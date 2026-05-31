@@ -28,7 +28,7 @@
             </intent-filter>
         </activity>
 
-                <!-- Default BoldWallet Icon Activity Alias -->
+        <!-- Default BoldWallet Icon Activity Alias -->
         <activity-alias
             android:name=".DefaultIconActivity"
             android:targetActivity=".MainActivity"

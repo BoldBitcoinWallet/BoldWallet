@@ -5,12 +5,17 @@ on:
     paths:
       - 'BBMTLib/**'
       - '.github/workflows/bbmtlib-test.yml'
+      - '.github/actions/setup-libtss/**'
+      - '.github/scripts/check-sensitive-logs.sh'
   workflow_dispatch:
 
 jobs:
   test:
     name: Test BBMTLib
     runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: '1'
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     
     defaults:
       run:
@@ -18,16 +23,22 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+
+      - name: Setup libtss
+        uses: ./.github/actions/setup-libtss
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version: '1.26'
           cache-dependency-path: BBMTLib/go.sum
 
       - name: Verify Go version
         run: go version
+
+      - name: Check sensitive log regressions
+        run: bash ../.github/scripts/check-sensitive-logs.sh
 
       - name: Install dependencies
         run: go mod download

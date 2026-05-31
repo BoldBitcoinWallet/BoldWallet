@@ -1,0 +1,34 @@
+name: Setup libtss
+description: Clone BoldBitcoinWallet/libtss beside BoldWallet and build libtss-ffi for BBMTLib CGO.
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout libtss (sibling of BoldWallet)
+      shell: bash
+      run: |
+        LIBTSS_DIR="${GITHUB_WORKSPACE}/../libtss"
+        LIBTSS_REF="7a712f345b710f98e7f7a26582427ad814852a63"
+        rm -rf "${LIBTSS_DIR}"
+        git clone --recurse-submodules https://github.com/BoldBitcoinWallet/libtss.git "${LIBTSS_DIR}"
+        git -C "${LIBTSS_DIR}" checkout "${LIBTSS_REF}"
+        git -C "${LIBTSS_DIR}" submodule update --init --recursive
+        ACTUAL_REF="$(git -C "${LIBTSS_DIR}" rev-parse HEAD)"
+        if [ "${ACTUAL_REF}" != "${LIBTSS_REF}" ]; then
+          echo "libtss revision mismatch: got ${ACTUAL_REF}, expected ${LIBTSS_REF}" >&2
+          exit 1
+        fi
+        echo "LIBTSS_DIR=${LIBTSS_DIR}" >> "${GITHUB_ENV}"
+        echo "LIBTSS_REF=${LIBTSS_REF}" >> "${GITHUB_ENV}"
+        test -f "${LIBTSS_DIR}/libtss-go/go.mod"
+        grep -q DerivePathWithChainCode "${LIBTSS_DIR}/libtss-go/tss/derive.go"
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build libtss-ffi
+      shell: bash
+      run: |
+        cd "${LIBTSS_DIR}"
+        cargo build --release -p libtss-ffi
+        test -f target/release/liblibtss_ffi.a

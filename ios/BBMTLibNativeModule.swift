@@ -10,10 +10,8 @@ import Network
 import React
 import Security
 import SystemConfiguration.CaptiveNetwork
-import Tss
-
 @objc(BBMTLibNativeModule)
-class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookListenerProtocol {
+class BBMTLibNativeModule: RCTEventEmitter {
 
   var useLog: Bool = true
 
@@ -97,7 +95,7 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     return s.isEmpty ? nil : s
   }
 
-  /// Debug: summary line (lengths / types). Full JSON is logged separately as `raw_json=`.
+  /// Debug: summary line (lengths / types) only.
   private func logNsecKeyshareDiag(rawLen: Int, obj: [String: Any]?, nsecVal: Any?) {
     let keysCsv = obj.map { $0.keys.sorted().joined(separator: ",") } ?? "(nil)"
     let nsecDesc: String
@@ -129,7 +127,6 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
         domain: "BBMTLibNativeModule", code: 1,
         userInfo: [NSLocalizedDescriptionKey: "No keyshare found in secure storage"])
     }
-    sendLogEvent("nsecFromKeyshare", "raw_json=\(raw)")
     let rawLen = raw.utf8.count
     let data = raw.data(using: .utf8)
     var obj: [String: Any]?
@@ -159,7 +156,7 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
       } else {
         sendLogEvent(
           "nsecFromKeyshare",
-          "FAIL: json_parse and no regex nsec rawLen=\(rawLen) err=\(errDesc) raw_json=\(raw)")
+          "FAIL: json_parse and no regex nsec rawLen=\(rawLen) err=\(errDesc)")
         throw NSError(
           domain: "BBMTLibNativeModule", code: 6,
           userInfo: [
@@ -220,6 +217,19 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
         userInfo: [NSLocalizedDescriptionKey: "Invalid nsec format in keyshare"])
     }
     return out
+  }
+
+  /// True when Keychain has a `keyshare` item without loading the blob (`kSecReturnData` false).
+  private func keyshareExistsInRNES() -> Bool {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrAccount as String: RNESKeychain.keyshareAccount,
+      kSecReturnData as String: false,
+      kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    var item: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &item)
+    return status == errSecSuccess
   }
 
   /// Read keyshare from the same Keychain layout as `RNEncryptedStorage` iOS implementation.
@@ -569,6 +579,15 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     resolve("getOutputDescriptor", output, error, resolver)
   }
 
+  @objc func appendOutputDescriptorChecksum(
+    _ descriptorBody: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    var error: NSError?
+    let output = TssAppendOutputDescriptorChecksum(descriptorBody, &error)
+    resolve("appendOutputDescriptorChecksum", output, error, resolver)
+  }
+
   @objc func btcAddress(
     _ compressedPubkey: String, network: String, addressType: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
@@ -683,6 +702,203 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     }
   }
 
+  @objc func dklsHelloDkg(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      let output: String
+      if BbmtBridge.isAvailable() {
+        output = BbmtBridge.helloDkg()
+      } else {
+        output =
+          "DKLS: run BBMTLib/build-dkls.sh ios and link ios/BbmtMobile/libbbmtmobile.xcframework"
+      }
+      self?.sendLogEvent("dklsHelloDkg", output)
+      resolver(output)
+    }
+  }
+
+  @objc func dklsMpcTssSetup(
+    _ server: String, partyID: String, partiesCSV: String, sessionID: String,
+    sessionKey: String, encKey: String, decKey: String, chaincode: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard BbmtBridge.isAvailable() else {
+        rejecter(
+          "DKLS_NATIVE_REQUIRED",
+          "Run BBMTLib/build-dkls.sh ios and link libbbmtmobile.xcframework in Xcode",
+          nil)
+        return
+      }
+      let output = BbmtBridge.lanJoinKeygen(
+        withKey: partyID, parties: partiesCSV, session: sessionID, server: server,
+        chaincode: chaincode, sessionKey: sessionKey, encKey: encKey, decKey: decKey)
+      if output.hasPrefix("error:") {
+        rejecter("DKLS_MPC_SETUP_ERROR", output, nil)
+        return
+      }
+      self?.sendLogEvent("dklsMpcTssSetup", String(output.prefix(120)))
+      resolver(output)
+    }
+  }
+
+  @objc func dklsNostrMpcTssSetup(
+    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
+    sessionKey: String, chaincode: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard BbmtBridge.isAvailable() else {
+        rejecter(
+          "DKLS_NATIVE_REQUIRED",
+          "Run BBMTLib/build-dkls.sh ios and link libdklsmobile.a in Xcode",
+          nil)
+        return
+      }
+      let output = BbmtBridge.nostrJoinKeygen(
+        withRelays: relaysCSV, nsec: partyNsec, peers: partiesNpubsCSV, session: sessionID,
+        sessionKey: sessionKey, chaincode: chaincode)
+      if output.hasPrefix("error:") {
+        rejecter("DKLS_NOSTR_KEYGEN_ERROR", output, nil)
+        return
+      }
+      self?.sendLogEvent("dklsNostrMpcTssSetup", String(output.prefix(120)))
+      resolver(output)
+    }
+  }
+
+  @objc func dklsCancelMpcSession(
+    _ sessionID: String, resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    if BbmtBridge.isAvailable() {
+      BbmtBridge.cancelMpcSession(sessionID)
+    }
+    resolver(nil)
+  }
+
+  @objc func dklsCancelNostrMpc(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    if BbmtBridge.isAvailable() {
+      BbmtBridge.cancelNostrMpc()
+    }
+    resolver(nil)
+  }
+
+  @objc func dklsMpcSignPSBT(
+    _ server: String, partyID: String, partiesCSV: String, sessionID: String,
+    sessionKey: String, encKey: String, decKey: String, psbtBase64: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard BbmtBridge.isAvailable() else {
+        rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
+        return
+      }
+      guard let keyshare = self?.loadKeyshareJSONFromRNES() else {
+        rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        return
+      }
+      let output = BbmtBridge.mpcSignPsbt(
+        withServer: server, key: partyID, parties: partiesCSV, session: sessionID,
+        sessionKey: sessionKey, encKey: encKey, decKey: decKey, keyshare: keyshare,
+        psbt: psbtBase64)
+      if output.hasPrefix("error:") {
+        rejecter("DKLS_PSBT_LAN", output, nil)
+        return
+      }
+      resolver(output)
+    }
+  }
+
+  @objc func dklsMpcSendBTCWithUTXOs(
+    _ server: String, partyID: String, partiesCSV: String, sessionID: String,
+    sessionKey: String, encKey: String, decKey: String, btcPub: String,
+    toAddress: String, satoshiAmount: String, satoshiFees: String,
+    utxosWithPathsJSON: String, changeAddress: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard BbmtBridge.isAvailable() else {
+        rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
+        return
+      }
+      guard let keyshare = self?.loadKeyshareJSONFromRNES() else {
+        rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        return
+      }
+      let output = BbmtBridge.mpcSendBtc(
+        withServer: server, key: partyID, parties: partiesCSV, session: sessionID,
+        sessionKey: sessionKey, encKey: encKey, decKey: decKey, keyshare: keyshare,
+        btcPub: btcPub, toAddress: toAddress, amount: satoshiAmount, fees: satoshiFees,
+        utxos: utxosWithPathsJSON, change: changeAddress)
+      if output.hasPrefix("error:") {
+        rejecter("DKLS_SEND_LAN", output, nil)
+        return
+      }
+      resolver(output)
+    }
+  }
+
+  @objc func dklsNostrMpcSendBTC(
+    _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
+    balanceSats: String, toAddress: String, satoshiAmount: String,
+    satoshiFees: String, utxosWithPathsJSON: String, changeAddress: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard BbmtBridge.isAvailable() else {
+        rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
+        return
+      }
+      do {
+        let (partyNsec, keyshareJSON) = try self?.nsecAndKeyshareJSONFromRNES()
+          ?? ("", "")
+        let output = BbmtBridge.nostrMpcSendBtc(
+          withRelays: relaysCSV, nsec: partyNsec, parties: partiesNpubsCSV,
+          npubsSorted: npubsSorted, balance: balanceSats, keyshare: keyshareJSON,
+          toAddress: toAddress, amount: satoshiAmount, fees: satoshiFees,
+          utxos: utxosWithPathsJSON, change: changeAddress)
+        if output.hasPrefix("error:") {
+          rejecter("DKLS_SEND_NOSTR", output, nil)
+          return
+        }
+        resolver(output)
+      } catch {
+        rejecter("DKLS_SEND_NOSTR", error.localizedDescription, error)
+      }
+    }
+  }
+
+  @objc func dklsNostrMpcSignPSBT(
+    _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
+    psbtBase64: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard BbmtBridge.isAvailable() else {
+        rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
+        return
+      }
+      do {
+        let (partyNsec, keyshareJSON) = try self?.nsecAndKeyshareJSONFromRNES()
+          ?? ("", "")
+        let output = BbmtBridge.nostrMpcSignPsbt(
+          withRelays: relaysCSV, nsec: partyNsec, parties: partiesNpubsCSV,
+          npubsSorted: npubsSorted, keyshare: keyshareJSON, psbt: psbtBase64)
+        if output.hasPrefix("error:") {
+          rejecter("DKLS_PSBT_NOSTR", output, nil)
+          return
+        }
+        resolver(output)
+      } catch {
+        rejecter("DKLS_PSBT_NOSTR", error.localizedDescription, error)
+      }
+    }
+  }
+
   @objc func nostrMpcTssSetup(
     _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
     sessionKey: String, chaincode: String, ppmFile: String,
@@ -755,6 +971,10 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async {
+      guard BbmtBridge.isAvailable() else {
+        rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
+        return
+      }
       var error: NSError?
       let output = TssCancelMpcSession(sessionID, &error)
       if error == nil {
@@ -770,6 +990,10 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .background).async {
+      guard BbmtBridge.isAvailable() else {
+        rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
+        return
+      }
       var error: NSError?
       let output = TssCancelNostrMpc(&error)
       if error == nil {
@@ -798,6 +1022,23 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
       let output = TssParsePSBTDetails(psbtBase64, &error)
       self?.sendLogEvent("parsePSBTDetails", output)
       resolver(error == nil ? output : error!.localizedDescription)
+    }
+  }
+
+  @objc func psbtIdentityHash(
+    _ psbtBase64: String, resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let output = TssPsbtIdentityHash(psbtBase64, &error)
+      let preview = output.count > 16 ? String(output.prefix(16)) + "…" : output
+      self?.sendLogEvent("psbtIdentityHash", preview)
+      if let error = error {
+        rejecter("PSBT_IDENTITY_ERROR", error.localizedDescription, error)
+      } else {
+        resolver(output)
+      }
     }
   }
 
@@ -1009,8 +1250,17 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
 
   /// Reads keyshare from RNES storage in native, parses JSON, returns a **minimal** object (only
   /// fields needed for Nostr UI / session prep). The full MPC blob is never passed to JS.
+  @objc func hasKeyshareInSecureStorage(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      resolve(self?.keyshareExistsInRNES() ?? false)
+    }
+  }
+
   @objc func getKeyshareNostrPrepJSON(
-    resolver: @escaping RCTPromiseResolveBlock,
+    _ resolve: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -1041,7 +1291,7 @@ class BBMTLibNativeModule: RCTEventEmitter, TssGoLogListenerProtocol, TssHookLis
         rejecter("BUILD_ERROR", "Could not build keyshare prep JSON", nil)
         return
       }
-      resolver(outStr)
+      resolve(outStr)
     }
   }
 

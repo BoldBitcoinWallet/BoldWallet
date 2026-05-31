@@ -1,8 +1,12 @@
 import React, {useCallback, useState, useEffect} from 'react';
 import {NativeModules} from 'react-native';
-import {useNavigation} from '@react-navigation/native';
 import KeyshareInfoContent from '../components/KeyshareInfoContent';
 import {useUser} from '../context/UserContext';
+import {
+  detectKeyshareTssBackend,
+  getTssBackendDisplayLabel,
+  type TssBackend,
+} from '../services/tssBackend';
 import {dbg, getKeyshareDisplayLabel, getKeyshareMetadata} from '../utils';
 import {generateAllOutputDescriptors} from '../utils';
 
@@ -23,19 +27,13 @@ type KeyshareInfo = {
   };
   npub: string | null;
   createdAt?: number | null;
+  tssBackend: TssBackend;
+  tssBackendLabel: string;
 };
 
 const DeviceScreen: React.FC = () => {
-  const navigation = useNavigation<any>();
   const {activeNetwork: network, activeAddressType: addressType} = useUser();
   const [keyshareInfo, setKeyshareInfo] = useState<KeyshareInfo | null>(null);
-
-  const openSettingsSection = useCallback(
-    (section: string) => {
-      navigation.navigate('Settings', {expandSection: section});
-    },
-    [navigation],
-  );
 
   const loadKeyshareInfo = useCallback(async () => {
     try {
@@ -67,7 +65,7 @@ const DeviceScreen: React.FC = () => {
         pubKey,
         chainCode,
         network || 'mainnet',
-        keyshare.created_at,
+        keyshare,
         addressType || 'segwit-native',
       );
       const outputDescriptors = {
@@ -75,6 +73,9 @@ const DeviceScreen: React.FC = () => {
         segwitNative: descriptors.segwitNative,
         segwitCompatible: descriptors.segwitCompatible,
       };
+      const tssBackend = detectKeyshareTssBackend(
+        keyshare as Record<string, unknown>,
+      );
       setKeyshareInfo({
         label,
         supportsLocal,
@@ -86,6 +87,8 @@ const DeviceScreen: React.FC = () => {
         outputDescriptors,
         npub: nostrNpub,
         createdAt: keyshare.created_at || null,
+        tssBackend,
+        tssBackendLabel: getTssBackendDisplayLabel(tssBackend),
       });
     } catch (error) {
       dbg('Error loading keyshare info:', error);
@@ -101,7 +104,6 @@ const DeviceScreen: React.FC = () => {
     <KeyshareInfoContent
       keyshareInfo={keyshareInfo}
       network={(network as 'mainnet' | 'testnet') || 'mainnet'}
-      onOpenSettingsSection={openSettingsSection}
     />
   );
 };

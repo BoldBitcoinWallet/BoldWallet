@@ -6,6 +6,7 @@
  * and use them immediately for fee estimation without a network round-trip.
  */
 import database from '../Database';
+import {dedupeUtxosByOutpoint} from '../utxoDedup';
 import {dbg} from '../../utils';
 
 export interface StoredUtxo {
@@ -85,11 +86,19 @@ class UtxoRepository {
          ORDER BY value_sats DESC`,
         [...addresses, network],
       );
-      return rows.map(this._rowToUtxo);
+      return dedupeUtxosByOutpoint(rows.map(this._rowToUtxo));
     } catch (err) {
       dbg('UtxoRepository.getUtxosForAddresses error', err);
       return [];
     }
+  }
+
+  /** Sum unique spendable UTXOs (deduped by txid:vout) for displayed addresses. */
+  getSpendableSatsForAddresses(addresses: string[], network: string): number {
+    return this.getUtxosForAddresses(addresses, network).reduce(
+      (sum, u) => sum + u.valueSats,
+      0,
+    );
   }
 
   /** Delete all UTXOs for an address (used to force re-sync before a send). */
@@ -169,6 +178,8 @@ class UtxoRepository {
     };
   }
 }
+
+export {dedupeUtxosByOutpoint} from '../utxoDedup';
 
 const utxoRepository = new UtxoRepository();
 export default utxoRepository;

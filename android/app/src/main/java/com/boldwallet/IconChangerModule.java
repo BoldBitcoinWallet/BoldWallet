@@ -49,6 +49,44 @@ public class IconChangerModule extends ReactContextBaseJavaModule {
         super(context);
     }
 
+    /** Ensures a launcher alias is enabled (fixes upgrades that disabled MainActivity). */
+    public static void ensureDefaultLauncher(android.content.Context context) {
+        try {
+            String packageName = context.getPackageName();
+            PackageManager pm = context.getPackageManager();
+            SharedPreferences prefs =
+                    context.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE);
+            String saved = prefs.getString(CURRENT_ICON_KEY, IconState.DEFAULT.getValue());
+            IconState state = IconState.fromString(saved);
+            if (state == IconState.ALTERNATIVE) {
+                pm.setComponentEnabledSetting(
+                        new ComponentName(packageName, DEFAULT_ICON_ACTIVITY),
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP);
+                pm.setComponentEnabledSetting(
+                        new ComponentName(packageName, ALTERNATIVE_ICON_ACTIVITY),
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP);
+            } else {
+                pm.setComponentEnabledSetting(
+                        new ComponentName(packageName, DEFAULT_ICON_ACTIVITY),
+                        PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                        PackageManager.DONT_KILL_APP);
+                pm.setComponentEnabledSetting(
+                        new ComponentName(packageName, ALTERNATIVE_ICON_ACTIVITY),
+                        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+                        PackageManager.DONT_KILL_APP);
+            }
+            // Legacy installs may have disabled MainActivity when it had a LAUNCHER filter.
+            pm.setComponentEnabledSetting(
+                    new ComponentName(packageName, MAIN_ACTIVITY),
+                    PackageManager.COMPONENT_ENABLED_STATE_ENABLED,
+                    PackageManager.DONT_KILL_APP);
+        } catch (Exception e) {
+            Log.w(TAG, "ensureDefaultLauncher: " + e.getMessage());
+        }
+    }
+
     @Override
     public String getName() {
         return "IconChanger";
@@ -64,16 +102,11 @@ public class IconChangerModule extends ReactContextBaseJavaModule {
             IconState targetState = IconState.fromString(iconName);
             Log.d(TAG, "Target icon state: " + targetState);
 
-            // Enable the target activity alias and disable the others
-            // We disable MainActivity's launcher intent and use activity-aliases instead
+            // Toggle launcher aliases only (MainActivity has no LAUNCHER filter).
             if (targetState == IconState.ALTERNATIVE) {
-                // Switch to calculator icon
-                disableComponent(pm, packageName, MAIN_ACTIVITY);
                 disableComponent(pm, packageName, DEFAULT_ICON_ACTIVITY);
                 enableComponent(pm, packageName, ALTERNATIVE_ICON_ACTIVITY);
             } else {
-                // Switch to default icon
-                disableComponent(pm, packageName, MAIN_ACTIVITY);
                 enableComponent(pm, packageName, DEFAULT_ICON_ACTIVITY);
                 disableComponent(pm, packageName, ALTERNATIVE_ICON_ACTIVITY);
             }

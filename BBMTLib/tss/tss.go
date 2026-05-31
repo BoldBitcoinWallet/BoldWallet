@@ -10,16 +10,15 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/bnb-chain/tss-lib/v2/common"
-	ecdsaKeygen "github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
-	"github.com/bnb-chain/tss-lib/v2/ecdsa/signing"
-	"github.com/bnb-chain/tss-lib/v2/tss"
+	"github.com/bnb-chain/tss-lib/v3/common"
+	ecdsaKeygen "github.com/bnb-chain/tss-lib/v3/ecdsa/keygen"
+	"github.com/bnb-chain/tss-lib/v3/ecdsa/signing"
+	"github.com/bnb-chain/tss-lib/v3/tss"
 	blog "github.com/ipfs/go-log/v2"
 )
 
@@ -29,15 +28,7 @@ func (s *ServiceImpl) ApplyData(msg string) error {
 }
 
 func LocalPreParams(ppmFile string, timeoutMinutes int) (result bool, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in LocalPreParams: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = false
-		}
-	}()
+	defer RecoverAsErrorClear("LocalPreParams", &err, func() { result = false })
 
 	Logln("BBMTLog", "ppm generation...")
 
@@ -77,15 +68,7 @@ func LocalPreParams(ppmFile string, timeoutMinutes int) (result bool, err error)
 }
 
 func PreParams(ppmFile string) (result *ecdsaKeygen.LocalPreParams, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in PreParams: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = nil
-		}
-	}()
+	defer RecoverAsErrorClear("PreParams", &err, func() { result = nil })
 
 	Logln("BBMTLog", "ppm generation...")
 
@@ -125,15 +108,7 @@ func PreParams(ppmFile string) (result *ecdsaKeygen.LocalPreParams, err error) {
 }
 
 func NewService(msg Messenger, stateAccessor LocalStateAccessor, createPreParam bool, ppmFile string) (result *ServiceImpl, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NewService: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = nil
-		}
-	}()
+	defer RecoverAsErrorClear("NewService", &err, func() { result = nil })
 
 	if msg == nil {
 		return nil, errors.New("nil messenger")
@@ -174,7 +149,7 @@ func savePreParamsToFile(preParams *ecdsaKeygen.LocalPreParams, filePath string)
 	if err != nil {
 		return fmt.Errorf("failed to marshal pre-parameters: %w", err)
 	}
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0600); err != nil {
 		return fmt.Errorf("failed to write pre-parameters to file: %w", err)
 	}
 	return nil
@@ -255,12 +230,13 @@ func (s *ServiceImpl) KeygenECDSA(req *KeygenRequest) (*KeygenResponse, error) {
 
 func (s *ServiceImpl) applyMessageToTssInstance(localParty tss.Party, msg string, sortedPartyIds tss.SortedPartyIDs) (string, error) {
 	var msgFromTss MessageFromTss
-	originalBytes, err := base64.StdEncoding.DecodeString(msg)
+	decodedMsg, err := base64.StdEncoding.DecodeString(msg)
 	if err != nil {
-		return "", fmt.Errorf("failed to decode message from base64, error: %w", err)
+		return "", fmt.Errorf("failed to decode inbound message: %w", err)
 	}
-	if err := json.Unmarshal(originalBytes, &msgFromTss); err != nil {
-		return "", fmt.Errorf("failed to unmarshal message from json, error: %w, [%s], [%s]", err, msg, originalBytes)
+	defer clear(decodedMsg)
+	if err := json.Unmarshal(decodedMsg, &msgFromTss); err != nil {
+		return "", fmt.Errorf("failed to parse inbound message payload: %w", err)
 	}
 	var fromParty *tss.PartyID
 	for _, item := range sortedPartyIds {
@@ -300,50 +276,41 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 
 		// Process outgoing messages
 		case outMsg := <-outCh:
-			go func() {
-				msgData, r, _err := outMsg.WireBytes()
-				if _err != nil {
-					errChan <- fmt.Errorf("failed to get wire bytes, error: %v", _err)
-					return
-				}
-				jsonBytes, _err := json.MarshalIndent(MessageFromTss{
-					WireBytes:   msgData,
-					From:        r.From.Moniker,
-					IsBroadcast: r.IsBroadcast,
-				}, "", "  ")
-				if _err != nil {
-					errChan <- fmt.Errorf("failed to marshal message to json, error: %v", _err)
-					return
-				}
-				outboundPayload := base64.StdEncoding.EncodeToString(jsonBytes)
-				if r.IsBroadcast || r.To == nil {
-					for _, item := range localState.KeygenCommitteeKeys {
-						if item == localState.LocalPartyKey {
-							continue
-						}
-						if _err := s.messenger.Send(r.From.Moniker, item, outboundPayload); _err != nil {
-							errChan <- fmt.Errorf("failed to broadcast message to peer, error: %v", _err)
-							return
-						}
+			msgData, r, _err := outMsg.WireBytes()
+			if _err != nil {
+				return "", fmt.Errorf("failed to get wire bytes, error: %v", _err)
+			}
+			jsonBytes, _err := json.MarshalIndent(MessageFromTss{
+				WireBytes:   msgData,
+				From:        r.From.Moniker,
+				IsBroadcast: r.IsBroadcast,
+			}, "", "  ")
+			if _err != nil {
+				return "", fmt.Errorf("failed to marshal message to json, error: %v", _err)
+			}
+			outboundPayload := base64.StdEncoding.EncodeToString(jsonBytes)
+			if r.IsBroadcast || r.To == nil {
+				for _, item := range localState.KeygenCommitteeKeys {
+					if item == localState.LocalPartyKey {
+						continue
 					}
-				} else {
-					for _, item := range r.To {
-						if _err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); _err != nil {
-							errChan <- fmt.Errorf("failed to send message to peer, error: %v", _err)
-							return
-						}
+					if _err := s.messenger.Send(r.From.Moniker, item, outboundPayload); _err != nil {
+						return "", fmt.Errorf("failed to broadcast message to peer, error: %v", _err)
 					}
 				}
-			}()
+			} else {
+				for _, item := range r.To {
+					if _err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); _err != nil {
+						return "", fmt.Errorf("failed to send message to peer, error: %v", _err)
+					}
+				}
+			}
 
 		// Process incoming messages
 		case msg := <-s.inboundMessageCh:
-			go func() {
-				if _, err := s.applyMessageToTssInstance(localParty, msg, sortedPartyIds); err != nil {
-					errChan <- fmt.Errorf("failed to apply message to tss instance, error: %w", err)
-					return
-				}
-			}()
+			if _, err := s.applyMessageToTssInstance(localParty, msg, sortedPartyIds); err != nil {
+				return "", fmt.Errorf("failed to apply message to tss instance, error: %w", err)
+			}
 
 		// Handle ECDSA end channel
 		case saveData := <-ecdsaEndCh:
@@ -511,49 +478,43 @@ func (s *ServiceImpl) processKeySign(localParty tss.Party,
 		case <-errCh:
 			return nil, errors.New("failed to start keysign process")
 		case msg := <-outCh:
-			go func() {
-				msgData, r, err := msg.WireBytes()
-				if err != nil {
-					errChan <- fmt.Errorf("failed to get wire bytes, error: %v", err)
-					return
-				}
-				jsonBytes, err := json.MarshalIndent(MessageFromTss{
-					WireBytes:   msgData,
-					From:        r.From.Moniker,
-					IsBroadcast: r.IsBroadcast,
-				}, "", "  ")
-				if err != nil {
-					errChan <- fmt.Errorf("failed to marshal message to json, error: %w", err)
-				}
-				// for debug
-				Logln("BBMTLog", "send message from ", msg.GetFrom(), "to", msg.GetTo())
-				outboundPayload := base64.StdEncoding.EncodeToString(jsonBytes)
-				if r.IsBroadcast {
-					for _, item := range sortedPartyIds {
-						// don't send message to itself
-						// the reason we can do this is because we set Monitor to be the participant key
-						if item.Moniker == localParty.PartyID().Moniker {
-							continue
-						}
-						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); err != nil {
-							errChan <- fmt.Errorf("failed to broadcast message to peer, error: %w", err)
-						}
+			msgData, r, err := msg.WireBytes()
+			if err != nil {
+				return nil, fmt.Errorf("failed to get wire bytes, error: %v", err)
+			}
+			jsonBytes, err := json.MarshalIndent(MessageFromTss{
+				WireBytes:   msgData,
+				From:        r.From.Moniker,
+				IsBroadcast: r.IsBroadcast,
+			}, "", "  ")
+			if err != nil {
+				return nil, fmt.Errorf("failed to marshal message to json, error: %w", err)
+			}
+			Logln("BBMTLog", "send message from ", msg.GetFrom(), "to", msg.GetTo())
+			outboundPayload := base64.StdEncoding.EncodeToString(jsonBytes)
+			if r.IsBroadcast {
+				for _, item := range sortedPartyIds {
+					// don't send message to itself
+					// the reason we can do this is because we set Monitor to be the participant key
+					if item.Moniker == localParty.PartyID().Moniker {
+						continue
 					}
-				} else {
-					for _, item := range r.To {
-						if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); err != nil {
-							errChan <- fmt.Errorf("failed to send message to peer, error: %w", err)
-						}
+					if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); err != nil {
+						return nil, fmt.Errorf("failed to broadcast message to peer, error: %w", err)
 					}
 				}
-			}()
+			} else {
+				for _, item := range r.To {
+					if err := s.messenger.Send(r.From.Moniker, item.Moniker, outboundPayload); err != nil {
+						return nil, fmt.Errorf("failed to send message to peer, error: %w", err)
+					}
+				}
+			}
 		case msg := <-s.inboundMessageCh:
-			go func() {
-				// apply the message to the tss instance
-				if _, err := s.applyMessageToTssInstance(localParty, msg, sortedPartyIds); err != nil {
-					errChan <- fmt.Errorf("failed to apply message to tss instance, error: %w", err)
-				}
-			}()
+			// apply the message to the tss instance
+			if _, err := s.applyMessageToTssInstance(localParty, msg, sortedPartyIds); err != nil {
+				return nil, fmt.Errorf("failed to apply message to tss instance, error: %w", err)
+			}
 		case sig := <-endCh: // finished keysign successfully
 			if signature == nil {
 				signature = sig

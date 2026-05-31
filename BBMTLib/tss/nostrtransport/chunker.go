@@ -31,7 +31,7 @@ func ParseChunkTag(value string) (result ChunkMetadata, err error) {
 			errMsg := fmt.Sprintf("PANIC in ParseChunkTag: %v", r)
 			fmt.Fprintf(os.Stderr, "BBMTLog: %s\n", errMsg)
 			fmt.Fprintf(os.Stderr, "BBMTLog: Stack trace: %s\n", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
+			err = panicError(r)
 			result = ChunkMetadata{}
 		}
 	}()

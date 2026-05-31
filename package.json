@@ -1,6 +1,6 @@
 {
   "name": "boldwallet",
-  "version": "3.1.1",
+  "version": "4.0.0",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
@@ -8,6 +8,9 @@
     "lint": "eslint .",
     "start": "react-native start",
     "test": "jest",
+    "test:hardening": "jest __tests__/mpcCancel.test.ts __tests__/hardening.test.ts __tests__/mpcProgressAbort.test.ts",
+    "verify:native": "bash BBMTLib/scripts/verify-native-artifacts.sh",
+    "check:jni": "bash android/scripts/check-jni-exports.sh",
     "test:extensionBind": "jest __tests__/extensionBind.test.ts",
     "postinstall": "patch-package"
   },

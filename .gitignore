@@ -75,21 +75,28 @@ bundle.js
 !.yarn/sdks
 !.yarn/versions
 
-# BBMTLib
+# BBMTLib — Go builds, mobile artifacts, test data
 #
 BBMTLib/.DS_Store
+BBMTLib/bin/
 BBMTLib/*.aar
 BBMTLib/*.jar
-BBMTLib/Tss.xcframework/
+BBMTLib/Tss.xcframework/**
+BBMTLib/Dkls.xcframework/**
+BBMTLib/libbbmtmobile.xcframework/**
+# c-shared host outputs (also under bin/; ignore if written to BBMTLib root)
+BBMTLib/libbbmtmobile
+BBMTLib/libbbmtmobile.h
+BBMTLib/libdklsmobile
+BBMTLib/libdklsmobile.h
 BBMTLib/scripts/bin/
 BBMTLib/scripts/*.json
-# Build binaries (bold-spend cross-platform binaries - ignore these)
-BBMTLib/bin/bold-spend-*
-# Build binaries (bbmt and related binaries - ignore these)
-BBMTLib/bin/bbmt*
+# Prebuilt libtss-ffi static libs (run mobile-deps/libtss/build-libtss.sh)
+BBMTLib/mobile-deps/libtss/**/*.a
+BBMTLib/mobile-deps/libtss/target/
 # Peer configuration files
 BBMTLib/peer*.json
-# Go build artifacts
+# Go build artifacts (host)
 BBMTLib/*.exe
 BBMTLib/*.dll
 BBMTLib/*.so
@@ -100,6 +107,9 @@ BBMTLib/*.dylib
 peer*.ks
 KeyShare*.share
 peer*.share
+# Local Nostr relay data (BBMTLib/scripts/start-local-relay.sh)
+BBMTLib/test-relay-data/
+
 # Testing data and temporary files
 BBMTLib/test-data/
 BBMTLib/test-keygen-output/
@@ -148,7 +158,9 @@ android/gradle.properties.local
 mcps/
 
 # IDE - VSCode
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/c_cpp_properties.json
 *.code-workspace
 
 # IDE - JetBrains
@@ -267,8 +279,6 @@ tmp/
 temp/
 
 # Editor directories and files
-.vscode/*
-!.vscode/extensions.json
 .idea
 *.suo
 *.ntvs*
@@ -305,6 +315,21 @@ proguard/
 android/app/debug/
 android/app/release/
 android/app/profile/
+# Kotlin compiler session markers
+android/.kotlin/
+**/.kotlin/
+*.salive
+# ProGuard/R8 mapping (release builds; huge, regenerated)
+android/mapping.txt
+# Legacy gomobile GG18 AAR (app uses libbbmtmobile.so + dkls_jni; see BBMTLib/build-dkls.sh)
+android/app/libs/tss.aar
+android/app/libs/tss-sources.jar
+# DKLs23 / bbmtmobile Android (BBMTLib/build-dkls.sh): libbbmtmobile.so, libbbmtmobile.h, dkls_jni.so
+android/app/src/main/jniLibs/**
+android/app/src/main/cpp/libbbmtmobile.h
+# Legacy pre-bbmtmobile rename (stale headers from old builds)
+android/app/src/main/cpp/libdklsmobile.h
+**/libdklsmobile.so
 
 # iOS
 *.pbxuser
@@ -327,6 +352,22 @@ ios/build/
 !*.xcworkspace/contents.xcworkspacedata
 *.xcuserdata
 *.xcscmblueprint
+# Unified bbmtmobile (BBMTLib/build-dkls.sh ios) — built locally, not committed (same as android jniLibs)
+ios/Tss.xcframework/**
+ios/DklsMobile/**
+ios/DklsBridge.h
+ios/DklsBridge.mm
+ios/libbbmtmobile_go.h
+ios/BbmtMobile/libbbmtmobile.xcframework/**
+ios/BbmtMobile/libbbmtmobile_go.h
+ios/BbmtMobile/libbbmtmobile*.h
+ios/BbmtMobile/*.a
+ios/BbmtMobile/libbbmtmobile-merged-*.a
+ios/BbmtMobile/libbbmtmobile-device.*
+ios/BbmtMobile/libbbmtmobile-sim.*
+ios/BbmtMobile/headers/
+# Stale iOS outputs from pre-bbmtmobile builds (under ios/DklsMobile/ when present)
+ios/DklsMobile/libdklsmobile.xcframework/**
 
 # CocoaPods
 Pods/
@@ -371,6 +412,8 @@ vendor/bundle/
 
 # Database files
 *.db
+*.db-shm
+*.db-wal
 *.sqlite
 *.sqlite3
 

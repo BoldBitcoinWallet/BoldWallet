@@ -790,15 +790,12 @@ const TransactionList = React.forwardRef<
       }
       HapticFeedback.medium();
       setIsRefreshing(true);
-      onPullRefresh?.();
-      // Invalidate cached /address/… responses so the refresh always hits the
-      // network.  Without this, mempoolClient serves the 30-second-old cached
-      // snapshot (originally populated during discovery's isAddressUsed() calls)
-      // and the user sees the same stale transaction list on every pull-to-refresh.
+      // Invalidate before parent balance sync so mempool address stats are fresh.
       if (baseApi) {
         const cleanBase = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
         mempoolClient.invalidate(`${cleanBase}/api/address/`);
       }
+      onPullRefresh?.();
       try {
         await memoizedFetchTransactions(baseApi);
       } catch {

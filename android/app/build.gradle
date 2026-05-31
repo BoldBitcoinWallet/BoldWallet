@@ -27,9 +27,10 @@ android {
         applicationId "com.boldwallet"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 59
-        versionName "3.1.1"
+        versionCode 60
+        versionName "4.0.0"
         missingDimensionStrategy 'react-native-camera', 'general'
+        // Match main: oldarch flavor with newArchEnabled=true in gradle.properties (RN 0.82).
         missingDimensionStrategy 'react-native-arch', 'oldarch'
         
         // 16KB page size support
@@ -108,7 +109,8 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.7.1'
     // Same EncryptedSharedPreferences contract as react-native-encrypted-storage (RNES) for native keyshare reads
     implementation "androidx.security:security-crypto:1.1.0-alpha03"
-    implementation files("libs/tss.aar").builtBy(tasks.named('preBuild'))
+    // Single Go runtime: libbbmtmobile.so + dkls_jni (BBMTLib/build-dkls.sh android).
+    // GG18 + DKLs both route through Bbmt*/Dkls* JNI — no gomobile tss.aar.
     implementation project(':react-native-fs')
     implementation project(':react-native-gesture-handler')
     implementation project(':react-native-device-info')

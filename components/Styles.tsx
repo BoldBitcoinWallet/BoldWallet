@@ -284,6 +284,8 @@ export interface Styles {
   keyshareBadgeText: TextStyle;
   keyshareBadgeTrio: ViewStyle;
   keyshareBadgeDuo: ViewStyle;
+  keyshareBadgeGg18: ViewStyle;
+  keyshareBadgeDkls: ViewStyle;
   keyshareStatusBadge: ViewStyle;
   keyshareStatusBadgeText: TextStyle;
   keyshareStatusBadgeSuccess: ViewStyle;
@@ -324,6 +326,7 @@ export interface Styles {
   collapsibleHeaderIcon: ImageStyle;
   collapsibleHeaderTitle: TextStyle;
   collapsibleChevron: TextStyle;
+  collapsibleChevronSpinner: ViewStyle;
   collapsibleContent: ViewStyle;
   walletInfoContainer: ViewStyle;
   walletInfoTitle: TextStyle;
@@ -1814,6 +1817,14 @@ export const createStyles = (theme: Theme): Styles => ({
   keyshareBadgeDuo: {
     backgroundColor: theme.colors.secondary,
   },
+  keyshareBadgeGg18: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  keyshareBadgeDkls: {
+    backgroundColor: theme.colors.secondary,
+    borderColor: theme.colors.secondary,
+  },
   keyshareStatusBadge: {
     paddingHorizontal: 10,
     paddingVertical: 5,
@@ -2126,6 +2137,10 @@ export const createStyles = (theme: Theme): Styles => ({
   collapsibleChevron: {
     fontSize: theme.fontSizes?.base || 14,
     fontFamily: theme.fontFamilies?.bold,
+  },
+  collapsibleChevronSpinner: {
+    minWidth: 20,
+    marginRight: 2,
   },
   collapsibleContent: {
     paddingHorizontal: 12,

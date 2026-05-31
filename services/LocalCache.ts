@@ -1,5 +1,6 @@
 import RNFS from 'react-native-fs';
 import {dbg} from '../utils';
+import {safeUnlink} from './rnfsSafe';
 class LocalCache {
   static baseDir = `${RNFS.DocumentDirectoryPath}/.cache`;
   // Ensure .cache directory exists
@@ -67,10 +68,7 @@ class LocalCache {
   static async removeItem(key: string) {
     try {
       const path = await this.getFilePath(key);
-      const exists = await RNFS.exists(path);
-      if (exists) {
-        await RNFS.unlink(path);
-      }
+      await safeUnlink(path);
     } catch (err) {
       dbg(`LocalCache removeItem error [${key}]:`, err);
     }
@@ -92,16 +90,13 @@ class LocalCache {
     try {
       const files = await RNFS.readDir(this.baseDir);
       for (const file of files) {
-        await RNFS.unlink(file.path);
+        await safeUnlink(file.path);
       }
     } catch (err) {
       dbg('LocalCache clear files error:', err);
     }
     try {
-      const exists = await RNFS.exists(this.baseDir);
-      if (exists) {
-        await RNFS.unlink(this.baseDir);
-      }
+      await safeUnlink(this.baseDir);
       await RNFS.mkdir(this.baseDir); // Recreate
     } catch (err) {
       dbg('LocalCache clear error:', err);

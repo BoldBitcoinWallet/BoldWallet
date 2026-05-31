@@ -1,13 +1,29 @@
 # OSX
-#
 .DS_Store
 
+# gomobile outputs (built by build.sh / build-dkls.sh)
 *.aar
-
 *.jar
+Tss.xcframework/**
+Dkls.xcframework/**
+libbbmtmobile.xcframework/**
 
-Tss.xcframework/
+# bbmtmobile / legacy dklsmobile c-shared (host; primary output is bin/)
+libbbmtmobile
+libbbmtmobile.h
+libdklsmobile
+libdklsmobile.h
 
+# c-shared / host binaries
+bin/
+
+# Prebuilt libtss-ffi (mobile-deps/libtss/build-libtss.sh)
+mobile-deps/libtss/**/*.a
+mobile-deps/libtss/target/
+
+# Scripts
 scripts/bin/
-
 scripts/*.json
+
+# Local Nostr relay (scripts/start-local-relay.sh)
+test-relay-data/

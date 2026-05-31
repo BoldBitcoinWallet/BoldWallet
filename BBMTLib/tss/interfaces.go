@@ -4,7 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 
-	ecdsaKeygen "github.com/bnb-chain/tss-lib/v2/ecdsa/keygen"
+	ecdsaKeygen "github.com/bnb-chain/tss-lib/v3/ecdsa/keygen"
 )
 
 type Service interface {
@@ -75,6 +75,7 @@ func (l *LocalStateNostr) GetNsec() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("decode hex: %w", err)
 	}
+	defer clear(rawNsec)
 	return string(rawNsec), nil
 }
 

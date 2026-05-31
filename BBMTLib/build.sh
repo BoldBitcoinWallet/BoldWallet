@@ -1,5 +1,34 @@
 #!/usr/bin/env bash
+# BoldWallet mobile native libs:
+#   ./build-all.sh       → libtss + GG18 + DKLs (Android + iOS on macOS) — use before release
+#   ./build.sh           → GG18 gomobile (tss.aar / Tss.xcframework)
+#   ./build-dkls.sh      → DKLs23 c-shared (libbbmtmobile.so / libbbmtmobile.xcframework)
+#   ./build.sh --with-dkls → GG18 + DKLs (same as build-all minus libtss pre-step / host smoke)
+#
+# Do not gomobile-bind dklsbind on Android: dkls.aar duplicates go.Seq from tss.aar.
 set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+cd "${ROOT}"
+
+WITH_DKLS=0
+CLEAR_CACHE=0
+for arg in "$@"; do
+  case "${arg}" in
+    --with-dkls) WITH_DKLS=1 ;;
+    --clear-cache) CLEAR_CACHE=1 ;;
+    -h|--help)
+      echo "Usage: $0 [--clear-cache] [--with-dkls]"
+      echo "  --with-dkls    Also run build-dkls.sh (Android + iOS on macOS)"
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: ${arg}"
+      echo "Usage: $0 [--clear-cache] [--with-dkls]"
+      exit 1
+      ;;
+  esac
+done
 
 # --- Configuration & Helpers ---
 
@@ -90,7 +119,7 @@ gomobile init || { warn "Init failed – retrying with verbose output"; gomobile
 gobind -h >/dev/null 2>&1 || { echo "Error: gobind not functional"; exit 1; }
 
 # Optional cache clear
-if [[ "${1:-}" == "--clear-cache" ]]; then
+if [[ "${CLEAR_CACHE}" -eq 1 ]]; then
     warn "Clearing cache as requested..."
     go clean -modcache
     go mod download
@@ -114,6 +143,9 @@ export GOFLAGS="-mod=mod"
 # set the max-page-size for the linker to ensure libgojni.so is compliant.
 gomobile bind -v -target=android -androidapi 21 -ldflags="-extldflags=-Wl,-z,max-page-size=16384" -o tss.aar github.com/BoldBitcoinWallet/BBMTLib/tss
 
+# DKLs23 on Android: ./build-dkls.sh android → libbbmtmobile.so + dkls_jni (not dkls.aar).
+# A second gomobile AAR duplicates go.Seq / go.Universe from tss.aar at link time.
+
 # Copy Artifacts
 if [[ -d "../android/app/libs" ]]; then
     # Run go mod tidy again at the end to ensure go.mod/go.sum are clean
@@ -126,6 +158,7 @@ if [[ -d "../android/app/libs" ]]; then
         cp -v tss-sources.jar ../android/app/libs/tss-sources.jar || warn "Copy sources.jar failed"
         echo "✓ tss-sources.jar copied to ../android/app/libs/tss-sources.jar"
     fi
+    rm -f ../android/app/libs/dkls.aar 2>/dev/null || true
 fi
 
 # --- 4. Build: iOS/macOS ---
@@ -139,16 +172,16 @@ if [[ "$(uname)" == "Darwin" ]]; then
         exit 1
     fi
 
-    # Build xcframework
+    # GG18 only; DKLs23 iOS uses ./build-dkls.sh ios → libdklsmobile.xcframework + DklsBridge
     gomobile bind -v -target=ios,iossimulator,macos -o Tss.xcframework github.com/BoldBitcoinWallet/BBMTLib/tss
 
     # Copy Artifacts
     if [[ -d "../ios" ]]; then
         info "Copying iOS artifacts..."
-        # Clean old framework to ensure clean copy
         rm -rf ../ios/Tss.xcframework 2>/dev/null || true
         cp -a ./Tss.xcframework ../ios/ || warn "Copy Tss.xcframework failed"
         echo "✓ Tss.xcframework copied to ../ios/Tss.xcframework"
+        rm -rf ../ios/Dkls.xcframework 2>/dev/null || true
     fi
 else
     info "Not running on macOS → Skipping iOS/macOS targets"
@@ -156,5 +189,19 @@ fi
 
 info "Tidying dependencies..."
 go mod tidy || warn "go mod tidy failed"
-    
+
+if [[ "${WITH_DKLS}" -eq 1 ]]; then
+  info "Building DKLs23 (build-dkls.sh)..."
+  bash "${ROOT}/build-dkls.sh" android
+  if [[ "$(uname)" == "Darwin" ]]; then
+    bash "${ROOT}/build-dkls.sh" ios
+  fi
+else
+  warn "DKLs23 not built. For release APK/IPA also run: ./build-dkls.sh android  (and ios on macOS)"
+  warn "Or use: ./build.sh --with-dkls  or  ./build-all.sh"
+fi
+
 info "Build complete!"
+info "  GG18:  android/app/libs/tss.aar"
+info "  DKLs:  android jniLibs/*/libbbmtmobile.so, ios/BbmtMobile/libbbmtmobile.xcframework"
+info "  All:   ./build-all.sh"

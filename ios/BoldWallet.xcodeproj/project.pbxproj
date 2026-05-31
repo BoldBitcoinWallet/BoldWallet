@@ -10,7 +10,6 @@
 		00E356F31AD99517003FC87E /* BoldWalletTests.m in Sources */ = {isa = PBXBuildFile; fileRef = 00E356F21AD99517003FC87E /* BoldWalletTests.m */; };
 		0440EA6B2D48369D00FE370B /* BBMTLibNativeModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0440EA6A2D48369D00FE370B /* BBMTLibNativeModule.swift */; };
 		0440EA6C2D48369D00FE370B /* BBMTLibNativeModule.m in Sources */ = {isa = PBXBuildFile; fileRef = 0440EA692D48369D00FE370B /* BBMTLibNativeModule.m */; };
-		0444C49B2EAE13A800CD740F /* Tss.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 0440EA622D4835DD00FE370B /* Tss.xcframework */; };
 		13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB01A68108700A75B9A /* AppDelegate.mm */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		13B07FC11A68108700A75B9A /* main.m in Sources */ = {isa = PBXBuildFile; fileRef = 13B07FB71A68108700A75B9A /* main.m */; };
@@ -26,6 +25,9 @@
 		A7BEE39BEEAF4F089CA47860 /* Inter-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 1594077544924158A9AAAA27 /* Inter-Medium.ttf */; };
 		ABFD1A7D0A9C1E3B52BE4826 /* libPods-BoldWallet.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 42B71AC30DBE14FE7026BFF1 /* libPods-BoldWallet.a */; };
 		B45690F427A049ACA62B5720 /* download_fonts.md in Resources */ = {isa = PBXBuildFile; fileRef = 6462EB0D3AF140DE98970BB5 /* download_fonts.md */; };
+		BBMT00012D48369D00FE370B /* BbmtBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = BBMT00022D48369D00FE370B /* BbmtBridge.mm */; };
+		BBMT00042D48369D00FE370B /* libbbmtmobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = BBMT00052D48369D00FE370B /* libbbmtmobile.xcframework */; };
+		BBMT00062D48369D00FE370B /* TssShim.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMT00072D48369D00FE370B /* TssShim.swift */; };
 		EB82B2233CF24510A230A956 /* JetBrainsMono-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 0B628FC831DA4FCB82826E0F /* JetBrainsMono-Medium.ttf */; };
 /* End PBXBuildFile section */
 
@@ -43,7 +45,6 @@
 		00E356EE1AD99517003FC87E /* BoldWalletTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BoldWalletTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		00E356F11AD99517003FC87E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		00E356F21AD99517003FC87E /* BoldWalletTests.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BoldWalletTests.m; sourceTree = "<group>"; };
-		0440EA622D4835DD00FE370B /* Tss.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; path = Tss.xcframework; sourceTree = "<group>"; };
 		0440EA692D48369D00FE370B /* BBMTLibNativeModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = BBMTLibNativeModule.m; sourceTree = "<group>"; };
 		0440EA6A2D48369D00FE370B /* BBMTLibNativeModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BBMTLibNativeModule.swift; sourceTree = "<group>"; };
 		0440EA6D2D4836D600FE370B /* BoldWallet-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "BoldWallet-Bridging-Header.h"; sourceTree = "<group>"; };
@@ -66,6 +67,10 @@
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = BoldWallet/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		A935B50B1AE989023F72F0C6 /* Pods-BoldWallet-BoldWalletTests.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BoldWallet-BoldWalletTests.release.xcconfig"; path = "Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests.release.xcconfig"; sourceTree = "<group>"; };
 		B30564DE79120A5C03ECEF22 /* Pods-BoldWallet.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BoldWallet.debug.xcconfig"; path = "Target Support Files/Pods-BoldWallet/Pods-BoldWallet.debug.xcconfig"; sourceTree = "<group>"; };
+		BBMT00022D48369D00FE370B /* BbmtBridge.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; path = BbmtBridge.mm; sourceTree = "<group>"; };
+		BBMT00032D48369D00FE370B /* BbmtBridge.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = BbmtBridge.h; sourceTree = "<group>"; };
+		BBMT00052D48369D00FE370B /* libbbmtmobile.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = libbbmtmobile.xcframework; path = BbmtMobile/libbbmtmobile.xcframework; sourceTree = "<group>"; };
+		BBMT00072D48369D00FE370B /* TssShim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TssShim.swift; sourceTree = "<group>"; };
 		CF244333124C48401EA96FBE /* libPods-BoldWallet-BoldWalletTests.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-BoldWallet-BoldWalletTests.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0ECD961405C400BBD93B045 /* Inter-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-Regular.ttf"; path = "../assets/fonts/Inter-Regular.ttf"; sourceTree = "<group>"; };
 		D8C01CCFA4229A770E5C486B /* Pods-BoldWallet-BoldWalletTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BoldWallet-BoldWalletTests.debug.xcconfig"; path = "Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests.debug.xcconfig"; sourceTree = "<group>"; };
@@ -86,7 +91,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0444C49B2EAE13A800CD740F /* Tss.xcframework in Frameworks */,
+				BBMT00042D48369D00FE370B /* libbbmtmobile.xcframework in Frameworks */,
 				ABFD1A7D0A9C1E3B52BE4826 /* libPods-BoldWallet.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -116,6 +121,9 @@
 			children = (
 				0440EA692D48369D00FE370B /* BBMTLibNativeModule.m */,
 				0440EA6A2D48369D00FE370B /* BBMTLibNativeModule.swift */,
+				BBMT00032D48369D00FE370B /* BbmtBridge.h */,
+				BBMT00022D48369D00FE370B /* BbmtBridge.mm */,
+				BBMT00072D48369D00FE370B /* TssShim.swift */,
 				13B07FAF1A68108700A75B9A /* AppDelegate.h */,
 				13B07FB01A68108700A75B9A /* AppDelegate.mm */,
 				0440EA6D2D4836D600FE370B /* BoldWallet-Bridging-Header.h */,
@@ -131,7 +139,7 @@
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
-				0440EA622D4835DD00FE370B /* Tss.xcframework */,
+				BBMT00052D48369D00FE370B /* libbbmtmobile.xcframework */,
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
 				42B71AC30DBE14FE7026BFF1 /* libPods-BoldWallet.a */,
 				CF244333124C48401EA96FBE /* libPods-BoldWallet-BoldWalletTests.a */,
@@ -251,7 +259,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 1620;
+				LastUpgradeCheck = 2640;
 				TargetAttributes = {
 					00E356ED1AD99517003FC87E = {
 						CreatedOnToolsVersion = 6.2;
@@ -487,6 +495,8 @@
 			files = (
 				0440EA6B2D48369D00FE370B /* BBMTLibNativeModule.swift in Sources */,
 				0440EA6C2D48369D00FE370B /* BBMTLibNativeModule.m in Sources */,
+				BBMT00012D48369D00FE370B /* BbmtBridge.mm in Sources */,
+				BBMT00062D48369D00FE370B /* TssShim.swift in Sources */,
 				13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */,
 				13B07FC11A68108700A75B9A /* main.m in Sources */,
 			);
@@ -562,12 +572,17 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 59;
+				CURRENT_PROJECT_VERSION = 60;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				ENABLE_BITCODE = NO;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/BbmtMobile",
+					"$(PROJECT_DIR)",
+				);
 				INFOPLIST_FILE = BoldWallet/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Bold Bitcoin Wallet";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
@@ -576,7 +591,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.1.1;
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/BbmtMobile",
+				);
+				MARKETING_VERSION = 4.0.0;
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -585,7 +604,6 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet;
 				PRODUCT_NAME = BoldWallet;
-				STRIP_INSTALLED_PRODUCT = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = "BoldWallet-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -600,11 +618,16 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 59;
+				CURRENT_PROJECT_VERSION = 60;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				ENABLE_TESTABILITY = NO;
 				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/BbmtMobile",
+					"$(PROJECT_DIR)",
+				);
 				INFOPLIST_FILE = BoldWallet/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Bold Bitcoin Wallet";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
@@ -613,7 +636,11 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 3.1.1;
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/BbmtMobile",
+				);
+				MARKETING_VERSION = 4.0.0;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -622,7 +649,6 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet;
 				PRODUCT_NAME = BoldWallet;
-				STRIP_INSTALLED_PRODUCT = NO;
 				SWIFT_OBJC_BRIDGING_HEADER = "BoldWallet-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
@@ -664,7 +690,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "i386 x86_64";
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -703,6 +729,7 @@
 				OTHER_LDFLAGS = "$(inherited)  ";
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
 				SWIFT_OBJC_BRIDGING_HEADER = "BoldWallet/BoldWallet-Bridging-Header.h";
 				USE_HERMES = true;
@@ -744,7 +771,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
-				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "";
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = "i386 x86_64";
 				GCC_C_LANGUAGE_STANDARD = gnu99;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -775,6 +802,7 @@
 				OTHER_LDFLAGS = "$(inherited)  ";
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OBJC_BRIDGING_HEADER = "BoldWallet/BoldWallet-Bridging-Header.h";
 				USE_HERMES = true;

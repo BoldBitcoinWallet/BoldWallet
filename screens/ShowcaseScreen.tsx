@@ -19,11 +19,24 @@ import AppPressable from '../components/AppPressable';
 import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import RNFS from 'react-native-fs';
+import {safeUnlink} from '../services/rnfsSafe';
 import {useTheme} from '../theme';
-import {dbg, isLegacyWallet, saveKeyshareMetadata} from '../utils';
+import {
+  dbg,
+  resolveUseLegacyDerivationPaths,
+  detectKeyshareTssBackend,
+} from '../utils';
+import {persistWalletKeyshare} from '../services/walletSetupOrchestrator';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
+import TssBackendSelector from '../components/TssBackendSelector';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import {
+  isDkls23OptedOut,
+  setDkls23OptedOut,
+  setKeygenTssBackendPreference,
+} from '../services/tssConfig';
+import type {TssBackend} from '../services/tssBackend';
 import database from '../services/Database';
 import {WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
@@ -37,10 +50,13 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [agreeToPrivacy, setAgreeToPrivacy] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
+  const [isBackendModalVisible, setIsBackendModalVisible] = useState(false);
   const [isModeModalVisible, setIsModeModalVisible] = useState(false);
   const [selectedMode, setSelectedMode] = useState<'duo' | 'trio' | null>(null);
   const [isTransportModalVisible, setIsTransportModalVisible] = useState(false);
   const [pendingMode, setPendingMode] = useState<'duo' | 'trio' | null>(null);
+  const [pendingKeygenBackend, setPendingKeygenBackend] =
+    useState<TssBackend | null>(null);
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
   );
@@ -150,16 +166,10 @@ const ShowcaseScreen = ({navigation}: any) => {
   const handleContentUri = async (uri: any) => {
     try {
       const localFilePath = `${RNFS.DocumentDirectoryPath}/tempFile.txt`;
-      // Check if the file already exists and delete it if it does
-      if (await RNFS.exists(localFilePath)) {
-        await RNFS.unlink(localFilePath);
-      }
-      // Copy the file to a local path
+      await safeUnlink(localFilePath);
       await RNFS.copyFile(uri, localFilePath);
-      // Read the file content as base64
       const content = await RNFS.readFile(localFilePath, 'base64');
-      // Clean up the temporary file
-      await RNFS.unlink(localFilePath);
+      await safeUnlink(localFilePath);
       return content;
     } catch (_error) {
       dbg('Error handling content URI:', _error);
@@ -205,14 +215,24 @@ const ShowcaseScreen = ({navigation}: any) => {
           dbg('Error parsing keyshare:', error);
           throw 'Error: Invalid keyshare';
         }
-        await EncryptedStorage.setItem('keyshare', decryptedKeyshare);
-        await saveKeyshareMetadata(decryptedKeyshare);
+        await persistWalletKeyshare(decryptedKeyshare);
         await LocalCache.clear();
         appConfigRepository.remove(CONFIG_KEYS.CURRENT_ADDRESS);
         // Reset legacy wallet modal flag for new wallet
         // If legacy wallet, set to "no" (show modal); if not legacy, set to "yes" (won't show anyway)
-        const isLegacy = isLegacyWallet(ks.created_at);
-        appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, isLegacy ? 'no' : 'yes');
+        const isLegacyPath = resolveUseLegacyDerivationPaths({
+          created_at: ks.created_at,
+          tss_backend: detectKeyshareTssBackend(ks),
+          local_party_key: ks.local_party_key ?? '',
+          keygen_committee_keys: ks.keygen_committee_keys ?? [],
+          pub_key: ks.pub_key ?? '',
+          chain_code_hex: ks.chain_code_hex ?? '',
+          nostr_npub: ks.nostr_npub ?? null,
+        });
+        appConfigRepository.set(
+          CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
+          isLegacyPath ? 'no' : 'yes',
+        );
         // CRITICAL: Always reset network to mainnet on keyshare import
         // This ensures a clean state and proper address derivation for the new wallet
         dbg('=== Keyshare imported: Resetting network to mainnet');
@@ -948,7 +968,7 @@ const ShowcaseScreen = ({navigation}: any) => {
               (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
             ]}
             onPress={() => {
-              setIsModeModalVisible(true);
+              setIsBackendModalVisible(true);
             }}
             disabled={!agreeToTerms || !agreeToPrivacy}>
             <View style={styles.ctaButtonIconContainer}>
@@ -1094,6 +1114,16 @@ const ShowcaseScreen = ({navigation}: any) => {
         }}
         type={legalModalType}
       />
+      <TssBackendSelector
+        visible={isBackendModalVisible}
+        onClose={() => setIsBackendModalVisible(false)}
+        onContinue={backend => {
+          setKeygenTssBackendPreference(backend);
+          setPendingKeygenBackend(backend);
+          setIsBackendModalVisible(false);
+          setIsModeModalVisible(true);
+        }}
+      />
       {/* Transport Mode Selector */}
       <TransportModeSelector
         visible={isTransportModalVisible}
@@ -1103,6 +1133,11 @@ const ShowcaseScreen = ({navigation}: any) => {
         }}
         onSelect={(transport: 'local' | 'nostr') => {
           if (!pendingMode) return;
+          const setupParams = {
+            mode: pendingMode,
+            transport: transport === 'local' ? ('lan' as const) : ('nostr' as const),
+            backend: pendingKeygenBackend ?? undefined,
+          };
           if (transport === 'local') {
             navigation.dispatch(
               CommonActions.reset({
@@ -1110,7 +1145,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                 routes: [
                   {
                     name: 'Devices Pairing',
-                    params: {mode: pendingMode},
+                    params: setupParams,
                   },
                 ],
               }),
@@ -1122,12 +1157,13 @@ const ShowcaseScreen = ({navigation}: any) => {
                 routes: [
                   {
                     name: 'Nostr Connect',
-                    params: {mode: pendingMode},
+                    params: setupParams,
                   },
                 ],
               }),
             );
           }
+          setPendingKeygenBackend(null);
         }}
         title="Select Pairing Method"
         description="Choose how to connect with other devices"
@@ -1145,7 +1181,23 @@ const ShowcaseScreen = ({navigation}: any) => {
                 source={require('../assets/security-icon.png')}
                 style={styles.modalHeaderIconImage}
               />
-              <Text style={styles.modalTitle}>Choose Your Setup</Text>
+              <Text
+                style={styles.modalTitle}
+                onLongPress={() => {
+                  if (!__DEV__) {
+                    return;
+                  }
+                  const useGg18 = !isDkls23OptedOut();
+                  setDkls23OptedOut(useGg18);
+                  Alert.alert(
+                    'Keygen backend (dev)',
+                    useGg18
+                      ? 'New wallets will use GG18 (legacy) until toggled again.'
+                      : 'New wallets will use DKLs23.',
+                  );
+                }}>
+                Choose Your Setup
+              </Text>
               <AppPressable
                 style={styles.closeButton}
                 onPress={() => {
@@ -1156,6 +1208,11 @@ const ShowcaseScreen = ({navigation}: any) => {
               </AppPressable>
             </View>
             <View style={styles.modalBody}>
+              {!selectedMode ? (
+                <Text style={styles.modeHintLine}>
+                  How many phones will join this wallet setup?
+                </Text>
+              ) : null}
               <View style={styles.modeOptionsContainer}>
                 <AppPressable
                   style={[
@@ -1347,18 +1404,18 @@ const ShowcaseScreen = ({navigation}: any) => {
                     {selectedMode === 'duo' ? (
                       <Text style={styles.modeSelectedHintText}>
                         <Text style={styles.modeSelectedHintTextBold}>
-                          Duo (2/2)
+                          2 devices
                         </Text>
-                        : two devices needed for wallet setup. both of them must
-                        approve transactions when spending funds.
+                        {' '}
+                        — both phones take part in setup and co-sign every spend.
                       </Text>
                     ) : (
                       <Text style={styles.modeSelectedHintText}>
                         <Text style={styles.modeSelectedHintTextBold}>
-                          Trio (2/3)
+                          3 devices
                         </Text>
-                        : three devices needed for wallet setup. any 2 of them
-                        must approve transactions when spending funds.
+                        {' '}
+                        — all three join setup; any 2 can approve a spend.
                       </Text>
                     )}
                   </View>

@@ -1,0 +1,365 @@
+import React, {useEffect, useState} from 'react';
+import {View, Text, StyleSheet, Modal, Image, Linking} from 'react-native';
+import AppPressable from './AppPressable';
+import {useTheme} from '../theme';
+import type {TssBackend} from '../services/tssBackend';
+import {getTssBackendDisplayLabel} from '../services/tssBackend';
+import {getKeygenTssBackendPreference} from '../services/tssConfig';
+
+const LIBTSS_URL = 'https://github.com/0xCarbon/libtss';
+const BNB_TSS_BLOG_URL =
+  'https://www.binance.com/en/blog/all/398654406137536512';
+
+const openExternalLink = (url: string) => {
+  Linking.openURL(url).catch(() => {});
+};
+
+interface TssBackendSelectorProps {
+  visible: boolean;
+  onClose: () => void;
+  onContinue: (backend: TssBackend) => void;
+}
+
+const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
+  visible,
+  onClose,
+  onContinue,
+}) => {
+  const {theme} = useTheme();
+  const [selected, setSelected] = useState<TssBackend | null>(null);
+
+  useEffect(() => {
+    if (visible) {
+      setSelected(getKeygenTssBackendPreference());
+    }
+  }, [visible]);
+
+  const accent =
+    theme.colors.background === '#ffffff'
+      ? theme.colors.primary
+      : theme.colors.bitcoinOrange;
+
+  const styles = StyleSheet.create({
+    modalOverlay: {
+      flex: 1,
+      backgroundColor: theme.colors.modalBackdrop,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    modalContent: {
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 16,
+      width: '85%',
+      maxWidth: 420,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
+      overflow: 'hidden',
+    },
+    modalHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      paddingHorizontal: 24,
+      paddingTop: 24,
+      paddingBottom: 16,
+      borderBottomWidth: 1,
+      borderBottomColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
+    },
+    modalHeaderIcon: {
+      width: 24,
+      height: 24,
+      tintColor: accent,
+    },
+    modalTitle: {
+      flex: 1,
+      marginLeft: 12,
+      fontSize: theme.fontSizes?.xl || 18,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+    },
+    closeButton: {
+      width: 40,
+      height: 40,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: 20,
+      borderWidth: 1,
+      borderColor: theme.colors.border + '20',
+    },
+    closeButtonText: {
+      fontSize: 20,
+      color: theme.colors.text,
+    },
+    modalBody: {
+      paddingHorizontal: 24,
+      paddingVertical: 20,
+    },
+    modalDescription: {
+      fontSize: theme.fontSizes?.base || 13,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      marginBottom: 14,
+      lineHeight: 20,
+    },
+    optionsRow: {
+      flexDirection: 'row',
+      gap: 12,
+    },
+    optionCard: {
+      flex: 1,
+      borderRadius: 12,
+      paddingVertical: 14,
+      paddingHorizontal: 10,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border + '40',
+      alignItems: 'center',
+    },
+    optionCardSelected: {
+      borderColor: accent,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.subPrimary + '10'
+          : theme.colors.bitcoinOrange + '20',
+    },
+    optionIcon: {
+      width: 32,
+      height: 32,
+    },
+    optionTitle: {
+      fontSize: theme.fontSizes?.md || 15,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+      marginTop: 8,
+      textAlign: 'center',
+    },
+    optionTitleSelected: {
+      color: accent,
+    },
+    optionSubtitle: {
+      fontSize: theme.fontSizes?.sm || 11,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+      marginTop: 4,
+      lineHeight: 15,
+    },
+    recommendedBadge: {
+      marginTop: 6,
+      fontSize: 10,
+      fontFamily: theme.fontFamilies?.bold,
+      color: accent,
+      textTransform: 'uppercase',
+      letterSpacing: 0.5,
+    },
+    hintBox: {
+      marginTop: 14,
+      padding: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.cardBackground,
+    },
+    hintRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: 10,
+    },
+    hintIcon: {
+      width: 20,
+      height: 20,
+      tintColor: accent,
+      marginTop: 2,
+    },
+    hintText: {
+      flex: 1,
+      fontSize: theme.fontSizes?.sm || 12,
+      color: theme.colors.textSecondary,
+      lineHeight: 18,
+    },
+    hintTextBold: {
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+    },
+    hintLink: {
+      fontFamily: theme.fontFamilies?.medium,
+      color: accent,
+      textDecorationLine: 'underline',
+    },
+    continueButton: {
+      marginTop: 16,
+      borderRadius: 12,
+      paddingVertical: 14,
+      alignItems: 'center',
+      backgroundColor: accent,
+    },
+    continueButtonDisabled: {
+      opacity: 0.5,
+    },
+    continueButtonText: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.white,
+    },
+    selectedBackendLabel: {
+      marginTop: 8,
+      fontSize: theme.fontSizes?.sm || 11,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+    },
+  });
+
+  const hintFor = (backend: TssBackend | null) => {
+    if (backend === 'gg18') {
+      return (
+        <Text style={styles.hintText}>
+          <Text style={styles.hintTextBold}>GG18 · BNB TSS</Text> — Binance
+          established MPC stack. Slower, heavier & battle tested.
+          Every device must pick the same stack.
+          {'\n\n'}
+          <Text
+            style={styles.hintLink}
+            onPress={() => openExternalLink(BNB_TSS_BLOG_URL)}>
+            Binance TSS overview
+          </Text>
+        </Text>
+      );
+    }
+    if (backend === 'dkls23') {
+      return (
+        <Text style={styles.hintText}>
+          <Text style={styles.hintTextBold}>DKLs23 (recommended)</Text> —
+          0xCarbon libtss. Faster setup and signing for new wallets. Every
+          device must pick DKLs23.
+          {'\n\n'}
+          <Text
+            style={styles.hintLink}
+            onPress={() => openExternalLink(LIBTSS_URL)}>
+            0xCarbon/libtss on GitHub
+          </Text>
+        </Text>
+      );
+    }
+    return (
+      <Text style={styles.hintText}>
+        Pick the MPC library every phone will use for this new wallet.
+      </Text>
+    );
+  };
+
+  return (
+    <Modal
+      transparent
+      visible={visible}
+      animationType="fade"
+      onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalContent}>
+          <View style={styles.modalHeader}>
+            <Image
+              source={require('../assets/security-icon.png')}
+              style={styles.modalHeaderIcon}
+              resizeMode="contain"
+            />
+            <Text style={styles.modalTitle}>MPC Signing Stack</Text>
+            <AppPressable
+              style={styles.closeButton}
+              onPress={onClose}
+              accessibilityLabel="Close"
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <Text style={styles.closeButtonText}>✕</Text>
+            </AppPressable>
+          </View>
+          <View style={styles.modalBody}>
+            <Text style={styles.modalDescription}>
+              Choose how this wallet will be created. Existing restored wallets
+              keep their original stack automatically.
+            </Text>
+            <View style={styles.optionsRow}>
+              <AppPressable
+                style={[
+                  styles.optionCard,
+                  selected === 'dkls23' && styles.optionCardSelected,
+                ]}
+                onPress={() => setSelected('dkls23')}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <Image
+                  source={require('../assets/0xcarbon-lib.png')}
+                  style={styles.optionIcon}
+                  resizeMode="contain"
+                />
+                <Text
+                  style={[
+                    styles.optionTitle,
+                    selected === 'dkls23' && styles.optionTitleSelected,
+                  ]}>
+                  DKLs23
+                </Text>
+                <Text style={styles.optionSubtitle}>0xCarbon libtss</Text>
+                <Text style={styles.recommendedBadge}>Recommended</Text>
+              </AppPressable>
+              <AppPressable
+                style={[
+                  styles.optionCard,
+                  selected === 'gg18' && styles.optionCardSelected,
+                ]}
+                onPress={() => setSelected('gg18')}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <Image
+                  source={require('../assets/bnb-lib.png')}
+                  style={styles.optionIcon}
+                  resizeMode="contain"
+                />
+                <Text
+                  style={[
+                    styles.optionTitle,
+                    selected === 'gg18' && styles.optionTitleSelected,
+                  ]}>
+                  GG18
+                </Text>
+                <Text style={styles.optionSubtitle}>BNB TSS library</Text>
+              </AppPressable>
+            </View>
+            <View style={styles.hintBox}>
+              <View style={styles.hintRow}>
+                <Image
+                  source={require('../assets/bulb-icon.png')}
+                  style={styles.hintIcon}
+                  resizeMode="contain"
+                />
+                {hintFor(selected)}
+              </View>
+            </View>
+            <AppPressable
+              style={[
+                styles.continueButton,
+                !selected && styles.continueButtonDisabled,
+              ]}
+              disabled={!selected}
+              onPress={() => {
+                if (selected) {
+                  onContinue(selected);
+                }
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <Text style={styles.continueButtonText}>Continue</Text>
+            </AppPressable>
+            {selected ? (
+              <Text style={styles.selectedBackendLabel}>
+                {getTssBackendDisplayLabel(selected)}
+              </Text>
+            ) : null}
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
+export default TssBackendSelector;

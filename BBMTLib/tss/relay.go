@@ -40,6 +40,26 @@ type Message struct {
 }
 
 // ---- Helper Functions ----
+func appendUniqueParticipants(existing, add []string) []string {
+	seen := make(map[string]struct{}, len(existing)+len(add))
+	out := make([]string, 0, len(existing)+len(add))
+	for _, p := range existing {
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	for _, p := range add {
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	return out
+}
+
 func getSessionID(r *http.Request) string {
 	vars := mux.Vars(r)
 	return vars["sessionID"]
@@ -79,7 +99,7 @@ func postSession(w http.ResponseWriter, r *http.Request) {
 	key := "session-" + sessionID
 	if session, found := getData(key); found {
 		existingSession := session.(Session)
-		existingSession.Participants = append(existingSession.Participants, participants...)
+		existingSession.Participants = appendUniqueParticipants(existingSession.Participants, participants)
 		setData(key, existingSession)
 	} else {
 		setData(key, Session{SessionID: sessionID, Participants: participants})
@@ -224,9 +244,22 @@ func deleteTssMessage(w http.ResponseWriter, r *http.Request) {
 
 	if data, found := getData(key); found {
 		messages := data.([]Message)
-		filtered := []Message{}
+		filtered := make([]Message, 0, len(messages))
 		for _, msg := range messages {
-			if !(msg.Hash == hash && msg.From == participantKey) {
+			if msg.Hash != hash {
+				filtered = append(filtered, msg)
+				continue
+			}
+			// Same payload/hash may be posted once per recipient (trio broadcast).
+			// Only drop the copy addressed to this polling party.
+			forMe := false
+			for _, to := range msg.To {
+				if to == participantKey {
+					forMe = true
+					break
+				}
+			}
+			if !forMe {
 				filtered = append(filtered, msg)
 			}
 		}
@@ -285,15 +318,7 @@ func listen(port string) *http.Server {
 var server *http.Server = nil
 
 func RunRelay(port string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in RunRelay: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("RunRelay", &err, &result)
 
 	// Stop existing server if any (unlock before calling to avoid deadlock)
 	serverMutex.Lock()
@@ -321,22 +346,14 @@ func RunRelay(port string) (result string, err error) {
 }
 
 func StopRelay() (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in StopRelay: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("StopRelay", &err, &result)
 
 	serverMutex.Lock()
 	defer serverMutex.Unlock()
-	if server == nil {
-		return "already_closed", nil
+	if server != nil {
+		server.Close()
+		server = nil
 	}
-	server.Close()
-	server = nil
+	releaseLanHandshakePort()
 	return "ok", nil
 }

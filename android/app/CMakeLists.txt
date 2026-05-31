@@ -1,19 +1,25 @@
 cmake_minimum_required(VERSION 3.22.1)
+project(boldwallet_dkls)
 
-# Set project name
-project(BoldWallet)
-
-# Force 16KB page size alignment for all native libraries
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wl,-z,max-page-size=0x4000")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,-z,max-page-size=0x4000")
-
-# Set linker flags for 16KB alignment
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,max-page-size=0x4000")
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,max-page-size=0x4000")
 
-# Global flags for all targets
-set(CMAKE_C_FLAGS_INIT "-Wl,-z,max-page-size=0x4000")
-set(CMAKE_CXX_FLAGS_INIT "-Wl,-z,max-page-size=0x4000")
+# Prebuilt unified Go shared library (BBMTLib/build-dkls.sh android → ./bbmtmobile).
+# Android MPC: libbbmtmobile.so via dkls_jni (Bbmt* + Dkls*); no gomobile tss.aar.
+set(BBMTMOBILE_DIR ${CMAKE_SOURCE_DIR}/src/main/jniLibs/${ANDROID_ABI})
+set(BBMTMOBILE_SO ${BBMTMOBILE_DIR}/libbbmtmobile.so)
 
-# This CMakeLists.txt configures linker flags for 16KB alignment
-# The actual native libraries are built by React Native and other modules
+if(EXISTS ${BBMTMOBILE_SO})
+    add_library(bbmtmobile SHARED IMPORTED)
+    set_target_properties(bbmtmobile PROPERTIES IMPORTED_LOCATION ${BBMTMOBILE_SO})
+
+    add_library(dkls_jni SHARED
+        src/main/cpp/dkls_jni.cpp
+        src/main/cpp/bbmt_tss_jni.cpp)
+    # Per-ABI Go header first (GoInt width matches ANDROID_ABI); cpp/libbbmtmobile.h is arm64-only.
+    target_include_directories(dkls_jni PRIVATE
+        ${BBMTMOBILE_DIR}
+        src/main/cpp)
+    target_link_libraries(dkls_jni bbmtmobile log android)
+endif()

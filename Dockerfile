@@ -15,6 +15,10 @@ RUN apt update && apt install -y --no-install-recommends \
     unzip \
     gcc \
     libc-dev \
+    rustc \
+    cargo \
+    pkg-config \
+    libssl-dev \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -60,6 +64,9 @@ RUN --mount=type=cache,target=/root/.android,id=android-sdk-cache,sharing=shared
 RUN mkdir -p /root/go/bin \
     && CGO_ENABLED=0 go install golang.org/x/mobile/cmd/gomobile@v0.0.0-20250408133729-978277e7eaf7 \
     && /root/go/bin/gomobile init
+
+# Install cargo-ndk for Android Rust static libs used by libtss-ffi
+RUN cargo install cargo-ndk
 
 # Build stage
 FROM base AS builder
@@ -127,7 +134,13 @@ RUN --mount=type=cache,target=/root/.npm,id=npm-cache,sharing=shared \
     mv components/QRScanner.foss.tsx components/QRScanner.tsx 2>/dev/null || true; \
     # Reinstall after package.json change (uses cache) \
     npm install --build-from-source --prefer-offline --no-audit --legacy-peer-deps; \
-    # Apply F-Droid patches \
+    # Apply F-Droid compatibility patches \
+    sed -i '/jvmToolchain/s/17/21/' node_modules/@react-native/gradle-plugin/*/build.gradle.kts 2>/dev/null || true; \
+    sed -i -e 's/JavaVersion.VERSION_17/JavaVersion.VERSION_21/g' -e 's/jvmToolchain(17)/jvmToolchain(21)/g' \
+      node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/utils/JdkConfiguratorUtils.kt 2>/dev/null || true; \
+    sed -i 's/jvmToolchain(17)/jvmToolchain(21)/g' node_modules/react-native/ReactAndroid/build.gradle.kts 2>/dev/null || true; \
+    sed -i '/namespace "com.op.sqlite"/a ndkVersion rootProject.ext.ndkVersion' \
+      node_modules/@op-engineering/op-sqlite/android/build.gradle 2>/dev/null || true; \
     sed -i -e '/installReferrerVersion/,+12d' node_modules/react-native-device-info/android/build.gradle 2>/dev/null || true; \
 fi
 
@@ -140,15 +153,12 @@ ENV GOFIPS140=${GOFIPS140}
 WORKDIR /BoldWallet/BBMTLib
 RUN --mount=type=cache,target=/root/go/pkg/mod,id=go-modules-cache,sharing=shared \
     --mount=type=cache,target=/root/.cache/go-build,id=go-build-cache,sharing=shared \
-    echo "building gomobile tss lib" && \
-    # gomobile is already installed and initialized in base stage, skip redundant steps \
+    --mount=type=cache,target=/root/.cargo/registry,id=cargo-registry-cache,sharing=shared \
+    --mount=type=cache,target=/root/.cargo/git,id=cargo-git-cache,sharing=shared \
+    echo "building libbbmtmobile + dkls_jni (single Android Go runtime)" && \
     export GOFLAGS="-mod=mod" && \
-    # Build Android AAR (iOS build not needed for Android APK) \
-    # Android 15 requires 16 KB page size support. \
-    /root/go/bin/gomobile bind -v -target=android -androidapi 21 -ldflags="-extldflags=-Wl,-z,max-page-size=16384" github.com/BoldBitcoinWallet/BBMTLib/tss && \
-    # Copy Android artifacts to android/app/libs \
-    cp tss.aar ../android/app/libs/tss.aar && \
-    cp tss-sources.jar ../android/app/libs/tss-sources.jar
+    bash ./mobile-deps/libtss/setup-libtss.sh && \
+    bash ./build-dkls.sh android
 
 # Build Android APK (uses cached npm and Gradle dependencies)
 WORKDIR /BoldWallet/android

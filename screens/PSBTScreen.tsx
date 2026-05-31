@@ -16,6 +16,7 @@ import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {PSBTLoader} from './PSBTModal';
+import {canonicalPsbtBase64} from '../services/psbtIdentity';
 import {dbg, generateAllOutputDescriptors, getKeyshareMetadata} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
 import TransportModeSelector from '../components/TransportModeSelector';
@@ -23,10 +24,13 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import Toast from 'react-native-toast-message';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
+import {safeUnlink} from '../services/rnfsSafe';
 import QRCodeModal from '../components/QRCodeModal';
 import SignedPSBTModal from './SignedPSBTModal';
 import {WalletService} from '../services/WalletService';
-import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from '../services/repositories/AppConfigRepository';
 import CurrencySelector from '../components/CurrencySelector';
 import {createStyles as createGlobalStyles} from '../components/Styles';
 const {BBMTLibNativeModule} = NativeModules;
@@ -137,7 +141,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         pubKey,
         chainCode,
         network,
-        keyshare.created_at,
+        keyshare,
       );
       const outputDescriptors = {
         legacy: descriptors.legacy,
@@ -168,10 +172,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${filename}`;
-        const fileExists = await RNFS.exists(filePath);
-        if (fileExists) {
-          await RNFS.unlink(filePath);
-        }
+        await safeUnlink(filePath);
         await RNFS.writeFile(filePath, text, 'utf8');
         await Share.open({
           title,
@@ -182,9 +183,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
           isNewTask: true,
           failOnCancel: false,
         });
-        try {
-          await RNFS.unlink(filePath);
-        } catch {}
+        await safeUnlink(filePath);
       } catch (error: any) {
         if (error?.message !== 'User did not share') {
           Alert.alert('Error', 'Failed to share file');
@@ -246,6 +245,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   // Note: The actual signing functions extract derivation paths from PSBT's Bip32Derivation internally
   const handlePSBTSign = useCallback(
     async (psbtBase64: string, _derivePath?: string) => {
+      const normalizedPsbt = canonicalPsbtBase64(psbtBase64);
       // The actual PSBT signing will extract paths from PSBT's Bip32Derivation field
       // derivePath parameter is kept for API compatibility but not used
       // Check if keyshare supports Nostr (has nostr_npub)
@@ -262,7 +262,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 params: {
                   mode: 'sign_psbt',
                   addressType,
-                  psbtBase64,
+                  psbtBase64: normalizedPsbt,
                 },
               }),
             );
@@ -274,7 +274,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         // Continue to show transport selector if check fails
       }
       // Store params and show transport selector
-      setPendingPSBTParams({psbtBase64});
+      setPendingPSBTParams({psbtBase64: normalizedPsbt});
       setTimeout(() => {
         setIsPSBTTransportModalVisible(true);
       }, 300);
@@ -382,7 +382,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             <AppPressable
               style={styles.watchWalletHeaderRow}
               onPress={handleToggleWatchWallet}
-              android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
               accessible={true}
               accessibilityRole="button"
               accessibilityLabel={`Bold Wallet Connect section, ${
@@ -444,7 +444,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                       <AppPressable
                         onPress={() => handleCopyOutputDescriptor('legacy')}
                         style={globalStyles.keyshareKeyContainerBadge}
-                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Image
                           source={require('../assets/copy-icon.png')}
                           style={globalStyles.keyshareBadgeCopyIcon}
@@ -461,7 +461,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                         <AppPressable
                           onPress={() => handleShareOutputDescriptor('legacy')}
                           style={globalStyles.keyshareCopyButton}
-                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                           <Image
                             source={require('../assets/share-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
@@ -470,7 +470,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                         <AppPressable
                           onPress={() => handleShowOutputDescriptorQR('legacy')}
                           style={globalStyles.keyshareCopyButton}
-                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                           <Image
                             source={require('../assets/qr-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
@@ -496,7 +496,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                           handleCopyOutputDescriptor('segwitNative')
                         }
                         style={globalStyles.keyshareKeyContainerBadge}
-                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Image
                           source={require('../assets/copy-icon.png')}
                           style={globalStyles.keyshareBadgeCopyIcon}
@@ -505,7 +505,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                           style={globalStyles.keyshareKeyTextClickable}
                           numberOfLines={1}>
                           {formatLongString(
-                            keyshareInfo.outputDescriptors.segwitNative || 'N/A',
+                            keyshareInfo.outputDescriptors.segwitNative ||
+                              'N/A',
                           )}
                         </Text>
                       </AppPressable>
@@ -515,7 +516,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             handleShareOutputDescriptor('segwitNative')
                           }
                           style={globalStyles.keyshareCopyButton}
-                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                           <Image
                             source={require('../assets/share-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
@@ -526,7 +527,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             handleShowOutputDescriptorQR('segwitNative')
                           }
                           style={globalStyles.keyshareCopyButton}
-                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                           <Image
                             source={require('../assets/qr-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
@@ -547,7 +548,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                           handleCopyOutputDescriptor('segwitCompatible')
                         }
                         style={globalStyles.keyshareKeyContainerBadge}
-                        android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Image
                           source={require('../assets/copy-icon.png')}
                           style={globalStyles.keyshareBadgeCopyIcon}
@@ -567,7 +568,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             handleShareOutputDescriptor('segwitCompatible')
                           }
                           style={globalStyles.keyshareCopyButton}
-                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                           <Image
                             source={require('../assets/share-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
@@ -578,7 +579,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                             handleShowOutputDescriptorQR('segwitCompatible')
                           }
                           style={globalStyles.keyshareCopyButton}
-                          android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                           <Image
                             source={require('../assets/qr-icon.png')}
                             style={globalStyles.keyshareCopyIcon}
@@ -601,7 +602,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
           <AppPressable
             style={styles.psbtSectionHeaderRow}
             onPress={handleTogglePSBTSection}
-            android_ripple={{ color: 'rgba(0,0,0,0.1)' }}
+            android_ripple={{color: 'rgba(0,0,0,0.1)'}}
             accessible={true}
             accessibilityRole="button"
             accessibilityLabel={`Sign PSBT section, ${
@@ -682,6 +683,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       />
       {/* PSBT Transport Mode Selector */}
       <TransportModeSelector
+        title="Co-Sign Via…"
+        description=""
         visible={isPSBTTransportModalVisible}
         onClose={() => {
           setIsPSBTTransportModalVisible(false);

@@ -1,18 +1,29 @@
-BBMTLib - Bold Bitcoin MPC TSS Library  
-Copyright 2025 Bold Bitcoin Wallet  
+BBMTLib - Bold Bitcoin MPC TSS Library
+Copyright 2025–2026 Bold Bitcoin Wallet
 
-This product includes modified code from the following open-source project:  
+This product includes software from the following open-source projects:
 
-- Mobile TSS Lib  
-  Source: https://github.com/vultisig/mobile-tss-lib  
-  License: Apache-2.0  
-  Modifications: Adapted networking logic, and rectified TSS for BTC scope.  
+- libtss — DKLs23 MPC backend
+  Distribution: https://github.com/BoldBitcoinWallet/libtss (Bold Bitcoin Wallet sustained fork)
+  Upstream: https://github.com/0xCarbon/libtss (Apache-2.0 OR MIT)
+  Use: Distributed key generation and threshold signing via libtss-go and libtss-ffi.
+  Integration: Native libraries built from pinned libtss checkout; Go bindings in BBMTLib/dkls.
+  Vendored Rust deps (org mirrors): frost (ZcashFoundation/frost), DKLs23 (0xCarbon/DKLs23)
 
-This product also uses the following third-party libraries as dependencies:  
-- Binance TSS Lib (MIT License)  
-- btcsuite (btcd) (MIT License)  
-- decred/dcrd (ISC License)  
-- ecies-go (MIT License)  
-- gorilla/mux (BSD-3-Clause License)  
-- go-cache (MIT License)  
-- ipfs/go-log (MIT License)  
+- Mobile TSS Lib (Vultisig) — GG18 MPC stack
+  Source: https://github.com/vultisig/mobile-tss-lib
+  License: Apache-2.0
+  Modifications: Adapted networking logic; rectified TSS for BTC scope.
+
+This product also uses the following third-party libraries as dependencies:
+
+- Binance TSS Lib (MIT)
+  Distribution: https://github.com/BoldBitcoinWallet/tss-lib (v3.0.0)
+  Upstream: https://github.com/bnb-chain/tss-lib
+- go-nostr (MIT) — https://github.com/nbd-wtf/go-nostr — Nostr relay transport for MPC
+- btcsuite / btcd (MIT)
+- decred / dcrd (ISC)
+- ecies-go (MIT)
+- gorilla/mux (BSD-3-Clause)
+- go-cache (MIT)
+- ipfs/go-log (MIT)

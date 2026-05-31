@@ -47,15 +47,7 @@ func decodeNsecFromBech32(nsec string) (string, error) {
 // DeriveNpubFromNsec derives a bech32 npub from a bech32 nsec (or hex nsec).
 // This function handles both bech32 (nsec1...) and hex formats.
 func DeriveNpubFromNsec(partyNsec string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in DeriveNpubFromNsec: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("DeriveNpubFromNsec", &err, &result)
 
 	// Decode nsec from bech32 to hex if needed
 	skHex, err := decodeNsecFromBech32(partyNsec)
@@ -82,15 +74,7 @@ func DeriveNpubFromNsec(partyNsec string) (result string, err error) {
 // Returns: {"nsec": "...", "npub": "..."}
 // Both nsec and npub are returned in bech32 format (nsec1... and npub1...)
 func NostrKeypair() (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrKeypair: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrKeypair", &err, &result)
 
 	// Generate private key in hex format
 	skHex := nostr.GeneratePrivateKey()
@@ -125,15 +109,7 @@ func NostrKeypair() (result string, err error) {
 
 // HexToNpub converts a hex public key to bech32 npub format.
 func HexToNpub(hexKey string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in HexToNpub: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("HexToNpub", &err, &result)
 
 	// Decode hex string to bytes
 	pkHex, err := hex.DecodeString(hexKey)
@@ -160,15 +136,7 @@ func HexToNpub(hexKey string) (result string, err error) {
 //   - chaincode: Chain code in hex
 //   - ppmPath: Path to pre-params file (optional, empty string means generate new pre-params)
 func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, chaincode, ppmPath string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrJoinKeygen: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrJoinKeygen", &err, &result)
 
 	// Initialize status tracking (similar to JoinKeygen)
 	status := Status{Step: 0, SeqNo: 0, Index: 0, Info: "initializing...", Type: "keygen", Done: false, Time: 0}
@@ -228,15 +196,7 @@ func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKe
 // NostrJoinKeysignWithSighash performs a Nostr-based keysign with a base64-encoded sighash (already a hash).
 // This is used for Bitcoin transaction signing where the sighash is already computed.
 func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, derivationPath, sighashBase64 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrJoinKeysignWithSighash: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrJoinKeysignWithSighash", &err, &result)
 
 	// Derive npub from nsec (handles bech32 format)
 	localNpub, err := DeriveNpubFromNsec(partyNsec)
@@ -275,7 +235,7 @@ func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionI
 		}
 	}
 
-	Logf("NostrJoinKeysignWithSighash: sessionID=%s, localNpub=%s, allParties=%v, peersNpub=%v", sessionID, localNpub, allParties, peersNpub)
+	Logf("NostrJoinKeysignWithSighash: signing session initialized")
 
 	// Create config
 	cfg := nostrtransport.Config{
@@ -300,15 +260,7 @@ func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionI
 // NostrJoinKeysign performs a Nostr-based keysign and returns the signature JSON.
 // The message will be hashed internally before signing.
 func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, derivationPath, message string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrJoinKeysign: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrJoinKeysign", &err, &result)
 
 	// Derive npub from nsec (handles bech32 format)
 	localNpub, err := DeriveNpubFromNsec(partyNsec)
@@ -373,17 +325,103 @@ type preAgreementResult struct {
 	averageFees int64
 }
 
+type preAgreementPayload struct {
+	AttemptID string `json:"attempt_id"`
+	Nonce     string `json:"nonce"`
+	Fees      *int64 `json:"fees,omitempty"`
+	SentAtMs  int64  `json:"sent_at_ms"`
+}
+
+const (
+	preAgreementClockSkew = 15 * time.Second
+	preAgreementMaxAge    = 2 * time.Minute
+)
+
+func isHexLen(value string, n int) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != n {
+		return false
+	}
+	_, err := hex.DecodeString(value)
+	return err == nil
+}
+
+func encodePreAgreementPayload(attemptID, nonce string, fees *int64) (string, error) {
+	payload := preAgreementPayload{
+		AttemptID: strings.TrimSpace(attemptID),
+		Nonce:     strings.ToLower(strings.TrimSpace(nonce)),
+		Fees:      fees,
+		SentAtMs:  time.Now().UnixMilli(),
+	}
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	return string(raw), nil
+}
+
+func decodeAndValidatePreAgreementPayload(raw string, expectedAttemptID string, requireFees bool) (*preAgreementPayload, error) {
+	var payload preAgreementPayload
+	if err := json.Unmarshal([]byte(strings.TrimSpace(raw)), &payload); err != nil {
+		return nil, fmt.Errorf("invalid pre-agreement payload json")
+	}
+	if !isHexLen(payload.Nonce, 64) {
+		return nil, fmt.Errorf("invalid pre-agreement nonce")
+	}
+	if expectedAttemptID != "" && payload.AttemptID != expectedAttemptID {
+		return nil, fmt.Errorf("attempt id mismatch")
+	}
+	if payload.SentAtMs <= 0 {
+		return nil, fmt.Errorf("missing pre-agreement timestamp")
+	}
+	now := time.Now()
+	sentAt := time.UnixMilli(payload.SentAtMs)
+	if sentAt.After(now.Add(preAgreementClockSkew)) {
+		return nil, fmt.Errorf("pre-agreement timestamp is in the future")
+	}
+	if now.Sub(sentAt) > preAgreementMaxAge {
+		return nil, fmt.Errorf("stale pre-agreement payload")
+	}
+	if requireFees {
+		if payload.Fees == nil {
+			return nil, fmt.Errorf("missing pre-agreement fees")
+		}
+		if *payload.Fees < 0 {
+			return nil, fmt.Errorf("invalid pre-agreement fees")
+		}
+	}
+	return &payload, nil
+}
+
+// nostrSendBtcSessionFlag identifies a duo Nostr send pre-agreement session.
+// Uses signing npubs + tx intent + attempt_id (master/initiator scoped per round).
+func nostrSendBtcSessionFlag(signingNpubsSorted, receiverAddress, attemptID string, amountSatoshi int64) (string, error) {
+	attemptID = strings.TrimSpace(attemptID)
+	if attemptID == "" {
+		return "", fmt.Errorf("attempt id required")
+	}
+	return Sha256(fmt.Sprintf("%s,%d,%s,%s", signingNpubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress), attemptID))
+}
+
+func nostrSendBtcSessionID(signingNpubsSorted, receiverAddress, attemptID, fullNonce string, amountSatoshi int64) (string, error) {
+	attemptID = strings.TrimSpace(attemptID)
+	if attemptID == "" {
+		return "", fmt.Errorf("attempt id required")
+	}
+	return Sha256(fmt.Sprintf("%s,%d,%s,%s,%s", signingNpubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress), attemptID, fullNonce))
+}
+
 // runNostrPreAgreementSendBTC performs a pre-agreement phase internally.
 // Both parties exchange their peerNonce and satoshiFees, then agree on:
 // - fullNonce: sorted join of both peerNonces (like in keygen)
 // - averageFees: average of both satoshiFees
-func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag string, localSatoshiFees int64) (result *preAgreementResult, err error) {
+func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, attemptID string, localSatoshiFees int64) (result *preAgreementResult, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			errMsg := fmt.Sprintf("PANIC in runNostrPreAgreementSendBTC: %v", r)
 			Logf("BBMTLog: %s", errMsg)
 			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
+			err = PanicError(r)
 			result = nil
 		}
 	}()
@@ -433,8 +471,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 		return nil, fmt.Errorf("failed to generate peerNonce: %w", err)
 	}
 
-	Logf("runNostrPreAgreementSendBTC: sessionFlag=%s, localNpub=%s, peerNpub=%s, peerNonce=%s, localFees=%d",
-		sessionFlag, localNpub, peerNpub, peerNonce, localSatoshiFees)
+	Logf("runNostrPreAgreementSendBTC: initialized pre-agreement")
 
 	// Create config for pre-agreement (using sessionFlag as sessionID)
 	cfg := nostrtransport.Config{
@@ -461,9 +498,13 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 
 	messenger := nostrtransport.NewMessenger(cfg, client)
 
-	// Prepare our message: <peerNonce>:<satoshiFees>
-	localMessage := fmt.Sprintf("%s:%d", peerNonce, localSatoshiFees)
-	Logf("runNostrPreAgreementSendBTC: sending message: %s", localMessage)
+	// Prepare our message payload.
+	localFees := localSatoshiFees
+	localMessage, err := encodePreAgreementPayload(attemptID, peerNonce, &localFees)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode pre-agreement payload: %w", err)
+	}
+	Logf("runNostrPreAgreementSendBTC: sending pre-agreement payload")
 
 	// Context for the pre-agreement phase
 	// Timeout: 16 seconds - fail fast if peer doesn't respond quickly
@@ -474,11 +515,10 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	// Channel to receive peer's message
 	peerMessageCh := make(chan string, 1)
 	peerErrorCh := make(chan error, 1)
+	sawPeerPayload := false
+	var peerPayloadMu sync.Mutex
 
-	// Start listening for peer's message
-	// Note: The MessagePump will receive messages that match the session tag,
-	// including messages that were sent before we started listening (if they're
-	// still in the relay's cache, typically last 1-2 minutes)
+	// Start listening for peer's message.
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -486,7 +526,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 				Logf("BBMTLog: %s", errMsg)
 				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
 				select {
-				case peerErrorCh <- fmt.Errorf("internal error (panic): %v", r):
+				case peerErrorCh <- PanicError(r):
 				default:
 				}
 			}
@@ -494,9 +534,16 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 
 		// Create message pump to receive messages
 		pump := nostrtransport.NewMessagePump(cfg, client)
-		err := pump.Run(ctx, func(payload []byte) error {
+		err := pump.RunSubscribeOnly(ctx, func(payload []byte) error {
 			peerMessage := string(payload)
-			Logf("runNostrPreAgreementSendBTC: received peer message: %s", peerMessage)
+			Logf("runNostrPreAgreementSendBTC: received pre-agreement payload")
+			peerPayloadMu.Lock()
+			if sawPeerPayload {
+				peerPayloadMu.Unlock()
+				return fmt.Errorf("duplicate pre-agreement payload from peer")
+			}
+			sawPeerPayload = true
+			peerPayloadMu.Unlock()
 			select {
 			case peerMessageCh <- peerMessage:
 			default:
@@ -521,32 +568,26 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	if err != nil {
 		return nil, fmt.Errorf("failed to send pre-agreement message: %w", err)
 	}
-	Logf("runNostrPreAgreementSendBTC: sent message to peer")
+	Logf("runNostrPreAgreementSendBTC: sent pre-agreement payload")
 
 	// Wait for peer's message
 	var peerMessage string
 	select {
 	case peerMessage = <-peerMessageCh:
-		Logf("runNostrPreAgreementSendBTC: received peer message: %s", peerMessage)
+		Logf("runNostrPreAgreementSendBTC: processing peer payload")
 	case err := <-peerErrorCh:
 		return nil, fmt.Errorf("failed to receive peer message: %w", err)
 	case <-ctx.Done():
-		return nil, fmt.Errorf("timeout waiting for peer message: %w", ctx.Err())
+		return nil, NostrMpcContextErr("pre-agreement", ctx.Err())
 	}
 
-	// Parse peer's message: <peerNonce>:<satoshiFees>
-	parts := strings.Split(peerMessage, ":")
-	if len(parts) != 2 {
-		return nil, fmt.Errorf("invalid peer message format: expected 'nonce:fees', got: %s", peerMessage)
-	}
-	peerNonceReceived := strings.TrimSpace(parts[0])
-	peerFeesStr := strings.TrimSpace(parts[1])
-	peerFees, err := strconv.ParseInt(peerFeesStr, 10, 64)
+	peerPayload, err := decodeAndValidatePreAgreementPayload(peerMessage, attemptID, true)
 	if err != nil {
-		return nil, fmt.Errorf("invalid peer fees format: %s", peerFeesStr)
+		return nil, fmt.Errorf("invalid peer pre-agreement payload: %w", err)
 	}
-
-	Logf("runNostrPreAgreementSendBTC: parsed peer message - nonce=%s, fees=%d", peerNonceReceived, peerFees)
+	peerNonceReceived := strings.ToLower(strings.TrimSpace(peerPayload.Nonce))
+	peerFees := *peerPayload.Fees
+	Logf("runNostrPreAgreementSendBTC: validated peer pre-agreement payload")
 
 	// Calculate fullNonce: sorted join of both nonces (like in keygen)
 	allNonces := []string{peerNonce, peerNonceReceived}
@@ -556,7 +597,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	// Calculate average fees
 	averageFees := (localSatoshiFees + peerFees) / 2
 
-	Logf("runNostrPreAgreementSendBTC: fullNonce=%s, averageFees=%d", fullNonce, averageFees)
+	Logf("runNostrPreAgreementSendBTC: combined nonce and average fee computed")
 
 	return &preAgreementResult{
 		fullNonce:   fullNonce,
@@ -571,17 +612,13 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 // - averageFees: average of both satoshiFees
 // Returns JSON: {"fullNonce": "...", "averageFees": 1234}
 func NostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag string, localSatoshiFees int64) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrPreAgreementSendBTC: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrPreAgreementSendBTC", &err, &result)
 
-	preAgreementResult, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, localSatoshiFees)
+	preAgreementAttemptID, err := Sha256(strings.TrimSpace(sessionFlag))
+	if err != nil {
+		return "", err
+	}
+	preAgreementResult, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, preAgreementAttemptID, localSatoshiFees)
 	if err != nil {
 		return "", err
 	}
@@ -610,15 +647,7 @@ func NostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 // NostrMpcSendBTC performs a Nostr-based MPC Bitcoin transaction.
 // changeAddress: when non-empty, change output is sent here (HD internal chain); otherwise to senderAddress.
 func NostrMpcSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, changeAddress string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrMpcSendBTC: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrMpcSendBTC", &err, &result)
 	return runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress, amountSatoshi, estimatedFee, changeAddress)
 }
 
@@ -626,15 +655,7 @@ func NostrMpcSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balance
 // utxosWithPathsJSON: JSON array of {txid, vout, value, derivation_path or derivationPath}
 // changeAddress: HD change address for change output (required)
 func NostrMpcSendBTCWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, receiverAddress, amountSatoshiStr, estimatedFeeStr, utxosWithPathsJSON, changeAddress string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrMpcSendBTCWithUTXOs: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrMpcSendBTCWithUTXOs", &err, &result)
 
 	amountSatoshi, parseErr := strconv.ParseInt(amountSatoshiStr, 10, 64)
 	if parseErr != nil {
@@ -650,41 +671,42 @@ func NostrMpcSendBTCWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted
 // runNostrMpcSendBTCInternal implements the Nostr-based MPC Bitcoin transaction.
 // This is analogous to MpcSendBTC but uses NostrJoinKeysign instead of JoinKeysign.
 // It performs pre-agreement internally to establish sessionID and unified fees.
-func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, changeAddress string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrMpcSendBTCInternal: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, _, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, changeAddress string) (result string, err error) {
+	defer RecoverAsError("runNostrMpcSendBTCInternal", &err, &result)
 	if changeAddress == "" {
 		changeAddress = senderAddress
 	}
 
 	Logln("BBMTLog", "invoking NostrMpcSendBTC...")
 
-	// Step 1: Calculate sessionFlag for pre-agreement
-	// Format: sha256(npubsSorted,balanceSats,satoshiAmount)
-	sessionFlag, err := Sha256(fmt.Sprintf("%s,%s,%d", npubsSorted, balanceSats, amountSatoshi))
+	if _, err := beginNostrMpcOperation(); err != nil {
+		return "", err
+	}
+	defer endNostrMpcOperation()
+
+	txIntentKey := fmt.Sprintf("%s,%d,%s", npubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress))
+	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey)
+	if err != nil {
+		return "", fmt.Errorf("attempt handshake failed: %w", err)
+	}
+
+	// Step 1: sessionFlag from duo signing npubs + tx intent + attempt_id.
+	sessionFlag, err := nostrSendBtcSessionFlag(npubsSorted, receiverAddress, attemptID, amountSatoshi)
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionFlag: %w", err)
 	}
-	Logf("NostrMpcSendBTC: calculated sessionFlag=%s", sessionFlag)
+	Logf("NostrMpcSendBTC: signingNpubs=%s sessionFlag=%s", npubsSorted, sessionFlag)
 
 	// Step 2: Perform pre-agreement to exchange nonces and fees
-	mpcHook("pre-agreement phase", sessionFlag, "", 0, 0, false)
-	preAgreement, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, estimatedFee)
+	mpcHook("btc_send", "pre-agreement phase", sessionFlag, "", 0, 0, false)
+	preAgreement, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, attemptID, estimatedFee)
 	if err != nil {
 		return "", fmt.Errorf("pre-agreement failed: %w", err)
 	}
-	Logf("NostrMpcSendBTC: pre-agreement completed - fullNonce=%s, averageFees=%d", preAgreement.fullNonce, preAgreement.averageFees)
+	Logf("NostrMpcSendBTC: pre-agreement completed")
 
 	// Step 3: Calculate actual sessionID using fullNonce (like in keygen)
-	// Format: sha256(npubsSorted,balanceSats,satoshiAmount,fullNonce)
-	sessionID, err := Sha256(fmt.Sprintf("%s,%s,%d,%s", npubsSorted, balanceSats, amountSatoshi, preAgreement.fullNonce))
+	sessionID, err := nostrSendBtcSessionID(npubsSorted, receiverAddress, attemptID, preAgreement.fullNonce, amountSatoshi)
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionID: %w", err)
 	}
@@ -696,7 +718,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 		return "", fmt.Errorf("failed to calculate sessionKey: %w", err)
 	}
 
-	Logf("NostrMpcSendBTC: calculated sessionID=%s, sessionKey=%s, using agreed fees=%d", sessionID, sessionKey, preAgreement.averageFees)
+	Logf("NostrMpcSendBTC: derived session credentials and agreed fees")
 
 	// Step 5: Use the agreed average fees instead of estimatedFee
 	agreedFee := preAgreement.averageFees
@@ -705,10 +727,10 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 		Logln("Using mainnet parameters")
-		mpcHook("using mainnet", sessionID, "", 0, 0, false)
+		mpcHook("btc_send", "using mainnet", sessionID, "", 0, 0, false)
 	} else {
 		Logln("Using testnet parameters")
-		mpcHook("using testnet", sessionID, "", 0, 0, false)
+		mpcHook("btc_send", "using testnet", sessionID, "", 0, 0, false)
 	}
 
 	pubKeyBytes, err := hex.DecodeString(publicKey)
@@ -726,7 +748,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	Logln("Sender address decoded successfully")
 
 	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
-	mpcHook("checking receiver address", sessionID, "", 0, 0, false)
+	mpcHook("btc_send", "checking receiver address", sessionID, "", 0, 0, false)
 	if err != nil {
 		Logf("Error decoding receiver address: %v", err)
 		return "", fmt.Errorf("failed to decode receiver address: %w", err)
@@ -735,7 +757,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	Logf("Sender Address Type: %T", fromAddr)
 	Logf("Receiver Address Type: %T", toAddr)
 
-	mpcHook("fetching utxos", sessionID, "", 0, 0, false)
+	mpcHook("btc_send", "fetching utxos", sessionID, "", 0, 0, false)
 	utxos, err := FetchUTXOs(senderAddress)
 	if err != nil {
 		Logf("Error fetching UTXOs: %v", err)
@@ -743,7 +765,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	}
 	Logf("Fetched UTXOs: %+v", utxos)
 
-	mpcHook("selecting utxos", sessionID, "", 0, 0, false)
+	mpcHook("btc_send", "selecting utxos", sessionID, "", 0, 0, false)
 	selectedUTXOs, totalAmount, err := SelectUTXOs(utxos, amountSatoshi+agreedFee, "smallest")
 	if err != nil {
 		Logf("Error selecting UTXOs: %v", err)
@@ -760,7 +782,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	utxoIndex := 0
 	utxoSession := ""
 
-	mpcHook("adding inputs", sessionID, utxoSession, utxoIndex, utxoCount, false)
+	mpcHook("btc_send", "adding inputs", sessionID, utxoSession, utxoIndex, utxoCount, false)
 	for _, utxo := range selectedUTXOs {
 		hash, err := chainhash.NewHashFromStr(utxo.TxID)
 		if err != nil {
@@ -783,7 +805,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	Logln("Sufficient funds available")
 
 	// Add recipient output
-	mpcHook("creating output script", sessionID, utxoSession, utxoIndex, utxoCount, false)
+	mpcHook("btc_send", "creating output script", sessionID, utxoSession, utxoIndex, utxoCount, false)
 	pkScript, err := txscript.PayToAddrScript(toAddr)
 	if err != nil {
 		Logf("Error creating output script: %v", err)
@@ -794,7 +816,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 
 	// Add change output if necessary (use changeAddress for HD internal chain when set)
 	changeAmount := totalAmount - amountSatoshi - agreedFee
-	mpcHook("calculating change amount", sessionID, utxoSession, utxoIndex, utxoCount, false)
+	mpcHook("btc_send", "calculating change amount", sessionID, utxoSession, utxoIndex, utxoCount, false)
 
 	if changeAmount > 546 {
 		changeAddr := fromAddr
@@ -834,13 +856,13 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	prevOutFetcher := txscript.NewMultiPrevOutFetcher(prevOuts)
 
 	// Sign each input with enhanced address type support
-	mpcHook("signing inputs", sessionID, utxoSession, utxoIndex, utxoCount, false)
+	mpcHook("btc_send", "signing inputs", sessionID, utxoSession, utxoIndex, utxoCount, false)
 	for i, utxo := range selectedUTXOs {
 		// update utxo session - counter
 		utxoIndex = i + 1
 		utxoSession = fmt.Sprintf("%s%d", sessionID, i)
 
-		mpcHook("fetching utxo details", sessionID, utxoSession, utxoIndex, utxoCount, false)
+		mpcHook("btc_send", "fetching utxo details", sessionID, utxoSession, utxoIndex, utxoCount, false)
 		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
 		if err != nil {
 			Logf("Error fetching UTXO details: %v", err)
@@ -866,8 +888,8 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 				// Note: The sighash is already a hash, so we need to pass it as base64 directly
 				// We'll use a helper function that accepts base64-encoded sighash
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-				mpcHook("joining keysign - P2WPKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
-				sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+				mpcHook("btc_send", "joining keysign - P2WPKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
+				sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign P2WPKH transaction: %w", err)
 				}
@@ -903,8 +925,8 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 				}
 
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-				mpcHook("joining keysign - generic SegWit", sessionID, utxoSession, utxoIndex, utxoCount, false)
-				sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+				mpcHook("btc_send", "joining keysign - generic SegWit", sessionID, utxoSession, utxoIndex, utxoCount, false)
+				sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign generic SegWit transaction: %w", err)
 				}
@@ -940,8 +962,8 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 				}
 
 				sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-				mpcHook("joining keysign - P2PKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
-				sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+				mpcHook("btc_send", "joining keysign - P2PKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
+				sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 				if err != nil {
 					return "", fmt.Errorf("failed to sign P2PKH transaction: %w", err)
 				}
@@ -1015,8 +1037,8 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 					}
 
 					sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-					mpcHook("joining keysign - P2SH-P2WPKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
-					sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+					mpcHook("btc_send", "joining keysign - P2SH-P2WPKH", sessionID, utxoSession, utxoIndex, utxoCount, false)
+					sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 					if err != nil {
 						return "", fmt.Errorf("failed to sign P2SH-P2WPKH transaction: %w", err)
 					}
@@ -1058,8 +1080,8 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 					}
 
 					sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-					mpcHook("joining keysign - P2SH", sessionID, utxoSession, utxoIndex, utxoCount, false)
-					sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+					mpcHook("btc_send", "joining keysign - P2SH", sessionID, utxoSession, utxoIndex, utxoCount, false)
+					sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 					if err != nil {
 						return "", fmt.Errorf("failed to sign P2SH transaction: %w", err)
 					}
@@ -1100,7 +1122,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 		}
 
 		// Script validation with proper prevOutFetcher
-		mpcHook("validating tx script", sessionID, utxoSession, utxoIndex, utxoCount, false)
+		mpcHook("btc_send", "validating tx script", sessionID, utxoSession, utxoIndex, utxoCount, false)
 		vm, err := txscript.NewEngine(
 			txOut.PkScript,
 			tx,
@@ -1123,7 +1145,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	}
 
 	// Serialize and broadcast
-	mpcHook("serializing tx", sessionID, utxoSession, utxoIndex, utxoCount, false)
+	mpcHook("btc_send", "serializing tx", sessionID, utxoSession, utxoIndex, utxoCount, false)
 	var signedTx bytes.Buffer
 	if err := tx.Serialize(&signedTx); err != nil {
 		Logf("Error serializing transaction: %v", err)
@@ -1132,32 +1154,36 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 
 	rawTx := hex.EncodeToString(signedTx.Bytes())
 	Logln("Raw Transaction (signed, not broadcast)")
-	mpcHook("signed", sessionID, utxoSession, utxoIndex, utxoCount, true)
+	mpcHook("btc_send", "signed", sessionID, utxoSession, utxoIndex, utxoCount, true)
 	return rawTx, nil
 }
 
 // runNostrMpcSendBTCInternalWithUTXOs implements multi-path Nostr MPC send using pre-fetched UTXOs.
-func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, receiverAddress string, amountSatoshi, estimatedFee int64, utxosWithPathsJSON, changeAddress string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrMpcSendBTCInternalWithUTXOs: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, _, keyshareJSON, receiverAddress string, amountSatoshi, estimatedFee int64, utxosWithPathsJSON, changeAddress string) (result string, err error) {
+	defer RecoverAsError("runNostrMpcSendBTCInternalWithUTXOs", &err, &result)
 
-	sessionFlag, err := Sha256(fmt.Sprintf("%s,%s,%d", npubsSorted, balanceSats, amountSatoshi))
+	if _, err := beginNostrMpcOperation(); err != nil {
+		return "", err
+	}
+	defer endNostrMpcOperation()
+
+	txIntentKey := fmt.Sprintf("%s,%d,%s", npubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress))
+	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey)
+	if err != nil {
+		return "", fmt.Errorf("attempt handshake failed: %w", err)
+	}
+
+	sessionFlag, err := nostrSendBtcSessionFlag(npubsSorted, receiverAddress, attemptID, amountSatoshi)
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionFlag: %w", err)
 	}
-	mpcHook("pre-agreement phase", sessionFlag, "", 0, 0, false)
-	preAgreement, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, estimatedFee)
+	Logf("NostrMpcSendBTCWithUTXOs: signingNpubs=%s sessionFlag=%s", npubsSorted, sessionFlag)
+	mpcHook("btc_send", "pre-agreement phase", sessionFlag, "", 0, 0, false)
+	preAgreement, err := runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, attemptID, estimatedFee)
 	if err != nil {
 		return "", fmt.Errorf("pre-agreement failed: %w", err)
 	}
-	sessionID, err := Sha256(fmt.Sprintf("%s,%s,%d,%s", npubsSorted, balanceSats, amountSatoshi, preAgreement.fullNonce))
+	sessionID, err := nostrSendBtcSessionID(npubsSorted, receiverAddress, attemptID, preAgreement.fullNonce, amountSatoshi)
 	if err != nil {
 		return "", err
 	}
@@ -1307,8 +1333,8 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 		}
 
 		sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
-		mpcHook("joining keysign", sessionID, utxoSession, i+1, utxoCount, false)
-		sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
+		mpcHook("btc_send", "joining keysign", sessionID, utxoSession, i+1, utxoCount, false)
+		sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, derivePath, sighashBase64)
 		if err != nil {
 			return "", fmt.Errorf("failed to sign input %d: %w", i, err)
 		}
@@ -1358,27 +1384,18 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 	}
 	rawTx := hex.EncodeToString(signedTx.Bytes())
 	Logln("Raw Transaction (signed, not broadcast)")
-	mpcHook("signed", sessionID, "", utxoCount, utxoCount, true)
+	mpcHook("btc_send", "signed", sessionID, "", utxoCount, utxoCount, true)
 	return rawTx, nil
 }
 
 // runNostrKeygenInternal is the internal implementation of Nostr keygen.
 func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, localNpub, sessionID string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrKeygenInternal: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
-	rootCtx, rootCancel := context.WithCancel(context.Background())
-	setActiveNostrCtx(rootCtx, rootCancel)
-	defer func() {
-		clearActiveNostrCtx()
-		rootCancel()
-	}()
+	defer RecoverAsError("runNostrKeygenInternal", &err, &result)
+	rootCtx, cleanup, err := AttachNostrOperationRoot()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(rootCtx, cfg.MaxTimeout)
 	defer cancel()
@@ -1476,7 +1493,7 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 				Logf("BBMTLog: %s", errMsg)
 				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
 				select {
-				case pumpErrCh <- fmt.Errorf("internal error (panic): %v", r):
+				case pumpErrCh <- PanicError(r):
 				default:
 				}
 			}
@@ -1509,10 +1526,15 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 	// Run keygen
 	allParties := append([]string{localNpub}, cfg.PeersNpub...)
 	partiesCSV := strings.Join(allParties, ",")
+	chainCodeHex, normErr := normalizeChainCodeHex(chaincode)
+	if normErr != nil {
+		pumpCancel()
+		return "", fmt.Errorf("fail to normalize chain code: %w", normErr)
+	}
 	_, err = tssService.KeygenECDSA(&KeygenRequest{
 		LocalPartyID: localNpub,
 		AllParties:   partiesCSV,
-		ChainCodeHex: chaincode,
+		ChainCodeHex: chainCodeHex,
 	})
 	if err != nil {
 		pumpCancel()
@@ -1590,27 +1612,18 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 
 // runNostrKeysignInternal is the internal implementation of Nostr keysign.
 func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNostr, derivePath, message string, allParties []string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrKeysignInternal: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("runNostrKeysignInternal", &err, &result)
 	sessionID := cfg.SessionID
 
 	// Initialize status tracking
 	status := Status{Step: 0, SeqNo: 0, Index: 0, Info: "initializing...", Type: "keysign", Done: false, Time: 0}
 	setStatus(sessionID, status)
 
-	rootCtx, rootCancel := context.WithCancel(context.Background())
-	setActiveNostrCtx(rootCtx, rootCancel)
-	defer func() {
-		clearActiveNostrCtx()
-		rootCancel()
-	}()
+	rootCtx, cleanup, err := AttachNostrOperationRoot()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(rootCtx, cfg.MaxTimeout)
 	defer cancel()
@@ -1703,7 +1716,7 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 				Logf("BBMTLog: %s", errMsg)
 				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
 				select {
-				case pumpErrCh <- fmt.Errorf("internal error (panic): %v", r):
+				case pumpErrCh <- PanicError(r):
 				default:
 				}
 			}
@@ -1773,7 +1786,7 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	case <-ctx.Done():
 		pumpCancel()
 		pumpWg.Wait()
-		return "", fmt.Errorf("context cancelled before keysign: %w", ctx.Err())
+		return "", NostrMpcContextErr("keysign", ctx.Err())
 	default:
 	}
 
@@ -1801,7 +1814,7 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	case <-ctx.Done():
 		pumpCancel()
 		pumpWg.Wait()
-		return "", fmt.Errorf("keysign timed out: %w", ctx.Err())
+		return "", NostrMpcContextErr("keysign", ctx.Err())
 	case err := <-keysignErrCh:
 		pumpCancel()
 		pumpWg.Wait()
@@ -1855,27 +1868,18 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 
 // runNostrKeysignInternalWithSighash is similar to runNostrKeysignInternal but accepts a base64-encoded sighash directly.
 func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *LocalStateNostr, derivePath, sighashBase64 string, allParties []string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrKeysignInternalWithSighash: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("runNostrKeysignInternalWithSighash", &err, &result)
 	sessionID := cfg.SessionID
 
 	// Initialize status tracking
 	status := Status{Step: 0, SeqNo: 0, Index: 0, Info: "initializing...", Type: "keysign", Done: false, Time: 0}
 	setStatus(sessionID, status)
 
-	rootCtx, rootCancel := context.WithCancel(context.Background())
-	setActiveNostrCtx(rootCtx, rootCancel)
-	defer func() {
-		clearActiveNostrCtx()
-		rootCancel()
-	}()
+	rootCtx, cleanup, err := AttachNostrOperationRoot()
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
 
 	ctx, cancel := context.WithTimeout(rootCtx, cfg.MaxTimeout)
 	defer cancel()
@@ -1971,7 +1975,7 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 				Logf("BBMTLog: %s", errMsg)
 				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
 				select {
-				case pumpErrCh <- fmt.Errorf("internal error (panic): %v", r):
+				case pumpErrCh <- PanicError(r):
 				default:
 				}
 			}
@@ -2039,7 +2043,7 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 	case <-ctx.Done():
 		pumpCancel()
 		pumpWg.Wait()
-		return "", fmt.Errorf("context cancelled before keysign: %w", ctx.Err())
+		return "", NostrMpcContextErr("keysign", ctx.Err())
 	default:
 	}
 
@@ -2067,7 +2071,7 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 	case <-ctx.Done():
 		pumpCancel()
 		pumpWg.Wait()
-		return "", fmt.Errorf("keysign timed out: %w", ctx.Err())
+		return "", NostrMpcContextErr("keysign", ctx.Err())
 	case err := <-keysignErrCh:
 		pumpCancel()
 		pumpWg.Wait()
@@ -2125,27 +2129,12 @@ type nostrLocalStateAccessor struct {
 }
 
 func (a *nostrLocalStateAccessor) GetLocalState(pubKey string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in nostrLocalStateAccessor.GetLocalState: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("nostrLocalStateAccessor.GetLocalState", &err, &result)
 	return "", fmt.Errorf("GetLocalState not supported in Nostr keygen")
 }
 
 func (a *nostrLocalStateAccessor) SaveLocalState(pubKey, localState string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in nostrLocalStateAccessor.SaveLocalState: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer RecoverAsError("nostrLocalStateAccessor.SaveLocalState", &err, nil)
 	if a.saveFunc != nil {
 		return a.saveFunc(pubKey, localState)
 	}
@@ -2158,15 +2147,7 @@ type nostrKeysignStateAccessor struct {
 }
 
 func (a *nostrKeysignStateAccessor) GetLocalState(pubKey string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in nostrKeysignStateAccessor.GetLocalState: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("nostrKeysignStateAccessor.GetLocalState", &err, &result)
 	if a.keyshare == nil {
 		return "", fmt.Errorf("keyshare not loaded")
 	}
@@ -2183,14 +2164,7 @@ func (a *nostrKeysignStateAccessor) GetLocalState(pubKey string) (result string,
 }
 
 func (a *nostrKeysignStateAccessor) SaveLocalState(pubkey, localState string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in nostrKeysignStateAccessor.SaveLocalState: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer RecoverAsError("nostrKeysignStateAccessor.SaveLocalState", &err, nil)
 	// Keysign doesn't modify the keyshare, so we don't need to save
 	return nil
 }
@@ -2204,14 +2178,7 @@ type nostrMessengerAdapter struct {
 
 // Send implements Messenger interface.
 func (a *nostrMessengerAdapter) Send(from, to, body string) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in nostrMessengerAdapter.Send: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-		}
-	}()
+	defer RecoverAsError("nostrMessengerAdapter.Send", &err, nil)
 
 	cfg := a.messenger.Cfg()
 	status := getStatus(cfg.SessionID)

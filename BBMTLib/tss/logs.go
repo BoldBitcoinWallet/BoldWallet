@@ -18,6 +18,21 @@ var (
 	logMutex      sync.RWMutex
 )
 
+var sensitiveLogTokens = []string{
+	"raw_json=",
+	"sessionkey",
+	"session key",
+	"sessionid=",
+	"fullnonce",
+	"peernonce",
+	"sighash",
+	"psbt_json",
+	"wire_bytes",
+	"keyshare",
+	"nsec",
+	"share_b64",
+}
+
 // SetEventListener sets the listener for UTXO events
 func SetEventListener(l GoLogListener) {
 	logMutex.Lock()
@@ -44,18 +59,36 @@ func logToReactNative(message string) {
 	}
 }
 
+func sanitizeLogMessage(message string) string {
+	trimmed := strings.TrimSpace(message)
+	if trimmed == "" {
+		return trimmed
+	}
+	lower := strings.ToLower(trimmed)
+	for _, token := range sensitiveLogTokens {
+		if strings.Contains(lower, token) {
+			return "[redacted: sensitive log suppressed]"
+		}
+	}
+	const maxLogLen = 500
+	if len(trimmed) > maxLogLen {
+		return trimmed[:maxLogLen] + "...(truncated)"
+	}
+	return trimmed
+}
+
 // Logf function: formats message and logs it
 func Logf(format string, v ...any) {
-	msg := fmt.Sprintf(format, v...) // Format the message
-	logToReactNative(msg)            // Send to React Native
-	log.Println(msg)                 // Also log to Logcat
+	msg := sanitizeLogMessage(fmt.Sprintf(format, v...))
+	logToReactNative(msg)
+	log.Println(msg)
 }
 
 // Logln: Logs a message like fmt.Println
 func Logln(v ...any) {
-	msg := strings.TrimSpace(fmt.Sprintln(v...))
+	msg := sanitizeLogMessage(strings.TrimSpace(fmt.Sprintln(v...)))
 	logToReactNative(msg)
-	log.Println(v...)
+	log.Println(msg)
 }
 
 func InitLog() {
@@ -66,6 +99,6 @@ func InitLog() {
 type logWriter struct{}
 
 func (logWriter) Write(p []byte) (n int, err error) {
-	logToReactNative(string(p))
+	logToReactNative(sanitizeLogMessage(string(p)))
 	return len(p), nil
 }

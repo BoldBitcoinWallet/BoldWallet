@@ -12,6 +12,7 @@ import database from './Database';
 import mempoolClient from './MempoolClient';
 import {dbg} from '../utils';
 import type {StoredUtxo} from './repositories/UtxoRepository';
+import {dedupeUtxosByOutpoint} from './utxoDedup';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -196,7 +197,9 @@ export function selectUtxos(
   utxos: StoredUtxo[],
   targetSats: number,
 ): StoredUtxo[] {
-  const sorted = [...utxos].sort((a, b) => a.valueSats - b.valueSats);
+  const sorted = dedupeUtxosByOutpoint(utxos).sort(
+    (a, b) => a.valueSats - b.valueSats,
+  );
   const selected: StoredUtxo[] = [];
   let total = 0;
   for (const u of sorted) {
@@ -211,6 +214,8 @@ export function selectUtxos(
   }
   return selected;
 }
+
+export {formatFeeEstimationError} from './feeErrorMessages';
 
 // ---------------------------------------------------------------------------
 // 5. pickRate — map FeeStrategy to the right field

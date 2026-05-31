@@ -11,14 +11,14 @@ import (
 	"fmt"
 	"math"
 	"math/big"
-	"runtime/debug"
 	"strconv"
 	"strings"
 
-	tcrypto "github.com/bnb-chain/tss-lib/v2/crypto"
-	"github.com/bnb-chain/tss-lib/v2/crypto/ckd"
-	"github.com/bnb-chain/tss-lib/v2/tss"
+	tcrypto "github.com/bnb-chain/tss-lib/v3/crypto"
+	"github.com/bnb-chain/tss-lib/v3/crypto/ckd"
+	"github.com/bnb-chain/tss-lib/v3/tss"
 	"github.com/btcsuite/btcd/btcec/v2"
+	btcecdsa "github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
@@ -39,6 +39,39 @@ func GetThreshold(value int) (int, error) {
 	}
 	threshold := int(math.Ceil(float64(value)*2.0/3.0)) - 1
 	return threshold, nil
+}
+
+func isHex64(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// normalizeChainCodeHex returns a 64-char hex chain code for GG18 keygen.
+// Accepts raw 64-char hex or LAN handshake `{attemptId64}:{seed64}` (uses seed).
+func normalizeChainCodeHex(chaincode string) (string, error) {
+	chaincode = strings.TrimSpace(chaincode)
+	if chaincode == "" {
+		return "", fmt.Errorf("ChainCodeHex is empty")
+	}
+	if isHex64(chaincode) {
+		return strings.ToLower(chaincode), nil
+	}
+	if idx := strings.Index(chaincode, ":"); idx > 0 {
+		attemptID := chaincode[:idx]
+		seed := chaincode[idx+1:]
+		if isHex64(attemptID) && isHex64(seed) {
+			return strings.ToLower(seed), nil
+		}
+	}
+	return "", fmt.Errorf("invalid chain code hex")
 }
 
 // GetHexEncodedPubKey returns the hexadecimal encoded string representation of an ECDSA/EDDSA public key.
@@ -104,15 +137,7 @@ func HashToInt(hash []byte, c elliptic.Curve) *big.Int {
 // network: "mainnet" or "testnet3"
 // Returns: xpub (mainnet) or tpub (testnet) encoded string at account level m/44/0/0
 func EncodeXpub(hexPubKey, hexChainCode, network string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in EncodeXpub: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("EncodeXpub", &err, &result)
 
 	if len(hexPubKey) == 0 {
 		return "", errors.New("empty pub key")
@@ -249,15 +274,7 @@ func base58Encode(input []byte) string {
 }
 
 func GetDerivedPubKey(hexPubKey, hexChainCode, path string, isEdDSA bool) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in GetDerivedPubKey: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("GetDerivedPubKey", &err, &result)
 
 	if isEdDSA {
 		return "", errors.New("don't support to derive pubkey for EdDSA now")
@@ -349,11 +366,48 @@ func GetDerivePathBytes(derivePath string) ([]uint32, error) {
 	return pathBuf, nil
 }
 
+// DerivationPathForLibtss converts wallet/PSBT paths (m/84'/1'/0'/0/0) to libtss form (m/84/1/0/0/0).
+// Pubkey derivation from the MPC group key uses non-hardened indices; libtss rejects hardened markers.
+func DerivationPathForLibtss(derivationPath string) (string, error) {
+	path := strings.TrimSpace(derivationPath)
+	if path == "" {
+		return "", nil
+	}
+	indices, err := GetDerivePathBytes(path)
+	if err != nil {
+		return "", err
+	}
+	if len(indices) == 0 {
+		return "", fmt.Errorf("empty derivation path %q", derivationPath)
+	}
+	parts := make([]string, len(indices))
+	for i, idx := range indices {
+		parts[i] = fmt.Sprintf("%d", idx)
+	}
+	return "m/" + strings.Join(parts, "/"), nil
+}
+
 func GetDERSignature(r, s *big.Int) ([]byte, error) {
-	return asn1.Marshal(ecdsaSignature{
+	der, err := asn1.Marshal(ecdsaSignature{
 		R: r,
 		S: s,
 	})
+	if err != nil {
+		return nil, err
+	}
+	return CanonicalizeDERSignature(der)
+}
+
+// CanonicalizeDERSignature returns BIP-143/Bitcoin-standard low-S DER encoding.
+func CanonicalizeDERSignature(der []byte) ([]byte, error) {
+	if len(der) == 0 {
+		return nil, fmt.Errorf("empty DER signature")
+	}
+	sig, err := btcecdsa.ParseDERSignature(der)
+	if err != nil {
+		return nil, fmt.Errorf("parse DER signature: %w", err)
+	}
+	return sig.Serialize(), nil
 }
 
 func hexToBytes(s string) []byte {
@@ -367,20 +421,20 @@ func hexToBytes(s string) []byte {
 }
 
 func Sha256(msg string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in Sha256: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("Sha256", &err, &result)
 
 	hash := sha256.New()
 	hash.Write([]byte(msg))
 	hashBytes := hash.Sum(nil)
 	return hex.EncodeToString(hashBytes), nil
+}
+
+// Sha256Bytes returns hex-encoded SHA-256 of raw bytes (not UTF-8 string).
+func Sha256Bytes(data []byte) (result string, err error) {
+	defer RecoverAsError("Sha256Bytes", &err, &result)
+
+	hashBytes := sha256.Sum256(data)
+	return hex.EncodeToString(hashBytes[:]), nil
 }
 
 func SecureRandom(length int) (string, error) {
@@ -397,17 +451,9 @@ func SecureRandom(length int) (string, error) {
 // hexChainCode: master chain code in hex (32 bytes / 64 chars)
 // network: "mainnet" or "testnet3"
 // addressType: "legacy", "segwit-native", or "segwit-compatible"
-// Returns: output descriptor string (pkh for legacy, wpkh for segwit-native, sh(wpkh) for segwit-compatible)
+// Returns: checksummed output descriptor (pkh / wpkh / sh(wpkh) with #suffix per BIP 380)
 func GetOutputDescriptor(hexPubKey, hexChainCode, network, addressType string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in GetOutputDescriptor: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("GetOutputDescriptor", &err, &result)
 
 	if len(hexPubKey) == 0 {
 		return "", errors.New("empty pub key")
@@ -543,5 +589,5 @@ func GetOutputDescriptor(hexPubKey, hexChainCode, network, addressType string) (
 		descriptor = fmt.Sprintf("pkh([%s/44'/%s/0']%s/0/*)", fingerprint, coinTypeStr, xpub)
 	}
 
-	return descriptor, nil
+	return AddDescriptorChecksum(descriptor)
 }

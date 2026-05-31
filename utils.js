@@ -1,8 +1,24 @@
-import {Platform} from 'react-native';
+import {DeviceEventEmitter, Platform} from 'react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import LocalCache from './services/LocalCache';
 import {isDebugLoggingEnabled} from './App';
+import {detectKeyshareTssBackend} from './services/tssBackend';
+import {BBMTLibNativeModule} from './native_modules';
+
+/** EncryptedStorage / RNES account for the full MPC keyshare blob. */
+export const KEYSHARE_STORAGE_KEY = 'keyshare';
+
+export {detectKeyshareTssBackend};
+
+/** Strip trailing `#checksum` from an output descriptor (BIP 380). */
+const stripDescriptorChecksum = d => {
+  if (!d || typeof d !== 'string') {
+    return '';
+  }
+  const i = d.lastIndexOf('#');
+  return i >= 0 ? d.slice(0, i) : d;
+};
 
 let ips = [];
 
@@ -133,7 +149,7 @@ export const shortenAddress = addr =>
  * @param {string} pubKey - Compressed master public key in hex
  * @param {string} chainCode - Master chain code in hex
  * @param {string} network - Network: 'mainnet' or 'testnet3'
- * @param {number|string|null|undefined} createdAt - Timestamp from keyshare.created_at
+ * @param {import('./types/keyshare').KeyshareMetadata|number|null|undefined} keyshareMeta - Metadata (preferred) or legacy created_at only
  * @param {string} addressType - Optional: current address type for primary descriptor selection
  * @returns {Promise<{legacy: string, segwitNative: string, segwitCompatible: string, primary: string}>}
  */
@@ -145,7 +161,11 @@ export const generateAllOutputDescriptors = async (
   createdAt,
   addressType = 'legacy',
 ) => {
-  const useLegacyPath = isLegacyWallet(createdAt);
+  const useLegacyPath = resolveUseLegacyDerivationPaths(
+    typeof createdAt === 'object' && createdAt !== null
+      ? createdAt
+      : {created_at: createdAt, tss_backend: 'gg18'},
+  );
   const outputDescriptors = {
     legacy: '',
     segwitNative: '',
@@ -163,14 +183,16 @@ export const generateAllOutputDescriptors = async (
       outputDescriptors.legacy = legacyDesc;
 
       if (legacyDesc) {
-        // For old wallets, all descriptors use BIP44 path (44') but different formats
-        // Legacy: pkh, SegWit Native: wpkh, SegWit Compatible: sh(wpkh)
-        // Simple string replacement
-        outputDescriptors.segwitNative = legacyDesc.replace(/^pkh\(/, 'wpkh(');
-        outputDescriptors.segwitCompatible = legacyDesc.replace(
-          /^pkh\(/,
-          'sh(wpkh(',
-        );
+        // Same BIP44 account key path as legacy pkh(); checksum must match transformed body (native).
+        const legacyBody = stripDescriptorChecksum(legacyDesc);
+        const segBody = legacyBody.replace(/^pkh\(/, 'wpkh(');
+        const shBody = legacyBody.replace(/^pkh\(/, 'sh(wpkh(') + ')';
+        const [segSum, shSum] = await Promise.all([
+          nativeModule.appendOutputDescriptorChecksum(segBody).catch(() => ''),
+          nativeModule.appendOutputDescriptorChecksum(shBody).catch(() => ''),
+        ]);
+        outputDescriptors.segwitNative = segSum || segBody;
+        outputDescriptors.segwitCompatible = shSum || shBody;
       }
     } else {
       // New wallets: generate proper descriptors for each address type
@@ -221,20 +243,93 @@ export const generateAllOutputDescriptors = async (
 };
 
 /**
- * Check if a wallet is a legacy wallet (created before the optimized path migration)
- * @param {number|string|null|undefined} createdAt - Timestamp from keyshare.created_at
- * @returns {boolean} - true if legacy wallet (should use BIP44 for all address types)
+ * Normalize keyshare.created_at to milliseconds (GG18 uses ms; older DKLs exports used seconds).
+ * @param {number|string|null|undefined} createdAt
+ * @returns {number|null}
  */
-export const isLegacyWallet = createdAt => {
-  if (!createdAt) {
-    // If no timestamp, assume legacy for safety
+export const normalizeCreatedAtMs = createdAt => {
+  if (createdAt == null || createdAt === '') {
+    return null;
+  }
+  const n =
+    typeof createdAt === 'string' ? parseInt(createdAt, 10) : Number(createdAt);
+  if (!Number.isFinite(n) || n <= 0) {
+    return null;
+  }
+  // Values below ~2001-09-09 in ms are treated as Unix seconds.
+  if (n < 1e12) {
+    return n * 1000;
+  }
+  return n;
+};
+
+/**
+ * Check if a GG18-era wallet uses legacy BIP44-only paths (pre path-migration cutoff).
+ * Not the same as MPC backend — use resolveUseLegacyDerivationPaths for routing.
+ * @param {number|null|undefined} createdAtMs - created_at in milliseconds
+ * @returns {boolean}
+ */
+export const isLegacyWallet = createdAtMs => {
+  if (createdAtMs == null) {
     return true;
   }
-  const timestamp =
-    typeof createdAt === 'string' ? parseInt(createdAt, 10) : createdAt;
-  // Wallets created after 1765894825732 use optimized paths (BIP84/BIP49)
-  // Wallets created before or equal to this timestamp use BIP44 for all address types
-  return timestamp <= 1765894825732;
+  return createdAtMs <= 1765894825732;
+};
+
+/**
+ * Whether to use BIP44 for all address types (legacy) vs BIP84/BIP49 by type (standard).
+ *
+ * - **DKLs23**: always standard paths (ignores created_at).
+ * - **GG18** (legacy + post-cutoff): unchanged pre-migration behavior — timestamp
+ *   cutoff `1765894825732` ms decides BIP44-only vs BIP84/BIP49 by address type.
+ *
+ * @param {import('./types/keyshare').KeyshareMetadata|null|undefined} meta
+ * @returns {boolean}
+ */
+export const resolveUseLegacyDerivationPaths = meta => {
+  if (!meta || typeof meta !== 'object') {
+    return true;
+  }
+  const backend = detectKeyshareTssBackend(meta);
+  if (backend === 'dkls23') {
+    return false;
+  }
+  return isLegacyWallet(normalizeCreatedAtMs(meta.created_at));
+};
+
+/**
+ * Human-readable wallet creation time for UI (from created_at, any unit).
+ * @param {number|string|null|undefined} createdAt
+ * @returns {string|null}
+ */
+export const formatKeyshareCreatedAt = createdAt => {
+  const ms = normalizeCreatedAtMs(createdAt);
+  if (ms == null) {
+    return null;
+  }
+  return new Date(ms).toLocaleString();
+};
+
+/**
+ * Full literal creation datetime for toasts / detail (locale-aware, includes timezone).
+ * @param {number|string|null|undefined} createdAt
+ * @returns {string|null}
+ */
+export const formatKeyshareCreatedAtLong = createdAt => {
+  const ms = normalizeCreatedAtMs(createdAt);
+  if (ms == null) {
+    return null;
+  }
+  return new Date(ms).toLocaleString(undefined, {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
+  });
 };
 
 /**
@@ -791,6 +886,12 @@ const DEFAULT_NOSTR_RELAYS = [
   'wss://nostr.xxi.quest',
 ];
 
+/** Relays that often reject large gift-wrap MPC events (profiling: msg: blocked). */
+const NOSTR_RELAY_DENYLIST = ['wss://nostr.oxtr.dev'];
+
+const filterUnreliableNostrRelays = relays =>
+  relays.filter(url => !NOSTR_RELAY_DENYLIST.includes(url.trim()));
+
 // Function to fetch dynamic Nostr relays from GitHub
 export const fetchDynamicNostrRelays = async () => {
   try {
@@ -821,15 +922,16 @@ export const fetchDynamicNostrRelays = async () => {
       .map(url => String(url)); // Ensure all are strings
 
     if (relays.length > 0) {
-      dbg('Fetched dynamic Nostr relays:', relays);
-      return relays;
+      const filtered = filterUnreliableNostrRelays(relays);
+      dbg('Fetched dynamic Nostr relays:', filtered);
+      return filtered;
     } else {
       dbg('No valid relays found in fetched content, using defaults');
-      return DEFAULT_NOSTR_RELAYS;
+      return filterUnreliableNostrRelays(DEFAULT_NOSTR_RELAYS);
     }
   } catch (error) {
     dbg('Failed to fetch dynamic Nostr relays:', error);
-    return DEFAULT_NOSTR_RELAYS;
+    return filterUnreliableNostrRelays(DEFAULT_NOSTR_RELAYS);
   }
 };
 
@@ -845,8 +947,9 @@ export const getNostrRelays = async (forceFetch = false) => {
           .map(r => r.trim())
           .filter(Boolean);
         if (relaysArray.length > 0) {
-          dbg('Using cached Nostr relays:', relaysArray);
-          return relaysArray;
+          const filtered = filterUnreliableNostrRelays(relaysArray);
+          dbg('Using cached Nostr relays:', filtered);
+          return filtered;
         }
       }
     } catch (error) {
@@ -908,6 +1011,44 @@ export const getKeyshareLabel = keyshare => {
     a === b ? 0 : a < b ? -1 : 1,
   );
   const index = sortedKeys.indexOf(lp);
+  if (index >= 0) {
+    return `KeyShare${index + 1}`;
+  }
+  return '';
+};
+
+/**
+ * Map any committee member (npub, hex, or KeyShare-style id) to KeyShareN using the
+ * same sorted `keygen_committee_keys` order as DKG / getKeyshareLabel.
+ * @param {Object|null|undefined} keyshare
+ * @param {string} memberKey
+ * @returns {string}
+ */
+export const getCommitteeKeyshareLabel = (keyshare, memberKey) => {
+  if (!keyshare || typeof keyshare !== 'object') {
+    return '';
+  }
+  const mk =
+    typeof memberKey === 'string' ? memberKey.trim() : String(memberKey ?? '').trim();
+  if (!mk) {
+    return '';
+  }
+  const keysRaw = keyshare.keygen_committee_keys;
+  if (!Array.isArray(keysRaw) || keysRaw.length === 0) {
+    return '';
+  }
+  const committee = keysRaw
+    .map(k =>
+      typeof k === 'string' ? k.trim() : String(k == null ? '' : k).trim(),
+    )
+    .filter(Boolean);
+  if (committee.length < 2) {
+    return '';
+  }
+  const sortedKeys = [...committee].sort((a, b) =>
+    a === b ? 0 : a < b ? -1 : 1,
+  );
+  const index = sortedKeys.indexOf(mk);
   if (index >= 0) {
     return `KeyShare${index + 1}`;
   }
@@ -1047,13 +1188,21 @@ export const decodeSendBitcoinQR = qrData => {
  */
 
 function normalizeKeyshareMetaObject(parsed) {
+  const tss_backend =
+    parsed.tss_backend === 'dkls23' || parsed.tss_backend === 'gg18'
+      ? parsed.tss_backend
+      : detectKeyshareTssBackend(parsed);
+  const rawCreated = parsed.created_at ?? null;
+  const created_at =
+    rawCreated != null ? normalizeCreatedAtMs(rawCreated) : null;
   return {
     pub_key: parsed.pub_key ?? '',
     chain_code_hex: parsed.chain_code_hex ?? '',
-    created_at: parsed.created_at ?? null,
+    created_at,
     local_party_key: parsed.local_party_key ?? '',
     keygen_committee_keys: parsed.keygen_committee_keys ?? [],
     nostr_npub: parsed.nostr_npub ?? null,
+    tss_backend,
   };
 }
 
@@ -1095,12 +1244,77 @@ function loadAppConfigRepository() {
   }
 }
 
+function keyshareMetaNeedsCreatedAtBackfill(raw, normalized) {
+  if (!raw || !normalized) {
+    return false;
+  }
+  const rawCa = raw.created_at;
+  if (rawCa == null) {
+    return false;
+  }
+  return normalizeCreatedAtMs(rawCa) !== rawCa;
+}
+
+async function persistNormalizedKeyshareMeta(meta, repo, CONFIG_KEYS) {
+  const json = JSON.stringify(meta);
+  await EncryptedStorage.setItem('keyshare_meta', json);
+  if (repo && CONFIG_KEYS) {
+    try {
+      repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, json);
+    } catch (e) {
+      dbg('persistNormalizedKeyshareMeta: DB mirror failed (non-fatal)', e);
+    }
+  }
+}
+
+/**
+ * Metadata cache omits MPC secrets; re-infer tss_backend from full keyshare when missing
+ * so DKLs wallets are not treated as GG18 for path policy.
+ * @param {import('./types/keyshare').KeyshareMetadata} meta
+ * @returns {Promise<import('./types/keyshare').KeyshareMetadata>}
+ */
+async function enrichMetaTssBackendFromFullKeyshare(meta) {
+  if (meta.tss_backend === 'dkls23' || meta.tss_backend === 'gg18') {
+    return meta;
+  }
+  try {
+    const full = await EncryptedStorage.getItem('keyshare');
+    if (!full || String(full).trim() === '') {
+      return meta;
+    }
+    const parsed = JSON.parse(full);
+    const backend = detectKeyshareTssBackend(parsed);
+    if (backend === meta.tss_backend) {
+      return meta;
+    }
+    return {...meta, tss_backend: backend};
+  } catch (e) {
+    dbg('enrichMetaTssBackendFromFullKeyshare: failed', e);
+    return meta;
+  }
+}
+
+function metaNeedsPersistAfterEnrich(before, after) {
+  if (!before || !after) {
+    return false;
+  }
+  return (
+    before.tss_backend !== after.tss_backend ||
+    before.created_at !== after.created_at
+  );
+}
+
 /**
  * Extract and persist only the non-secret metadata fields from a keyshare JSON string.
  * Call this whenever EncryptedStorage.setItem('keyshare', …) is called.
  * @param {string} keyshareJson - Raw keyshare JSON string
  */
-export const saveKeyshareMetadata = async keyshareJson => {
+/**
+ * @param {string} keyshareJson
+ * @param {{ throwOnError?: boolean }} [opts]
+ */
+export const saveKeyshareMetadata = async (keyshareJson, opts = {}) => {
+  const throwOnError = opts.throwOnError === true;
   try {
     const parsed = JSON.parse(keyshareJson);
     const meta = normalizeKeyshareMetaObject(parsed);
@@ -1112,13 +1326,87 @@ export const saveKeyshareMetadata = async keyshareJson => {
         repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, json);
       } catch (e) {
         dbg('saveKeyshareMetadata: DB mirror failed (non-fatal)', e);
+        if (throwOnError) {
+          throw e;
+        }
       }
     }
     dbg('saveKeyshareMetadata: saved metadata');
+    DeviceEventEmitter.emit('wallet:keyshare-ready');
   } catch (e) {
     dbg('saveKeyshareMetadata: failed', e);
+    if (throwOnError) {
+      throw e instanceof Error
+        ? e
+        : new Error('Failed to save wallet metadata mirror');
+    }
   }
 };
+
+/**
+ * True when secure storage has the full `keyshare` blob (wallet exists).
+ * Uses native RNES key presence when available (no JSON load/decrypt through JS).
+ */
+export async function hasWalletKeyshareInSecureStorage() {
+  const native = BBMTLibNativeModule?.hasKeyshareInSecureStorage;
+  if (typeof native === 'function') {
+    try {
+      const result = await native();
+      return result === true || result === 'true' || result === 1;
+    } catch (e) {
+      dbg('hasWalletKeyshareInSecureStorage: native check failed', e);
+      return false;
+    }
+  }
+  try {
+    const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
+    return !!(raw && String(raw).trim());
+  } catch (e) {
+    dbg('hasWalletKeyshareInSecureStorage: fallback failed', e);
+    return false;
+  }
+}
+
+/**
+ * Initial stack route after unlock: MainTabs only when the keyshare blob exists.
+ * Clears orphan `keyshare_meta` / DB mirror when metadata exists without a blob
+ * (e.g. interrupted setup or debug keygen that saved meta only).
+ */
+/**
+ * @param {{ clearOrphanMeta?: boolean }} [opts]
+ * @returns {Promise<'MainTabs'|'Welcome'>}
+ */
+export async function resolveInitialWalletRoute(opts = {}) {
+  const clearOrphanMeta = opts.clearOrphanMeta !== false;
+  const hasKeyshare = await hasWalletKeyshareInSecureStorage();
+  if (!hasKeyshare) {
+    if (clearOrphanMeta) {
+      try {
+        const meta = await getKeyshareMetadata();
+        if (meta) {
+          dbg(
+            'resolveInitialWalletRoute: clearing orphan metadata (no keyshare blob)',
+          );
+        }
+        await clearKeyshareMetadata();
+      } catch (e) {
+        dbg('resolveInitialWalletRoute: clear orphan meta failed', e);
+      }
+    }
+    dbg('resolveInitialWalletRoute: no keyshare blob → Welcome');
+    return 'Welcome';
+  }
+  dbg('resolveInitialWalletRoute: keyshare blob present → MainTabs');
+  return 'MainTabs';
+}
+
+/**
+ * True when the wallet can be used (secure keyshare blob exists).
+ * Metadata alone is not sufficient.
+ */
+export async function hasUsableWalletKeyshare() {
+  return hasWalletKeyshareInSecureStorage();
+}
 
 /**
  * Read the non-secret keyshare metadata without loading the full MPC blob.
@@ -1146,14 +1434,28 @@ export const getKeyshareMetadata = async () => {
     const encOk = encNorm && keyshareMetaLooksComplete(encNorm);
 
     if (encOk) {
-      if (repo && CONFIG_KEYS) {
+      let out = encNorm;
+      const enriched = await enrichMetaTssBackendFromFullKeyshare(encNorm);
+      if (metaNeedsPersistAfterEnrich(encNorm, enriched)) {
+        out = enriched;
+      }
+      if (
+        keyshareMetaNeedsCreatedAtBackfill(encParsed, out) ||
+        metaNeedsPersistAfterEnrich(encNorm, out)
+      ) {
         try {
-          repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, JSON.stringify(encNorm));
+          await persistNormalizedKeyshareMeta(out, repo, CONFIG_KEYS);
+        } catch (e) {
+          dbg('getKeyshareMetadata: meta backfill failed', e);
+        }
+      } else if (repo && CONFIG_KEYS) {
+        try {
+          repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, JSON.stringify(out));
         } catch (e) {
           dbg('getKeyshareMetadata: sync DB from Encrypted failed', e);
         }
       }
-      return encNorm;
+      return out;
     }
 
     const dbRaw =
@@ -1163,13 +1465,21 @@ export const getKeyshareMetadata = async () => {
     const dbOk = dbNorm && keyshareMetaLooksComplete(dbNorm);
 
     if (dbOk) {
-      try {
-        await EncryptedStorage.setItem(
-          'keyshare_meta',
-          JSON.stringify(dbNorm),
-        );
-      } catch (e) {
-        dbg('getKeyshareMetadata: backfill Encrypted from DB failed', e);
+      if (keyshareMetaNeedsCreatedAtBackfill(dbParsed, dbNorm)) {
+        try {
+          await persistNormalizedKeyshareMeta(dbNorm, repo, CONFIG_KEYS);
+        } catch (e) {
+          dbg('getKeyshareMetadata: DB created_at backfill failed', e);
+        }
+      } else {
+        try {
+          await EncryptedStorage.setItem(
+            'keyshare_meta',
+            JSON.stringify(dbNorm),
+          );
+        } catch (e) {
+          dbg('getKeyshareMetadata: backfill Encrypted from DB failed', e);
+        }
       }
       return dbNorm;
     }

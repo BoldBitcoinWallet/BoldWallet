@@ -15,6 +15,7 @@ import AppPressable from './AppPressable';
 import {NativeModules} from 'react-native';
 import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
+import {safeUnlink} from '../services/rnfsSafe';
 import {dbg, getKeyshareLabel, getKeyshareMetadata} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
@@ -192,12 +193,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
           failOnCancel: false,
         });
 
-        // Cleanup temp file (best-effort)
-        try {
-          await RNFS.unlink(filePath);
-        } catch {
-          // ignore cleanup errors
-        }
+        await safeUnlink(filePath);
 
         clearModal();
         if (onBackupComplete) {

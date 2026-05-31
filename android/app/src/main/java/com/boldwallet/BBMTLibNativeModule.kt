@@ -11,14 +11,10 @@ import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
 import com.facebook.react.bridge.ReactMethod
 import com.facebook.react.modules.core.DeviceEventManagerModule
-import tss.GoLogListener
-import tss.HookListener
-
-import tss.Tss
-
 import org.json.JSONException
 import org.json.JSONObject
 
+import java.io.File
 import java.net.NetworkInterface
 import java.net.Inet4Address
 import java.util.Arrays
@@ -27,7 +23,7 @@ import java.util.regex.Pattern
 import kotlin.text.Charsets
 
 class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
-    ReactContextBaseJavaModule(reactContext), GoLogListener, HookListener {
+    ReactContextBaseJavaModule(reactContext) {
 
     companion object {
         /** Must match [com.emeraldsanto.encryptedstorage.RNEncryptedStorageModule] */
@@ -48,28 +44,87 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     init {
         eventName = "BBMT_DROID"
-    }
-
-    override fun onMessage(msg: String?) {
-        msg?.let {
-            sendLogEvent("TssHook", msg)
+        if (bbmtLibraryPresentInApk()) {
+            ensureBbmtRuntime()
         }
-        onGoLog(msg)
     }
 
-    override fun onGoLog(msg: String?) {
-        msg?.let { ld("GoLog", it) }
+    /** Called from JNI (libbbmtmobile) so MPC hooks reach React Native. */
+    fun deliverMpcHook(msg: String) {
+        sendLogEvent("TssHook", msg)
+    }
+
+    /** Called from JNI (BbmtSetGoLogListener) for Go runtime logs. */
+    fun deliverGoLog(msg: String) {
+        ld("GoLog", msg)
+    }
+
+    @Synchronized
+    private fun activateMpcHookBridge() {
+        if (DklsNative.isLoaded()) {
+            DklsNative.setBbmtHookListener(this)
+        } else {
+            DklsNative.clearBbmtHookListener()
+        }
+    }
+
+    /** Load libbbmtmobile (single Go runtime for GG18 + DKLs). */
+    @Synchronized
+    private fun ensureBbmtRuntime(): Boolean {
+        if (!DklsNative.ensureLoaded()) {
+            return false
+        }
+        activateMpcHookBridge()
+        return true
+    }
+
+    private fun rejectBbmtUnavailable(promise: Promise, method: String): Boolean {
+        if (ensureBbmtRuntime()) {
+            return false
+        }
+        promise.reject(
+            "BBMT_NATIVE_REQUIRED",
+            "$method requires libbbmtmobile — run BBMTLib/build-dkls.sh android and rebuild",
+            null,
+        )
+        return true
+    }
+
+    private fun bbmtLibraryPresentInApk(): Boolean {
+        val dir = reactApplicationContext.applicationInfo.nativeLibraryDir ?: return false
+        return File(dir, "libbbmtmobile.so").exists()
+    }
+
+    @ReactMethod
+    fun ensureDklsLanRuntime(promise: Promise) {
+        Thread {
+            try {
+                if (!ensureBbmtRuntime()) {
+                    promise.reject(
+                        "DKLS_NATIVE_REQUIRED",
+                        "Run BBMTLib/build-dkls.sh android and rebuild the app",
+                        null,
+                    )
+                    return@Thread
+                }
+                promise.resolve("ok")
+            } catch (e: Throwable) {
+                promise.reject("DKLS_LAN_RUNTIME", e.message, e)
+            }
+        }.start()
     }
 
     @ReactMethod
     fun addListener(eventName: String) {
-        Tss.setEventListener(this)
-        Tss.setHookListener(this)
+        if (bbmtLibraryPresentInApk()) {
+            ensureBbmtRuntime()
+        }
+        activateMpcHookBridge()
     }
 
     @ReactMethod
     fun removeListeners(count: Int) {
-        Tss.setEventListener(null)
+        DklsNative.clearBbmtHookListener()
     }
 
     private fun sendLogEvent(tag: String, msg: String) {
@@ -99,8 +154,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     /**
      * RN always delivers the keyshare as a Java [String] from JS (unavoidable bridge copy).
      * This does not remove that; it adds a native staging path we control: UTF-8 [ByteArray],
-     * ephemeral [String] for [Tss], then [Arrays.fill] zero on the buffer. The bridge [String]
-     * and JVM string internals remain until GC. Copies inside Tss are not under app control.
+     * ephemeral [String] for native MPC, then [Arrays.fill] zero on the buffer.
      */
     private inline fun <T> withZeroedKeyshareUtf8(keyshareFromBridge: String, block: (String) -> T): T {
         val bytes = keyshareFromBridge.toByteArray(Charsets.UTF_8)
@@ -131,12 +185,32 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    /** True when RNES has a `keyshare` entry without reading/decrypting the blob value. */
+    private fun keyshareExistsInRNES(): Boolean {
+        val prefs = rnesEncryptedPrefs() ?: return false
+        return prefs.contains(KEY_KEYSHARE)
+    }
+
     private fun loadKeyshareJSONFromRNES(): String? {
         val prefs = rnesEncryptedPrefs() ?: return null
         return prefs.getString(KEY_KEYSHARE, null)
     }
 
-    /** Summary line; full blob is logged separately as `raw_json=` (dev). */
+    /**
+     * Lightweight wallet presence check for app bootstrap (no keyshare JSON through JS).
+     */
+    @ReactMethod
+    fun hasKeyshareInSecureStorage(promise: Promise) {
+        Thread {
+            try {
+                promise.resolve(keyshareExistsInRNES())
+            } catch (e: Exception) {
+                promise.reject("KEYSHARE_EXISTS_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /** Summary line only; never logs keyshare contents. */
     private fun logNsecKeyshareDiag(rawLen: Int, obj: JSONObject?, nsecVal: Any?) {
         val keysCsv = obj?.keys()?.asSequence()?.sorted()?.joinToString(",") ?: "(nil)"
         val nsecDesc =
@@ -164,7 +238,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * One RNES read: party nsec for Tss + same raw keyshare JSON for [withZeroedKeyshareUtf8].
+     * One RNES read: party nsec + same raw keyshare JSON for [withZeroedKeyshareUtf8].
      * Aligned with iOS [nsecAndKeyshareJSONFromRNES].
      */
     private fun nsecAndKeyshareJSONFromRNES(): Pair<String, String> {
@@ -174,7 +248,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     ld("nsecFromKeyshare", "FAIL: no_encrypted_prefs_blob key=$KEY_KEYSHARE")
                     throw Exception("No keyshare found in secure storage")
                 }
-        ld("nsecFromKeyshare", "raw_json=$raw")
         val rawLen = raw.toByteArray(Charsets.UTF_8).size
         var obj: JSONObject? = null
         var parseEx: JSONException? = null
@@ -197,7 +270,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     ?: run {
                         ld(
                             "nsecFromKeyshare",
-                            "FAIL: json_parse and no regex nsec rawLen=$rawLen msg=${parseEx?.message} raw_json=$raw",
+                            "FAIL: json_parse and no regex nsec rawLen=$rawLen msg=${parseEx?.message}",
                         )
                         throw Exception("Could not parse keyshare JSON (nsec not extractable)")
                     }
@@ -253,15 +326,18 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun disableLogging(tag: String, promise: Promise) {
         useLog = false
-        Tss.disableLogs()
+        if (ensureBbmtRuntime()) {
+            DklsNative.bbmtDisableLogsNative()
+        }
         promise.resolve(tag)
     }
 
     @ReactMethod
     fun setBtcNetwork(network: String, promise: Promise) {
         try {
-            Tss.setNetwork(network)
-            val result = Tss.getNetwork()
+            if (rejectBbmtUnavailable(promise, "setBtcNetwork")) return
+            DklsNative.bbmtSetNetworkNative(network)
+            val result = DklsNative.bbmtGetNetworkNative()
             ld("setBtcNetwork", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -273,7 +349,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun setFeePolicy(policy: String, promise: Promise) {
         try {
-            val result = Tss.useFeePolicy(policy)
+            if (rejectBbmtUnavailable(promise, "setFeePolicy")) return
+            val result = DklsNative.bbmtUseFeePolicyNative(policy)
             ld("setFeePolicy", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -285,7 +362,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun totalUTXO(address: String, promise: Promise) {
         try {
-            val result = Tss.totalUTXO(address)
+            if (rejectBbmtUnavailable(promise, "totalUTXO")) return
+            val result = DklsNative.bbmtTotalUTXONative(address)
             ld("totalUTXO", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -298,7 +376,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun setAPI(network: String, baseAPI: String, promise: Promise) {
         try {
-            val result = Tss.useAPI(network, baseAPI)
+            if (rejectBbmtUnavailable(promise, "setAPI")) return
+            val result = DklsNative.bbmtUseAPINative(network, baseAPI)
             ld("setAPI", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -310,7 +389,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun setFeeAPIs(urls: String, promise: Promise) {
         try {
-            val result = Tss.useFeeAPIs(urls)
+            if (rejectBbmtUnavailable(promise, "setFeeAPIs")) return
+            val result = DklsNative.bbmtUseFeeAPIsNative(urls)
             ld("setFeeAPIs", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -323,9 +403,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     fun spendingHash(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
         Thread {
             try {
+                if (rejectBbmtUnavailable(promise, "spendingHash")) return@Thread
                 val amt = amountSatoshi.toLong()
-                val result =
-                    Tss.spendingHash(senderAddress, receiverAddress, amt)
+                val result = DklsNative.bbmtSpendingHashNative(senderAddress, receiverAddress, amt)
                 ld("spendingHash", result)
                 promise.resolve(result)
             } catch (e: Exception) {
@@ -339,7 +419,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     fun spendingHashWithUTXOs(utxosWithPathsJSON: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
         Thread {
             try {
-                val result = Tss.spendingHashWithUTXOs(utxosWithPathsJSON, receiverAddress, amountSatoshi)
+                if (rejectBbmtUnavailable(promise, "spendingHashWithUTXOs")) return@Thread
+                val result = DklsNative.bbmtSpendingHashWithUTXOsNative(
+                    utxosWithPathsJSON, receiverAddress, amountSatoshi,
+                )
                 ld("spendingHashWithUTXOs", result)
                 promise.resolve(result)
             } catch (e: Exception) {
@@ -353,9 +436,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     fun estimateFees(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
         Thread {
             try {
+                if (rejectBbmtUnavailable(promise, "estimateFees")) return@Thread
                 val amt = amountSatoshi.toLong()
-                val result =
-                    Tss.estimateFees(senderAddress, receiverAddress, amt)
+                val result = DklsNative.bbmtEstimateFeesNative(senderAddress, receiverAddress, amt)
                 ld("estimateFee", result)
                 promise.resolve(result)
             } catch (e: Exception) {
@@ -375,11 +458,12 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     ) {
         Thread {
             try {
-                val result = Tss.estimateFeeWithUTXOs(
+                if (rejectBbmtUnavailable(promise, "estimateFeeWithUTXOs")) return@Thread
+                val result = DklsNative.bbmtEstimateFeeWithUTXOsNative(
                     utxosWithPathsJSON,
                     receiverAddress,
                     amountSatoshi,
-                    changeAddress
+                    changeAddress,
                 )
                 ld("estimateFeeWithUTXOs", result)
                 promise.resolve(result)
@@ -394,7 +478,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     fun postTx(rawTxHex: String, promise: Promise) {
         Thread {
             try {
-                val txid = Tss.postTx(rawTxHex)
+                if (rejectBbmtUnavailable(promise, "postTx")) return@Thread
+                val txid = DklsNative.bbmtPostTxNative(rawTxHex)
                 ld("postTx", txid)
                 promise.resolve(txid)
             } catch (e: Throwable) {
@@ -407,7 +492,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun computeTxId(rawTxHex: String, promise: Promise) {
         try {
-            val txid = Tss.computeTxId(rawTxHex)
+            if (rejectBbmtUnavailable(promise, "computeTxId")) return
+            val txid = DklsNative.bbmtComputeTxIdNative(rawTxHex)
             promise.resolve(txid)
         } catch (e: Throwable) {
             promise.reject("COMPUTE_TXID_ERROR", "Failed to compute txid: ${e.message}", e)
@@ -417,7 +503,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun cancelMpcSession(sessionID: String, promise: Promise) {
         try {
-            val out = Tss.cancelMpcSession(sessionID)
+            if (rejectBbmtUnavailable(promise, "cancelMpcSession")) return
+            val out = DklsNative.bbmtCancelMpcSessionNative(sessionID)
             promise.resolve(out)
         } catch (e: Throwable) {
             promise.reject("CANCEL_MPC_ERROR", "Failed to cancel MPC session: ${e.message}", e)
@@ -427,7 +514,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun cancelNostrMpc(promise: Promise) {
         try {
-            val out = Tss.cancelNostrMpc()
+            if (rejectBbmtUnavailable(promise, "cancelNostrMpc")) return
+            val out = DklsNative.bbmtCancelNostrMpcNative()
             promise.resolve(out)
         } catch (e: Throwable) {
             promise.reject("CANCEL_NOSTR_MPC_ERROR", "Failed to cancel Nostr MPC: ${e.message}", e)
@@ -437,7 +525,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun runRelay(port: String, promise: Promise) {
         try {
-            val result = Tss.runRelay(port)
+            if (rejectBbmtUnavailable(promise, "runRelay")) return
+            val result = DklsNative.bbmtRunRelayNative(port)
             ld("runRelay",result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -449,7 +538,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun stopRelay(tag: String, promise: Promise) {
         try {
-            val result = Tss.stopRelay()
+            if (rejectBbmtUnavailable(promise, "stopRelay")) return
+            val result = DklsNative.bbmtStopRelayNative()
             ld("stopRelay","$tag:$result")
             promise.resolve(result)
         } catch (e: Exception) {
@@ -463,7 +553,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     promise: Promise) {
         Thread {
             try {
-                val output = Tss.publishData(port, timeout, encKey, raw, mode)
+                if (rejectBbmtUnavailable(promise, "publishData")) return@Thread
+                val output = DklsNative.bbmtPublishDataNative(port, timeout, encKey, raw, mode)
                 ld("publishData", output)
                 promise.resolve(output)
             } catch (e: Throwable) {
@@ -477,7 +568,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     fun fetchData(url: String, decKey: String, payload: String, promise: Promise) {
         Thread {
             try {
-                val raw = Tss.fetchData(url, decKey, payload)
+                if (rejectBbmtUnavailable(promise, "fetchData")) return@Thread
+                val raw = DklsNative.bbmtFetchDataNative(url, decKey, payload)
                 ld("fetchData", raw)
                 promise.resolve(raw)
             } catch (e: Throwable) {
@@ -491,7 +583,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     fun listenForPeers(id: String, pubkey: String, port: String, timeout: String, mode: String, promise: Promise) {
         Thread {
             try {
-                val peer = Tss.listenForPeers(id, pubkey, port, timeout, mode)
+                if (rejectBbmtUnavailable(promise, "listenForPeers")) return@Thread
+                val peer = DklsNative.bbmtListenForPeersNative(id, pubkey, port, timeout, mode)
                 ld("listenForPeers", peer)
                 promise.resolve(peer)
             } catch (e: Throwable) {
@@ -505,7 +598,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     fun discoverPeers(id: String, pubkey: String, localIP: String, remoteIP: String, port: String, timeout: String, mode: String, promise: Promise) {
         Thread {
             try {
-                val peer = Tss.discoverPeers(id, pubkey, localIP, remoteIP, port, timeout, mode)
+                if (rejectBbmtUnavailable(promise, "discoverPeers")) return@Thread
+                val peer = DklsNative.bbmtDiscoverPeersNative(
+                    id, pubkey, localIP, remoteIP, port, timeout, mode,
+                )
                 ld("discoverPeers", peer)
                 promise.resolve(peer)
             } catch (e: Throwable) {
@@ -606,7 +702,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun nostrKeypair(promise: Promise) {
         try {
-            val result = Tss.nostrKeypair()
+            if (rejectBbmtUnavailable(promise, "nostrKeypair")) return
+            val result = DklsNative.bbmtNostrKeypairNative()
             ld("nostrKeypair", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -619,7 +716,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     fun hexToNpub(hexKey: String, promise: Promise) {
         Thread {
             try {
-                val result = Tss.hexToNpub(hexKey)
+                if (rejectBbmtUnavailable(promise, "hexToNpub")) return@Thread
+                val result = DklsNative.bbmtHexToNpubNative(hexKey)
                 ld("hexToNpub", result)
                 promise.resolve(result)
             } catch (e: Exception) {
@@ -642,14 +740,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     ) {
         Thread {
             try {
-                val result = Tss.nostrJoinKeygen(
+                if (rejectBbmtUnavailable(promise, "nostrMpcTssSetup")) return@Thread
+                val result = DklsNative.bbmtNostrJoinKeygenNative(
                     relaysCSV,
                     partyNsec,
                     partiesNpubsCSV,
                     sessionID,
                     sessionKey,
                     chaincode,
-                    ppmFile
+                    ppmFile,
                 )
                 ld("nostrMpcTssSetup", result)
                 promise.resolve(result)
@@ -674,8 +773,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     ) {
         Thread {
             try {
+                if (rejectBbmtUnavailable(promise, "nostrJoinKeysign")) return@Thread
                 val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    Tss.nostrJoinKeysign(
+                    DklsNative.bbmtNostrJoinKeysignNative(
                         relaysCSV,
                         partyNsec,
                         partiesNpubsCSV,
@@ -683,7 +783,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         sessionKey,
                         ks,
                         derivationPath,
-                        message
+                        message,
                     )
                 }
                 ld("nostrJoinKeysign", result)
@@ -710,7 +810,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     ) {
         Thread {
             try {
-                val result = Tss.joinKeygen(
+                if (rejectBbmtUnavailable(promise, "mpcTssSetup")) return@Thread
+                val result = DklsNative.bbmtJoinKeygenNative(
                     ppmFile,
                     partyID,
                     partiesCSV,
@@ -719,7 +820,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     sessionID,
                     server,
                     chaincode,
-                    sessionKey
+                    sessionKey,
                 )
                 ld("mpcTssSetup", result.toString())
                 promise.resolve(result)
@@ -734,7 +835,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     fun preparams(partyID: String, timeout: String, promise: Promise) {
         Thread {
             try {
-                val result = Tss.localPreParams(partyID, timeout.toLong())
+                if (rejectBbmtUnavailable(promise, "preparams")) return@Thread
+                val result = DklsNative.bbmtLocalPreParamsNative(partyID, timeout.toLong())
                 ld("preparams", result.toString())
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -747,7 +849,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun recoverPubkey(r: String, s: String, v: String, h: String, promise: Promise) {
         try {
-            val result = Tss.secP256k1Recover(r, s, v, h)
+            if (rejectBbmtUnavailable(promise, "recoverPubkey")) return
+            val result = DklsNative.bbmtSecP256k1RecoverNative(r, s, v, h)
             ld("recoverPubkey", result)
             promise.resolve(result)
         } catch (e: Throwable) {
@@ -759,7 +862,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun derivePubkey(hexPubkey: String, hexChaincode: String, path: String, promise: Promise) {
         try {
-            val result = Tss.getDerivedPubKey(hexPubkey, hexChaincode, path, false)
+            if (rejectBbmtUnavailable(promise, "derivePubkey")) return
+            val result = DklsNative.bbmtGetDerivedPubKeyNative(hexPubkey, hexChaincode, path, false)
             ld("derivePubkey", result)
             promise.resolve(result)
         } catch (e: Throwable) {
@@ -771,7 +875,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun encodeXpub(hexPubkey: String, hexChaincode: String, network: String, promise: Promise) {
         try {
-            val result = Tss.encodeXpub(hexPubkey, hexChaincode, network)
+            if (rejectBbmtUnavailable(promise, "encodeXpub")) return
+            val result = DklsNative.bbmtEncodeXpubNative(hexPubkey, hexChaincode, network)
             ld("encodeXpub", result)
             promise.resolve(result)
         } catch (e: Throwable) {
@@ -783,7 +888,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun getOutputDescriptor(hexPubkey: String, hexChaincode: String, network: String, addressType: String, promise: Promise) {
         try {
-            val result = Tss.getOutputDescriptor(hexPubkey, hexChaincode, network, addressType)
+            if (rejectBbmtUnavailable(promise, "getOutputDescriptor")) return
+            val result = DklsNative.bbmtGetOutputDescriptorNative(hexPubkey, hexChaincode, network, addressType)
             ld("getOutputDescriptor", result)
             promise.resolve(result)
         } catch (e: Throwable) {
@@ -793,14 +899,32 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun appendOutputDescriptorChecksum(descriptorBody: String, promise: Promise) {
+        try {
+            if (rejectBbmtUnavailable(promise, "appendOutputDescriptorChecksum")) return
+            val result = DklsNative.bbmtAppendOutputDescriptorChecksumNative(descriptorBody)
+            ld("appendOutputDescriptorChecksum", result)
+            promise.resolve(result)
+        } catch (e: Throwable) {
+            ld("appendOutputDescriptorChecksum", "error: ${e.stackTraceToString()}")
+            promise.reject(
+                "APPEND_DESCRIPTOR_CHECKSUM_ERROR",
+                "Failed to append descriptor checksum: ${e.message}",
+                e,
+            )
+        }
+    }
+
+    @ReactMethod
     fun btcAddress(compressedPubkey: String, network: String, addressType: String,  promise: Promise) {
         var resolved = false
         try {
+            if (rejectBbmtUnavailable(promise, "btcAddress")) return
             val result = when(addressType) {
-                "segwit-native" -> Tss.pubToP2WPKH(compressedPubkey, network)
-                "segwit-compatible" -> Tss.pubToP2SHP2WKH(compressedPubkey, network)
-                "taproot" -> Tss.pubToP2TR(compressedPubkey, network)
-                "legacy" -> Tss.pubToP2KH(compressedPubkey, network)
+                "segwit-native" -> DklsNative.bbmtPubToP2WPKHNative(compressedPubkey, network)
+                "segwit-compatible" -> DklsNative.bbmtPubToP2SHP2WKHNative(compressedPubkey, network)
+                "taproot" -> DklsNative.bbmtPubToP2TRNative(compressedPubkey, network)
+                "legacy" -> DklsNative.bbmtPubToP2KHNative(compressedPubkey, network)
                 else -> {
                     ld("btcAddress", "invalid-address type")
                     ""
@@ -822,20 +946,32 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun eciesKeypair(promise: Promise) {
-        try {
-            val result = Tss.generateKeyPair()
-            ld("eciesKeypair", result)
-            promise.resolve(result)
-        } catch (e: Exception) {
-            ld("eciesKeypair", "error: ${e.stackTraceToString()}")
-            promise.resolve(e.message)
-        }
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "eciesKeypair")) return@Thread
+                val result = DklsNative.bbmtGenerateKeyPairNative()
+                if (result.startsWith("error:")) {
+                    promise.reject(
+                        "ECIES_KEYPAIR",
+                        result.removePrefix("error:"),
+                        null,
+                    )
+                    return@Thread
+                }
+                ld("eciesKeypair", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("eciesKeypair", "error: ${e.stackTraceToString()}")
+                promise.reject("ECIES_KEYPAIR", e.message, e)
+            }
+        }.start()
     }
 
     @ReactMethod
     fun aesEncrypt(data: String, key: String, promise: Promise) {
         try {
-            val result = Tss.aesEncrypt(data, key)
+            if (rejectBbmtUnavailable(promise, "aesEncrypt")) return
+            val result = DklsNative.bbmtAesEncryptNative(data, key)
             ld("aesEncrypt", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -847,7 +983,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun aesDecrypt(data: String, key: String, promise: Promise) {
         try {
-            val result = Tss.aesDecrypt(data, key)
+            if (rejectBbmtUnavailable(promise, "aesDecrypt")) return
+            val result = DklsNative.bbmtAesDecryptNative(data, key)
             ld("aesDecrypt", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -865,8 +1002,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                     return@Thread
                 }
+                if (rejectBbmtUnavailable(promise, "aesEncryptStoredKeyshare")) return@Thread
                 val result = withZeroedKeyshareUtf8(data) { ks ->
-                    Tss.aesEncrypt(ks, key)
+                    DklsNative.bbmtAesEncryptNative(ks, key)
                 }
                 ld("aesEncryptStoredKeyshare", result)
                 promise.resolve(result)
@@ -880,7 +1018,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun sha256(msg: String, promise: Promise) {
         try {
-            val result = Tss.sha256(msg)
+            if (rejectBbmtUnavailable(promise, "sha256")) return
+            val result = DklsNative.bbmtSha256Native(msg)
             ld("sha256", result)
             promise.resolve(result)
         } catch (e: Throwable) {
@@ -908,8 +1047,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                     return@Thread
                 }
+                if (rejectBbmtUnavailable(promise, "mpcSignPSBT")) return@Thread
                 val result = withZeroedKeyshareUtf8(keyshare) { ks ->
-                    Tss.mpcSignPSBT(
+                    DklsNative.bbmtMpcSignPSBTNative(
                         server,
                         partyID,
                         partiesCSV,
@@ -918,7 +1058,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         encKey,
                         decKey,
                         ks,
-                        psbtBase64
+                        psbtBase64,
                     )
                 }
                 ld("mpcSignPSBT", result)
@@ -954,8 +1094,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                     return@Thread
                 }
+                if (rejectBbmtUnavailable(promise, "mpcSendBTCWithUTXOs")) return@Thread
                 val result = withZeroedKeyshareUtf8(keyshare) { ks ->
-                    Tss.mpcSendBTCWithUTXOs(
+                    DklsNative.bbmtMpcSendBTCWithUTXOsNative(
                         server,
                         partyID,
                         partiesCSV,
@@ -969,7 +1110,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         amountSatoshi,
                         feeSatoshi,
                         utxosWithPathsJSON,
-                        changeAddress
+                        changeAddress,
                     )
                 }
                 ld("mpcSendBTCWithUTXOs", result)
@@ -997,8 +1138,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         Thread {
             try {
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
+                if (rejectBbmtUnavailable(promise, "nostrMpcSendBTC")) return@Thread
                 val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    Tss.nostrMpcSendBTCWithUTXOs(
+                    DklsNative.bbmtNostrMpcSendBTCWithUTXOsNative(
                         relaysCSV,
                         partyNsec,
                         partiesNpubsCSV,
@@ -1009,7 +1151,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         amountSatoshi,
                         estimatedFee,
                         utxosWithPathsJSON,
-                        changeAddress ?: ""
+                        changeAddress ?: "",
                     )
                 }
                 ld("nostrMpcSendBTC", result)
@@ -1032,14 +1174,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         Thread {
             try {
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
+                if (rejectBbmtUnavailable(promise, "nostrMpcSignPSBT")) return@Thread
                 val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    Tss.nostrMpcSignPSBT(
+                    DklsNative.bbmtNostrMpcSignPSBTNative(
                         relaysCSV,
                         partyNsec,
                         partiesNpubsCSV,
                         npubsSorted,
                         ks,
-                        psbtBase64
+                        psbtBase64,
                     )
                 }
                 ld("nostrMpcSignPSBT", result)
@@ -1086,15 +1229,286 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun dklsHelloDkg(promise: Promise) {
+        Thread {
+            try {
+                // Single runtime: libbbmtmobile loaded in module init when present in APK.
+                val result = if (bbmtLibraryPresentInApk()) {
+                    "dkls23 ok (native library present)"
+                } else {
+                    "DKLS: run BBMTLib/build-dkls.sh android and rebuild (libbbmtmobile.so missing)"
+                }
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_HELLO_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsMpcTssSetup(
+        server: String,
+        partyID: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        encKey: String,
+        decKey: String,
+        chaincode: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!ensureBbmtRuntime()) {
+                    promise.reject(
+                        "DKLS_NATIVE_REQUIRED",
+                        "Run BBMTLib/build-dkls.sh android and rebuild the app",
+                        null,
+                    )
+                    return@Thread
+                }
+                val result = DklsNative.lanJoinKeygenNative(
+                    partyID,
+                    partiesCSV,
+                    sessionID,
+                    server,
+                    chaincode,
+                    sessionKey,
+                    encKey,
+                    decKey,
+                )
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_MPC_SETUP_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsNostrMpcTssSetup(
+        relaysCSV: String,
+        partyNsec: String,
+        partiesNpubsCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        chaincode: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!ensureBbmtRuntime()) {
+                    promise.reject(
+                        "DKLS_NATIVE_REQUIRED",
+                        "Run BBMTLib/build-dkls.sh android and rebuild the app (libbbmtmobile missing)",
+                        null,
+                    )
+                    return@Thread
+                }
+                val result = DklsNative.nostrJoinKeygenNative(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    sessionID,
+                    sessionKey,
+                    chaincode,
+                )
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_NOSTR_KEYGEN_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsCancelMpcSession(sessionID: String, promise: Promise) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "dklsCancelMpcSession")) return@Thread
+                DklsNative.cancelMpcSessionNative(sessionID)
+                promise.resolve(null)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_CANCEL_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsCancelNostrMpc(promise: Promise) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "dklsCancelNostrMpc")) return@Thread
+                DklsNative.cancelNostrMpcNative()
+                promise.resolve(null)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_CANCEL_NOSTR_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsMpcSignPSBT(
+        server: String,
+        partyID: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        encKey: String,
+        decKey: String,
+        psbtBase64: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!ensureBbmtRuntime()) {
+                    promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
+                    return@Thread
+                }
+                val keyshare = loadKeyshareJSONFromRNES()
+                    ?: run {
+                        promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
+                        return@Thread
+                    }
+                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
+                    DklsNative.mpcSignPsbtNative(
+                        server, partyID, partiesCSV, sessionID, sessionKey,
+                        encKey, decKey, ks, psbtBase64,
+                    )
+                }
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_PSBT_LAN", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsMpcSendBTCWithUTXOs(
+        server: String,
+        partyID: String,
+        partiesCSV: String,
+        sessionID: String,
+        sessionKey: String,
+        encKey: String,
+        decKey: String,
+        btcPub: String,
+        toAddress: String,
+        satoshiAmount: String,
+        satoshiFees: String,
+        utxosWithPathsJSON: String,
+        changeAddress: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!ensureBbmtRuntime()) {
+                    promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
+                    return@Thread
+                }
+                val keyshare = loadKeyshareJSONFromRNES()
+                    ?: run {
+                        promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
+                        return@Thread
+                    }
+                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
+                    DklsNative.mpcSendBtcWithUtxosNative(
+                        server, partyID, partiesCSV, sessionID, sessionKey,
+                        encKey, decKey, ks, btcPub, toAddress,
+                        satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
+                    )
+                }
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_SEND_LAN", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsNostrMpcSendBTC(
+        relaysCSV: String,
+        partiesNpubsCSV: String,
+        npubsSorted: String,
+        balanceSats: String,
+        toAddress: String,
+        satoshiAmount: String,
+        satoshiFees: String,
+        utxosWithPathsJSON: String,
+        changeAddress: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!ensureBbmtRuntime()) {
+                    promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
+                    return@Thread
+                }
+                val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
+                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
+                    DklsNative.nostrMpcSendBtcWithUtxosNative(
+                        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, ks,
+                        toAddress, satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
+                    )
+                }
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_SEND_NOSTR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun dklsNostrMpcSignPSBT(
+        relaysCSV: String,
+        partiesNpubsCSV: String,
+        npubsSorted: String,
+        psbtBase64: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (!ensureBbmtRuntime()) {
+                    promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
+                    return@Thread
+                }
+                val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
+                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
+                    DklsNative.nostrMpcSignPsbtNative(
+                        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, ks, psbtBase64,
+                    )
+                }
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("DKLS_PSBT_NOSTR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
     fun parsePSBTDetails(psbtBase64: String, promise: Promise) {
         Thread {
             try {
-                val result = Tss.parsePSBTDetails(psbtBase64)
+                if (rejectBbmtUnavailable(promise, "parsePSBTDetails")) return@Thread
+                val result = DklsNative.bbmtParsePSBTDetailsNative(psbtBase64)
                 ld("parsePSBTDetails", result)
                 promise.resolve(result)
             } catch (e: Throwable) {
                 ld("parsePSBTDetails", "error: ${e.stackTraceToString()}")
                 promise.reject("PARSE_PSBT_ERROR", "Failed to parse PSBT: ${e.message}", e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun psbtIdentityHash(psbtBase64: String, promise: Promise) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "psbtIdentityHash")) return@Thread
+                val result = DklsNative.bbmtPsbtIdentityHashNative(psbtBase64)
+                ld("psbtIdentityHash", result.take(16) + "…")
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                ld("psbtIdentityHash", "error: ${e.stackTraceToString()}")
+                promise.reject("PSBT_IDENTITY_ERROR", "Failed to hash PSBT: ${e.message}", e)
             }
         }.start()
     }

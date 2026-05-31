@@ -10,6 +10,7 @@ import (
 	"runtime/debug"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/BoldBitcoinWallet/BBMTLib/tss/nostrtransport"
@@ -20,7 +21,9 @@ import (
 	"github.com/btcsuite/btcd/wire"
 )
 
-// MpcSignPSBT signs a PSBT using MPC (server-based transport)
+// MpcSignPSBT signs a PSBT using MPC (server-based transport).
+// Per-input paths from Bip32Derivation are passed to DispatchJoinKeysign, which routes DKLs23
+// wallets through deriveShareForSigning (wallet chain_code_hex + path) before MPC keysign.
 // Parameters:
 //   - server, key, partiesCSV, session, sessionKey, encKey, decKey: TSS parameters
 //   - keyshare: JSON keyshare data
@@ -31,15 +34,7 @@ import (
 // Returns: base64-encoded signed PSBT
 func MpcSignPSBT(
 	server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, psbtBase64 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in MpcSignPSBT: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("MpcSignPSBT", &err, &result)
 
 	Logln("BBMTLog", "invoking MpcSignPSBT...")
 
@@ -61,8 +56,7 @@ func MpcSignPSBT(
 	if keyshareData.ChainCodeHex == "" {
 		return "", fmt.Errorf("keyshare missing chain_code_hex")
 	}
-	Logf("Keyshare parsed: pub_key (hex, full)=%s, chaincode (hex, full)=%s", truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex))
-	Logf("Keyshare parsed: pub_key (hex) length=%d, chaincode (hex) length=%d", len(keyshareData.PubKey), len(keyshareData.ChainCodeHex))
+	Logf("Keyshare parsed successfully")
 
 	// Decode PSBT from base64
 	psbtBytes, err := base64.StdEncoding.DecodeString(psbtBase64)
@@ -124,11 +118,7 @@ func MpcSignPSBT(
 		Logf("PSBT has no XPubs")
 	}
 
-	psbtJSON, err := json.MarshalIndent(packet, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal PSBT: %w", err)
-	}
-	Logf("PSBT_JSON: %s", string(psbtJSON))
+	Logf("PSBT parsed to JSON for validation")
 
 	// Get the unsigned transaction
 	tx := packet.UnsignedTx
@@ -157,6 +147,7 @@ func MpcSignPSBT(
 
 	// Sign each input
 	inputCount := len(packet.Inputs)
+	signedInputCount := 0
 	for i := range packet.Inputs {
 		input := &packet.Inputs[i]
 		txIn := tx.TxIn[i]
@@ -176,58 +167,27 @@ func MpcSignPSBT(
 			return "", fmt.Errorf("missing UTXO data for input %d", i)
 		}
 
-		// Extract derivation path for this specific input from PSBT
-		// The PSBT's Bip32Derivation is the authoritative source for the derivation path
-		var inputPubKeyBytes []byte
-		var inputDerivePath string
-
 		if len(input.Bip32Derivation) == 0 {
 			return "", fmt.Errorf("input %d: missing Bip32Derivation in PSBT - PSBT must contain derivation path for each input", i)
 		}
 
-		// Get derivation path from PSBT - this is the authoritative source
-		path := input.Bip32Derivation[0].Bip32Path
-		// Log raw path for debugging
-		pathStr := fmt.Sprintf("%v", path)
+		pathStr := fmt.Sprintf("%v", input.Bip32Derivation[0].Bip32Path)
 		Logf("Input %d: PSBT Bip32Derivation raw path: %s", i, pathStr)
-		extractedPath := formatBip32Path(path)
-		if extractedPath == "" {
-			return "", fmt.Errorf("input %d: PSBT Bip32Derivation has empty or invalid path", i)
-		}
-		inputDerivePath = extractedPath
-		Logf("Input %d: Using derivation path from PSBT Bip32Derivation: %s", i, inputDerivePath)
 
-		// Get the pubkey from PSBT's Bip32Derivation (this is what the PSBT expects)
-		psbtPubKeyBytes := input.Bip32Derivation[0].PubKey
-		Logf("Input %d: PSBT Bip32Derivation pubkey: %x", i, psbtPubKeyBytes)
-
-		// Derive the public key from keyshare using GetDerivedPubKey with the path from PSBT
-		// Use the keyshare's pub_key and chaincode to derive the corresponding public key
-		Logf("Input %d: Deriving public key from keyshare - xpub: %s, chaincode: %s, path: %s", i, truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex), inputDerivePath)
-		derivedPubKeyHex, err := GetDerivedPubKey(keyshareData.PubKey, keyshareData.ChainCodeHex, inputDerivePath, false)
-		if err != nil {
-			return "", fmt.Errorf("failed to derive public key for input %d with path %s: %w", i, inputDerivePath, err)
+		inputDerivePath, inputPubKeyBytes, owned := findPSBTInputDerivation(
+			packet, input.Bip32Derivation, keyshareData.PubKey, keyshareData.ChainCodeHex,
+		)
+		if !owned {
+			Logf("Input %d: skipping — PSBT pubkey %x, raw path %s, network %s (import %s descriptor in Sparrow)",
+				i, input.Bip32Derivation[0].PubKey[:min(8, len(input.Bip32Derivation[0].PubKey))],
+				pathStr, _btc_net, bip84AccountPathPrefix())
+			continue
 		}
-		derivedPubKeyBytes, err := hex.DecodeString(derivedPubKeyHex)
-		if err != nil {
-			return "", fmt.Errorf("failed to decode derived public key for input %d: %w", i, err)
-		}
-		Logf("Input %d: Derived public key (hex): %s, bytes: %x (length: %d)", i, truncateHex(derivedPubKeyHex), derivedPubKeyBytes, len(derivedPubKeyBytes))
-
-		// Check if this input belongs to us by comparing derived pubkey with PSBT's pubkey
-		if !bytes.Equal(derivedPubKeyBytes, psbtPubKeyBytes) {
-			Logf("Input %d: ⚠️  SKIPPING SIGNATURE - Pubkey mismatch: derived %x != PSBT %x (path: %s)", i, derivedPubKeyBytes[:min(8, len(derivedPubKeyBytes))], psbtPubKeyBytes[:min(8, len(psbtPubKeyBytes))], inputDerivePath)
-			Logf("Input %d: This input does not belong to our wallet, skipping signature", i)
-			continue // Skip signing this input, but continue with other inputs
-		}
-
-		Logf("Input %d: ✅ Pubkey matches - this input belongs to our wallet, will sign", i)
-		// Use the derived key for signing (which matches PSBT's key)
-		inputPubKeyBytes = derivedPubKeyBytes
+		Logf("Input %d: signing with path %s, pubkey %x", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
 
 		// Create session for this input
 		utxoSession := fmt.Sprintf("%s%d", session, i)
-		mpcHook("signing psbt input", session, utxoSession, i+1, inputCount, false)
+		mpcHook("psbt", "signing psbt input", session, utxoSession, i+1, inputCount, false)
 
 		// Get sighash type from PSBT input, default to SigHashAll if not specified
 		sighashType := txscript.SigHashAll
@@ -339,10 +299,10 @@ func MpcSignPSBT(
 		// MPC sign the sighash
 		sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 		Logf("Input %d: Signing with derivation path: %s, public key: %x...", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
-		Logf("Input %d sighash: %s", i, sighashBase64)
+		Logf("Input %d computed sighash", i)
 
-		mpcHook("joining keysign", session, utxoSession, i+1, inputCount, false)
-		sigJSON, err := JoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, inputDerivePath, sighashBase64)
+		mpcHook("psbt", "joining keysign", session, utxoSession, i+1, inputCount, false)
+		sigJSON, err := DispatchJoinKeysign(server, key, partiesCSV, utxoSession, sessionKey, encKey, decKey, keyshare, inputDerivePath, sighashBase64)
 		if err != nil {
 			return "", fmt.Errorf("failed to sign input %d: %w", i, err)
 		}
@@ -359,27 +319,37 @@ func MpcSignPSBT(
 		if err != nil {
 			return "", fmt.Errorf("failed to decode DER signature for input %d: %w", i, err)
 		}
+		derSignature, err = CanonicalizeDERSignature(derSignature)
+		if err != nil {
+			return "", fmt.Errorf("failed to canonicalize signature for input %d: %w", i, err)
+		}
 
 		// Add signature with the sighash type used for signing
 		signatureWithHashType := append(derSignature, byte(sighashType))
 
 		// Add partial signature to PSBT using the input-specific public key
 		input.PartialSigs = append(input.PartialSigs, &psbt.PartialSig{
-			PubKey:    inputPubKeyBytes, // Use the public key from Bip32Derivation
+			PubKey:    inputPubKeyBytes,
 			Signature: signatureWithHashType,
 		})
 
+		signedInputCount++
 		Logf("Input %d signed successfully with public key from PSBT", i)
 	}
 
-	mpcHook("psbt signing complete", session, "", inputCount, inputCount, true)
+	if signedInputCount == 0 {
+		return "", fmt.Errorf("no PSBT inputs were signed: none of the PSBT input pubkeys match this wallet on %s (import the matching output descriptor from Bold PSBT screen — Native SegWit uses %s; legacy-path wallets use BIP44 %s; coin type must match network)",
+			_btc_net, bip84AccountPathPrefix(), standardAccountPathPrefixes()[2])
+	}
+
+	mpcHook("psbt", "psbt signing complete", session, "", inputCount, inputCount, true)
 
 	// Validate the signed PSBT by finalizing and checking each input
 	Logf("Validating signed PSBT before serialization...")
 	if err := validateSignedPSBT(packet, prevOutFetcher); err != nil {
 		return "", fmt.Errorf("PSBT validation failed: %w", err)
 	}
-	Logf("PSBT validation succeeded for all inputs")
+	Logf("PSBT validation succeeded for %d input(s)", signedInputCount)
 
 	// Serialize the signed PSBT
 	var signedPSBT bytes.Buffer
@@ -389,112 +359,93 @@ func MpcSignPSBT(
 
 	// Return as base64
 	signedBase64 := base64.StdEncoding.EncodeToString(signedPSBT.Bytes())
-	Logf("Signed PSBT: %d bytes", len(signedBase64))
-	Logf("Signed PSBT: %s", signedBase64)
+	Logf("Signed PSBT: %d bytes (%d inputs signed)", len(signedBase64), signedInputCount)
 
 	return signedBase64, nil
 }
 
-// validateSignedPSBT validates that all signed inputs in the PSBT have valid signatures
-// This helps catch signature errors before serialization
-func validateSignedPSBT(packet *psbt.Packet, prevOutFetcher *txscript.MultiPrevOutFetcher) error {
-	// Get the transaction
+// validateSignedPSBT runs the script interpreter on each input we signed (catches invalid MPC sigs).
+func validateSignedPSBT(packet *psbt.Packet, prevOutFetcher txscript.PrevOutputFetcher) error {
 	tx := packet.UnsignedTx
-
-	// Validate each input that has signatures
 	hashCache := txscript.NewTxSigHashes(tx, prevOutFetcher)
-
-	if hashCache == nil {
-		return fmt.Errorf("failed to create transaction signature hashes")
-	}
-
 	validatedCount := 0
 
 	for i := range tx.TxIn {
 		input := &packet.Inputs[i]
-		txIn := tx.TxIn[i]
-
-		// Skip validation if this input has no signatures from us
 		if len(input.PartialSigs) == 0 {
-			Logf("Input %d: No partial signatures to validate (may be signed by other parties)", i)
 			continue
 		}
 
-		// Get the previous output
 		var txOut *wire.TxOut
 		if input.WitnessUtxo != nil {
 			txOut = input.WitnessUtxo
 		} else if input.NonWitnessUtxo != nil {
-			outPoint := txIn.PreviousOutPoint
+			outPoint := tx.TxIn[i].PreviousOutPoint
 			if int(outPoint.Index) < len(input.NonWitnessUtxo.TxOut) {
 				txOut = input.NonWitnessUtxo.TxOut[outPoint.Index]
 			}
 		}
-
 		if txOut == nil {
 			return fmt.Errorf("input %d: missing UTXO data for validation", i)
 		}
 
-		// PSBT inputs are not finalized yet (they have partial signatures)
-		// We can validate the signature format and public key matching
-		Logf("Input %d: Validating partial signatures (count: %d)", i, len(input.PartialSigs))
-
-		// Determine script type for better error messages
-		scriptType := "unknown"
-		scriptHash := "unknown"
-		if len(txOut.PkScript) >= 22 && txOut.PkScript[0] == 0x00 && txOut.PkScript[1] == 0x14 {
-			scriptType = "P2WPKH"
-			scriptHash = hex.EncodeToString(txOut.PkScript[2:22])
-		} else if len(txOut.PkScript) >= 25 && txOut.PkScript[0] == 0x76 {
-			scriptType = "P2PKH"
-			scriptHash = hex.EncodeToString(txOut.PkScript[3:23])
-		} else if len(txOut.PkScript) >= 23 && txOut.PkScript[0] == 0xa9 {
-			scriptType = "P2SH"
-			scriptHash = hex.EncodeToString(txOut.PkScript[2:22])
+		partialSig := input.PartialSigs[0]
+		if len(partialSig.Signature) < 2 {
+			return fmt.Errorf("input %d: signature too short", i)
+		}
+		if len(partialSig.PubKey) != 33 {
+			return fmt.Errorf("input %d: invalid pubkey length %d", i, len(partialSig.PubKey))
 		}
 
-		// Verify each partial signature format and public key
-		for sigIdx, partialSig := range input.PartialSigs {
-			if len(partialSig.Signature) < 1 {
-				return fmt.Errorf("input %d, signature %d: signature is empty (script type: %s, script hash: %s)",
-					i, sigIdx, scriptType, scriptHash)
+		txCopy := tx.Copy()
+		inCopy := txCopy.TxIn[i]
+		if txscript.IsWitnessProgram(txOut.PkScript) {
+			inCopy.Witness = wire.TxWitness{partialSig.Signature, partialSig.PubKey}
+			inCopy.SignatureScript = nil
+		} else if txscript.IsPayToPubKeyHash(txOut.PkScript) {
+			builder := txscript.NewScriptBuilder()
+			builder.AddData(partialSig.Signature)
+			builder.AddData(partialSig.PubKey)
+			scriptSig, err := builder.Script()
+			if err != nil {
+				return fmt.Errorf("input %d: build scriptSig: %w", i, err)
 			}
-
-			// Extract signature and hash type
-			sigBytes := partialSig.Signature[:len(partialSig.Signature)-1]
-			hashType := txscript.SigHashType(partialSig.Signature[len(partialSig.Signature)-1])
-
-			// Verify signature format
-			if len(sigBytes) < 8 {
-				return fmt.Errorf("input %d, signature %d: signature too short (%d bytes, minimum 8) (script type: %s, script hash: %s, hash type: %d)",
-					i, sigIdx, len(sigBytes), scriptType, scriptHash, hashType)
+			inCopy.SignatureScript = scriptSig
+			inCopy.Witness = nil
+		} else if txscript.IsPayToScriptHash(txOut.PkScript) {
+			pubKeyHash := btcutil.Hash160(partialSig.PubKey)
+			redeemScript := make([]byte, 22)
+			redeemScript[0], redeemScript[1] = 0x00, 0x14
+			copy(redeemScript[2:], pubKeyHash)
+			builder := txscript.NewScriptBuilder()
+			builder.AddData(redeemScript)
+			scriptSig, err := builder.Script()
+			if err != nil {
+				return fmt.Errorf("input %d: build P2SH scriptSig: %w", i, err)
 			}
-
-			// Verify public key format
-			if len(partialSig.PubKey) != 33 {
-				return fmt.Errorf("input %d, signature %d: invalid public key length (%d bytes, expected 33) (script type: %s, script hash: %s, public key: %x...)",
-					i, sigIdx, len(partialSig.PubKey), scriptType, scriptHash, partialSig.PubKey[:min(8, len(partialSig.PubKey))])
-			}
-
-			// Verify public key hash matches script (for P2WPKH and P2PKH)
-			pubKeyHash := hex.EncodeToString(btcutil.Hash160(partialSig.PubKey))
-			if scriptType == "P2WPKH" || scriptType == "P2PKH" {
-				if pubKeyHash != scriptHash {
-					return fmt.Errorf("input %d, signature %d: public key hash mismatch (script type: %s, script expects: %s, signature pubkey hash: %s, public key: %x..., hash type: %d)",
-						i, sigIdx, scriptType, scriptHash, pubKeyHash,
-						partialSig.PubKey[:min(8, len(partialSig.PubKey))], hashType)
-				}
-			}
-
-			Logf("Input %d, signature %d: validated - length %d, hash type %d, pubkey hash %s",
-				i, sigIdx, len(sigBytes), hashType, pubKeyHash)
+			inCopy.SignatureScript = scriptSig
+			inCopy.Witness = wire.TxWitness{partialSig.Signature, partialSig.PubKey}
+		} else {
+			return fmt.Errorf("input %d: unsupported script type for validation", i)
 		}
 
-		Logf("Input %d: All partial signatures validated (format and pubkey match)", i)
+		vm, err := txscript.NewEngine(
+			txOut.PkScript, txCopy, i, txscript.StandardVerifyFlags,
+			nil, hashCache, txOut.Value, prevOutFetcher,
+		)
+		if err != nil {
+			return fmt.Errorf("input %d: script engine: %w", i, err)
+		}
+		if err := vm.Execute(); err != nil {
+			return fmt.Errorf("input %d: signature not valid for sighash: %w", i, err)
+		}
 		validatedCount++
+		Logf("Input %d: script validation OK", i)
 	}
 
-	Logf("PSBT validation: %d inputs validated successfully", validatedCount)
+	if validatedCount == 0 {
+		return fmt.Errorf("no partial signatures to validate")
+	}
 	return nil
 }
 
@@ -535,18 +486,193 @@ func formatBip32Path(path []uint32) string {
 	return "m/" + strings.Join(parts, "/")
 }
 
+// resolveInputDerivePath builds the full path used for GetDerivedPubKey and DKLs keysign.
+// Some PSBTs store paths relative to the account xpub (e.g. m/0/0); prefix with XPubs when short.
+func resolveInputDerivePath(packet *psbt.Packet, inputPath []uint32) string {
+	formatted := formatBip32Path(inputPath)
+	if formatted == "" {
+		return ""
+	}
+	if len(inputPath) >= 4 || len(packet.XPubs) == 0 {
+		return formatted
+	}
+	xpubPath := formatBip32Path(packet.XPubs[0].Bip32Path)
+	if xpubPath == "" {
+		return formatted
+	}
+	suffix := strings.TrimPrefix(formatted, "m/")
+	return xpubPath + "/" + suffix
+}
+
+func derivePubKeyBytesForPath(pubKeyHex, chainCodeHex, path string) ([]byte, error) {
+	derivedPubKeyHex, err := GetDerivedPubKey(pubKeyHex, chainCodeHex, path, false)
+	if err != nil {
+		return nil, err
+	}
+	return hex.DecodeString(derivedPubKeyHex)
+}
+
+// standardAccountPathPrefixes lists BIP44/49/84 account paths Bold and Sparrow may use.
+func standardAccountPathPrefixes() []string {
+	coinType := "1'"
+	if _btc_net == "mainnet" {
+		coinType = "0'"
+	}
+	return []string{
+		fmt.Sprintf("m/84'/%s/0'", coinType),
+		fmt.Sprintf("m/49'/%s/0'", coinType),
+		fmt.Sprintf("m/44'/%s/0'", coinType),
+	}
+}
+
+// bip84AccountPathPrefix is the native-segwit account path (used in error hints for DKLs wallets).
+func bip84AccountPathPrefix() string {
+	return standardAccountPathPrefixes()[0]
+}
+
+// pathCandidates returns derivation path strings to try for a PSBT Bip32Path entry.
+// Sparrow often stores paths relative to the account xpub (m/0/N) without global XPubs.
+func pathCandidates(packet *psbt.Packet, inputPath []uint32) []string {
+	formatted := formatBip32Path(inputPath)
+	if formatted == "" {
+		return nil
+	}
+	seen := make(map[string]struct{})
+	var out []string
+	add := func(p string) {
+		if p == "" {
+			return
+		}
+		if _, dup := seen[p]; dup {
+			return
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+
+	add(formatted)
+	add(resolveInputDerivePath(packet, inputPath))
+
+	suffix := strings.TrimPrefix(formatted, "m/")
+	if len(inputPath) < 4 {
+		for _, account := range standardAccountPathPrefixes() {
+			add(account + "/" + suffix)
+			// Single index only: try receive (0) and change (1) chain
+			if len(inputPath) == 1 {
+				idx := inputPath[0]
+				if idx >= 0x80000000 {
+					idx -= 0x80000000
+				}
+				add(fmt.Sprintf("%s/0/%d", account, idx))
+				add(fmt.Sprintf("%s/1/%d", account, idx))
+			}
+		}
+	}
+	for _, xpub := range packet.XPubs {
+		xp := formatBip32Path(xpub.Bip32Path)
+		if xp != "" && len(inputPath) < 4 {
+			add(xp + "/" + suffix)
+		}
+	}
+	return out
+}
+
+// enumerateStandardWalletPaths lists BIP44/49/84 receive and change paths for pubkey matching.
+func enumerateStandardWalletPaths(maxIndex int) []string {
+	accounts := standardAccountPathPrefixes()
+	paths := make([]string, 0, len(accounts)*(maxIndex+1)*2)
+	for _, account := range accounts {
+		for chain := 0; chain <= 1; chain++ {
+			for i := 0; i <= maxIndex; i++ {
+				paths = append(paths, fmt.Sprintf("%s/%d/%d", account, chain, i))
+			}
+		}
+	}
+	return paths
+}
+
+func derivePathMatchesPSBTPubKey(pubKeyHex, chainCodeHex, candidate string, wantPub []byte) (bool, []byte) {
+	derived, err := derivePubKeyBytesForPath(pubKeyHex, chainCodeHex, candidate)
+	if err != nil {
+		return false, nil
+	}
+	return bytes.Equal(derived, wantPub), derived
+}
+
+// findPSBTInputDerivation picks the path whose derived pubkey matches a PSBT Bip32Derivation entry.
+func findPSBTInputDerivation(
+	packet *psbt.Packet,
+	bip32Derivations []*psbt.Bip32Derivation,
+	pubKeyHex, chainCodeHex string,
+) (derivePath string, pubKeyBytes []byte, ok bool) {
+	const maxSearchIndex = 50
+
+	for _, bd := range bip32Derivations {
+		for _, candidate := range pathCandidates(packet, bd.Bip32Path) {
+			if match, derived := derivePathMatchesPSBTPubKey(pubKeyHex, chainCodeHex, candidate, bd.PubKey); match {
+				Logf("PSBT path match via candidate %s (pubkey %x)", candidate, derived[:min(8, len(derived))])
+				return candidate, derived, true
+			}
+		}
+		// Sparrow relative paths without XPubs: scan BIP44/49/84 receive/change indices
+		for _, candidate := range enumerateStandardWalletPaths(maxSearchIndex) {
+			if match, derived := derivePathMatchesPSBTPubKey(pubKeyHex, chainCodeHex, candidate, bd.PubKey); match {
+				Logf("PSBT path match via wallet scan %s (pubkey %x)", candidate, derived[:min(8, len(derived))])
+				return candidate, derived, true
+			}
+		}
+	}
+	return "", nil, false
+}
+
+// canonicalPsbtBase64 decodes base64 (ignoring whitespace) and re-encodes so the same PSBT bytes match.
+func canonicalPsbtBase64(psbtBase64 string) (string, error) {
+	trimmed := strings.Map(func(r rune) rune {
+		if r == ' ' || r == '\n' || r == '\r' || r == '\t' {
+			return -1
+		}
+		return r
+	}, strings.TrimSpace(psbtBase64))
+	if trimmed == "" {
+		return "", fmt.Errorf("empty PSBT")
+	}
+	psbtBytes, err := base64.StdEncoding.DecodeString(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode PSBT base64: %w", err)
+	}
+	if len(psbtBytes) < 4 || psbtBytes[0] != 0x70 || psbtBytes[1] != 0x73 || psbtBytes[2] != 0x62 || psbtBytes[3] != 0x74 {
+		return "", fmt.Errorf("invalid PSBT (missing psbt magic bytes)")
+	}
+	return base64.StdEncoding.EncodeToString(psbtBytes), nil
+}
+
+// PsbtIdentityHash is the cross-device session id for the same unsigned transaction.
+// Hashes serialized UnsignedTx wire bytes (not base64 text or display JSON), so file vs QR
+// encodings and extra PSBT fields (e.g. partial signatures) do not change the hash.
+func PsbtIdentityHash(psbtBase64 string) (string, error) {
+	canonical, err := canonicalPsbtBase64(psbtBase64)
+	if err != nil {
+		return "", err
+	}
+	psbtBytes, err := base64.StdEncoding.DecodeString(canonical)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode canonical PSBT: %w", err)
+	}
+	packet, err := psbt.NewFromRawBytes(bytes.NewReader(psbtBytes), false)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse PSBT for identity: %w", err)
+	}
+	var txBuf bytes.Buffer
+	if err := packet.UnsignedTx.Serialize(&txBuf); err != nil {
+		return "", fmt.Errorf("failed to serialize unsigned tx for identity: %w", err)
+	}
+	return Sha256Bytes(txBuf.Bytes())
+}
+
 // ParsePSBTDetails extracts transaction details from a PSBT for display
 // Returns JSON with inputs, outputs, fee, and total amounts
 func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in ParsePSBTDetails: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("ParsePSBTDetails", &err, &result)
 
 	params := &chaincfg.TestNet3Params
 	if _btc_net == "mainnet" {
@@ -583,10 +709,19 @@ func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
 		var value int64
 		if input.WitnessUtxo != nil {
 			value = input.WitnessUtxo.Value
+			_, addrs, _, addrErr := txscript.ExtractPkScriptAddrs(input.WitnessUtxo.PkScript, params)
+			if addrErr == nil && len(addrs) > 0 {
+				inputInfo["address"] = addrs[0].EncodeAddress()
+			}
 		} else if input.NonWitnessUtxo != nil {
 			idx := txIn.PreviousOutPoint.Index
 			if int(idx) < len(input.NonWitnessUtxo.TxOut) {
-				value = input.NonWitnessUtxo.TxOut[idx].Value
+				prevOut := input.NonWitnessUtxo.TxOut[idx]
+				value = prevOut.Value
+				_, addrs, _, addrErr := txscript.ExtractPkScriptAddrs(prevOut.PkScript, params)
+				if addrErr == nil && len(addrs) > 0 {
+					inputInfo["address"] = addrs[0].EncodeAddress()
+				}
 			}
 		}
 		inputInfo["amount"] = value
@@ -596,42 +731,66 @@ func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
 		// Extract derivation path from Bip32Derivation for this input
 		var inputDerivePath string
 		if len(input.Bip32Derivation) > 0 {
-			// Use the first derivation path found for this input
-			// Convert []uint32 to string format like "m/44'/0'/0'/0/0"
-			path := input.Bip32Derivation[0].Bip32Path
-			inputDerivePath = formatBip32Path(path)
+			inputDerivePath = resolveInputDerivePath(packet, input.Bip32Derivation[0].Bip32Path)
 		}
 
 		// Store derivation path for this input (or empty if not found)
 		derivePathsPerInput = append(derivePathsPerInput, inputDerivePath)
 	}
 
-	// Calculate outputs
+	// Calculate outputs (align with packet.Outputs for Bip32 metadata)
 	var totalOutput int64
 	outputs := make([]map[string]interface{}, 0)
-	for _, txOut := range tx.TxOut {
+	derivePathsPerOutput := make([]string, 0)
+	for i, txOut := range tx.TxOut {
 		addr := "Unknown"
 		_, addrs, _, err := txscript.ExtractPkScriptAddrs(txOut.PkScript, params)
 		if err == nil && len(addrs) > 0 {
 			addr = addrs[0].EncodeAddress()
 		}
 
-		outputs = append(outputs, map[string]interface{}{
+		outputDerivePath := ""
+		isChange := false
+		if i < len(packet.Outputs) && len(packet.Outputs[i].Bip32Derivation) > 0 {
+			outputDerivePath = resolveInputDerivePath(packet, packet.Outputs[i].Bip32Derivation[0].Bip32Path)
+			// Change chain is typically index 1 in BIP84 (…/1/n).
+			path := packet.Outputs[i].Bip32Derivation[0].Bip32Path
+			if len(path) >= 2 {
+				chainIdx := path[len(path)-2]
+				if chainIdx >= 0x80000000 {
+					chainIdx -= 0x80000000
+				}
+				isChange = chainIdx == 1
+			}
+		} else if totalInput > 0 && txOut.Value > 0 && txOut.Value < totalInput/10 {
+			isChange = true
+		}
+
+		outInfo := map[string]interface{}{
 			"address": addr,
 			"amount":  txOut.Value,
-		})
+		}
+		if outputDerivePath != "" {
+			outInfo["derivationPath"] = outputDerivePath
+		}
+		if isChange {
+			outInfo["isChange"] = true
+		}
+		outputs = append(outputs, outInfo)
+		derivePathsPerOutput = append(derivePathsPerOutput, outputDerivePath)
 		totalOutput += txOut.Value
 	}
 
 	fee := max(totalInput-totalOutput, 0)
 
 	result_map := map[string]interface{}{
-		"inputs":      inputs,
-		"outputs":     outputs,
-		"fee":         fee,
-		"totalInput":  totalInput,
-		"totalOutput": totalOutput,
-		"derivePaths": derivePathsPerInput,
+		"inputs":            inputs,
+		"outputs":           outputs,
+		"fee":               fee,
+		"totalInput":        totalInput,
+		"totalOutput":       totalOutput,
+		"derivePaths":       derivePathsPerInput,
+		"outputDerivePaths": derivePathsPerOutput,
 	}
 
 	jsonBytes, err := json.Marshal(result_map)
@@ -642,8 +801,8 @@ func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
 	return string(jsonBytes), nil
 }
 
-// NostrMpcSignPSBT signs a PSBT using MPC over Nostr transport
-// This is analogous to NostrMpcSendBTC but for PSBT signing
+// NostrMpcSignPSBT signs a PSBT using MPC over Nostr transport.
+// Per-input paths are passed to DispatchNostrJoinKeysignWithSighash (DKLs: deriveShareForSigning).
 // Parameters:
 //   - relaysCSV: comma-separated Nostr relay URLs
 //   - partyNsec: party's Nostr secret key (bech32)
@@ -656,15 +815,7 @@ func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
 func NostrMpcSignPSBT(
 	relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted,
 	keyshareJSON, psbtBase64 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in NostrMpcSignPSBT: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("NostrMpcSignPSBT", &err, &result)
 
 	return runNostrMpcSignPSBTInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64)
 }
@@ -673,17 +824,14 @@ func NostrMpcSignPSBT(
 func runNostrMpcSignPSBTInternal(
 	relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted,
 	keyshareJSON, psbtBase64 string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in runNostrMpcSignPSBTInternal: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("runNostrMpcSignPSBTInternal", &err, &result)
 
 	Logln("BBMTLog", "invoking NostrMpcSignPSBT...")
+
+	if _, err := beginNostrMpcOperation(); err != nil {
+		return "", err
+	}
+	defer endNostrMpcOperation()
 
 	// Log network being used
 	if _btc_net == "mainnet" {
@@ -692,28 +840,41 @@ func runNostrMpcSignPSBTInternal(
 		Logln("Using testnet parameters")
 	}
 
-	// Step 1: Calculate sessionFlag for pre-agreement using PSBT hash
+	// Step 1: Calculate sessionFlag for pre-agreement using PSBT identity hash (same as LAN pairing).
 	// Format: sha256(npubsSorted,psbtHash)
-	psbtHash, err := Sha256(psbtBase64)
+	psbtHash, err := PsbtIdentityHash(psbtBase64)
 	if err != nil {
-		return "", fmt.Errorf("failed to hash PSBT: %w", err)
+		return "", fmt.Errorf("failed to hash PSBT identity: %w", err)
 	}
-	sessionFlag, err := Sha256(fmt.Sprintf("%s,%s", npubsSorted, psbtHash))
+	canonicalB64, err := canonicalPsbtBase64(psbtBase64)
+	if err != nil {
+		return "", fmt.Errorf("failed to canonicalize PSBT: %w", err)
+	}
+	psbtBase64 = canonicalB64
+
+	txIntentKey := fmt.Sprintf("%s,%s", npubsSorted, psbtHash)
+	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey)
+	if err != nil {
+		return "", fmt.Errorf("attempt handshake failed: %w", err)
+	}
+
+	sessionFlag, err := Sha256(fmt.Sprintf("%s,%s,%s", npubsSorted, psbtHash, attemptID))
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionFlag: %w", err)
 	}
-	Logf("NostrMpcSignPSBT: calculated sessionFlag=%s (psbtHash=%s)", sessionFlag, psbtHash[:16])
+	Logf("NostrMpcSignPSBT: psbtIdentityHash=%s (unsigned tx bytes)", psbtHash)
+	Logf("NostrMpcSignPSBT: calculated sessionFlag=%s", sessionFlag)
 
 	// Step 2: Perform pre-agreement to exchange nonces
-	mpcHook("pre-agreement phase", sessionFlag, "", 0, 0, false)
-	preAgreement, err := runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag)
+	mpcHook("psbt", "pre-agreement phase", sessionFlag, "", 0, 0, false)
+	preAgreement, err := runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, attemptID)
 	if err != nil {
 		return "", fmt.Errorf("pre-agreement failed: %w", err)
 	}
-	Logf("NostrMpcSignPSBT: pre-agreement completed - fullNonce=%s", preAgreement.fullNonce)
+	Logf("NostrMpcSignPSBT: pre-agreement completed")
 
 	// Step 3: Calculate actual sessionID using fullNonce
-	sessionID, err := Sha256(fmt.Sprintf("%s,%s,%s", npubsSorted, psbtHash, preAgreement.fullNonce))
+	sessionID, err := Sha256(fmt.Sprintf("%s,%s,%s,%s", npubsSorted, psbtHash, attemptID, preAgreement.fullNonce))
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionID: %w", err)
 	}
@@ -723,7 +884,7 @@ func runNostrMpcSignPSBTInternal(
 	if err != nil {
 		return "", fmt.Errorf("failed to calculate sessionKey: %w", err)
 	}
-	Logf("NostrMpcSignPSBT: calculated sessionID=%s, sessionKey=%s", sessionID, sessionKey)
+	Logf("NostrMpcSignPSBT: derived session credentials")
 
 	// Parse keyshare JSON to get xpub and chaincode for deriving public keys
 	var keyshareData LocalStateNostr
@@ -736,8 +897,7 @@ func runNostrMpcSignPSBTInternal(
 	if keyshareData.ChainCodeHex == "" {
 		return "", fmt.Errorf("keyshare missing chain_code_hex")
 	}
-	Logf("Keyshare parsed: pub_key (hex, full)=%s, chaincode (hex, full)=%s", truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex))
-	Logf("Keyshare parsed: pub_key (hex) length=%d, chaincode (hex) length=%d", len(keyshareData.PubKey), len(keyshareData.ChainCodeHex))
+	Logf("Keyshare parsed successfully")
 
 	// Decode PSBT from base64
 	psbtBytes, err := base64.StdEncoding.DecodeString(psbtBase64)
@@ -799,12 +959,7 @@ func runNostrMpcSignPSBTInternal(
 		Logf("PSBT has no XPubs")
 	}
 
-	// JSON of the whole packet
-	psbtJSON, err := json.MarshalIndent(packet, "", "  ")
-	if err != nil {
-		return "", fmt.Errorf("failed to marshal PSBT: %w", err)
-	}
-	Logf("PSBT_JSON: %s", string(psbtJSON))
+	Logf("PSBT parsed to JSON for validation")
 
 	// Get the unsigned transaction
 	tx := packet.UnsignedTx
@@ -832,6 +987,7 @@ func runNostrMpcSignPSBTInternal(
 
 	// Sign each input
 	inputCount := len(packet.Inputs)
+	signedInputCount := 0
 	for i := range packet.Inputs {
 		input := &packet.Inputs[i]
 		txIn := tx.TxIn[i]
@@ -851,58 +1007,27 @@ func runNostrMpcSignPSBTInternal(
 			return "", fmt.Errorf("missing UTXO data for input %d", i)
 		}
 
-		// Extract derivation path for this specific input from PSBT
-		// The PSBT's Bip32Derivation is the authoritative source for the derivation path
-		var inputPubKeyBytes []byte
-		var inputDerivePath string
-
 		if len(input.Bip32Derivation) == 0 {
 			return "", fmt.Errorf("input %d: missing Bip32Derivation in PSBT - PSBT must contain derivation path for each input", i)
 		}
 
-		// Get derivation path from PSBT - this is the authoritative source
-		path := input.Bip32Derivation[0].Bip32Path
-		// Log raw path for debugging
-		pathStr := fmt.Sprintf("%v", path)
+		pathStr := fmt.Sprintf("%v", input.Bip32Derivation[0].Bip32Path)
 		Logf("Input %d: PSBT Bip32Derivation raw path: %s", i, pathStr)
-		extractedPath := formatBip32Path(path)
-		if extractedPath == "" {
-			return "", fmt.Errorf("input %d: PSBT Bip32Derivation has empty or invalid path", i)
-		}
-		inputDerivePath = extractedPath
-		Logf("Input %d: Using derivation path from PSBT Bip32Derivation: %s", i, inputDerivePath)
 
-		// Get the pubkey from PSBT's Bip32Derivation (this is what the PSBT expects)
-		psbtPubKeyBytes := input.Bip32Derivation[0].PubKey
-		Logf("Input %d: PSBT Bip32Derivation pubkey: %x", i, psbtPubKeyBytes)
-
-		// Derive the public key from keyshare using GetDerivedPubKey with the path from PSBT
-		// Use the keyshare's pub_key and chaincode to derive the corresponding public key
-		Logf("Input %d: Deriving public key from keyshare - xpub: %s, chaincode: %s, path: %s", i, truncateHex(keyshareData.PubKey), truncateHex(keyshareData.ChainCodeHex), inputDerivePath)
-		derivedPubKeyHex, err := GetDerivedPubKey(keyshareData.PubKey, keyshareData.ChainCodeHex, inputDerivePath, false)
-		if err != nil {
-			return "", fmt.Errorf("failed to derive public key for input %d with path %s: %w", i, inputDerivePath, err)
+		inputDerivePath, inputPubKeyBytes, owned := findPSBTInputDerivation(
+			packet, input.Bip32Derivation, keyshareData.PubKey, keyshareData.ChainCodeHex,
+		)
+		if !owned {
+			Logf("Input %d: skipping — PSBT pubkey %x, raw path %s, network %s (import %s descriptor in Sparrow)",
+				i, input.Bip32Derivation[0].PubKey[:min(8, len(input.Bip32Derivation[0].PubKey))],
+				pathStr, _btc_net, bip84AccountPathPrefix())
+			continue
 		}
-		derivedPubKeyBytes, err := hex.DecodeString(derivedPubKeyHex)
-		if err != nil {
-			return "", fmt.Errorf("failed to decode derived public key for input %d: %w", i, err)
-		}
-		Logf("Input %d: Derived public key (hex): %s, bytes: %x (length: %d)", i, truncateHex(derivedPubKeyHex), derivedPubKeyBytes, len(derivedPubKeyBytes))
-
-		// Check if this input belongs to us by comparing derived pubkey with PSBT's pubkey
-		if !bytes.Equal(derivedPubKeyBytes, psbtPubKeyBytes) {
-			Logf("Input %d: ⚠️  SKIPPING SIGNATURE - Pubkey mismatch: derived %x != PSBT %x (path: %s)", i, derivedPubKeyBytes[:min(8, len(derivedPubKeyBytes))], psbtPubKeyBytes[:min(8, len(psbtPubKeyBytes))], inputDerivePath)
-			Logf("Input %d: This input does not belong to our wallet, skipping signature", i)
-			continue // Skip signing this input, but continue with other inputs
-		}
-
-		Logf("Input %d: ✅ Pubkey matches - this input belongs to our wallet, will sign", i)
-		// Use the derived key for signing (which matches PSBT's key)
-		inputPubKeyBytes = derivedPubKeyBytes
+		Logf("Input %d: signing with path %s, pubkey %x", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
 
 		// Create session for this input
 		utxoSession := fmt.Sprintf("%s%d", sessionID, i)
-		mpcHook("signing psbt input (nostr)", sessionID, utxoSession, i+1, inputCount, false)
+		mpcHook("psbt", "signing psbt input (nostr)", sessionID, utxoSession, i+1, inputCount, false)
 
 		// Get sighash type from PSBT input, default to SigHashAll if not specified
 		sighashType := txscript.SigHashAll
@@ -1014,10 +1139,10 @@ func runNostrMpcSignPSBTInternal(
 		// MPC sign the sighash via Nostr
 		sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 		Logf("Input %d: Signing with derivation path: %s, public key: %x...", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
-		Logf("Input %d sighash: %s", i, sighashBase64)
+		Logf("Input %d computed sighash", i)
 
-		mpcHook("joining keysign (nostr)", sessionID, utxoSession, i+1, inputCount, false)
-		sigJSON, err := NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, inputDerivePath, sighashBase64)
+		mpcHook("psbt", "joining keysign (nostr)", sessionID, utxoSession, i+1, inputCount, false)
+		sigJSON, err := DispatchNostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, utxoSession, sessionKey, keyshareJSON, inputDerivePath, sighashBase64)
 		if err != nil {
 			return "", fmt.Errorf("failed to sign input %d: %w", i, err)
 		}
@@ -1034,27 +1159,37 @@ func runNostrMpcSignPSBTInternal(
 		if err != nil {
 			return "", fmt.Errorf("failed to decode DER signature for input %d: %w", i, err)
 		}
+		derSignature, err = CanonicalizeDERSignature(derSignature)
+		if err != nil {
+			return "", fmt.Errorf("failed to canonicalize signature for input %d: %w", i, err)
+		}
 
 		// Add signature with the sighash type used for signing
 		signatureWithHashType := append(derSignature, byte(sighashType))
 
 		// Add partial signature to PSBT using the input-specific public key
 		input.PartialSigs = append(input.PartialSigs, &psbt.PartialSig{
-			PubKey:    inputPubKeyBytes, // Use the public key from Bip32Derivation
+			PubKey:    inputPubKeyBytes,
 			Signature: signatureWithHashType,
 		})
 
+		signedInputCount++
 		Logf("Input %d signed successfully with public key from PSBT", i)
 	}
 
-	mpcHook("psbt signing complete", sessionID, "", inputCount, inputCount, true)
+	if signedInputCount == 0 {
+		return "", fmt.Errorf("no PSBT inputs were signed: none of the PSBT input pubkeys match this wallet on %s (import the matching output descriptor from Bold PSBT screen — Native SegWit uses %s; legacy-path wallets use BIP44 %s; coin type must match network)",
+			_btc_net, bip84AccountPathPrefix(), standardAccountPathPrefixes()[2])
+	}
+
+	mpcHook("psbt", "psbt signing complete", sessionID, "", inputCount, inputCount, true)
 
 	// Validate the signed PSBT by finalizing and checking each input
 	Logf("Validating signed PSBT before serialization...")
 	if err := validateSignedPSBT(packet, prevOutFetcher); err != nil {
 		return "", fmt.Errorf("PSBT validation failed: %w", err)
 	}
-	Logf("PSBT validation succeeded for all inputs")
+	Logf("PSBT validation succeeded for %d input(s)", signedInputCount)
 
 	// Serialize the signed PSBT
 	var signedPSBT bytes.Buffer
@@ -1064,8 +1199,7 @@ func runNostrMpcSignPSBTInternal(
 
 	// Return as base64
 	signedBase64 := base64.StdEncoding.EncodeToString(signedPSBT.Bytes())
-	Logf("Signed PSBT: %d bytes", len(signedBase64))
-	Logf("Signed PSBT: %s", signedBase64)
+	Logf("Signed PSBT: %d bytes (%d inputs signed)", len(signedBase64), signedInputCount)
 
 	return signedBase64, nil
 }
@@ -1078,13 +1212,13 @@ type psbtPreAgreementResult struct {
 // runNostrPreAgreementPSBT performs a pre-agreement phase for PSBT signing
 // Both parties exchange their peerNonce, then agree on:
 // - fullNonce: sorted join of both peerNonces (like in keygen)
-func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag string) (result *psbtPreAgreementResult, err error) {
+func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag, attemptID string) (result *psbtPreAgreementResult, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			errMsg := fmt.Sprintf("PANIC in runNostrPreAgreementPSBT: %v", r)
 			Logf("BBMTLog: %s", errMsg)
 			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
+			err = PanicError(r)
 			result = nil
 		}
 	}()
@@ -1134,8 +1268,7 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 		return nil, fmt.Errorf("failed to generate peerNonce: %w", err)
 	}
 
-	Logf("runNostrPreAgreementPSBT: sessionFlag=%s, localNpub=%s, peerNpub=%s, peerNonce=%s",
-		sessionFlag, localNpub, peerNpub, peerNonce)
+	Logf("runNostrPreAgreementPSBT: initialized pre-agreement")
 
 	// Create config for pre-agreement
 	cfg := nostrtransport.Config{
@@ -1162,17 +1295,22 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 
 	messenger := nostrtransport.NewMessenger(cfg, client)
 
-	// Prepare our message: just the nonce
-	localMessage := peerNonce
-	Logf("runNostrPreAgreementPSBT: sending nonce: %s", localMessage)
+	// Prepare our payload: attempt binding + nonce + timestamp.
+	localMessage, err := encodePreAgreementPayload(attemptID, peerNonce, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode pre-agreement payload: %w", err)
+	}
+	Logf("runNostrPreAgreementPSBT: sending pre-agreement message")
 
-	// Context for the pre-agreement phase (2 minutes timeout)
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	// Context for the pre-agreement phase (inherits active Nostr abort context).
+	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 2*time.Minute)
 	defer cancel()
 
 	// Channel to receive peer's message
 	peerMessageCh := make(chan string, 1)
 	peerErrorCh := make(chan error, 1)
+	sawPeerPayload := false
+	var peerPayloadMu sync.Mutex
 
 	// Start listening for peer's message
 	go func() {
@@ -1182,16 +1320,23 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 				Logf("BBMTLog: %s", errMsg)
 				Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
 				select {
-				case peerErrorCh <- fmt.Errorf("internal error (panic): %v", r):
+				case peerErrorCh <- PanicError(r):
 				default:
 				}
 			}
 		}()
 
 		pump := nostrtransport.NewMessagePump(cfg, client)
-		err := pump.Run(ctx, func(payload []byte) error {
+		err := pump.RunSubscribeOnly(ctx, func(payload []byte) error {
 			peerMessage := string(payload)
-			Logf("runNostrPreAgreementPSBT: received peer message: %s", peerMessage)
+			Logf("runNostrPreAgreementPSBT: received peer message")
+			peerPayloadMu.Lock()
+			if sawPeerPayload {
+				peerPayloadMu.Unlock()
+				return fmt.Errorf("duplicate pre-agreement payload from peer")
+			}
+			sawPeerPayload = true
+			peerPayloadMu.Unlock()
 			select {
 			case peerMessageCh <- peerMessage:
 			default:
@@ -1216,23 +1361,29 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 	}
 	Logf("runNostrPreAgreementPSBT: sent nonce to peer")
 
-	// Wait for peer's nonce
-	var peerNonceReceived string
+	// Wait for peer payload
+	var peerMessage string
 	select {
-	case peerNonceReceived = <-peerMessageCh:
-		Logf("runNostrPreAgreementPSBT: received peer nonce: %s", peerNonceReceived)
+	case peerMessage = <-peerMessageCh:
+		Logf("runNostrPreAgreementPSBT: received peer nonce")
 	case err := <-peerErrorCh:
 		return nil, fmt.Errorf("failed to receive peer message: %w", err)
 	case <-ctx.Done():
-		return nil, fmt.Errorf("timeout waiting for peer message: %w", ctx.Err())
+		return nil, NostrMpcContextErr("pre-agreement", ctx.Err())
 	}
 
+	peerPayload, err := decodeAndValidatePreAgreementPayload(peerMessage, attemptID, false)
+	if err != nil {
+		return nil, fmt.Errorf("invalid peer pre-agreement payload: %w", err)
+	}
+	peerNonceReceived := strings.ToLower(strings.TrimSpace(peerPayload.Nonce))
+
 	// Calculate fullNonce: sorted join of both nonces
-	allNonces := []string{peerNonce, strings.TrimSpace(peerNonceReceived)}
+	allNonces := []string{strings.ToLower(strings.TrimSpace(peerNonce)), peerNonceReceived}
 	sort.Strings(allNonces)
 	fullNonce := strings.Join(allNonces, ",")
 
-	Logf("runNostrPreAgreementPSBT: fullNonce=%s", fullNonce)
+	Logf("runNostrPreAgreementPSBT: combined nonce computed")
 
 	return &psbtPreAgreementResult{
 		fullNonce: fullNonce,

@@ -4,39 +4,50 @@
 
 A secure Multi-Party Computation (MPC) Threshold Signature Scheme (TSS) library for Bitcoin, built for mobile integration on both iOS and Android.
 
-## How to Build
+## How to Build (mobile)
 
 ```bash
-# Get dependencies
-go mod tidy
+cd BBMTLib
 
-# Initialize Go Mobile (install as tool, doesn't modify go.mod)
-go install golang.org/x/mobile/bind@latest
+# Everything for release (libtss + GG18 + DKLs, Android + iOS on macOS)
+./build-all.sh
 
-# Set build flags
-export GOFLAGS="-mod=mod"
+# Or step by step:
+./build.sh --with-dkls    # GG18 gomobile + DKLs (no libtss pre-step / host smoke)
+./build-dkls.sh android # libbbmtmobile.so + dkls_jni (GG18 + DKLs, single runtime)
+./build.sh              # gomobile tss.aar / Tss.xcframework (legacy; Android app uses bbmtmobile)
+./build-dkls.sh ios     # libbbmtmobile.xcframework (macOS only)
 ```
 
-## iOS
+For F-Droid / Android release builds, prefer this minimal path:
 
 ```bash
-# Build for iOS, macOS, and iOS Simulator
-gomobile bind -v -target=ios,macos,iossimulator -tags=ios,macos,iossimulator github.com/BoldBitcoinWallet/BBMTLib/tss
+cd BBMTLib
+bash mobile-deps/libtss/setup-libtss.sh   # clones BoldBitcoinWallet/libtss + vendor submodules
+cargo install cargo-ndk
+./build-dkls.sh android
 ```
 
-## Android
+`build-all.sh` remains useful for local full-matrix builds, but is not required to produce the Android APK native artifacts.
+
+| Backend | Script | Android | iOS |
+|---------|--------|---------|-----|
+| **Both** | `build-all.sh` | `jniLibs/*/libbbmtmobile.so` + `dkls_jni` | `BbmtMobile/libbbmtmobile.xcframework` |
+| GG18 + DKLs | `build-dkls.sh android` | same (Bbmt* + Dkls* JNI) | `build-dkls.sh ios` |
+| Legacy gomobile | `build.sh` | (not linked in app) | optional `Tss.xcframework` |
+
+Do **not** ship `tss.aar` and `libbbmtmobile.so` together — two Go runtimes corrupt the heap. See [docs/DKLS_MOBILE.md](docs/DKLS_MOBILE.md).
+
+## iOS (manual gomobile)
 
 ```bash
-# Build for Android
-gomobile bind -v -target=android github.com/BoldBitcoinWallet/BBMTLib/tss
+gomobile bind -v -target=ios,iossimulator,macos -o Tss.xcframework github.com/BoldBitcoinWallet/BBMTLib/tss
+```
 
-# If the following error occurs  
-"no usable NDK in /Android/Sdk: unsupported API version 16"
-# Then specify the version api with the following command
-gomobile bind -v -target=android -androidapi 21 github.com/BoldBitcoinWallet/BBMTLib/tss
+## Android (release app)
 
-# Copy the generated tss.aar lib to the android/app/libs folder
-cp tss.aar ../android/app/libs/tss.aar
+```bash
+./build-dkls.sh android   # libbbmtmobile.so + libdkls_jni.so per ABI
 ```
 
 ## FIPS 140-3 (SP 800-90A DRBG) (NIST) compliance

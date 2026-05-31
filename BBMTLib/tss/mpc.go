@@ -5,15 +5,16 @@ import (
 	"context"
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/md5"
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"runtime/debug"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -60,18 +61,11 @@ func SessionState(session string) string {
 	defer statusMutex.RUnlock()
 	status, exists := statusMap[session]
 	if !exists {
-		return "{}" // Return an empty state if session doesn't exist
+		return fmt.Sprintf(`{ "session": %q }`, session)
 	}
-	step := status.Step
-	seqNo := status.SeqNo
-	index := status.Index
-	info := status.Info
-	time := status.Time
-	done := status.Done
-
 	return fmt.Sprintf(
-		`{ "time": %d, "step": %d, "type": "%s", "info": "%s", "sentNo": %d, "receivedNo": %d, "done": %t }`,
-		time, step, status.Type, info, seqNo, index, done,
+		`{ "session": %q, "time": %d, "step": %d, "type": "%s", "info": %q, "sentNo": %d, "receivedNo": %d, "done": %t }`,
+		session, status.Time, status.Step, status.Type, status.Info, status.SeqNo, status.Index, status.Done,
 	)
 }
 
@@ -180,15 +174,7 @@ func setStatus(session string, status Status) {
 }
 
 func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chaincode, sessionKey string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in JoinKeygen: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("JoinKeygen", &err, &result)
 
 	parties := strings.Split(partiesCSV, ",")
 
@@ -259,10 +245,15 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	Logln("BBMTLog", "downloadMessage active...")
 	go downloadMessage(server, session, sessionKey, key, *tssServerImp, endCh, wg)
 	Logln("BBMTLog", "doing ECDSA keygen...")
+	chainCodeHex, err := normalizeChainCodeHex(chaincode)
+	if err != nil {
+		close(endCh)
+		return "", fmt.Errorf("fail to normalize chain code: %w", err)
+	}
 	_, err = tssServerImp.KeygenECDSA(&KeygenRequest{
 		LocalPartyID: key,
 		AllParties:   strings.Join(parties, ","),
-		ChainCodeHex: chaincode,
+		ChainCodeHex: chainCodeHex,
 	})
 	if err != nil {
 		close(endCh)
@@ -304,15 +295,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 }
 
 func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, keyshare, derivePath, message string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in JoinKeysign: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("JoinKeysign", &err, &result)
 	parties := strings.Split(partiesCSV, ",")
 
 	// Ensure the session has a cancel channel (prefix-cancellable) and clean it up at end.
@@ -448,35 +431,26 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 	return string(sigStr), nil
 }
 
-func md5Hash(data string) (string, error) {
-	// Create a new MD5 hash
-	hasher := md5.New()
+func computePayloadDigest(data string) string {
+	sum := sha256.Sum256([]byte(data))
+	return "d1:" + hex.EncodeToString(sum[:])
+}
 
-	// Write the data to the hasher
-	_, err := hasher.Write([]byte(data))
+func computePayloadAuthTag(data, keyHex string) (string, error) {
+	key, err := hex.DecodeString(strings.TrimSpace(keyHex))
 	if err != nil {
-		return "", fmt.Errorf("failed to write data to hasher: %w", err)
+		return "", fmt.Errorf("failed to decode auth key: %w", err)
 	}
-
-	// Get the hashed data
-	hashBytes := hasher.Sum(nil)
-
-	// Convert the hash to a hexadecimal string
-	hashHex := hex.EncodeToString(hashBytes)
-
-	return hashHex, nil
+	defer clear(key)
+	mac := hmac.New(sha256.New, key)
+	if _, err := mac.Write([]byte(data)); err != nil {
+		return "", fmt.Errorf("failed to compute auth tag: %w", err)
+	}
+	return "h1:" + hex.EncodeToString(mac.Sum(nil)), nil
 }
 
 func AesEncrypt(data, key string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in AesEncrypt: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("AesEncrypt", &err, &result)
 
 	decodedKey, err := hex.DecodeString(key)
 	if err != nil {
@@ -500,15 +474,7 @@ func AesEncrypt(data, key string) (result string, err error) {
 }
 
 func AesDecrypt(encryptedData, key string) (result string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			errMsg := fmt.Sprintf("PANIC in AesDecrypt: %v", r)
-			Logf("BBMTLog: %s", errMsg)
-			Logf("BBMTLog: Stack trace: %s", string(debug.Stack()))
-			err = fmt.Errorf("internal error (panic): %v", r)
-			result = ""
-		}
-	}()
+	defer RecoverAsError("AesDecrypt", &err, &result)
 
 	// Decode the key from hex
 	decodedKey, err := hex.DecodeString(key)
@@ -585,13 +551,17 @@ func (m *MessengerImp) Send(from, to, body string) error {
 		}
 	}
 
-	// Compute MD5 hash of the body
-	hash, err := md5Hash(body)
-	if err != nil {
-		Logln("BBMTLog", "Error computing MD5 hash:", err)
+	hash := computePayloadDigest(body)
+	if len(m.SessionKey) > 0 {
+		hash, err = computePayloadAuthTag(body, m.SessionKey)
+		if err != nil {
+			return fmt.Errorf("failed to compute payload auth tag: %w", err)
+		}
 	}
 
-	status := getStatus(m.SessionID)
+	// Per-party seq so parallel LAN parties in one process (integration tests) do not share SeqNo.
+	seqKey := m.SessionID + "\x1f" + from
+	status := getStatus(seqKey)
 
 	// Marshal the request payload into JSON
 	requestBody, err := json.MarshalIndent(struct {
@@ -616,6 +586,9 @@ func (m *MessengerImp) Send(from, to, body string) error {
 	url := m.Server + "/message/" + m.SessionID
 	Logln("BBMTLog", "sending message...")
 
+	ReportTransportProgress(m.SessionID, "lan", "out", 0, 1, true)
+	defer ReportTransportProgress(m.SessionID, "lan", "out", 0, 1, false)
+
 	// Prepare the HTTP request
 	resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
 	if err != nil {
@@ -624,17 +597,11 @@ func (m *MessengerImp) Send(from, to, body string) error {
 	}
 	defer resp.Body.Close()
 
-	// Log the response
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		Logln("BBMTLog", "fail to read response: ", err)
-		return fmt.Errorf("fail to read response: %w", err)
-	}
 	Logln("BBMTLog", "message sent, status:", resp.Status)
 
 	// Check for non-200 status codes
 	if resp.StatusCode != http.StatusOK {
-		Logln("BBMTLog", "message sent, response body:", string(respBody)[:min(80, len(string(respBody)))]+"...")
+		Logln("BBMTLog", "message send failed with non-200 response")
 		return fmt.Errorf("fail to send message: %s", resp.Status)
 	}
 
@@ -643,7 +610,7 @@ func (m *MessengerImp) Send(from, to, body string) error {
 	status.Info = fmt.Sprintf("Sent Message %d", status.SeqNo)
 	status.Step++
 	status.SeqNo++
-	setSeqNo(m.SessionID, status.Info, status.Step, status.SeqNo)
+	setSeqNo(seqKey, status.Info, status.Step, status.SeqNo)
 
 	return nil
 }
@@ -670,89 +637,169 @@ func (l *LocalStateAccessorImp) SaveLocalState(pubKey, localState string) error 
 }
 
 func joinSession(server, session, key string) error {
-	timeout := time.NewTimer(30 * time.Second)
+	timeout := time.NewTimer(60 * time.Second)
 	defer timeout.Stop()
+	retry := time.NewTicker(2 * time.Second)
+	defer retry.Stop()
+	sessionUrl := server + "/" + session
+	body := []byte("[\"" + key + "\"]")
+	attempts := 0
+	tryJoin := func() bool {
+		attempts++
+		bodyReader := bytes.NewReader(body)
+		resp, err := http.Post(sessionUrl, "application/json", bodyReader)
+		if err != nil {
+			Logln("BBMTLog", "joinSession: POST failed", "url=", sessionUrl, "party=", key, "attempt=", attempts, "err=", err)
+			return false
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated {
+			Logln("BBMTLog", "joinSession: unexpected status", "url=", sessionUrl, "party=", key, "attempt=", attempts, "status=", resp.Status)
+			return false
+		}
+		Logln("BBMTLog", "joinSession: registered", "party=", key, "session=", session)
+		return true
+	}
+	if tryJoin() {
+		return nil
+	}
 	for {
 		select {
 		case <-timeout.C:
-			return fmt.Errorf("timeout joining the session")
-		default:
-			sessionUrl := server + "/" + session
-			body := []byte("[\"" + key + "\"]")
-			bodyReader := bytes.NewReader(body)
-			resp, err := http.Post(sessionUrl, "application/json", bodyReader)
-			if err != nil {
-				Logln("BBMTLog", "fail to get session", "error", err)
-				time.Sleep(2 * time.Second)
-			} else if resp.StatusCode != http.StatusCreated {
-				Logln("BBMTLog", "fail to check session", "status", resp.Status)
-				time.Sleep(2 * time.Second)
-			} else {
+			return fmt.Errorf(
+				"timeout joining the session (server=%s session=%s party=%s attempts=%d)",
+				server, session, key, attempts,
+			)
+		case <-retry.C:
+			if tryJoin() {
 				return nil
 			}
 		}
 	}
+}
+
+func lanJoinAwaitTimeout(partyCount int) time.Duration {
+	if s := os.Getenv("DKLS_TEST_AWAIT_SEC"); s != "" {
+		if sec, err := strconv.Atoi(s); err == nil && sec > 0 {
+			return time.Duration(sec) * time.Second
+		}
+	}
+	if partyCount >= 3 {
+		return 120 * time.Second
+	}
+	// Duo: joiner probes relay after master starts it; allow time for Join-first pacing.
+	return 30 * time.Second
+}
+
+func partiesMissing(have, need []string) []string {
+	haveSet := make(map[string]struct{}, len(have))
+	for _, h := range have {
+		haveSet[h] = struct{}{}
+	}
+	var missing []string
+	for _, n := range need {
+		if _, ok := haveSet[n]; !ok {
+			missing = append(missing, n)
+		}
+	}
+	return missing
 }
 
 func awaitJoiners(parties []string, server, session string) error {
 	sessionUrl := server + "/" + session
-	timeout := time.NewTimer(30 * time.Second)
+	waitFor := lanJoinAwaitTimeout(len(parties))
+	timeout := time.NewTimer(waitFor)
 	defer timeout.Stop()
-
+	poll := time.NewTicker(2 * time.Second)
+	defer poll.Stop()
+	lastLog := time.Time{}
+	check := func() (bool, error) {
+		keys, err := fetchSessionParticipants(sessionUrl)
+		if err != nil {
+			Logln("BBMTLog", "awaitJoiners: get session failed", err)
+			return false, nil
+		}
+		if equalUnordered(keys, parties) {
+			Logln("BBMTLog", "awaitJoiners: all parties joined", session, keys)
+			return true, nil
+		}
+		if missing := partiesMissing(keys, parties); len(missing) > 0 {
+			ReportKeygenProgress(
+				session, 1,
+				fmt.Sprintf("waiting for %s", strings.Join(missing, ", ")),
+				false,
+			)
+		}
+		if time.Since(lastLog) >= 10*time.Second {
+			lastLog = time.Now()
+			Logln(
+				"BBMTLog", "awaitJoiners: waiting",
+				"session=", session,
+				"have=", keys,
+				"need=", parties,
+			)
+		}
+		return false, nil
+	}
+	if done, err := check(); err != nil || done {
+		return err
+	}
 	for {
 		select {
 		case <-timeout.C:
-			return fmt.Errorf("timeout waiting for all parties after 30 seconds")
-		default:
-			resp, err := http.Get(sessionUrl)
-			if err != nil {
-				Logln("BBMTLog", "fail to get session", "error", err)
-				continue
+			keys, _ := fetchSessionParticipants(sessionUrl)
+			return fmt.Errorf(
+				"timeout waiting for all parties after %v (have %v, need %v)",
+				waitFor, keys, parties,
+			)
+		case <-poll.C:
+			if done, err := check(); err != nil || done {
+				return err
 			}
-
-			if resp.StatusCode != http.StatusOK {
-				Logln("BBMTLog", "waiting for session...")
-				continue
-			}
-
-			var keys []string
-			buff, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return fmt.Errorf("fail to read session body: %w", err)
-			}
-
-			if err := json.Unmarshal(buff, &keys); err != nil {
-				return fmt.Errorf("fail to unmarshal session body: %w", err)
-			}
-
-			if equalUnordered(keys, parties) {
-				return nil
-			}
-
-			// backoff
-			time.Sleep(2 * time.Second)
 		}
 	}
 }
 
+func fetchSessionParticipants(sessionUrl string) ([]string, error) {
+	resp, err := http.Get(sessionUrl)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("session status %s", resp.Status)
+	}
+	buff, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var keys []string
+	if err := json.Unmarshal(buff, &keys); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
 func equalUnordered(a, b []string) bool {
-	if len(a) != len(b) {
+	aset := stringSet(a)
+	bset := stringSet(b)
+	if len(aset) != len(bset) {
 		return false
 	}
-
-	amap := make(map[string]int)
-	for _, val := range a {
-		amap[val]++
-	}
-
-	for _, val := range b {
-		if amap[val] == 0 {
+	for k := range bset {
+		if _, ok := aset[k]; !ok {
 			return false
 		}
-		amap[val]--
 	}
-
 	return true
+}
+
+func stringSet(vals []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(vals))
+	for _, v := range vals {
+		out[v] = struct{}{}
+	}
+	return out
 }
 
 func endSession(server, session string) error {
@@ -972,8 +1019,39 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 						}
 					}
 				}
+				if message.Hash != "" {
+					switch {
+					case strings.HasPrefix(message.Hash, "h1:"):
+						if len(sessionKey) == 0 {
+							Logln("BBMTLog", "Missing session key for authenticated payload", message.SeqNo)
+							deleteMessage(server, session, key, message.Hash)
+							continue
+						}
+						expectedTag, tagErr := computePayloadAuthTag(body, sessionKey)
+						if tagErr != nil {
+							Logln("BBMTLog", "Failed to verify payload auth tag:", tagErr)
+							continue
+						}
+						if !hmac.Equal([]byte(expectedTag), []byte(message.Hash)) {
+							Logln("BBMTLog", "Payload auth-tag mismatch; dropping message", message.SeqNo)
+							deleteMessage(server, session, key, message.Hash)
+							continue
+						}
+					case strings.HasPrefix(message.Hash, "d1:"):
+						expectedDigest := computePayloadDigest(body)
+						if expectedDigest != message.Hash {
+							Logln("BBMTLog", "Payload digest mismatch; dropping message", message.SeqNo)
+							deleteMessage(server, session, key, message.Hash)
+							continue
+						}
+					default:
+						Logln("BBMTLog", "Unknown payload hash format; dropping message", message.SeqNo)
+						deleteMessage(server, session, key, message.Hash)
+						continue
+					}
+				}
 
-				Logln("BBMTLog", "Applying message body:", body[:min(50, len(body))])
+				Logln("BBMTLog", "Applying inbound message body")
 				if err := tssServerImp.ApplyData(body); err != nil {
 					Logln("BBMTLog", "Failed to apply message data:", err)
 				}
