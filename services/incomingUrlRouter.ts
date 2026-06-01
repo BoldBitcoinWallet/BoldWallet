@@ -3,8 +3,38 @@ const UNIVERSAL_PAY_HOSTS = new Set(['boldbitcoinwallet.com', 'www.boldbitcoinwa
 export type ParsedIncomingUrl =
   | {kind: 'bitcoin-pay'; address: string; amountBtc?: string}
   | {kind: 'universal-pay'; address: string; amountBtc?: string}
+  | {kind: 'boldwallet-pay'; address: string; amountBtc?: string}
   | {kind: 'boldwallet-import-keyshare'}
   | {kind: 'unknown'};
+
+function parsePayQueryParams(params: URLSearchParams): {
+  address: string;
+  amountBtc?: string;
+} | null {
+  const address =
+    params.get('address')?.trim() || params.get('bitcoin')?.trim() || '';
+  if (!address) {
+    return null;
+  }
+  return {address, amountBtc: parseQueryAmount(params)};
+}
+
+/** Build a custom-scheme pay link that opens Bold Wallet from an in-browser /pay page. */
+export function buildBoldwalletPayUri(
+  address: string,
+  amountBtc?: string,
+  label?: string,
+): string {
+  const params = new URLSearchParams();
+  params.set('address', address.trim());
+  if (amountBtc?.trim()) {
+    params.set('amount', amountBtc.trim());
+  }
+  if (label?.trim()) {
+    params.set('label', label.trim());
+  }
+  return `boldwallet://pay?${params.toString()}`;
+}
 
 function parseQueryAmount(params: URLSearchParams): string | undefined {
   const amount = params.get('amount');
@@ -32,8 +62,50 @@ export function parseBoldwalletUri(url: string): ParsedIncomingUrl {
   if (!/^boldwallet:/i.test(trimmed)) {
     return {kind: 'unknown'};
   }
-  const path = trimmed.replace(/^boldwallet:\/\/?/i, '').split('?')[0].toLowerCase();
-  if (path === 'import-keyshare' || path === 'import-keyshare/') {
+  const href = /^boldwallet:\/\//i.test(trimmed)
+    ? trimmed
+    : trimmed.replace(/^boldwallet:/i, 'boldwallet://');
+  try {
+    const parsed = new URL(href);
+    const host = parsed.hostname.toLowerCase();
+    const path = parsed.pathname.toLowerCase().replace(/\/$/, '') || '';
+    const legacyPath = trimmed
+      .replace(/^boldwallet:\/\/?/i, '')
+      .split('?')[0]
+      .toLowerCase()
+      .replace(/\/$/, '');
+
+    if (
+      host === 'import-keyshare' ||
+      path === '/import-keyshare' ||
+      path === 'import-keyshare' ||
+      legacyPath === 'import-keyshare'
+    ) {
+      return {kind: 'boldwallet-import-keyshare'};
+    }
+
+    const isPay =
+      host === 'pay' ||
+      path === '/pay' ||
+      path === 'pay' ||
+      legacyPath === 'pay';
+    if (isPay) {
+      const payParams = parsePayQueryParams(parsed.searchParams);
+      if (payParams) {
+        return {kind: 'boldwallet-pay', ...payParams};
+      }
+      return {kind: 'unknown'};
+    }
+  } catch {
+    // fall through to legacy parsing
+  }
+
+  const legacyPath = trimmed
+    .replace(/^boldwallet:\/\/?/i, '')
+    .split('?')[0]
+    .toLowerCase()
+    .replace(/\/$/, '');
+  if (legacyPath === 'import-keyshare') {
     return {kind: 'boldwallet-import-keyshare'};
   }
   return {kind: 'unknown'};
@@ -51,15 +123,11 @@ export function parseUniversalPayLink(url: string): ParsedIncomingUrl {
     if (!parsed.pathname.startsWith('/pay')) {
       return {kind: 'unknown'};
     }
-    const address =
-      parsed.searchParams.get('address')?.trim() ||
-      parsed.searchParams.get('bitcoin')?.trim() ||
-      '';
-    if (!address) {
+    const payParams = parsePayQueryParams(parsed.searchParams);
+    if (!payParams) {
       return {kind: 'unknown'};
     }
-    const amountBtc = parseQueryAmount(parsed.searchParams);
-    return {kind: 'universal-pay', address, amountBtc};
+    return {kind: 'universal-pay', ...payParams};
   } catch {
     return {kind: 'unknown'};
   }

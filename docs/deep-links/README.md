@@ -10,6 +10,16 @@ https://boldbitcoinwallet.com/pay?address=<bitcoin-address>&amount=<btc-decimal>
 
 Optional query params mirror BIP-21 (`label`, etc.) where supported by `parseUniversalPayLink`.
 
+### Custom scheme (in-browser /pay fallback)
+
+When the user is already on the web `/pay` landing page, HTTPS universal links usually stay in the browser. Use **`boldwallet://pay`** to open Bold Wallet directly:
+
+```
+boldwallet://pay?address=<bitcoin-address>&amount=<btc-decimal>
+```
+
+Handled in `parseBoldwalletUri` → `IncomingUrlHandler` (same Send prefill as HTTPS/BIP-21). The welcome site primary CTA uses this scheme.
+
 ## iOS — Apple App Site Association
 
 Host at:
@@ -48,4 +58,5 @@ Both `boldbitcoinwallet.com` and `www.boldbitcoinwallet.com` HTTPS `/pay` links 
 - **iOS:** Install release build, tap a `/pay` link in Notes/Safari; app should open without a disambiguation browser step.
 - **Android:** `adb shell am start -a android.intent.action.VIEW -d "https://boldbitcoinwallet.com/pay?address=bc1qtest"` (also test `https://www.boldbitcoinwallet.com/pay?...`)
 - **Web fallback:** https://boldbitcoinwallet.com/pay?address=… (landing page in `welcome` repo)
-- **Custom schemes:** `boldwallet://import-keyshare`, `bitcoin:bc1q...?amount=0.001`
+- **Custom schemes:** `boldwallet://pay?address=…`, `boldwallet://import-keyshare`, `bitcoin:bc1q...?amount=0.001`
+- **In-browser /pay:** `adb shell am start -a android.intent.action.VIEW -d "boldwallet://pay?address=bc1qtest&amount=0.001"`

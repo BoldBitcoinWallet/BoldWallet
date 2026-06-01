@@ -37,6 +37,24 @@ describe('incomingUrlRouter', () => {
       });
     });
 
+    it('parses boldwallet://pay with address and amount', () => {
+      expect(
+        parseBoldwalletUri(
+          'boldwallet://pay?address=bc1qtest&amount=0.25&label=shop',
+        ),
+      ).toEqual({
+        kind: 'boldwallet-pay',
+        address: 'bc1qtest',
+        amountBtc: '0.25',
+      });
+    });
+
+    it('returns unknown for pay without address', () => {
+      expect(parseBoldwalletUri('boldwallet://pay?amount=1')).toEqual({
+        kind: 'unknown',
+      });
+    });
+
     it('returns unknown for other boldwallet paths', () => {
       expect(parseBoldwalletUri('boldwallet://other')).toEqual({
         kind: 'unknown',
@@ -84,6 +102,17 @@ describe('incomingUrlRouter', () => {
       expect(parseIncomingUrl('boldwallet://import-keyshare').kind).toBe(
         'boldwallet-import-keyshare',
       );
+    });
+
+    it('dispatches boldwallet pay scheme', () => {
+      const result = parseIncomingUrl(
+        'boldwallet://pay?address=bc1qcustom&amount=0.01',
+      );
+      expect(result).toEqual({
+        kind: 'boldwallet-pay',
+        address: 'bc1qcustom',
+        amountBtc: '0.01',
+      });
     });
 
     it('dispatches https pay links', () => {
