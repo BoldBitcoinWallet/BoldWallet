@@ -55,19 +55,6 @@ static void ClearKeychainIfNecessary() {
   return [super application:application openURL:url options:options];
 }
 
-- (BOOL)application:(UIApplication *)application
-continueUserActivity:(NSUserActivity *)userActivity
-  restorationHandler:(void (^)(NSArray<id<UIUserActivityRestoring>> * _Nullable))restorationHandler
-{
-  if ([userActivity.activityType isEqualToString:NSUserActivityTypeBrowsingWeb]) {
-    NSURL *url = userActivity.webpageURL;
-    if (url != nil && [KeyshareShareAppDelegate handleUniversalLink:url]) {
-      return YES;
-    }
-  }
-  return [super application:application continueUserActivity:userActivity restorationHandler:restorationHandler];
-}
-
 - (NSURL *)sourceURLForBridge:(RCTBridge *)bridge
 {
   return [self bundleURL];

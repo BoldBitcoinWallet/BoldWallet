@@ -6,10 +6,5 @@
 	<array>
 		<string>group.org.reactjs.native.boldbtc.wallet</string>
 	</array>
-	<key>com.apple.developer.associated-domains</key>
-	<array>
-		<string>applinks:boldbitcoinwallet.com</string>
-		<string>applinks:www.boldbitcoinwallet.com</string>
-	</array>
 </dict>
 </plist>

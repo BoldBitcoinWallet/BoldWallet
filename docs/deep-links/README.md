@@ -1,62 +1,30 @@
-# Deep link server setup (Phase 2)
+# Deep links (BoldWallet)
 
-BoldWallet handles external URLs via native intent filters and JS routing in `IncomingUrlHandler`. HTTPS universal links require hosting verification files on `boldbitcoinwallet.com`.
+BoldWallet accepts external payment URLs via standard **BIP-21** `bitcoin:` URIs only. There is no HTTPS pay page or App Links association for payments (privacy-first).
 
-## Pay URL shape
-
-```
-https://boldbitcoinwallet.com/pay?address=<bitcoin-address>&amount=<btc-decimal>
-```
-
-Optional query params mirror BIP-21 (`label`, etc.) where supported by `parseUniversalPayLink`.
-
-### Custom scheme (in-browser /pay fallback)
-
-When the user is already on the web `/pay` landing page, HTTPS universal links usually stay in the browser. Use **`boldwallet://pay`** to open Bold Wallet directly:
+## Payment links
 
 ```
-boldwallet://pay?address=<bitcoin-address>&amount=<btc-decimal>
+bitcoin:<address>?amount=<btc-decimal>&label=<optional>
 ```
 
-Handled in `parseBoldwalletUri` → `IncomingUrlHandler` (same Send prefill as HTTPS/BIP-21). The welcome site primary CTA uses this scheme.
+Handled in `incomingUrlRouter` → `IncomingUrlHandler` → Send screen prefill (`sendAddress`, `sendAmountBtc`).
 
-## iOS — Apple App Site Association
-
-Host at:
+## Keyshare import
 
 ```
-https://boldbitcoinwallet.com/.well-known/apple-app-site-association
+boldwallet://import-keyshare
 ```
 
-Use the template in [`apple-app-site-association`](./apple-app-site-association). Team ID `2G529K765N`. App ID: `org.reactjs.native.boldbtc.wallet`. Live copy: `welcome` repo → `public/.well-known/`.
+Opens the keyshare import flow (not a payment link).
 
-Enable **Associated Domains** in Xcode — `applinks:boldbitcoinwallet.com` and `applinks:www.boldbitcoinwallet.com` in `BoldWallet.entitlements`.
+## Platform registration
 
-## Android — Digital Asset Links
-
-Host at:
-
-```
-https://boldbitcoinwallet.com/.well-known/assetlinks.json
-```
-
-Use the template in [`assetlinks.json`](./assetlinks.json). Live copy: `welcome` repo → `public/.well-known/`.
-
-**Fingerprints:** include every certificate users may install with:
-
-| Source | Key | Status |
-|--------|-----|--------|
-| GitHub APK / sideload | Upload keystore (`BoldBitcoinWallet.jks`) | In `assetlinks.json` |
-| Google Play | App signing key (Play Console → Setup → App integrity → App signing) | Add when available |
-
-Package name: `com.boldwallet`.
-
-Both `boldbitcoinwallet.com` and `www.boldbitcoinwallet.com` HTTPS `/pay` links are supported (Android manifest + iOS associated domains).
+- **Android:** `bitcoin` and `boldwallet` schemes in `AndroidManifest.xml` (no verified HTTPS `/pay` intent filters).
+- **iOS:** `bitcoin` and `boldwallet` URL schemes in `Info.plist` (no Associated Domains for pay).
 
 ## Verification
 
-- **iOS:** Install release build, tap a `/pay` link in Notes/Safari; app should open without a disambiguation browser step.
-- **Android:** `adb shell am start -a android.intent.action.VIEW -d "https://boldbitcoinwallet.com/pay?address=bc1qtest"` (also test `https://www.boldbitcoinwallet.com/pay?...`)
-- **Web fallback:** https://boldbitcoinwallet.com/pay?address=… (landing page in `welcome` repo)
-- **Custom schemes:** `boldwallet://pay?address=…`, `boldwallet://import-keyshare`, `bitcoin:bc1q...?amount=0.001`
-- **In-browser /pay:** `adb shell am start -a android.intent.action.VIEW -d "boldwallet://pay?address=bc1qtest&amount=0.001"`
+- **Android:** `adb shell am start -a android.intent.action.VIEW -d "bitcoin:bc1qtest?amount=0.001"`
+- **iOS:** Open `bitcoin:bc1qtest?amount=0.001` from Notes or Safari.
+- **Keyshare:** `adb shell am start -a android.intent.action.VIEW -d "boldwallet://import-keyshare"`

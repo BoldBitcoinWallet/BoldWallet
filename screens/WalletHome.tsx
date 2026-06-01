@@ -1744,7 +1744,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const parsed = parseIncomingUrl(trimmed);
       let addressCandidate: string;
       let amountBtc: string | undefined;
-      if (parsed.kind === 'bitcoin-pay' || parsed.kind === 'universal-pay') {
+      if (parsed.kind === 'bitcoin-pay') {
         addressCandidate = parsed.address;
         amountBtc = parsed.amountBtc;
       } else {

@@ -1,7 +1,6 @@
 import {
   parseBitcoinUri,
   parseBoldwalletUri,
-  parseUniversalPayLink,
   parseIncomingUrl,
   extractBitcoinAddressFromPaymentInput,
 } from '../services/incomingUrlRouter';
@@ -37,54 +36,18 @@ describe('incomingUrlRouter', () => {
       });
     });
 
-    it('parses boldwallet://pay with address and amount', () => {
+    it('returns unknown for boldwallet pay paths', () => {
       expect(
         parseBoldwalletUri(
           'boldwallet://pay?address=bc1qtest&amount=0.25&label=shop',
         ),
-      ).toEqual({
-        kind: 'boldwallet-pay',
-        address: 'bc1qtest',
-        amountBtc: '0.25',
-      });
-    });
-
-    it('returns unknown for pay without address', () => {
-      expect(parseBoldwalletUri('boldwallet://pay?amount=1')).toEqual({
-        kind: 'unknown',
-      });
+      ).toEqual({kind: 'unknown'});
     });
 
     it('returns unknown for other boldwallet paths', () => {
       expect(parseBoldwalletUri('boldwallet://other')).toEqual({
         kind: 'unknown',
       });
-    });
-  });
-
-  describe('parseUniversalPayLink', () => {
-    it('parses HTTPS pay link on allowed host', () => {
-      expect(
-        parseUniversalPayLink(
-          'https://boldbitcoinwallet.com/pay?address=bc1qtest&amount=0.5',
-        ),
-      ).toEqual({
-        kind: 'universal-pay',
-        address: 'bc1qtest',
-        amountBtc: '0.5',
-      });
-    });
-
-    it('rejects non-pay paths', () => {
-      expect(
-        parseUniversalPayLink('https://boldbitcoinwallet.com/blog/post'),
-      ).toEqual({kind: 'unknown'});
-    });
-
-    it('rejects unknown hosts', () => {
-      expect(
-        parseUniversalPayLink('https://evil.com/pay?address=bc1qtest'),
-      ).toEqual({kind: 'unknown'});
     });
   });
 
@@ -98,28 +61,25 @@ describe('incomingUrlRouter', () => {
       }
     });
 
-    it('dispatches boldwallet scheme', () => {
+    it('dispatches boldwallet import-keyshare', () => {
       expect(parseIncomingUrl('boldwallet://import-keyshare').kind).toBe(
         'boldwallet-import-keyshare',
       );
     });
 
-    it('dispatches boldwallet pay scheme', () => {
-      const result = parseIncomingUrl(
-        'boldwallet://pay?address=bc1qcustom&amount=0.01',
-      );
-      expect(result).toEqual({
-        kind: 'boldwallet-pay',
-        address: 'bc1qcustom',
-        amountBtc: '0.01',
-      });
+    it('does not dispatch https pay links', () => {
+      expect(
+        parseIncomingUrl(
+          'https://www.boldbitcoinwallet.com/pay?address=bc1qxyz',
+        ).kind,
+      ).toBe('unknown');
     });
 
-    it('dispatches https pay links', () => {
-      const result = parseIncomingUrl(
-        'https://www.boldbitcoinwallet.com/pay?address=bc1qxyz',
-      );
-      expect(result.kind).toBe('universal-pay');
+    it('does not dispatch boldwallet pay links', () => {
+      expect(
+        parseIncomingUrl('boldwallet://pay?address=bc1qcustom&amount=0.01')
+          .kind,
+      ).toBe('unknown');
     });
   });
 
@@ -132,12 +92,12 @@ describe('incomingUrlRouter', () => {
       ).toBe('bc1qfromuri');
     });
 
-    it('extracts address from universal pay link', () => {
+    it('does not extract from https pay link', () => {
       expect(
         extractBitcoinAddressFromPaymentInput(
           'https://boldbitcoinwallet.com/pay?address=bc1qfromweb',
         ),
-      ).toBe('bc1qfromweb');
+      ).toBe('https://boldbitcoinwallet.com/pay?address=bc1qfromweb');
     });
 
     it('returns plain address unchanged', () => {

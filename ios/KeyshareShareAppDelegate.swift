@@ -5,7 +5,7 @@ import UIKit
 class KeyshareShareAppDelegate: NSObject {
   @objc static func handleIncomingURL(_ url: URL) -> Bool {
     let scheme = url.scheme?.lowercased() ?? ""
-    if scheme == "bitcoin" || scheme == "https" || scheme == "http" {
+    if scheme == "bitcoin" {
       IncomingUrlModule.storePendingUrl(url.absoluteString)
       IncomingUrlModule.notifyPendingUrl()
       return true
@@ -17,9 +17,7 @@ class KeyshareShareAppDelegate: NSObject {
         KeyshareShareModule.notifyPendingShare()
         return true
       }
-      IncomingUrlModule.storePendingUrl(url.absoluteString)
-      IncomingUrlModule.notifyPendingUrl()
-      return true
+      return false
     }
     if url.isFileURL {
       if KeyshareShareStorage.copyIncomingFile(at: url) != nil {
@@ -28,19 +26,6 @@ class KeyshareShareAppDelegate: NSObject {
       }
     }
     return false
-  }
-
-  @objc static func handleUniversalLink(_ url: URL) -> Bool {
-    guard url.scheme?.lowercased() == "https" else {
-      return false
-    }
-    let host = url.host?.lowercased() ?? ""
-    guard host == "boldbitcoinwallet.com" || host == "www.boldbitcoinwallet.com" else {
-      return false
-    }
-    IncomingUrlModule.storePendingUrl(url.absoluteString)
-    IncomingUrlModule.notifyPendingUrl()
-    return true
   }
 
   @objc static func handleLaunchOptions(_ launchOptions: [AnyHashable: Any]?) {

@@ -53,18 +53,6 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="boldwallet" />
             </intent-filter>
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="boldbitcoinwallet.com" android:pathPrefix="/pay" />
-            </intent-filter>
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="www.boldbitcoinwallet.com" android:pathPrefix="/pay" />
-            </intent-filter>
         </activity>
 
         <!-- Default BoldWallet Icon Activity Alias -->

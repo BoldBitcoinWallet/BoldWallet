@@ -74,11 +74,7 @@ const IncomingUrlHandler = ({isAuthenticated, navigationRef}: Props) => {
           await finishPendingUrl();
           return;
         }
-        if (
-          parsed.kind === 'bitcoin-pay' ||
-          parsed.kind === 'universal-pay' ||
-          parsed.kind === 'boldwallet-pay'
-        ) {
+        if (parsed.kind === 'bitcoin-pay') {
           await openPaymentLink(parsed.address, parsed.amountBtc);
           return;
         }

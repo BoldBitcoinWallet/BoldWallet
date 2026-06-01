@@ -64,14 +64,6 @@ class MainActivity : ReactActivity() {
         val scheme = data.scheme?.lowercase() ?: return null
         return when (scheme) {
             "bitcoin", "boldwallet" -> data.toString()
-            "https", "http" -> {
-                val host = data.host?.lowercase() ?: return null
-                if (host == "boldbitcoinwallet.com" || host == "www.boldbitcoinwallet.com") {
-                    data.toString()
-                } else {
-                    null
-                }
-            }
             else -> null
         }
     }

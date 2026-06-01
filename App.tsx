@@ -65,12 +65,7 @@ const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 const linking: LinkingOptions<any> = {
-  prefixes: [
-    'boldwallet://',
-    'bitcoin:',
-    'https://boldbitcoinwallet.com',
-    'https://www.boldbitcoinwallet.com',
-  ],
+  prefixes: ['boldwallet://', 'bitcoin:'],
   config: {
     screens: {
       MainTabs: {
