@@ -29,6 +29,15 @@
 		BBMT00042D48369D00FE370B /* libbbmtmobile.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = BBMT00052D48369D00FE370B /* libbbmtmobile.xcframework */; };
 		BBMT00062D48369D00FE370B /* TssShim.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMT00072D48369D00FE370B /* TssShim.swift */; };
 		EB82B2233CF24510A230A956 /* JetBrainsMono-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 0B628FC831DA4FCB82826E0F /* JetBrainsMono-Medium.ttf */; };
+		IU001A1B2C3D4E5F60718293 /* IncomingUrlModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = IU005A1B2C3D4E5F60718293 /* IncomingUrlModule.swift */; };
+		IU002A1B2C3D4E5F60718293 /* IncomingUrlModule.m in Sources */ = {isa = PBXBuildFile; fileRef = IU006A1B2C3D4E5F60718293 /* IncomingUrlModule.m */; };
+		KS001A1B2C3D4E5F60718293 /* KeyshareShareModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = KS005A1B2C3D4E5F60718293 /* KeyshareShareModule.swift */; };
+		KS002A1B2C3D4E5F60718293 /* KeyshareShareModule.m in Sources */ = {isa = PBXBuildFile; fileRef = KS006A1B2C3D4E5F60718293 /* KeyshareShareModule.m */; };
+		KS003A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = KS007A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift */; };
+		KS004A1B2C3D4E5F60718293 /* KeyshareShareAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = KS008A1B2C3D4E5F60718293 /* KeyshareShareAppDelegate.swift */; };
+		KS009A1B2C3D4E5F60718293 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = KS010A1B2C3D4E5F60718293 /* ShareViewController.swift */; };
+		KS011A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = KS012A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift */; };
+		KS021A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = KS016A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -39,7 +48,28 @@
 			remoteGlobalIDString = 13B07F861A680F5B00A75B9A;
 			remoteInfo = BoldWallet;
 		};
+		KS024A1B2C3D4E5F60718293 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = KS018A1B2C3D4E5F60718293;
+			remoteInfo = BoldWalletShareExtension;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		KS022A1B2C3D4E5F60718293 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				KS021A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		00E356EE1AD99517003FC87E /* BoldWalletTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = BoldWalletTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -76,6 +106,18 @@
 		D8C01CCFA4229A770E5C486B /* Pods-BoldWallet-BoldWalletTests.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-BoldWallet-BoldWalletTests.debug.xcconfig"; path = "Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests.debug.xcconfig"; sourceTree = "<group>"; };
 		D90219E7622D406C8DE13D09 /* setup_fonts.sh */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 4; includeInIndex = 0; lastKnownFileType = text.script.sh; name = setup_fonts.sh; path = ../assets/fonts/setup_fonts.sh; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		IU005A1B2C3D4E5F60718293 /* IncomingUrlModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IncomingUrlModule.swift; sourceTree = "<group>"; };
+		IU006A1B2C3D4E5F60718293 /* IncomingUrlModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = IncomingUrlModule.m; sourceTree = "<group>"; };
+		KS005A1B2C3D4E5F60718293 /* KeyshareShareModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyshareShareModule.swift; sourceTree = "<group>"; };
+		KS006A1B2C3D4E5F60718293 /* KeyshareShareModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = KeyshareShareModule.m; sourceTree = "<group>"; };
+		KS007A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyshareShareStorage.swift; sourceTree = "<group>"; };
+		KS008A1B2C3D4E5F60718293 /* KeyshareShareAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyshareShareAppDelegate.swift; sourceTree = "<group>"; };
+		KS010A1B2C3D4E5F60718293 /* ShareViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareViewController.swift; sourceTree = "<group>"; };
+		KS012A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyshareShareStorage.swift; sourceTree = "<group>"; };
+		KS013A1B2C3D4E5F60718293 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		KS014A1B2C3D4E5F60718293 /* BoldWalletShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BoldWalletShareExtension.entitlements; sourceTree = "<group>"; };
+		KS015A1B2C3D4E5F60718293 /* BoldWallet.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = BoldWallet.entitlements; path = BoldWallet/BoldWallet.entitlements; sourceTree = "<group>"; };
+		KS016A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BoldWalletShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -93,6 +135,13 @@
 			files = (
 				BBMT00042D48369D00FE370B /* libbbmtmobile.xcframework in Frameworks */,
 				ABFD1A7D0A9C1E3B52BE4826 /* libPods-BoldWallet.a in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		KS020A1B2C3D4E5F60718293 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -132,6 +181,7 @@
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB71A68108700A75B9A /* main.m */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
+				KS015A1B2C3D4E5F60718293 /* BoldWallet.entitlements */,
 			);
 			name = BoldWallet;
 			sourceTree = "<group>";
@@ -160,6 +210,8 @@
 				13B07FAE1A68108700A75B9A /* BoldWallet */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				00E356EF1AD99517003FC87E /* BoldWalletTests */,
+				KS017A1B2C3D4E5F60718293 /* BoldWalletShareExtension */,
+				KS028A1B2C3D4E5F60718293 /* KeyshareShare */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
 				BBD78D7AC51CEA395F1C20DB /* Pods */,
@@ -175,6 +227,7 @@
 			children = (
 				13B07F961A680F5B00A75B9A /* BoldWallet.app */,
 				00E356EE1AD99517003FC87E /* BoldWalletTests.xctest */,
+				KS016A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -204,6 +257,30 @@
 				A935B50B1AE989023F72F0C6 /* Pods-BoldWallet-BoldWalletTests.release.xcconfig */,
 			);
 			path = Pods;
+			sourceTree = "<group>";
+		};
+		KS017A1B2C3D4E5F60718293 /* BoldWalletShareExtension */ = {
+			isa = PBXGroup;
+			children = (
+				KS010A1B2C3D4E5F60718293 /* ShareViewController.swift */,
+				KS012A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift */,
+				KS013A1B2C3D4E5F60718293 /* Info.plist */,
+				KS014A1B2C3D4E5F60718293 /* BoldWalletShareExtension.entitlements */,
+			);
+			path = BoldWalletShareExtension;
+			sourceTree = "<group>";
+		};
+		KS028A1B2C3D4E5F60718293 /* KeyshareShare */ = {
+			isa = PBXGroup;
+			children = (
+				KS005A1B2C3D4E5F60718293 /* KeyshareShareModule.swift */,
+				KS006A1B2C3D4E5F60718293 /* KeyshareShareModule.m */,
+				KS007A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift */,
+				KS008A1B2C3D4E5F60718293 /* KeyshareShareAppDelegate.swift */,
+				IU005A1B2C3D4E5F60718293 /* IncomingUrlModule.swift */,
+				IU006A1B2C3D4E5F60718293 /* IncomingUrlModule.m */,
+			);
+			name = KeyshareShare;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -242,15 +319,34 @@
 				F2A8B9C12D4E5F6A7B8C9D0E /* Generate Framework dSYMs */,
 				E8D6F183D6CC6CC44ACC99AE /* [CP] Embed Pods Frameworks */,
 				A4868003626827247A694241 /* [CP] Copy Pods Resources */,
+				KS022A1B2C3D4E5F60718293 /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				KS023A1B2C3D4E5F60718293 /* PBXTargetDependency */,
 			);
 			name = BoldWallet;
 			productName = BoldWallet;
 			productReference = 13B07F961A680F5B00A75B9A /* BoldWallet.app */;
 			productType = "com.apple.product-type.application";
+		};
+		KS018A1B2C3D4E5F60718293 /* BoldWalletShareExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = KS027A1B2C3D4E5F60718293 /* Build configuration list for PBXNativeTarget "BoldWalletShareExtension" */;
+			buildPhases = (
+				KS019A1B2C3D4E5F60718293 /* Sources */,
+				KS020A1B2C3D4E5F60718293 /* Frameworks */,
+				KS029A1B2C3D4E5F60718293 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = BoldWalletShareExtension;
+			productName = BoldWalletShareExtension;
+			productReference = KS016A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -285,6 +381,7 @@
 			targets = (
 				13B07F861A680F5B00A75B9A /* BoldWallet */,
 				00E356ED1AD99517003FC87E /* BoldWalletTests */,
+				KS018A1B2C3D4E5F60718293 /* BoldWalletShareExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -316,6 +413,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		KS029A1B2C3D4E5F60718293 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
@@ -343,13 +447,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -408,13 +508,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -429,13 +525,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-frameworks-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -450,13 +542,9 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
-			inputPaths = (
-			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-resources-${CONFIGURATION}-output-files.xcfilelist",
-			);
-			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -499,6 +587,21 @@
 				BBMT00062D48369D00FE370B /* TssShim.swift in Sources */,
 				13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */,
 				13B07FC11A68108700A75B9A /* main.m in Sources */,
+				KS001A1B2C3D4E5F60718293 /* KeyshareShareModule.swift in Sources */,
+				KS002A1B2C3D4E5F60718293 /* KeyshareShareModule.m in Sources */,
+				KS003A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift in Sources */,
+				KS004A1B2C3D4E5F60718293 /* KeyshareShareAppDelegate.swift in Sources */,
+				IU001A1B2C3D4E5F60718293 /* IncomingUrlModule.swift in Sources */,
+				IU002A1B2C3D4E5F60718293 /* IncomingUrlModule.m in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		KS019A1B2C3D4E5F60718293 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				KS009A1B2C3D4E5F60718293 /* ShareViewController.swift in Sources */,
+				KS011A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -509,6 +612,11 @@
 			isa = PBXTargetDependency;
 			target = 13B07F861A680F5B00A75B9A /* BoldWallet */;
 			targetProxy = 00E356F41AD99517003FC87E /* PBXContainerItemProxy */;
+		};
+		KS023A1B2C3D4E5F60718293 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = KS018A1B2C3D4E5F60718293 /* BoldWalletShareExtension */;
+			targetProxy = KS024A1B2C3D4E5F60718293 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -572,7 +680,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 60;
+				CODE_SIGN_ENTITLEMENTS = BoldWallet/BoldWallet.entitlements;
+				CURRENT_PROJECT_VERSION = 61;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				ENABLE_BITCODE = NO;
@@ -592,10 +701,11 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = (
+					"$(SDKROOT)/usr/lib/swift",
 					"$(inherited)",
 					"$(PROJECT_DIR)/BbmtMobile",
 				);
-				MARKETING_VERSION = 4.0.0;
+				MARKETING_VERSION = 4.0.1;
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -618,7 +728,8 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 60;
+				CODE_SIGN_ENTITLEMENTS = BoldWallet/BoldWallet.entitlements;
+				CURRENT_PROJECT_VERSION = 61;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				ENABLE_TESTABILITY = NO;
@@ -637,10 +748,11 @@
 					"@executable_path/Frameworks",
 				);
 				LIBRARY_SEARCH_PATHS = (
+					"$(SDKROOT)/usr/lib/swift",
 					"$(inherited)",
 					"$(PROJECT_DIR)/BbmtMobile",
 				);
-				MARKETING_VERSION = 4.0.0;
+				MARKETING_VERSION = 4.0.1;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -726,12 +838,14 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
-				OTHER_LDFLAGS = "$(inherited)  ";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					" ",
+				);
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "$(inherited) DEBUG";
-				SWIFT_OBJC_BRIDGING_HEADER = "BoldWallet/BoldWallet-Bridging-Header.h";
 				USE_HERMES = true;
 			};
 			name = Debug;
@@ -799,14 +913,66 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
-				OTHER_LDFLAGS = "$(inherited)  ";
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					" ",
+				);
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_COMPILATION_MODE = wholemodule;
-				SWIFT_OBJC_BRIDGING_HEADER = "BoldWallet/BoldWallet-Bridging-Header.h";
 				USE_HERMES = true;
 				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		KS025A1B2C3D4E5F60718293 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = BoldWalletShareExtension/BoldWalletShareExtension.entitlements;
+				CURRENT_PROJECT_VERSION = 61;
+				DEVELOPMENT_TEAM = 2G529K765N;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BoldWalletShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 4.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		KS026A1B2C3D4E5F60718293 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				CODE_SIGN_ENTITLEMENTS = BoldWalletShareExtension/BoldWalletShareExtension.entitlements;
+				CURRENT_PROJECT_VERSION = 61;
+				DEVELOPMENT_TEAM = 2G529K765N;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = BoldWalletShareExtension/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 4.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet.ShareExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
 		};
@@ -836,6 +1002,15 @@
 			buildConfigurations = (
 				83CBBA201A601CBA00E9B192 /* Debug */,
 				83CBBA211A601CBA00E9B192 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		KS027A1B2C3D4E5F60718293 /* Build configuration list for PBXNativeTarget "BoldWalletShareExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				KS025A1B2C3D4E5F60718293 /* Debug */,
+				KS026A1B2C3D4E5F60718293 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

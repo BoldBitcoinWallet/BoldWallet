@@ -67,6 +67,8 @@ interface SendBitcoinModalProps {
   selectedCurrency: string;
   /** Pre-fill address when opening (e.g. from QR scan of a plain address). */
   initialAddress?: string;
+  /** Pre-fill amount in BTC when opening (e.g. BIP-21 amount query). */
+  initialAmountBtc?: string;
 }
 const E8 = Big(10).pow(8);
 const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
@@ -78,6 +80,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   walletAddress,
   selectedCurrency,
   initialAddress,
+  initialAmountBtc,
 }) => {
   const isMountedRef = useRef(true);
   const visibleRef = useRef(visible);
@@ -695,7 +698,19 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     if (initialAddress) {
       setAddress(initialAddress);
     }
-  }, [visible, initialAddress]);
+    if (initialAmountBtc) {
+      try {
+        const amountBTC = Big(initialAmountBtc);
+        if (amountBTC.gt(0)) {
+          setBtcAmount(amountBTC);
+          setInBtcAmount(amountBTC.toFixed(8));
+          setInUsdAmount(amountBTC.times(btcToFiatRate).toFixed(2));
+        }
+      } catch {
+        // Ignore invalid pre-filled amounts
+      }
+    }
+  }, [visible, initialAddress, initialAmountBtc, btcToFiatRate]);
   useEffect(() => {
     if (!address) {
       setAddressError(null);

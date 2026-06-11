@@ -5,9 +5,7 @@ import {
   Text,
   StyleSheet,
   Alert,
-  NativeModules,
   Modal,
-  TextInput,
   ScrollView,
   Animated,
   Easing,
@@ -18,19 +16,20 @@ import {
 import AppPressable from '../components/AppPressable';
 import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
-import RNFS from 'react-native-fs';
-import {safeUnlink} from '../services/rnfsSafe';
 import {useTheme} from '../theme';
+import {dbg, hasWalletKeyshareInSecureStorage} from '../utils';
+import KeyshareImportPasswordModal from '../components/KeyshareImportPasswordModal';
 import {
-  dbg,
-  resolveUseLegacyDerivationPaths,
-  detectKeyshareTssBackend,
-} from '../utils';
-import {persistWalletKeyshare} from '../services/walletSetupOrchestrator';
+  assertNoExistingWallet,
+  importKeyshareFromBase64,
+  readKeyshareBase64FromUri,
+  showKeyshareImportError,
+  showWalletAlreadyLoadedAlert,
+  WalletAlreadyLoadedError,
+} from '../services/keyshareImport';
 import LegalModal from '../components/LegalModal';
 import TransportModeSelector from '../components/TransportModeSelector';
 import TssBackendSelector from '../components/TssBackendSelector';
-import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {
   isDkls23OptedOut,
   setDkls23OptedOut,
@@ -42,11 +41,11 @@ import {WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
 import LocalCache from '../services/LocalCache';
 import {useUser} from '../context/UserContext';
-const {BBMTLibNativeModule} = NativeModules;
 const ShowcaseScreen = ({navigation}: any) => {
   const [modalVisible, setModalVisible] = useState(false);
-  const [password, setPassword] = useState('');
   const [fileContent, setFileContent] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+  const [walletAlreadyLoaded, setWalletAlreadyLoaded] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [agreeToPrivacy, setAgreeToPrivacy] = useState(false);
   const [isLegalModalVisible, setIsLegalModalVisible] = useState(false);
@@ -60,8 +59,6 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
   );
-  const [isPasswordFocused, setIsPasswordFocused] = useState(false);
-  const [passwordVisible, setPasswordVisible] = useState(false);
   const {theme} = useTheme();
   const {setActiveNetwork} = useUser();
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
@@ -163,30 +160,25 @@ const ShowcaseScreen = ({navigation}: any) => {
       setSelectedMode(null);
     }
   }, [isModeModalVisible]);
-  const handleContentUri = async (uri: any) => {
-    try {
-      const localFilePath = `${RNFS.DocumentDirectoryPath}/tempFile.txt`;
-      await safeUnlink(localFilePath);
-      await RNFS.copyFile(uri, localFilePath);
-      const content = await RNFS.readFile(localFilePath, 'base64');
-      await safeUnlink(localFilePath);
-      return content;
-    } catch (_error) {
-      dbg('Error handling content URI:', _error);
-      return '';
-    }
-  };
-  // Handle the restore wallet process
+  useEffect(() => {
+    hasWalletKeyshareInSecureStorage()
+      .then(setWalletAlreadyLoaded)
+      .catch(() => setWalletAlreadyLoaded(false));
+  }, []);
   const handleRestoreWallet = async () => {
     try {
+      await assertNoExistingWallet();
       const res = await DocumentPicker.pickSingle({
         type: [DocumentPicker.types.allFiles],
       });
-      const uri = `${res.uri}`;
-      let content = await handleContentUri(uri);
+      const content = await readKeyshareBase64FromUri(`${res.uri}`);
       setFileContent(content);
       setModalVisible(true);
     } catch (err: any) {
+      if (err instanceof WalletAlreadyLoadedError) {
+        showWalletAlreadyLoadedAlert();
+        return;
+      }
       if (DocumentPicker.isCancel(err)) {
         dbg('User cancelled the picker');
       } else {
@@ -195,70 +187,24 @@ const ShowcaseScreen = ({navigation}: any) => {
       }
     }
   };
-  const handlePasswordSubmit = async () => {
+  const handlePasswordSubmit = async (password: string) => {
     try {
-      const decryptedKeyshare = await BBMTLibNativeModule.aesDecrypt(
-        fileContent,
-        await BBMTLibNativeModule.sha256(password),
-      );
-      if (decryptedKeyshare.indexOf('pub_key') < 0) {
-        Alert.alert('Wrong Password', 'Could not import keyshare');
-      } else {
-        // validate keyshare
-        let ks: any;
-        try {
-          ks = JSON.parse(decryptedKeyshare);
-          if (!ks.pub_key) {
-            throw 'Error: pub_key not found in keyshare';
-          }
-        } catch (error) {
-          dbg('Error parsing keyshare:', error);
-          throw 'Error: Invalid keyshare';
-        }
-        await persistWalletKeyshare(decryptedKeyshare);
-        await LocalCache.clear();
-        appConfigRepository.remove(CONFIG_KEYS.CURRENT_ADDRESS);
-        // Reset legacy wallet modal flag for new wallet
-        // If legacy wallet, set to "no" (show modal); if not legacy, set to "yes" (won't show anyway)
-        const isLegacyPath = resolveUseLegacyDerivationPaths({
-          created_at: ks.created_at,
-          tss_backend: detectKeyshareTssBackend(ks),
-          local_party_key: ks.local_party_key ?? '',
-          keygen_committee_keys: ks.keygen_committee_keys ?? [],
-          pub_key: ks.pub_key ?? '',
-          chain_code_hex: ks.chain_code_hex ?? '',
-          nostr_npub: ks.nostr_npub ?? null,
-        });
-        appConfigRepository.set(
-          CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
-          isLegacyPath ? 'no' : 'yes',
-        );
-        // CRITICAL: Always reset network to mainnet on keyshare import
-        // This ensures a clean state and proper address derivation for the new wallet
-        dbg('=== Keyshare imported: Resetting network to mainnet');
-        await setActiveNetwork('mainnet');
-        dbg('=== Network reset to mainnet, UserContext will refresh addresses');
-        setModalVisible(false);
-        setPassword('');
-        dbg('Navigating to User Preferences (restore will run after endpoint selection)');
-        setTimeout(() => {
-          navigation.dispatch(
-            CommonActions.reset({
-              index: 0,
-              routes: [{name: 'User Preferences', params: {pendingRestore: true}}],
-            }),
-          );
-        }, 500);
-      }
-    } catch {
-      dbg('Failed to decode as UTF-8. File might be binary.');
-      Alert.alert('Error', 'Failed to import the file');
+      setIsImporting(true);
+      await importKeyshareFromBase64(fileContent, password, {
+        setActiveNetwork,
+        navigate: action => navigation.dispatch(action),
+      });
+      setModalVisible(false);
+      setFileContent('');
+    } catch (error) {
+      showKeyshareImportError(error);
+    } finally {
+      setIsImporting(false);
     }
   };
   const handleCloseModal = () => {
     setModalVisible(false);
-    setPassword('');
-    setIsPasswordFocused(false);
+    setFileContent('');
   };
   const styles = StyleSheet.create({
     container: {
@@ -329,6 +275,23 @@ const ShowcaseScreen = ({navigation}: any) => {
       marginBottom: 24,
       width: '100%',
       paddingHorizontal: 8,
+    },
+    walletLoadedBanner: {
+      marginBottom: 16,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderRadius: 12,
+      backgroundColor: theme.colors.subPrimary + '15',
+      borderWidth: 1,
+      borderColor: theme.colors.border + '40',
+      width: '100%',
+    },
+    walletLoadedBannerText: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+      lineHeight: 20,
     },
     ctaButtonPrimary: {
       backgroundColor:
@@ -961,16 +924,29 @@ const ShowcaseScreen = ({navigation}: any) => {
             </Text>
           </View>
         </View>
+        {walletAlreadyLoaded ? (
+          <View style={styles.walletLoadedBanner}>
+            <Text style={styles.walletLoadedBannerText}>
+              A wallet keyshare is already loaded. Delete it from Settings before
+              setting up or restoring a different wallet.
+            </Text>
+          </View>
+        ) : null}
         <View style={styles.ctaButtons}>
           <AppPressable
             style={[
               styles.ctaButtonPrimary,
-              (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
+              ((!agreeToTerms || !agreeToPrivacy) || walletAlreadyLoaded) &&
+                styles.disabledButton,
             ]}
             onPress={() => {
+              if (walletAlreadyLoaded) {
+                showWalletAlreadyLoadedAlert();
+                return;
+              }
               setIsBackendModalVisible(true);
             }}
-            disabled={!agreeToTerms || !agreeToPrivacy}>
+            disabled={!agreeToTerms || !agreeToPrivacy || walletAlreadyLoaded}>
             <View style={styles.ctaButtonIconContainer}>
               <Image
                 source={require('../assets/new-icon.png')}
@@ -988,12 +964,17 @@ const ShowcaseScreen = ({navigation}: any) => {
           <AppPressable
             style={[
               styles.ctaButtonSecondary,
-              (!agreeToTerms || !agreeToPrivacy) && styles.disabledButton,
+              ((!agreeToTerms || !agreeToPrivacy) || walletAlreadyLoaded) &&
+                styles.disabledButton,
             ]}
             onPress={() => {
+              if (walletAlreadyLoaded) {
+                showWalletAlreadyLoadedAlert();
+                return;
+              }
               handleRestoreWallet();
             }}
-            disabled={!agreeToTerms || !agreeToPrivacy}>
+            disabled={!agreeToTerms || !agreeToPrivacy || walletAlreadyLoaded}>
             <View style={styles.ctaButtonIconContainer}>
               <Image
                 source={require('../assets/restore-icon.png')}
@@ -1010,102 +991,12 @@ const ShowcaseScreen = ({navigation}: any) => {
           </AppPressable>
         </View>
       </View>
-      {/* Enhanced Password Prompt Modal */}
-      <Modal
-        transparent={true}
+      <KeyshareImportPasswordModal
         visible={modalVisible}
-        animationType="fade"
-        onRequestClose={handleCloseModal}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            {/* Modal Header with Close Button */}
-            <View style={styles.modalHeader}>
-              <Image
-                source={require('../assets/locker-icon.png')}
-                style={styles.modalHeaderIconImage}
-              />
-              <Text style={styles.modalTitle}>Restore Keyshare</Text>
-              <AppPressable
-                style={styles.closeButton}
-                onPress={handleCloseModal}
-                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <Text style={styles.closeButtonText}>✕</Text>
-              </AppPressable>
-            </View>
-            {/* Modal Body */}
-            <View style={styles.modalBody}>
-              {/* Password Input */}
-              <View style={styles.passwordInputContainer}>
-                <Text style={styles.passwordInputLabel}>Keyshare Password</Text>
-                <View style={styles.passwordInputWrapper}>
-                  <TextInput
-                    style={[
-                      styles.passwordInput,
-                      isPasswordFocused && styles.passwordInputFocused,
-                    ]}
-                    secureTextEntry={!passwordVisible}
-                    placeholder="Enter the password"
-                    placeholderTextColor={`${theme.colors.text}40`}
-                    value={password}
-                    onChangeText={setPassword}
-                    onFocus={() => setIsPasswordFocused(true)}
-                    onBlur={() => setIsPasswordFocused(false)}
-                  />
-                  <AppPressable
-                    style={styles.eyeButton}
-                    onPress={() => {
-                      setPasswordVisible(!passwordVisible);
-                    }}>
-                    <Image
-                      source={
-                        passwordVisible
-                          ? require('../assets/eye-off-icon.png')
-                          : require('../assets/eye-on-icon.png')
-                      }
-                      style={styles.eyeIcon}
-                      resizeMode="contain"
-                    />
-                  </AppPressable>
-                </View>
-              </View>
-              {/* Action Buttons */}
-              <View style={styles.modalActions}>
-                <AppPressable
-                  style={[styles.modalActionButton, styles.modalCancelButton]}
-                  onPress={handleCloseModal}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <Text
-                    style={[
-                      styles.modalActionButtonText,
-                      styles.modalCancelButtonText,
-                    ]}>
-                    Cancel
-                  </Text>
-                </AppPressable>
-                <AppPressable
-                  style={[styles.modalActionButton, styles.modalSubmitButton]}
-                  onPress={() => {
-                    handlePasswordSubmit();
-                  }}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <Image
-                    source={require('../assets/key-icon.png')}
-                    style={styles.buttonIcon}
-                    resizeMode="contain"
-                  />
-                  <Text
-                    style={[
-                      styles.modalActionButtonText,
-                      styles.modalSubmitButtonText,
-                    ]}>
-                    Import
-                  </Text>
-                </AppPressable>
-              </View>
-            </View>
-          </View>
-        </View>
-      </Modal>
+        onClose={handleCloseModal}
+        onSubmit={handlePasswordSubmit}
+        isSubmitting={isImporting}
+      />
       {/* Legal Modal */}
       <LegalModal
         visible={isLegalModalVisible}

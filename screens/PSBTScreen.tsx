@@ -43,6 +43,7 @@ interface KeyshareInfoForPsbt {
 }
 type RouteParams = {
   signedPsbt?: string;
+  sharedPsbtBase64?: string;
 };
 const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -62,6 +63,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   );
   const [isWatchWalletExpanded, setIsWatchWalletExpanded] = useState(false);
   const [isPSBTSectionExpanded, setIsPSBTSectionExpanded] = useState(false);
+  const [sharedInitialPsbt, setSharedInitialPsbt] = useState<string | undefined>(
+    undefined,
+  );
   const [isOutputDescriptorQrVisible, setIsOutputDescriptorQrVisible] =
     useState(false);
   const [selectedDescriptorType, setSelectedDescriptorType] = useState<
@@ -166,6 +170,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       navigation.setParams({signedPsbt: undefined});
     }
   }, [route.params?.signedPsbt, navigation]);
+  useEffect(() => {
+    const sharedPsbt = route.params?.sharedPsbtBase64;
+    if (sharedPsbt) {
+      setSharedInitialPsbt(sharedPsbt);
+      setIsPSBTSectionExpanded(true);
+      navigation.setParams({sharedPsbtBase64: undefined});
+    }
+  }, [route.params?.sharedPsbtBase64, navigation]);
   // Share helper for exporting text as a small file (descriptor)
   const shareTextAsFile = useCallback(
     async (text: string, filename: string, title: string) => {
@@ -637,6 +649,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.psbtSectionContent}>
               <View style={styles.psbtBodyContainer}>
                 <PSBTLoader
+                  initialPsbtBase64={sharedInitialPsbt}
                   onClose={() => {
                     // In PSBT screen, Cancel should only reset the loader state,
                     // not navigate away from this screen.

@@ -1,6 +1,7 @@
 // App.tsx
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {NavigationContainer} from '@react-navigation/native';
+import type {LinkingOptions, NavigationContainerRef} from '@react-navigation/native';
 import type {BottomTabHeaderProps} from '@react-navigation/bottom-tabs';
 import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
@@ -55,11 +56,27 @@ import {CustomHeader} from './components/Header';
 import Toast from 'react-native-toast-message';
 import {createToastConfig} from './utils/toastConfig';
 import {promptWalletBiometricAuth} from './services/walletBiometricAuth';
+import IncomingShareHandler from './components/IncomingShareHandler';
+import IncomingUrlHandler from './components/IncomingUrlHandler';
 // Initialize react-native-screens for Fabric compatibility
 enableScreens(true);
 const {BBMTLibNativeModule} = NativeModules;
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+const linking: LinkingOptions<any> = {
+  prefixes: ['boldwallet://', 'bitcoin:'],
+  config: {
+    screens: {
+      MainTabs: {
+        screens: {
+          Wallet: 'wallet',
+          PSBT: 'psbt',
+        },
+      },
+    },
+  },
+};
 
 // Debug logging state (session-only, not persisted)
 // Default: false (logs suppressed even in __DEV__)
@@ -543,6 +560,13 @@ const App = () => {
     const sub = DeviceEventEmitter.addListener(
       'app:reload',
       async (payload?: {revalidateRoute?: boolean}) => {
+        if (Platform.OS === 'android') {
+          try {
+            require('rn-barcode-zxing-scan').default?.stopQrReader?.();
+          } catch {
+            // Native module unavailable — non-fatal
+          }
+        }
         setIsAuthenticated(false);
         setDebugLoggingEnabledState(debugLoggingEnabledRef.current);
         // Resolve route before remounting navigation so unlock never lands with initialRoute null.
@@ -782,6 +806,7 @@ const App = () => {
               <AppContent
                 key={`content-${contentResetKey}`}
                 initialRoute={initialRoute}
+                isAuthenticated={isAuthenticated}
               />
             )}
           </UserProvider>
@@ -790,8 +815,15 @@ const App = () => {
     </ErrorBoundary>
   );
 };
-const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
+const AppContent = ({
+  initialRoute,
+  isAuthenticated,
+}: {
+  initialRoute: string | null;
+  isAuthenticated: boolean;
+}) => {
   const {theme} = useTheme();
+  const navigationRef = useRef<NavigationContainerRef<any>>(null);
   const dynamicStyles = {
     navigationContainer: {
       ...styles.navigationContainer,
@@ -801,7 +833,7 @@ const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
   return (
     <WalletProvider>
         <View style={dynamicStyles.navigationContainer}>
-          <NavigationContainer>
+          <NavigationContainer ref={navigationRef} linking={linking}>
             <Stack.Navigator
               initialRouteName={initialRoute || undefined}
               screenOptions={{
@@ -849,6 +881,14 @@ const AppContent = ({initialRoute}: {initialRoute: string | null}) => {
               />
             </Stack.Navigator>
           </NavigationContainer>
+          <IncomingShareHandler
+            isAuthenticated={isAuthenticated}
+            navigationRef={navigationRef}
+          />
+          <IncomingUrlHandler
+            isAuthenticated={isAuthenticated}
+            navigationRef={navigationRef}
+          />
           <View style={styles.toastWrapper}>
             <Toast config={createToastConfig(theme)} />
           </View>

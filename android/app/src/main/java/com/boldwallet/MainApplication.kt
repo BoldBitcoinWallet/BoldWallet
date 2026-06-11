@@ -20,6 +20,8 @@ class MainApplication : Application(), ReactApplication {
             context = applicationContext,
             packageList = PackageList(this).packages.apply {
                 add(BBMTLibNativePackage())
+                add(KeyshareSharePackage())
+                add(IncomingUrlPackage())
                 add(IconChangerPackage())
                 add(RNGestureHandlerPackage())
                 add(RNDeviceInfo())
