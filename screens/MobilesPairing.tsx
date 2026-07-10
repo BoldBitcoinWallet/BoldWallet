@@ -3158,6 +3158,14 @@ const MobilesPairing = ({navigation}: any) => {
       marginBottom: 16,
       lineHeight: 24,
     },
+    readinessText: {
+      fontSize: theme.fontSizes?.base || 13,
+      marginBottom: 8,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.text
+          : theme.colors.white,
+    },
     keygenBackendBadgeWrap: {
       alignSelf: 'center',
       marginBottom: 8,
@@ -4512,10 +4520,7 @@ const MobilesPairing = ({navigation}: any) => {
             {peerIP && (isSendBitcoin || isSignPSBT) && (
               <>
                 <View style={styles.informationCard}>
-                  <Text
-                    style={[
-                      {fontSize: theme.fontSizes?.base || 13, marginBottom: 8},
-                    ]}>
+                  <Text style={styles.readinessText}>
                     Both devices must be ready.
                   </Text>
                   {isSendBitcoin && route.params ? (
@@ -4565,6 +4570,7 @@ const MobilesPairing = ({navigation}: any) => {
             summaryLine={spendStickySummary}
             network={route.params?.network}
             buttonLabel={spendStickyLabel}
+            buttonColor={theme.colors.bitcoinOrange}
             onPress={() => runKeysign()}
           />
         ) : null}

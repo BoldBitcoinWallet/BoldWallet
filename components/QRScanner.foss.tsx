@@ -40,6 +40,7 @@ const QRScanner: React.FC<QRScannerProps> = ({
   const {theme} = useTheme();
   const [isScanning, setIsScanning] = useState(false);
   const scanSubscriptionRef = useRef<any>(null);
+  const isScanningRef = useRef(false);
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
@@ -198,33 +199,45 @@ const QRScanner: React.FC<QRScannerProps> = ({
       BarcodeZxingScan.setStatusMessage(subtitle);
     }
     if (Platform.OS === 'android') {
+      isScanningRef.current = true;
       BarcodeZxingScan.showQrReader((error: any, data: any) => {
+        isScanningRef.current = false;
         // Clear custom status message
         if (BarcodeZxingScan.setStatusMessage) {
           BarcodeZxingScan.setStatusMessage('');
         }
         if (error) {
           dbg('FOSS: Single scan error:', error);
+          onClose();
           return;
         }
         if (data) {
           onScan(data);
           onClose();
+        } else {
+          // No data, no error - user pressed back
+          onClose();
         }
       });
     } else {
       // iOS - use single scan
+      isScanningRef.current = true;
       BarcodeZxingScan.showQrReader((error: any, data: any) => {
+        isScanningRef.current = false;
         // Clear custom status message
         if (BarcodeZxingScan.setStatusMessage) {
           BarcodeZxingScan.setStatusMessage('');
         }
         if (error) {
           dbg('FOSS: iOS scan error:', error);
+          onClose();
           return;
         }
         if (data) {
           onScan(data);
+          onClose();
+        } else {
+          // No data, no error - user pressed back
           onClose();
         }
       });
@@ -232,15 +245,16 @@ const QRScanner: React.FC<QRScannerProps> = ({
   }, [subtitle, onScan, onClose]);
   // Auto-start single scan when modal opens; clear stale callback when closed
   useEffect(() => {
-    if (visible && mode === 'single' && !isScanning) {
+    if (visible && mode === 'single' && !isScanningRef.current) {
       handleSingleScan();
     } else if (!visible && mode === 'single') {
+      isScanningRef.current = false;
       clearQrReaderCallback();
       if (BarcodeZxingScan.setStatusMessage) {
         BarcodeZxingScan.setStatusMessage('');
       }
     }
-  }, [visible, mode, isScanning, handleSingleScan, clearQrReaderCallback]);
+  }, [visible, mode, handleSingleScan, clearQrReaderCallback]);
   const isAnimatedQR = showProgress && progress && progress.total > 1;
   const progressPercent = isAnimatedQR
     ? Math.min(

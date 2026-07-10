@@ -76,6 +76,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [pendingPSBTParams, setPendingPSBTParams] = useState<{
     psbtBase64: string;
   } | null>(null);
+  const [isNostrTransportSupported, setIsNostrTransportSupported] =
+    useState(true);
   const [signedPsbt, setSignedPsbt] = useState<string | null>(null);
   const [isSignedPSBTModalVisible, setIsSignedPSBTModalVisible] =
     useState(false);
@@ -253,6 +255,15 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     },
     [keyshareInfo],
   );
+  const resolveNostrTransportSupport = useCallback(async (): Promise<boolean> => {
+    try {
+      const keyshare = await getKeyshareMetadata();
+      return !!(keyshare?.nostr_npub && keyshare.nostr_npub.trim() !== '');
+    } catch (error) {
+      dbg('PSBTScreen: Error checking keyshare for Nostr support:', error);
+      return false;
+    }
+  }, []);
   // Handle PSBT signing - same logic as WalletHome
   // Note: The actual signing functions extract derivation paths from PSBT's Bip32Derivation internally
   const handlePSBTSign = useCallback(
@@ -260,38 +271,15 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       const normalizedPsbt = canonicalPsbtBase64(psbtBase64);
       // The actual PSBT signing will extract paths from PSBT's Bip32Derivation field
       // derivePath parameter is kept for API compatibility but not used
-      // Check if keyshare supports Nostr (has nostr_npub)
-      try {
-        const keyshare = await getKeyshareMetadata();
-        if (keyshare) {
-          const hasNostrSupport =
-            keyshare.nostr_npub && keyshare.nostr_npub.trim() !== '';
-          if (!hasNostrSupport) {
-            // Keyshare was generated with local mode, navigate directly to Devices Pairing
-            navigation.dispatch(
-              CommonActions.navigate({
-                name: 'Devices Pairing',
-                params: {
-                  mode: 'sign_psbt',
-                  addressType,
-                  psbtBase64: normalizedPsbt,
-                },
-              }),
-            );
-            return;
-          }
-        }
-      } catch (error) {
-        dbg('PSBTScreen: Error checking keyshare for Nostr support:', error);
-        // Continue to show transport selector if check fails
-      }
+      const hasNostrSupport = await resolveNostrTransportSupport();
+      setIsNostrTransportSupported(hasNostrSupport);
       // Store params and show transport selector
       setPendingPSBTParams({psbtBase64: normalizedPsbt});
       setTimeout(() => {
         setIsPSBTTransportModalVisible(true);
       }, 300);
     },
-    [addressType, navigation],
+    [resolveNostrTransportSupport],
   );
   const navigateToPSBTSigning = useCallback(
     (transport: 'local' | 'nostr') => {
@@ -699,6 +687,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         title="Co-Sign Via…"
         description=""
         visible={isPSBTTransportModalVisible}
+        nostrEnabled={isNostrTransportSupported}
+        defaultTransport={isNostrTransportSupported ? null : 'local'}
         onClose={() => {
           setIsPSBTTransportModalVisible(false);
           setPendingPSBTParams(null);

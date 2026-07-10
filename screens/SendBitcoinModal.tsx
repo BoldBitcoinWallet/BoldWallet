@@ -41,7 +41,7 @@ import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {initializeBranta, resolveBrantaQr} from '../services/BrantaService';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import BrantaVerificationCard from '../components/BrantaVerificationCard';
-import {extractBitcoinAddressFromPaymentInput} from '../services/incomingUrlRouter';
+import {extractBitcoinAddressFromPaymentInput, parseBitcoinUri} from '../services/incomingUrlRouter';
 const {BBMTLibNativeModule} = NativeModules;
 
 const SEND_BITCOIN_VIDEO_GUIDE_URL =
@@ -73,6 +73,8 @@ interface SendBitcoinModalProps {
   initialAddress?: string;
   /** Pre-fill amount in BTC when opening (e.g. BIP-21 amount query). */
   initialAmountBtc?: string;
+  /** Pre-fill Branta QR for verification when opening (e.g. from WalletHome scan). */
+  initialBrantaRawQr?: string;
 }
 const E8 = Big(10).pow(8);
 const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
@@ -85,6 +87,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   selectedCurrency,
   initialAddress,
   initialAmountBtc,
+  initialBrantaRawQr,
 }) => {
   const isMountedRef = useRef(true);
   const visibleRef = useRef(visible);
@@ -115,6 +118,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   } | null>(null);
   const [brantaVerifyUrl, setBrantaVerifyUrl] = useState<string | undefined>();
   const [brantaLoading, setBrantaLoading] = useState(false);
+  const [_brantaError, setBrantaError] = useState<string | null>(null);
+  const [brantaRawQrProp, setBrantaRawQrProp] = useState<string>('');
   const {theme} = useTheme();
   const {
     showSats,
@@ -757,71 +762,137 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     // debouncedGetFee is memoized once; do not list it or getFee — would cancel/reset the debouncer on unrelated identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, btcAmount, feeStrategy, validateAddressForCurrentNetwork]);
-  // Initialize Branta service for current network
+  // Initialize Branta service and pre-load QR data if provided
   useEffect(() => {
-    initializeBranta(activeNetwork);
-  }, [activeNetwork]);
+    try {
+      initializeBranta(activeNetwork);
+      
+      // If prop-provided Branta QR, extract address+amount immediately from bitcoin: URI
+      // and also trigger merchant info resolution
+      if (initialBrantaRawQr) {
+        try {
+          // Extract address and amount from bitcoin: URI without waiting for API
+          const parsed = parseBitcoinUri(initialBrantaRawQr);
+          if (parsed.kind === 'bitcoin-pay') {
+            setAddress(parsed.address);
+            if (parsed.amountBtc) {
+              try {
+                const amountBTC = Big(parsed.amountBtc);
+                if (amountBTC.gt(0)) {
+                  setBtcAmount(amountBTC);
+                  setInBtcAmount(amountBTC.toFixed(8));
+                  setInUsdAmount(amountBTC.times(btcToFiatRate).toFixed(2));
+                }
+              } catch (e) {
+                // Ignore invalid amount
+              }
+            }
+          }
+          // Trigger merchant info resolution in background
+          setBrantaRawQrProp(initialBrantaRawQr);
+        } catch (parseErr) {
+          dbg('Error parsing Branta QR', parseErr);
+          setBrantaRawQrProp('');
+        }
+      } else {
+        setBrantaRawQrProp('');
+      }
+    } catch (err) {
+      // Silent error in initialization
+      dbg('Error initializing Branta', err);
+      setBrantaRawQrProp('');
+    }
+  }, [activeNetwork, initialBrantaRawQr, btcToFiatRate]);
   // Resolve Branta QR when raw QR data is set (strict mode: only ZK-encoded QRs)
   useEffect(() => {
-    if (!brantaRawQr) {
+    const rawQr = brantaRawQr || brantaRawQrProp;
+    
+    if (!rawQr) {
       setBrantaPayment(null);
       setBrantaVerifyUrl(undefined);
       setBrantaLoading(false);
+      setBrantaError(null);
       return;
     }
 
+    // Reset error state and mark as loading
     setBrantaPayment(null);
     setBrantaVerifyUrl(undefined);
     setBrantaLoading(true);
+    setBrantaError(null);
     let cancelled = false;
 
-    resolveBrantaQr(brantaRawQr, activeNetwork)
-      .then(result => {
+    // Wrap entire Branta resolution in try-catch for robustness
+    (async () => {
+      try {
+        const result = await resolveBrantaQr(rawQr, activeNetwork);
+        
         if (cancelled) return;
+
         if (!result) {
+          // Silent fallback: no Branta data found, continue with manual entry
           setBrantaPayment(null);
           setBrantaVerifyUrl(undefined);
           setBrantaLoading(false);
+          setBrantaError(null);
           return;
         }
 
-        // Set the address from Branta resolution (the actual merchant destination)
-        if (validateAddressForCurrentNetwork(result.address)) {
-          setAddress(result.address);
+        try {
+          // Validate address
+          if (validateAddressForCurrentNetwork(result.address)) {
+            setAddress(result.address);
+          }
+
+          // Persist to merchant_labels repository with error handling
+          try {
+            merchantLabelRepository.upsert({
+              address: result.address,
+              platform: result.platform,
+              description: result.description,
+              logoUrl: result.logoUrl,
+              logoLightUrl: result.logoLightUrl,
+              verifyUrl: result.verifyUrl,
+              fetchedAt: Date.now(),
+            });
+          } catch (dbErr) {
+            // Silent DB error - doesn't block UI
+            dbg('Warning: Failed to persist merchant label', dbErr);
+          }
+
+          // Update UI state
+          setBrantaPayment({
+            platform: result.platform,
+            description: result.description,
+            logoUrl: result.logoUrl,
+            logoLightUrl: result.logoLightUrl,
+          });
+          setBrantaVerifyUrl(result.verifyUrl);
+          setBrantaLoading(false);
+          setBrantaError(null);
+        } catch (processErr) {
+          // Error processing result, silent fallback
+          dbg('Error processing Branta result', processErr);
+          setBrantaPayment(null);
+          setBrantaVerifyUrl(undefined);
+          setBrantaLoading(false);
+          setBrantaError(null);
         }
-
-        // Persist to merchant_labels repository
-        merchantLabelRepository.upsert({
-          address: result.address,
-          platform: result.platform,
-          description: result.description,
-          logoUrl: result.logoUrl,
-          logoLightUrl: result.logoLightUrl,
-          verifyUrl: result.verifyUrl,
-          fetchedAt: Date.now(),
-        });
-
-        setBrantaPayment({
-          platform: result.platform,
-          description: result.description,
-          logoUrl: result.logoUrl,
-          logoLightUrl: result.logoLightUrl,
-        });
-        setBrantaVerifyUrl(result.verifyUrl);
-        setBrantaLoading(false);
-      })
-      .catch(err => {
+      } catch (err) {
+        // Top-level catch for any unexpected errors
         if (cancelled) return;
-        dbg('resolveBrantaQr error', err);
+        dbg('Unexpected error in resolveBrantaQr', err);
         setBrantaPayment(null);
         setBrantaVerifyUrl(undefined);
         setBrantaLoading(false);
-      });
+        setBrantaError(null);
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [brantaRawQr, activeNetwork, validateAddressForCurrentNetwork]);
+  }, [brantaRawQr, brantaRawQrProp, activeNetwork, validateAddressForCurrentNetwork]);
   const pasteAddress = useCallback(async () => {
     const text = await Clipboard.getString();
     // Validate that the clipboard contains what looks like a Bitcoin address

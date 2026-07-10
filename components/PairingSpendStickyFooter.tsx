@@ -12,6 +12,7 @@ export type PairingSpendStickyFooterProps = {
   onPress: () => void;
   disabled?: boolean;
   iconSource?: number;
+  buttonColor?: string;
 };
 
 const PairingSpendStickyFooter: React.FC<PairingSpendStickyFooterProps> = ({
@@ -21,6 +22,7 @@ const PairingSpendStickyFooter: React.FC<PairingSpendStickyFooterProps> = ({
   onPress,
   disabled = false,
   iconSource = require('../assets/cosign-icon.png'),
+  buttonColor,
 }) => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
@@ -76,7 +78,7 @@ const PairingSpendStickyFooter: React.FC<PairingSpendStickyFooterProps> = ({
     button: {
       backgroundColor: disabled
         ? theme.colors.border
-        : theme.colors.primary,
+        : buttonColor || theme.colors.primary,
       borderRadius: 12,
       paddingVertical: 14,
       alignItems: 'center',

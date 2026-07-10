@@ -5923,6 +5923,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             summaryLine={nostrSpendSummary}
             network={route.params?.network}
             buttonLabel={nostrSpendLabel}
+            buttonColor={theme.colors.bitcoinOrange}
             onPress={isSignPSBT ? startSignPSBT : startSendBTC}
             disabled={nostrSpendDisabled}
           />

@@ -416,8 +416,6 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
       }
       // It handles back button itself, we just need to handle the result
       BarcodeZxingScan.showQrReader((error: any, data: any) => {
-        // Scanner closed (either via back button or scan completed)
-        isScanningRef.current = false;
         // Clear custom status message
         if (BarcodeZxingScan.setStatusMessage) {
           BarcodeZxingScan.setStatusMessage('');
