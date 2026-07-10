@@ -434,4 +434,4 @@ third_party/
 
 # Docker cache
 .docker-cache/
-build.log
+build.log/libtss

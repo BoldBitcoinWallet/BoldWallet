@@ -13,6 +13,7 @@ import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import moment from 'moment';
 import {dbg, explorerWebBaseFromApiUrl, formatBitcoinDisplay} from '../utils';
+import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 interface TransactionDetailsModalProps {
   visible: boolean;
   onClose: () => void;
@@ -527,6 +528,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                         const addr: string = input.prevout?.scriptpubkey_address || '';
                         const sats: number = input.prevout?.value || 0;
                         const pathInfo = addr ? addressPathMap?.[addr] : undefined;
+                        const merchantLabel = addr ? merchantLabelRepository.getByAddress(addr) : null;
                         const short = addr
                           ? `${addr.slice(0, 9)}…${addr.slice(-6)}`
                           : 'coinbase';
@@ -577,6 +579,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                   {pathInfo ? (
                                     <Text style={styles.flowItemPath} numberOfLines={1}>
                                       {pathInfo.derivationPath} · {pathInfo.chain} #{pathInfo.index}
+                                    </Text>
+                                  ) : merchantLabel ? (
+                                    <Text style={styles.flowItemType} numberOfLines={1}>
+                                      {merchantLabel.platform}
                                     </Text>
                                   ) : (
                                     <Text style={styles.flowItemType}>external</Text>
@@ -629,6 +635,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                         const addr: string = output.scriptpubkey_address || '';
                         const sats: number = output.value || 0;
                         const pathInfo = addr ? addressPathMap?.[addr] : undefined;
+                        const merchantLabel = addr ? merchantLabelRepository.getByAddress(addr) : null;
                         const isChange = pathInfo?.chain === 'change';
                         const short = addr
                           ? `${addr.slice(0, 9)}…${addr.slice(-6)}`
@@ -685,6 +692,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                   {pathInfo ? (
                                     <Text style={styles.flowItemPath} numberOfLines={1}>
                                       {pathInfo.derivationPath} · {pathInfo.chain} #{pathInfo.index}
+                                    </Text>
+                                  ) : merchantLabel ? (
+                                    <Text style={styles.flowItemType} numberOfLines={1}>
+                                      {merchantLabel.platform}
                                     </Text>
                                   ) : (
                                     <Text style={styles.flowItemType}>external</Text>
