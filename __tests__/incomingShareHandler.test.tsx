@@ -1,5 +1,5 @@
 import React from 'react';
-import {AppState} from 'react-native';
+import {Alert, AppState} from 'react-native';
 import TestRenderer, {act} from 'react-test-renderer';
 import IncomingShareHandler from '../components/IncomingShareHandler';
 
@@ -19,6 +19,7 @@ const mockReadKeyshareBase64FromUri = jest.fn();
 const mockSubscribeToSharedFiles = jest.fn();
 const mockGetInitialSharedFileUri = jest.fn();
 const mockModalProps = jest.fn();
+const mockClearPendingSharedFile = jest.fn(async () => undefined);
 
 jest.mock('../context/UserContext', () => ({
   useUser: () => ({
@@ -44,7 +45,7 @@ jest.mock('../services/keyshareImport', () => ({
 }));
 
 jest.mock('../services/incomingShareBridge', () => ({
-  clearPendingSharedFile: jest.fn(async () => undefined),
+  clearPendingSharedFile: () => mockClearPendingSharedFile(),
   getInitialSharedFileUri: (...args: unknown[]) =>
     mockGetInitialSharedFileUri(...args),
   normalizeSharedFileUri: (uri: string) => uri,
@@ -73,6 +74,7 @@ describe('IncomingShareHandler', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     appStateHandler = null;
+    mockClearPendingSharedFile.mockResolvedValue(undefined);
 
     mockSubscribeToSharedFiles.mockImplementation((listener: (uri: string) => void) => {
       void listener;
@@ -96,6 +98,8 @@ describe('IncomingShareHandler', () => {
         }
         return {remove: jest.fn()} as never;
       });
+
+    jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
   });
 
   afterEach(() => {
@@ -137,5 +141,33 @@ describe('IncomingShareHandler', () => {
       | {visible?: boolean}
       | undefined;
     expect(lastModalCall?.visible).toBe(true);
+  });
+
+  it('shows unsupported alert for unknown shared file kinds', async () => {
+    mockClassifyIncomingFile.mockResolvedValue('unknown');
+    mockGetInitialSharedFileUri.mockResolvedValue('file:///tmp/video.mp4');
+
+    await act(async () => {
+      TestRenderer.create(
+        <IncomingShareHandler
+          isAuthenticated={true}
+          navigationRef={navigationRef as never}
+        />,
+      );
+    });
+
+    await act(async () => {
+      appStateHandler?.('active');
+    });
+
+    await flush();
+    await flush();
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Unsupported file',
+      'This file type is not supported by BoldWallet.',
+    );
+    expect(mockReadKeyshareBase64FromUri).not.toHaveBeenCalled();
+    expect(mockClearPendingSharedFile).toHaveBeenCalled();
   });
 });

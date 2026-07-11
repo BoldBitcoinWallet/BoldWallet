@@ -29,17 +29,21 @@
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="*/*" />
+                <data android:mimeType="application/octet-stream" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="content" />
-                <data android:scheme="file" />
-                <data android:mimeType="*/*" />
-                <data android:pathPattern=".*\\.share" />
-                <data android:pathPattern=".*\\.psbt" />
+                <data android:scheme="content" android:pathPattern=".*\\.share" />
+                <data android:scheme="file" android:pathPattern=".*\\.share" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" android:pathPattern=".*\\.psbt" />
+                <data android:scheme="file" android:pathPattern=".*\\.psbt" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />

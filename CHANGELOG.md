@@ -23,6 +23,7 @@
 - **Imports** — added `parseBitcoinUri` export to `incomingUrlRouter.ts` for BIP-21 parsing in SendBitcoinModal.
 
 ### Fixed / hardening
+- **Share-sheet file-type hardening (Android + iOS)** — narrowed file-share/open registration and native intake guards to supported extensions (`.share`, `.psbt`) so unrelated files (for example `.mp4`) are no longer suggested to/opened by BoldWallet; classifier fallback now returns `unknown` instead of treating unknown files as keyshare.
 - **UI crash prevention** — all Branta errors (network timeouts, SDK failures, malformed responses, database errors) are caught and silently ignored; user can always manually enter address or use cached merchant info from prior scans.
 - **Non-blocking persistence** — database write errors (full disk, permission issues) do not block merchant info display or prevent address from populating.
 - **Privacy** — Branta SDK configured with `privacy: 'strict'` so plaintext addresses are never resolved; only ZK-encoded QRs with branta_id + branta_secret params trigger merchant lookup.

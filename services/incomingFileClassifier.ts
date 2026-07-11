@@ -42,7 +42,7 @@ export async function classifyIncomingFile(uri: string): Promise<IncomingFileKin
   } catch {
     // fall through
   }
-  return 'keyshare';
+  return 'unknown';
 }
 
 export async function readPsbtBase64FromSharedUri(uri: string): Promise<string> {

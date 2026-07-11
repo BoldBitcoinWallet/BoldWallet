@@ -1,7 +1,8 @@
 import UIKit
-import UniformTypeIdentifiers
 
 class ShareViewController: UIViewController {
+  private let supportedExtensions: Set<String> = ["share", "psbt"]
+
   override func viewDidAppear(_ animated: Bool) {
     super.viewDidAppear(animated)
     handleSharedContent()
@@ -19,11 +20,9 @@ class ShareViewController: UIViewController {
       }
       for provider in attachments {
         let typeIdentifiers = [
-          UTType.data.identifier,
-          UTType.item.identifier,
-          UTType.content.identifier,
-          UTType.fileURL.identifier,
-          "public.data",
+          "org.reactjs.native.boldbtc.wallet.keyshare",
+          "org.reactjs.native.boldbtc.wallet.psbt",
+          "public.file-url",
         ]
         for typeIdentifier in typeIdentifiers where provider.hasItemConformingToTypeIdentifier(typeIdentifier) {
           provider.loadItem(forTypeIdentifier: typeIdentifier, options: nil) { [weak self] item, _ in
@@ -40,25 +39,18 @@ class ShareViewController: UIViewController {
 
   private func handleLoadedItem(_ item: NSSecureCoding?) {
     if let url = item as? URL {
-      if KeyshareShareStorage.copyIncomingFile(at: url) != nil {
+      if isSupportedSharedFile(url), KeyshareShareStorage.copyIncomingFile(at: url) != nil {
         openHostApp()
         closeExtension()
         return
-      }
-    }
-    if let data = item as? Data, let containerURL = KeyshareShareStorage.groupContainerURL() {
-      let destinationURL = containerURL.appendingPathComponent(KeyshareShareStorage.pendingFileName)
-      do {
-        try data.write(to: destinationURL)
-        KeyshareShareStorage.storePendingUri(destinationURL.path)
-        openHostApp()
-        closeExtension()
-        return
-      } catch {
-        // fall through
       }
     }
     closeExtension()
+  }
+
+  private func isSupportedSharedFile(_ url: URL) -> Bool {
+    let ext = url.pathExtension.lowercased()
+    return supportedExtensions.contains(ext)
   }
 
   private func openHostApp() {
