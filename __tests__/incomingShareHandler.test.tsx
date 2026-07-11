@@ -32,13 +32,12 @@ jest.mock('../services/walletGuard', () => ({
 }));
 
 jest.mock('../services/incomingFileClassifier', () => ({
-  classifyIncomingFile: (...args: unknown[]) => mockClassifyIncomingFile(...args),
+  classifyIncomingFile: (uri: string) => mockClassifyIncomingFile(uri),
 }));
 
 jest.mock('../services/keyshareImport', () => ({
   importKeyshareFromBase64: jest.fn(),
-  readKeyshareBase64FromUri: (...args: unknown[]) =>
-    mockReadKeyshareBase64FromUri(...args),
+  readKeyshareBase64FromUri: (uri: string) => mockReadKeyshareBase64FromUri(uri),
   showKeyshareImportError: jest.fn(),
   showWalletAlreadyLoadedAlert: jest.fn(),
   WalletAlreadyLoadedError: class WalletAlreadyLoadedError extends Error {},
@@ -46,11 +45,10 @@ jest.mock('../services/keyshareImport', () => ({
 
 jest.mock('../services/incomingShareBridge', () => ({
   clearPendingSharedFile: () => mockClearPendingSharedFile(),
-  getInitialSharedFileUri: (...args: unknown[]) =>
-    mockGetInitialSharedFileUri(...args),
+  getInitialSharedFileUri: () => mockGetInitialSharedFileUri(),
   normalizeSharedFileUri: (uri: string) => uri,
-  subscribeToSharedFiles: (...args: unknown[]) =>
-    mockSubscribeToSharedFiles(...args),
+  subscribeToSharedFiles: (listener: (uri: string) => void) =>
+    mockSubscribeToSharedFiles(listener),
 }));
 
 jest.mock('../components/KeyshareImportPasswordModal', () => {
