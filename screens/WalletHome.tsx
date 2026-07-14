@@ -244,7 +244,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [initialSendAmountBtc, setInitialSendAmountBtc] = useState<
     string | null
   >(null);
+  const [initialSendBrantaRawQr, setInitialSendBrantaRawQr] = useState<
+    string | null
+  >(null);
   const [scannedFromQR, setScannedFromQR] = useState(false); // Track if data came from QR scan
+  const [isNostrTransportSupported, setIsNostrTransportSupported] =
+    useState(true);
   const [priceData, setPriceData] = useState<{[key: string]: number}>({});
   const [_segwitCompatibleAddress, setSegwitCompatibleAddress] =
     React.useState('');
@@ -1385,6 +1390,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       blurr ? 'true' : 'false',
     );
   };
+  const resolveNostrTransportSupport = useCallback(async (): Promise<boolean> => {
+    try {
+      const keyshare = await getKeyshareMetadata();
+      return !!(keyshare?.nostr_npub && keyshare.nostr_npub.trim() !== '');
+    } catch (error) {
+      dbg('Error checking keyshare for Nostr support:', error);
+      return false;
+    }
+  }, []);
   const handleSend = async (
     to: string,
     amountSats: Big,
@@ -1397,144 +1411,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setIsSending(true);
       // Close send modal immediately
       setIsSendModalVisible(false);
-      // Check if keyshare supports Nostr (has nostr_npub)
-      try {
-        const keyshare = await getKeyshareMetadata();
-        if (keyshare) {
-          const hasNostrSupport =
-            keyshare.nostr_npub && keyshare.nostr_npub.trim() !== '';
-          if (!hasNostrSupport) {
-            // Keyshare was generated with local mode, navigate directly to MobilesPairing
-            const toAddress = to;
-            const satoshiAmount = amountSats.toString().split('.')[0];
-            const fiatAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
-            const satoshiFees = feeSats.toString().split('.')[0];
-            const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
-            // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
-            // If scanned from QR, use QR values; otherwise use computed values from handleSend
-            let addressTypeToUse = '';
-            let derivationPathToUse = '';
-            let networkToUse = '';
-            let fromAddressToUse = '';
-            if (scannedFromQR) {
-              // Use values from scanned QR code
-              addressTypeToUse =
-                scannedAddressType && scannedAddressType.trim() !== ''
-                  ? scannedAddressType
-                  : '';
-              derivationPathToUse =
-                currentDerivationPath && currentDerivationPath.trim() !== ''
-                  ? currentDerivationPath
-                  : '';
-              networkToUse =
-                scannedNetwork && scannedNetwork.trim() !== ''
-                  ? scannedNetwork
-                  : '';
-              fromAddressToUse = '';
-            } else {
-              // Use computed values from handleSend (sender device)
-              // Compute derivation path if not already set
-              addressTypeToUse = addressType || 'segwit-native';
-              if (
-                !currentDerivationPath ||
-                currentDerivationPath.trim() === ''
-              ) {
-                const useLegacyPath = resolveUseLegacyDerivationPaths(keyshare);
-                const normalizedNetwork =
-                  network === 'testnet3' ? 'testnet' : network || 'mainnet';
-                const externalIndex = await getExternalIndex(
-                  network || 'mainnet',
-                  addressTypeToUse,
-                );
-                derivationPathToUse = getReceivePath(
-                  normalizedNetwork,
-                  addressTypeToUse,
-                  useLegacyPath,
-                  externalIndex,
-                );
-              } else {
-                derivationPathToUse = currentDerivationPath;
-              }
-              networkToUse = network || 'mainnet'; // Keep native format
-              fromAddressToUse = computedFromAddress;
-            }
-            // Validate required parameters
-            if (!addressTypeToUse || addressTypeToUse.trim() === '') {
-              Alert.alert(
-                'Error',
-                'Address type is required for send transaction',
-              );
-              setIsSending(false);
-              return;
-            }
-            if (!derivationPathToUse || derivationPathToUse.trim() === '') {
-              Alert.alert(
-                'Error',
-                'Derivation path is required for send transaction',
-              );
-              setIsSending(false);
-              return;
-            }
-            if (!networkToUse || networkToUse.trim() === '') {
-              Alert.alert('Error', 'Network is required for send transaction');
-              setIsSending(false);
-              return;
-            }
-            const navigationParams = {
-              mode: 'send_btc',
-              addressType: addressTypeToUse.trim(), // MANDATORY: address type from sender or QR
-              toAddress,
-              satoshiAmount,
-              fiatAmount,
-              satoshiFees,
-              fiatFees,
-              selectedCurrency,
-              spendingHash,
-              derivationPath: derivationPathToUse.trim(), // MANDATORY: derivation path from sender or QR
-              network: networkToUse.trim(), // MANDATORY: network from sender or QR (native format)
-            };
-            dbg(
-              '=== WalletHome: Navigating to MobilesPairing (no Nostr support) ===',
-              {
-                scannedFromQR,
-                params: {
-                  addressType: addressTypeToUse,
-                  derivationPath: derivationPathToUse,
-                  network: networkToUse,
-                  fromAddress: fromAddressToUse,
-                  toAddress,
-                  satoshiAmount,
-                  satoshiFees,
-                },
-                source: {
-                  scannedAddressType,
-                  scannedNetwork,
-                  currentDerivationPath,
-                  computedFromAddress,
-                  walletAddressType: addressType,
-                  walletNetwork: network,
-                },
-              },
-            );
-            navigation.dispatch(
-              CommonActions.navigate({
-                name: 'Devices Pairing',
-                params: navigationParams,
-              }),
-            );
-            setIsSending(false);
-            setScannedFromQR(false);
-            setScannedAddressType('');
-            setCurrentDerivationPath('');
-            setScannedNetwork('');
-            setComputedFromAddress('');
-            return;
-          }
-        }
-      } catch (error) {
-        dbg('Error checking keyshare for Nostr support:', error);
-        // Continue to show transport selector if check fails
-      }
+      const hasNostrSupport = await resolveNostrTransportSupport();
+      setIsNostrTransportSupported(hasNostrSupport);
       // CRITICAL: Compute derivation path, from address, and ensure network is in native format
       // This ensures all parameters are correctly propagated to pairing screens
       let derivationPath = '';
@@ -1751,6 +1629,21 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         addressCandidate =
           extractBitcoinAddressFromPaymentInput(trimmed) ?? trimmed;
       }
+
+      // Check if this is a Branta-enhanced BIP-21 URI (contains branta_id and branta_secret params)
+      // Treat as normal BIP-21 URI PLUS trigger merchant lookup in parallel
+      let initialBrantaQr: string | undefined;
+      try {
+        const hasBrantaParams = trimmed.includes('branta_id') &&
+                               trimmed.includes('branta_secret');
+        if (hasBrantaParams) {
+          dbg('Detected Branta ZK params in BIP-21 URI, will lookup merchant info');
+          initialBrantaQr = trimmed;
+        }
+      } catch (brantaCheckErr) {
+        dbg('Error checking Branta params', brantaCheckErr);
+      }
+
       const networkForValidation =
         network === 'testnet3' ? 'testnet' : network || 'mainnet';
       if (
@@ -1759,6 +1652,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       ) {
         setInitialSendAddress(addressCandidate);
         setInitialSendAmountBtc(amountBtc ?? null);
+        if (initialBrantaQr) {
+          setInitialSendBrantaRawQr(initialBrantaQr);
+        }
         setIsSendModalVisible(true);
         return;
       }
@@ -1887,11 +1783,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       });
       setScannedFromQR(true);
       // Show transport selector immediately (no QR code shown since data came from scan)
-      setTimeout(() => {
+      setTimeout(async () => {
+        const hasNostrSupport = await resolveNostrTransportSupport();
+        setIsNostrTransportSupported(hasNostrSupport);
         setIsTransportModalVisible(true);
       }, 300);
     },
-    [network],
+    [network, resolveNostrTransportSupport],
   );
   // Handle QR scan for send bitcoin data
   const handleScanQRForSend = useCallback(() => {
@@ -2446,15 +2344,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               : balanceBTC,
           )}
           walletAddress={address}
+          initialAddress={initialSendAddress ?? undefined}
+          initialAmountBtc={initialSendAmountBtc ?? undefined}
+          initialBrantaRawQr={initialSendBrantaRawQr ?? undefined}
           onClose={() => {
             setIsSendModalVisible(false);
             setInitialSendAddress(null);
             setInitialSendAmountBtc(null);
+            setInitialSendBrantaRawQr(null);
           }}
           onSend={handleSend}
           selectedCurrency={selectedCurrency}
-          initialAddress={initialSendAddress ?? undefined}
-          initialAmountBtc={initialSendAmountBtc ?? undefined}
         />
       )}
       <TransportModeSelector
@@ -2472,6 +2372,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }}
         title="Co-Sign Via…"
         description=""
+        nostrEnabled={isNostrTransportSupported}
+        defaultTransport={isNostrTransportSupported ? null : 'local'}
         sendBitcoinData={
           pendingSendParams
             ? {

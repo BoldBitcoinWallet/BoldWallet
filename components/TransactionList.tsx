@@ -37,6 +37,7 @@ import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
 import TransactionDetailsModal from './TransactionDetailsModal';
 import transactionRepository from '../services/repositories/TransactionRepository';
+import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import apiQueue from '../services/ApiQueue';
 import transactionSyncer from '../services/sync/TransactionSyncer';
 import HistoricalPriceService, {
@@ -1387,6 +1388,10 @@ const TransactionList = React.forwardRef<
           // Set empty array for received transactions (not used in display)
           relevantAddresses = [];
         }
+        // Look up merchant label for the relevant address (Branta verification cache)
+        const merchantLabel = relevantAddress
+          ? merchantLabelRepository.getByAddress(relevantAddress)
+          : null;
         // Follow global BTC/sats toggle (WalletHome)
         // sent === 0: all outputs landed on our own addresses — self-directed tx.
         // Distinguish by number of internal outputs:
@@ -1515,16 +1520,26 @@ const TransactionList = React.forwardRef<
                 <View style={styles.addressContainer}>
                   <Text style={styles.address}>
                     {status.includes('Sen') ? 'To: ' : 'Fr: '}
-                    <Text style={styles.addressText}>
-                      {relevantAddress.slice(0, 3)}…{relevantAddress.slice(-3)}
-                      {status.includes('Sen') &&
-                        relevantAddresses.length > 1 && (
-                          <Text style={styles.addressText}>
-                            {' '}
-                            (+{relevantAddresses.length - 1})
-                          </Text>
-                        )}
-                    </Text>
+                    {merchantLabel ? (
+                      <Text style={[styles.addressText, {fontWeight: '600'}]}>
+                        {merchantLabel.platform}
+                        {'\n'}
+                        <Text style={styles.addressText}>
+                          {relevantAddress.slice(0, 3)}…{relevantAddress.slice(-3)}
+                        </Text>
+                      </Text>
+                    ) : (
+                      <Text style={styles.addressText}>
+                        {relevantAddress.slice(0, 3)}…{relevantAddress.slice(-3)}
+                        {status.includes('Sen') &&
+                          relevantAddresses.length > 1 && (
+                            <Text style={styles.addressText}>
+                              {' '}
+                              (+{relevantAddresses.length - 1})
+                            </Text>
+                          )}
+                      </Text>
+                    )}
                   </Text>
                 </View>
                 <Text style={styles.fiatAmount}>

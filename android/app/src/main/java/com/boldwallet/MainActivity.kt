@@ -11,6 +11,8 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class MainActivity : ReactActivity() {
 
+    private val sharedFileUriRegex = Regex(".*\\.(share|psbt)(?:[?#].*)?$")
+
     override fun getMainComponentName(): String = "BoldWallet"
 
     override fun createReactActivityDelegate(): ReactActivityDelegate =
@@ -73,21 +75,27 @@ class MainActivity : ReactActivity() {
             Intent.ACTION_SEND -> {
                 val streamUri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
                 if (streamUri != null) {
-                    return streamUri.toString()
+                    val uri = streamUri.toString()
+                    return if (isSupportedSharedFileUri(uri)) uri else null
                 }
                 val text = intent.getStringExtra(Intent.EXTRA_TEXT)
                 if (!text.isNullOrBlank() && (text.startsWith("content://") || text.startsWith("file://"))) {
-                    return text.trim()
+                    val uri = text.trim()
+                    return if (isSupportedSharedFileUri(uri)) uri else null
                 }
             }
             Intent.ACTION_VIEW -> {
                 val data = intent.data ?: return null
                 val scheme = data.scheme?.lowercase() ?: return null
                 if (scheme == "content" || scheme == "file") {
-                    return data.toString()
+                    val uri = data.toString()
+                    return if (isSupportedSharedFileUri(uri)) uri else null
                 }
             }
         }
         return null
     }
+
+    private fun isSupportedSharedFileUri(uri: String): Boolean =
+        sharedFileUriRegex.matches(uri.lowercase())
 }

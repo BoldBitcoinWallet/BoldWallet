@@ -90,11 +90,10 @@
 			<key>CFBundleTypeName</key>
 			<string>BoldWallet Keyshare</string>
 			<key>LSHandlerRank</key>
-			<string>Owner</string>
+			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>org.reactjs.native.boldbtc.wallet.keyshare</string>
-				<string>public.data</string>
 			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>
@@ -103,11 +102,10 @@
 			<key>CFBundleTypeName</key>
 			<string>BoldWallet PSBT</string>
 			<key>LSHandlerRank</key>
-			<string>Owner</string>
+			<string>Alternate</string>
 			<key>LSItemContentTypes</key>
 			<array>
 				<string>org.reactjs.native.boldbtc.wallet.psbt</string>
-				<string>public.data</string>
 			</array>
 			<key>CFBundleTypeRole</key>
 			<string>Viewer</string>

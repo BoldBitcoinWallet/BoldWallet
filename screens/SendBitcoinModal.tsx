@@ -38,6 +38,10 @@ import utxoRepository from '../services/repositories/UtxoRepository';
 import {estimateFee, type FeeStrategy} from '../services/feeUtils';
 import {formatFeeEstimationError} from '../services/feeErrorMessages';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {initializeBranta, resolveBrantaQr} from '../services/BrantaService';
+import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
+import BrantaVerificationCard from '../components/BrantaVerificationCard';
+import {extractBitcoinAddressFromPaymentInput, parseBitcoinUri} from '../services/incomingUrlRouter';
 const {BBMTLibNativeModule} = NativeModules;
 
 const SEND_BITCOIN_VIDEO_GUIDE_URL =
@@ -69,6 +73,8 @@ interface SendBitcoinModalProps {
   initialAddress?: string;
   /** Pre-fill amount in BTC when opening (e.g. BIP-21 amount query). */
   initialAmountBtc?: string;
+  /** Pre-fill Branta QR for verification when opening (e.g. from WalletHome scan). */
+  initialBrantaRawQr?: string;
 }
 const E8 = Big(10).pow(8);
 const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
@@ -81,6 +87,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   selectedCurrency,
   initialAddress,
   initialAmountBtc,
+  initialBrantaRawQr,
 }) => {
   const isMountedRef = useRef(true);
   const visibleRef = useRef(visible);
@@ -101,6 +108,18 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [_activeInput, setActiveInput] = useState<'btc' | 'usd' | null>(null);
   const [feeStrategy, setFeeStrategy] = useState('1hr');
   const [addressError, setAddressError] = useState<string | null>(null);
+  // Branta verification state
+  const [brantaRawQr, setBrantaRawQr] = useState<string>('');
+  const [brantaPayment, setBrantaPayment] = useState<{
+    platform: string;
+    description?: string;
+    logoUrl?: string;
+    logoLightUrl?: string;
+  } | null>(null);
+  const [brantaVerifyUrl, setBrantaVerifyUrl] = useState<string | undefined>();
+  const [brantaLoading, setBrantaLoading] = useState(false);
+  const [_brantaError, setBrantaError] = useState<string | null>(null);
+  const [brantaRawQrProp, setBrantaRawQrProp] = useState<string>('');
   const {theme} = useTheme();
   const {
     showSats,
@@ -693,6 +712,11 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     if (!visible) {
       setAddress('');
       lastFeeInputsRef.current = '';
+      // Reset Branta state when modal closes
+      setBrantaRawQr('');
+      setBrantaPayment(null);
+      setBrantaVerifyUrl(undefined);
+      setBrantaLoading(false);
       return;
     }
     if (initialAddress) {
@@ -738,6 +762,137 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     // debouncedGetFee is memoized once; do not list it or getFee — would cancel/reset the debouncer on unrelated identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [address, btcAmount, feeStrategy, validateAddressForCurrentNetwork]);
+  // Initialize Branta service and pre-load QR data if provided
+  useEffect(() => {
+    try {
+      initializeBranta(activeNetwork);
+      
+      // If prop-provided Branta QR, extract address+amount immediately from bitcoin: URI
+      // and also trigger merchant info resolution
+      if (initialBrantaRawQr) {
+        try {
+          // Extract address and amount from bitcoin: URI without waiting for API
+          const parsed = parseBitcoinUri(initialBrantaRawQr);
+          if (parsed.kind === 'bitcoin-pay') {
+            setAddress(parsed.address);
+            if (parsed.amountBtc) {
+              try {
+                const amountBTC = Big(parsed.amountBtc);
+                if (amountBTC.gt(0)) {
+                  setBtcAmount(amountBTC);
+                  setInBtcAmount(amountBTC.toFixed(8));
+                  setInUsdAmount(amountBTC.times(btcToFiatRate).toFixed(2));
+                }
+              } catch (e) {
+                // Ignore invalid amount
+              }
+            }
+          }
+          // Trigger merchant info resolution in background
+          setBrantaRawQrProp(initialBrantaRawQr);
+        } catch (parseErr) {
+          dbg('Error parsing Branta QR', parseErr);
+          setBrantaRawQrProp('');
+        }
+      } else {
+        setBrantaRawQrProp('');
+      }
+    } catch (err) {
+      // Silent error in initialization
+      dbg('Error initializing Branta', err);
+      setBrantaRawQrProp('');
+    }
+  }, [activeNetwork, initialBrantaRawQr, btcToFiatRate]);
+  // Resolve Branta QR when raw QR data is set (strict mode: only ZK-encoded QRs)
+  useEffect(() => {
+    const rawQr = brantaRawQr || brantaRawQrProp;
+    
+    if (!rawQr) {
+      setBrantaPayment(null);
+      setBrantaVerifyUrl(undefined);
+      setBrantaLoading(false);
+      setBrantaError(null);
+      return;
+    }
+
+    // Reset error state and mark as loading
+    setBrantaPayment(null);
+    setBrantaVerifyUrl(undefined);
+    setBrantaLoading(true);
+    setBrantaError(null);
+    let cancelled = false;
+
+    // Wrap entire Branta resolution in try-catch for robustness
+    (async () => {
+      try {
+        const result = await resolveBrantaQr(rawQr, activeNetwork);
+        
+        if (cancelled) return;
+
+        if (!result) {
+          // Silent fallback: no Branta data found, continue with manual entry
+          setBrantaPayment(null);
+          setBrantaVerifyUrl(undefined);
+          setBrantaLoading(false);
+          setBrantaError(null);
+          return;
+        }
+
+        try {
+          // Validate address
+          if (validateAddressForCurrentNetwork(result.address)) {
+            setAddress(result.address);
+          }
+
+          // Persist to merchant_labels repository with error handling
+          try {
+            merchantLabelRepository.upsert({
+              address: result.address,
+              platform: result.platform,
+              description: result.description,
+              logoUrl: result.logoUrl,
+              logoLightUrl: result.logoLightUrl,
+              verifyUrl: result.verifyUrl,
+              fetchedAt: Date.now(),
+            });
+          } catch (dbErr) {
+            // Silent DB error - doesn't block UI
+            dbg('Warning: Failed to persist merchant label', dbErr);
+          }
+
+          // Update UI state
+          setBrantaPayment({
+            platform: result.platform,
+            description: result.description,
+            logoUrl: result.logoUrl,
+            logoLightUrl: result.logoLightUrl,
+          });
+          setBrantaVerifyUrl(result.verifyUrl);
+          setBrantaLoading(false);
+          setBrantaError(null);
+        } catch (processErr) {
+          // Error processing result, silent fallback
+          dbg('Error processing Branta result', processErr);
+          setBrantaPayment(null);
+          setBrantaVerifyUrl(undefined);
+          setBrantaLoading(false);
+          setBrantaError(null);
+        }
+      } catch (err) {
+        // Top-level catch for any unexpected errors
+        if (cancelled) return;
+        dbg('Unexpected error in resolveBrantaQr', err);
+        setBrantaPayment(null);
+        setBrantaVerifyUrl(undefined);
+        setBrantaLoading(false);
+        setBrantaError(null);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [brantaRawQr, brantaRawQrProp, activeNetwork, validateAddressForCurrentNetwork]);
   const pasteAddress = useCallback(async () => {
     const text = await Clipboard.getString();
     // Validate that the clipboard contains what looks like a Bitcoin address
@@ -826,6 +981,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       if (!qrData || !qrData.trim()) {
         return;
       }
+
+      // Store raw QR for Branta resolution (if it contains branta_id & branta_secret, it will resolve)
+      setBrantaRawQr(qrData.trim());
+
+      // Detect if this is a Branta ZK QR by checking for ZK parameters
+      const hasBrantaParams = qrData.includes('branta_id') && qrData.includes('branta_secret');
+
       // Check if it's a send bitcoin QR format (address|amount|fee|hash|addressType|derivationPath)
       const decoded = decodeSendBitcoinQR(qrData) as {
         toAddress: string;
@@ -865,9 +1027,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         setInBtcAmount(amountBTC.toFixed(8));
         setInUsdAmount(amountBTC.times(btcToFiatRate).toFixed(2));
         setSpendingHash(decoded.spendingHash || '');
-        // Set the fee (will be validated when fee estimation runs)
-        // Note: The fee from QR might not match current network conditions,
-        // but we'll let the fee estimation handle that
         Alert.alert(
           'Transaction Details Loaded',
           `Address and amount have been filled from the QR code.\n\nAddress: ${decoded.toAddress.substring(
@@ -878,10 +1037,35 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
             formatted: balanceFormattingEnabled,
           })}\n\nPlease review and confirm.`,
         );
+      } else if (hasBrantaParams) {
+        // Branta ZK QR detected — don't extract address from URI placeholder
+        // The Branta effect will resolve and set the actual destination address
+        // (Branta returns the real merchant address, not the bitcoin: URI placeholder)
+        dbg('handleQRScan: Detected Branta ZK params, waiting for resolution');
       } else {
-        // It's a regular Bitcoin address - just set the address
-        if (validateAddressForCurrentNetwork(qrData.trim())) {
-          setAddress(qrData.trim());
+        // Try to handle as bitcoin: URI or plain address
+        const extractedAddress = extractBitcoinAddressFromPaymentInput(
+          qrData.trim(),
+        );
+        if (extractedAddress && validateAddressForCurrentNetwork(extractedAddress)) {
+          setAddress(extractedAddress);
+          // If it was a bitcoin: URI with amount parameter, extract and populate it
+          if (qrData.trim().toLowerCase().startsWith('bitcoin:')) {
+            try {
+              const url = new URL(qrData.trim());
+              const amountParam = url.searchParams.get('amount');
+              if (amountParam) {
+                const amountBTC = Big(amountParam);
+                if (amountBTC.gt(0)) {
+                  setBtcAmount(amountBTC);
+                  setInBtcAmount(amountBTC.toFixed(8));
+                  setInUsdAmount(amountBTC.times(btcToFiatRate).toFixed(2));
+                }
+              }
+            } catch {
+              // Ignore errors in URI parsing; address was already extracted
+            }
+          }
         } else {
           Alert.alert(
             'Invalid QR Code',
@@ -1093,6 +1277,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   {addressError && (
                     <AppText style={styles.errorText}>{addressError}</AppText>
                   )}
+                  <BrantaVerificationCard
+                    platform={brantaPayment?.platform}
+                    description={brantaPayment?.description}
+                    logoUrl={brantaPayment?.logoUrl}
+                    logoLightUrl={brantaPayment?.logoLightUrl}
+                    verifyUrl={brantaVerifyUrl}
+                    isLoading={brantaLoading}
+                  />
                   {/* Balance Card */}
                   <View style={styles.balanceCard}>
                     <View style={styles.balanceCardLeft}>

@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {View, Text, StyleSheet, Modal, Image, ScrollView} from 'react-native';
 import AppPressable from './AppPressable';
 import StaticQRCode from './StaticQRCode';
@@ -8,6 +8,8 @@ interface TransportModeSelectorProps {
   visible: boolean;
   onClose: () => void;
   onSelect: (transport: 'local' | 'nostr') => void;
+  nostrEnabled?: boolean;
+  defaultTransport?: 'local' | 'nostr' | null;
   title?: string;
   description?: string;
   // Optional: Show QR code for send bitcoin data (only on device 1, not when scanned)
@@ -33,23 +35,41 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   visible,
   onClose,
   onSelect,
+  nostrEnabled = true,
+  defaultTransport = null,
   title = 'Transport Method',
   description = 'Choose how to connect with other devices',
   sendBitcoinData = null,
   showQRCode = true,
 }) => {
   const {theme} = useTheme();
+  const initialTransport = useMemo<'local' | 'nostr' | null>(() => {
+    if (!nostrEnabled) {
+      return 'local';
+    }
+    return defaultTransport;
+  }, [defaultTransport, nostrEnabled]);
   const [selectedTransport, setSelectedTransport] = useState<
     'local' | 'nostr' | null
-  >(null);
+  >(initialTransport);
+
+  useEffect(() => {
+    if (visible) {
+      setSelectedTransport(initialTransport);
+    }
+  }, [initialTransport, visible]);
+
   const handleSelect = (transport: 'local' | 'nostr') => {
+    if (transport === 'nostr' && !nostrEnabled) {
+      return;
+    }
     setSelectedTransport(transport);
   };
   const handleContinue = () => {
     if (selectedTransport) {
       onSelect(selectedTransport);
       onClose();
-      setSelectedTransport(null);
+      setSelectedTransport(initialTransport);
     }
   };
   const styles = StyleSheet.create({
@@ -234,6 +254,17 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     transportOptionDescriptionSelected: {
       color: theme.colors.textSecondary,
     },
+    transportOptionCardDisabled: {
+      opacity: 0.45,
+      borderColor: theme.colors.border + '70',
+    },
+    transportDisabledText: {
+      marginTop: 8,
+      marginBottom: 8,
+      fontSize: theme.fontSizes?.sm || 12,
+      color: theme.colors.textSecondary,
+      textAlign: 'left',
+    },
     transportSelectedHint: {
       marginTop: 12,
       backgroundColor:
@@ -346,7 +377,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
             <AppPressable
               style={styles.closeButton}
               onPress={() => {
-                setSelectedTransport(null);
+                setSelectedTransport(initialTransport);
                 onClose();
               }}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
@@ -362,6 +393,11 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
             showsVerticalScrollIndicator={false}>
             {description && description.length > 0 && (
               <Text style={styles.modalDescription}>{description}</Text>
+            )}
+            {!nostrEnabled && (
+              <Text style={styles.transportDisabledText}>
+                Nostr is not available for this wallet keyshare.
+              </Text>
             )}
             {/* QR Code Section - Only show if sendBitcoinData exists and showQRCode is true */}
             {sendBitcoinData &&
@@ -438,10 +474,12 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
               <AppPressable
                 style={[
                   styles.transportOptionCard,
+                  !nostrEnabled && styles.transportOptionCardDisabled,
                   selectedTransport === 'nostr' &&
                     styles.transportOptionCardSelected,
                 ]}
                 onPress={() => handleSelect('nostr')}
+                disabled={!nostrEnabled}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <View style={styles.transportOptionContent}>
                   <View style={styles.transportOptionIconWrapper}>

@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {Alert} from 'react-native';
+import {Alert, AppState} from 'react-native';
 import {CommonActions} from '@react-navigation/native';
 import type {NavigationContainerRef} from '@react-navigation/native';
 import KeyshareImportPasswordModal from './KeyshareImportPasswordModal';
@@ -49,6 +49,9 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [fileContent, setFileContent] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [isAppActive, setIsAppActive] = useState(
+    () => AppState.currentState === 'active',
+  );
   const processingUriRef = useRef<string | null>(null);
   const queuedUriRef = useRef<string | null>(null);
 
@@ -148,11 +151,11 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
         return;
       }
       queuedUriRef.current = normalized;
-      if (isAuthenticated) {
+      if (isAuthenticated && isAppActive) {
         void processSharedUri(normalized);
       }
     },
-    [isAuthenticated, processSharedUri],
+    [isAppActive, isAuthenticated, processSharedUri],
   );
 
   useEffect(() => {
@@ -161,7 +164,27 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
   }, [enqueueSharedUri]);
 
   useEffect(() => {
-    if (!isAuthenticated) {
+    const sub = AppState.addEventListener('change', state => {
+      setIsAppActive(state === 'active');
+    });
+    return () => {
+      sub.remove();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAuthenticated || !isAppActive) {
+      return;
+    }
+    const queuedUri = queuedUriRef.current;
+    if (!queuedUri) {
+      return;
+    }
+    void processSharedUri(queuedUri);
+  }, [isAppActive, isAuthenticated, processSharedUri]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !isAppActive) {
       return;
     }
     let cancelled = false;
@@ -176,7 +199,7 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, enqueueSharedUri]);
+  }, [isAppActive, isAuthenticated, enqueueSharedUri]);
 
   const handleCloseModal = () => {
     setModalVisible(false);

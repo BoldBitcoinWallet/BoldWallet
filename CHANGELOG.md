@@ -1,5 +1,50 @@
 # Changelog
 
+## [4.0.2] - 2026-07-10
+
+> **Feature release:** Branta.pro address verification SDK integration for merchant identification and verification display on Bitcoin sends. Verified merchant logos and links auto-detect from Branta-enhanced BIP-21 URIs in both WalletHome and SendBitcoinModal scanners, with seamless address/amount extraction and silent fallback on network errors.
+
+### Added
+- **Branta SDK integration** — `@branta-ops/branta@^3.1.3` (v2 API) with strict privacy mode for ZK-encoded merchant verification (plaintext addresses do not resolve). React Native crypto provider via `@noble/hashes` and `@noble/ciphers`.
+- **BrantaService functional API** — `initializeBranta(network)` and `resolveBrantaQr(rawQr, network)` wrapper that normalizes network mapping ('mainnet' → Production, all others → Staging), handles SDK initialization, and swallows errors with silent fallback.
+- **Merchant label persistence** — `MerchantLabelRepository` via SQLite `merchant_labels` table stores address → merchant metadata (platform, description, logoUrl, logoLightUrl, verifyUrl, fetchedAt) with upsert semantics.
+- **BrantaVerificationCard component** — renders merchant verification badge showing platform (bold), optional description, and "Verified by Branta" clickable link; theme-aware logo selection (light/dark mode); returns null when no platform is present.
+- **Branta-enhanced BIP-21 URI support** — `bitcoin:address?branta_id=...&branta_secret=...` URIs are parsed as standard BIP-21 (address + amount extracted immediately) PLUS trigger merchant lookup in parallel. Detected in both WalletHome scanner and SendBitcoinModal scanner.
+- **Instant address/amount prefill from Branta QRs** — SendBitcoinModal immediately extracts address and amount from the bitcoin: URI via `parseBitcoinUri()` without waiting for API resolution; merchant info loads in background, enabling fee estimation to start instantly.
+- **WalletHome Branta QR auto-detection** — `processScannedQRData` detects branta_id + branta_secret params and passes the raw QR to SendBitcoinModal via `initialBrantaRawQr` prop for seamless merchant lookup flow.
+- **Comprehensive error handling** — nested try-catch blocks throughout Branta resolution (SDK call, result processing, database persistence) with silent fallback on all errors; database persistence errors do not block UI; network failures allow manual entry to continue.
+- **Integration tests** — `__tests__/brantaService.test.ts` with 9 tests covering function exports, network mapping, crypto provider compatibility, privacy mode, URL sanitization, empty input handling, and address extraction.
+
+### Changed
+- **SendBitcoinModal initialization** — added `initialBrantaRawQr` prop support; Branta initialization and prop-provided QR pre-loading use try-catch; address and amount are extracted immediately from BIP-21 URI.
+- **SendBitcoinModal Branta resolution** — async/await pattern with outer try-catch (SDK errors), middle try-catch (result processing), and inner try-catch (DB persistence); all error paths reset state to null and continue silently.
+- **WalletHome scanner flow** — Branta ZK QR detection moved after standard BIP-21 parsing so address + amount are extracted from the URI first; Branta merchant lookup triggered as secondary background operation via `initialBrantaRawQr` prop.
+- **SendBitcoinModal state management** — added `brantaRawQr` (directly scanned), `brantaRawQrProp` (from WalletHome), `brantaPayment`, `brantaVerifyUrl`, `brantaLoading`, `_brantaError` for comprehensive Branta flow tracking.
+- **Imports** — added `parseBitcoinUri` export to `incomingUrlRouter.ts` for BIP-21 parsing in SendBitcoinModal.
+
+### Fixed / hardening
+- **Share-sheet file-type hardening (Android + iOS)** — narrowed file-share/open registration and native intake guards to supported extensions (`.share`, `.psbt`) so unrelated files (for example `.mp4`) are no longer suggested to/opened by BoldWallet; classifier fallback now returns `unknown` instead of treating unknown files as keyshare.
+- **UI crash prevention** — all Branta errors (network timeouts, SDK failures, malformed responses, database errors) are caught and silently ignored; user can always manually enter address or use cached merchant info from prior scans.
+- **Non-blocking persistence** — database write errors (full disk, permission issues) do not block merchant info display or prevent address from populating.
+- **Privacy** — Branta SDK configured with `privacy: 'strict'` so plaintext addresses are never resolved; only ZK-encoded QRs with branta_id + branta_secret params trigger merchant lookup.
+- **Type safety** — crypto provider adapters for `@noble/hashes` overloaded exports; hmac and sha256 wrappers match SDK function signatures.
+- **Android QR scanner back-press re-open loop** — `QRScanner.tsx` (AndroidQRScanner) now keeps `isScanningRef.current = true` until `visible=false` propagates (removed premature reset in callback); `QRScanner.foss.tsx` adds `isScanningRef` useRef, properly guards single-mode re-entry, and handles back-press (`error=undefined, data=undefined`) by calling `onClose()` to prevent scanner auto-reopen on back button press. Fixes modal getting stuck in continuous scan loop.
+- **Send/PSBT transport modal consistency** — Bitcoin send and PSBT signing now always open the transport selector (instead of bypassing directly to local pairing when Nostr is unsupported), so QR shorthand flow is always available for co-signing handoff.
+- **Nostr capability gating** — transport selector now disables Nostr when keyshare metadata has no `nostr_npub`, preselects Local transport, and prevents unsupported Nostr routing while keeping Local continue path one-tap.
+- **Pairing UI dark-mode and CTA contrast** — Local pairing readiness hint (“Both devices must be ready.”) now uses high-contrast text in dark mode; sticky Start/Join co-signing CTAs in both LAN and Nostr pairing screens now use Bitcoin orange for consistent action emphasis.
+- **iOS keyshare share-sheet resume reliability** — `KeyshareShareModule` now buffers pending share notifications and re-emits only when RN listeners are attached (`startObserving`), preventing dropped `keyshareSharedFile` events when the app opens from share while backgrounded/locked.
+- **Deferred shared-file processing until foreground** — `IncomingShareHandler` now gates shared-file handling on authenticated + app-active state, queues incoming URIs across background transitions, and drains processing on `AppState` active so keyshare password modal appears on first resume instead of requiring manual re-entry.
+
+### Technical Details
+- **Version**: `package.json` **4.0.2**; Android **`versionCode` 62** / **`versionName` 4.0.2**; iOS build **62** / **`MARKETING_VERSION` 4.0.2**.
+- **New dependencies**: `@branta-ops/branta@^3.1.3`, `@noble/hashes@^1.4.0`, `@noble/ciphers@^0.4.0` (React Native crypto provider, zero transitive deps).
+- **New files**: `services/BrantaService.ts`, `components/BrantaVerificationCard.tsx`, `services/repositories/MerchantLabelRepository.ts`, `__tests__/brantaService.test.ts`.
+- **New DB table**: `merchant_labels` (`address TEXT PRIMARY KEY`, `platform TEXT`, `description TEXT`, `logo_url TEXT`, `logo_light_url TEXT`, `verify_url TEXT`, `fetched_at INTEGER`).
+- **Modified files**: `screens/SendBitcoinModal.tsx`, `screens/WalletHome.tsx`, `services/Database.ts`, `services/incomingUrlRouter.ts`.
+- **Build notes**: Metro config supports `unstable_enablePackageExports` for Branta SDK ESM exports; ensure native rebuild after adding dependencies.
+
+---
+
 ## [4.0.1] - 2026-05-31
 
 > **Patch release:** external intake for wallet setup and payments — share-sheet import for keyshares and PSBTs, **BIP-21 `bitcoin:` payment links only** (no HTTPS `/pay` or `boldwallet://pay`), and guards that block overwriting an existing wallet. Fixes iOS build issues introduced with the Share Extension and deep-link native modules, and the Android QR scanner SIGABRT reported in [#71](https://github.com/BoldBitcoinWallet/BoldWallet/issues/71).

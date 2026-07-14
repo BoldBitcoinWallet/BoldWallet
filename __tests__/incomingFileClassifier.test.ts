@@ -6,7 +6,10 @@ jest.mock('react-native-fs', () => ({
 
 import {Buffer} from 'buffer';
 import {isPsbtBytes} from '../services/psbtIdentity';
-import {inferFileKindFromUri} from '../services/incomingFileClassifier';
+import {
+  classifyIncomingFile,
+  inferFileKindFromUri,
+} from '../services/incomingFileClassifier';
 
 describe('incomingFileClassifier', () => {
   it('infers PSBT from .psbt extension', () => {
@@ -20,5 +23,10 @@ describe('incomingFileClassifier', () => {
   it('detects PSBT magic bytes', () => {
     const psbtBytes = Buffer.from([0x70, 0x73, 0x62, 0x74, 0x00]);
     expect(isPsbtBytes(psbtBytes)).toBe(true);
+  });
+
+  it('classifies unsupported extension as unknown', async () => {
+    const fileUri = 'file:///tmp/video.mp4';
+    await expect(classifyIncomingFile(fileUri)).resolves.toBe('unknown');
   });
 });

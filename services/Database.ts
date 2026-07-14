@@ -191,6 +191,17 @@ const SCHEMA_STATEMENTS = [
     extra_json     TEXT,
     PRIMARY KEY (entity_type, entity_key)
   )`,
+
+  // ── Merchant Labels (Branta address verification cache) ──────────────────────
+  `CREATE TABLE IF NOT EXISTS merchant_labels (
+    address            TEXT PRIMARY KEY,
+    platform           TEXT NOT NULL,
+    description        TEXT,
+    logo_url           TEXT,
+    logo_light_url     TEXT,
+    verify_url         TEXT,
+    fetched_at         INTEGER NOT NULL
+  )`,
 ];
 
 // ---------------------------------------------------------------------------

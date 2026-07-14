@@ -35,6 +35,9 @@ export class WrongKeysharePasswordError extends Error {
 export type ParsedKeyshare = {
   pub_key: string;
   created_at?: number | null;
+  tss_backend?: unknown;
+  ecdsa_local_data?: unknown;
+  share_b64?: unknown;
   local_party_key?: string;
   keygen_committee_keys?: string[];
   chain_code_hex?: string;
