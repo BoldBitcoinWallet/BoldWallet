@@ -10,8 +10,37 @@
  * - response = cipher + checksum (67 bytes), base64
  */
 import {BBMTLibNativeModule} from '../native_modules';
+import {getReceivePath, resolveUseLegacyDerivationPaths} from '../utils';
 
 const Buffer = (global as any).Buffer;
+
+export type PairingPayloadNetwork = 'mainnet' | 'testnet' | 'testnet4';
+
+export interface PairingPayload {
+  version: string;
+  network: PairingPayloadNetwork;
+  addresses: {
+    mainnet?: string;
+    testnet?: string;
+  };
+  pubKeys: {
+    mainnet?: string;
+    testnet?: string;
+  };
+  fingerprint: string;
+}
+
+type PairingResponseEnvelope = {
+  type: 'pairing_response';
+  data: PairingPayload & {
+    // Compatibility fields consumed by legacy extension pairing handlers.
+    publicKey?: string;
+    chainCode?: string;
+    deviceId?: string;
+  };
+  timestamp: number;
+  id: string;
+};
 
 /** Parse pairing_code from extension QR data (e.g. "data: pairing_code=abc" or "pairing_code=abc") */
 export function parsePairingCodeFromScannedData(raw: string): string | null {
@@ -65,6 +94,78 @@ export async function computeExtensionBindResponseQr(
 
   const response = Buffer.concat([cipherBytes, checksumBytes]);
   return response.toString('base64');
+}
+
+function normalizePayloadNetwork(network: string): PairingPayloadNetwork {
+  if (network === 'testnet4') return 'testnet4';
+  if (network === 'testnet' || network === 'testnet3') return 'testnet';
+  return 'mainnet';
+}
+
+/**
+ * Build standardized pairing payload JSON for Bold extension.
+ * Includes active network, network-specific addresses/pubkeys, and fingerprint.
+ */
+export async function computeExtensionPairingPayloadQr(params: {
+  pairingCode: string;
+  pubKey: string;
+  chainCode: string;
+  keyshareMeta?: Record<string, any> | null;
+  activeNetwork: string;
+}): Promise<string> {
+  const {pairingCode, pubKey, chainCode, keyshareMeta, activeNetwork} = params;
+
+  if (!pubKey || !chainCode) {
+    throw new Error('pubKey and chainCode are required for pairing payload');
+  }
+
+  const useLegacyPath = resolveUseLegacyDerivationPaths(keyshareMeta || null);
+  const deriveNet = async (net: 'mainnet' | 'testnet3') => {
+    const path = getReceivePath(net, 'segwit-native', useLegacyPath, 0);
+    const derivedPub = await BBMTLibNativeModule.derivePubkey(pubKey, chainCode, path);
+    const addr = await BBMTLibNativeModule.btcAddress(
+      derivedPub,
+      net,
+      'segwit-native',
+    );
+    return {address: addr, pub: derivedPub};
+  };
+
+  const [mainnet, testnet] = await Promise.all([
+    deriveNet('mainnet'),
+    deriveNet('testnet3'),
+  ]);
+
+  const payloadNetwork = normalizePayloadNetwork(activeNetwork);
+  const normalizedActive = payloadNetwork === 'mainnet' ? 'mainnet' : 'testnet';
+  const activePub = normalizedActive === 'mainnet' ? mainnet.pub : testnet.pub;
+
+  const fingerprintHash = await BBMTLibNativeModule.sha256(pubKey);
+  const fingerprint = (fingerprintHash || '').substring(0, 8).toLowerCase();
+
+  const payload: PairingResponseEnvelope = {
+    type: 'pairing_response',
+    data: {
+      version: '1.0',
+      network: payloadNetwork,
+      addresses: {
+        mainnet: mainnet.address,
+        testnet: testnet.address,
+      },
+      pubKeys: {
+        mainnet: mainnet.pub,
+        testnet: testnet.pub,
+      },
+      fingerprint,
+      publicKey: activePub,
+      chainCode,
+      deviceId: 'mobile-wallet',
+    },
+    timestamp: Date.now(),
+    id: `pairing-${pairingCode}-${Date.now()}`,
+  };
+
+  return JSON.stringify(payload);
 }
 
 export type ParseExtensionResponseResult = {

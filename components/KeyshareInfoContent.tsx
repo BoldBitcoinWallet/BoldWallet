@@ -49,6 +49,7 @@ import QRScanner from './QRScanner';
 import {
   parsePairingCodeFromScannedData,
   computeExtensionBindResponseQr,
+  computeExtensionPairingPayloadQr,
 } from '../utils/extensionBind';
 import type {TssBackend} from '../services/tssBackend';
 
@@ -825,11 +826,29 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
       extensionBindHandledRef.current = true;
       setIsExtensionBindScannerVisible(false);
       try {
-        const qrData = await computeExtensionBindResponseQr(
-          pairingCode,
-          pubKey,
-          chainCode,
-        );
+        let qrData = '';
+        try {
+          qrData = await computeExtensionPairingPayloadQr({
+            pairingCode,
+            pubKey,
+            chainCode,
+            keyshareMeta: {
+              created_at: keyshareInfo?.createdAt,
+              keygen_committee_keys:
+                keyshareInfo?.type === 'trio'
+                  ? [1, 2, 3]
+                  : [1, 2],
+            },
+            activeNetwork: network,
+          });
+        } catch (payloadErr) {
+          dbg('Standard pairing payload generation failed, using legacy bind response:', payloadErr);
+          qrData = await computeExtensionBindResponseQr(
+            pairingCode,
+            pubKey,
+            chainCode,
+          );
+        }
         setExtensionResponseQrData(qrData);
         setIsExtensionResponseQrVisible(true);
       } catch (e) {
@@ -838,7 +857,13 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         Alert.alert('Error', 'Failed to generate response QR.');
       }
     },
-    [keyshareInfo?.pubKey, keyshareInfo?.chainCode],
+    [
+      keyshareInfo?.pubKey,
+      keyshareInfo?.chainCode,
+      keyshareInfo?.createdAt,
+      keyshareInfo?.type,
+      network,
+    ],
   );
 
   const handleToggleWalletInfo = useCallback(() => {

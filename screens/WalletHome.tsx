@@ -93,6 +93,7 @@ import mempoolClient from '../services/MempoolClient';
 import {
   parsePairingCodeFromScannedData,
   computeExtensionBindResponseQr,
+  computeExtensionPairingPayloadQr,
 } from '../utils/extensionBind';
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -224,12 +225,24 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         Alert.alert('Error', 'Keyshare info is not available.');
         return;
       }
-      const qrDataBase64 = await computeExtensionBindResponseQr(
-        pairingCode,
-        pubKey,
-        chainCode,
-      );
-      setExtensionResponseQrData(qrDataBase64);
+      let qrData = '';
+      try {
+        qrData = await computeExtensionPairingPayloadQr({
+          pairingCode,
+          pubKey,
+          chainCode,
+          keyshareMeta: keyshare,
+          activeNetwork: network,
+        });
+      } catch (payloadErr) {
+        dbg('WalletHome standardized pairing payload failed, using legacy response:', payloadErr);
+        qrData = await computeExtensionBindResponseQr(
+          pairingCode,
+          pubKey,
+          chainCode,
+        );
+      }
+      setExtensionResponseQrData(qrData);
       setIsExtensionResponseQrVisible(true);
     } catch (e) {
       dbg('Extension bind from scan failed:', e);

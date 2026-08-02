@@ -97,20 +97,33 @@ build_host() {
   (cd "${LIBTSS}" && cargo build --release -p libtss-ffi)
   local host_lib="${LIBTSS}/target/release"
   mkdir -p bin
-  export CGO_LDFLAGS="-L${host_lib} -llibtss_ffi -lm"
   if [ "$(uname -s)" = "Darwin" ]; then
-    export CGO_LDFLAGS="${CGO_LDFLAGS} -framework Security -framework CoreFoundation"
+    export CGO_LDFLAGS="-L${host_lib} -llibtss_ffi -lm -framework Security -framework CoreFoundation"
+  elif [ "$(uname -s)" = "Linux" ] && [ -f "${host_lib}/liblibtss_ffi.a" ]; then
+    # Prefer static lib on Linux so go test does not depend on runtime .so lookup.
+    export CGO_LDFLAGS="-L${host_lib} -l:liblibtss_ffi.a -ldl -lm -lpthread"
   else
-    export CGO_LDFLAGS="${CGO_LDFLAGS} -ldl -lpthread"
+    export CGO_LDFLAGS="-L${host_lib} -llibtss_ffi -lm -ldl -lpthread"
   fi
+
+  if [ "$(uname -s)" = "Linux" ]; then
+    export LD_LIBRARY_PATH="${host_lib}:${LD_LIBRARY_PATH:-}"
+  fi
+
   info "Building bbmtmobile for host..."
   go build -buildmode=c-shared -o bin/libbbmtmobile ./bbmtmobile/
   cp -f bin/libbbmtmobile.h "${CPP_DIR}/libbbmtmobile.h" 2>/dev/null || true
+
+  # Keep host smoke tests stable on low-resource Linux VMs.
+  local host_test_gomaxprocs="${HOST_TEST_GOMAXPROCS:-2}"
+  local host_test_parallel="${HOST_TEST_PARALLEL:-1}"
+  local host_test_p="${HOST_TEST_P:-1}"
+
   info "Host smoke test (fast unit + join-barrier; no LAN keygen)..."
-  go test -count=1 -timeout 3m ./dkls/ -run 'TestHelloDkg|TestDKGAndSignInProcess|TestDKGAndSignInProcessTrio|TestRunDKGWithSenderInProcess|TestRunDKGWithSenderTrioInProcess|TestDedupe|TestRecvPeer|TestMerge|TestLanAwaitJoinersPartialTrio'
+  GOMAXPROCS="${host_test_gomaxprocs}" go test -count=1 -timeout 3m -p "${host_test_p}" -parallel "${host_test_parallel}" ./dkls/ -run 'TestHelloDkg|TestDKGAndSignInProcess|TestDKGAndSignInProcessTrio|TestRunDKGWithSenderInProcess|TestRunDKGWithSenderTrioInProcess|TestDedupe|TestRecvPeer|TestMerge|TestLanAwaitJoinersPartialTrio'
   if [ "${RUN_DKLS_LAN_INTEGRATION:-0}" = "1" ]; then
     info "LAN keygen integration (RUN_DKLS_LAN_INTEGRATION=1, may take ~15m)..."
-    go test -count=1 -timeout 15m ./dkls/ -run 'TestLanJoinKeygenDuo$|TestLanJoinKeygenTrio$|TestLanJoinKeygenTrioDerivedSessionKey'
+    GOMAXPROCS="${host_test_gomaxprocs}" go test -count=1 -timeout 15m -p "${host_test_p}" -parallel "${host_test_parallel}" ./dkls/ -run 'TestLanJoinKeygenDuo$|TestLanJoinKeygenTrio$|TestLanJoinKeygenTrioDerivedSessionKey'
   fi
 }
 
