@@ -7,6 +7,7 @@ import {
   getTssBackendDisplayLabel,
   type TssBackend,
 } from '../services/tssBackend';
+import {nostrMessaging} from '../services/nostrMessaging';
 import {dbg, getKeyshareDisplayLabel, getKeyshareMetadata} from '../utils';
 import {generateAllOutputDescriptors} from '../utils';
 
@@ -44,7 +45,14 @@ const DeviceScreen: React.FC = () => {
       }
       const pubKey = keyshare.pub_key || '';
       const chainCode = keyshare.chain_code_hex || '';
-      const nostrNpub = keyshare.nostr_npub || null;
+      let nostrNpub = keyshare.nostr_npub || null;
+      if (!nostrNpub) {
+        try {
+          nostrNpub = await nostrMessaging.getOrCreateLocalNpub();
+        } catch (err) {
+          dbg('DeviceScreen: could not derive fallback nostr npub', err);
+        }
+      }
       const supportsNostr = !!(nostrNpub && nostrNpub.trim() !== '');
       const supportsLocal = true;
       let fingerprint = 'N/A';

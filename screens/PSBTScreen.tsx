@@ -31,6 +31,11 @@ import {WalletService} from '../services/WalletService';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
+import { nostrMessaging, type CoSignResponsePayload } from '../services/nostrMessaging';
+import {
+  clearPendingCoSignRequest,
+  getPendingCoSignRequest,
+} from '../services/nostrCoSignSession';
 import CurrencySelector from '../components/CurrencySelector';
 import {createStyles as createGlobalStyles} from '../components/Styles';
 const {BBMTLibNativeModule} = NativeModules;
@@ -168,6 +173,32 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     if (signedPsbtParam) {
       setSignedPsbt(signedPsbtParam);
       setIsSignedPSBTModalVisible(true);
+
+      const pending = getPendingCoSignRequest();
+      if (pending) {
+        const response: CoSignResponsePayload = {
+          txId: pending.request.txId,
+          approved: true,
+          signedPsbtBase64: signedPsbtParam,
+          signedPsbtHex: nostrMessaging.psbtBase64ToHex(signedPsbtParam),
+        };
+
+        void nostrMessaging
+          .sendCoSignResponse(
+            pending.senderNpub,
+            pending.recipientFingerprint || 'mobile-wallet',
+            pending.senderFingerprint,
+            response,
+          )
+          .then(() => {
+            dbg('PSBTScreen: sent COSIGN_RESPONSE over Nostr');
+            clearPendingCoSignRequest();
+          })
+          .catch(err => {
+            dbg('PSBTScreen: failed to send COSIGN_RESPONSE', err);
+          });
+      }
+
       // Clear the param to prevent showing again
       navigation.setParams({signedPsbt: undefined});
     }

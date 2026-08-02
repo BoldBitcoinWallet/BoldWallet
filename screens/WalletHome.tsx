@@ -90,6 +90,7 @@ import syncCoordinator, {
 } from '../services/sync/SyncCoordinator';
 import apiQueue from '../services/ApiQueue';
 import mempoolClient from '../services/MempoolClient';
+import {nostrMessaging} from '../services/nostrMessaging';
 import {
   parsePairingCodeFromScannedData,
   computeExtensionBindResponseQr,
@@ -224,6 +225,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         extensionBindAlertShownRef.current = false;
         Alert.alert('Error', 'Keyshare info is not available.');
         return;
+      }
+      if (!keyshare.nostr_npub) {
+        try {
+          keyshare.nostr_npub = await nostrMessaging.getOrCreateLocalNpub();
+        } catch (err) {
+          dbg('WalletHome: unable to derive fallback nostr npub for bind', err);
+        }
       }
       let qrData = '';
       try {

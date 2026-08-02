@@ -42,6 +42,7 @@ import {
 } from 'react-native';
 import AppPressable from './components/AppPressable';
 import WalletSettings from './screens/WalletSettings';
+import KeyshareChatScreen from './screens/KeyshareChatScreen';
 import {NativeModules} from 'react-native';
 import {
   dbg,
@@ -58,6 +59,7 @@ import {createToastConfig} from './utils/toastConfig';
 import {promptWalletBiometricAuth} from './services/walletBiometricAuth';
 import IncomingShareHandler from './components/IncomingShareHandler';
 import IncomingUrlHandler from './components/IncomingUrlHandler';
+import NostrCoSignBridge from './components/NostrCoSignBridge';
 // Initialize react-native-screens for Fabric compatibility
 enableScreens(true);
 const {BBMTLibNativeModule} = NativeModules;
@@ -131,6 +133,7 @@ const tabBarIcons = {
   Utxos: require('./assets/utxo-icon.png'),
   Addresses: require('./assets/addresses-icon.png'),
   PSBT: require('./assets/cosign-icon.png'),
+  Chat: require('./assets/nostr-icon.png'),
   Settings: require('./assets/settings-icon.png'),
 };
 
@@ -201,6 +204,14 @@ const TabBarIconPSBT = (props: {color: string; size?: number}) => (
 const TabBarIconSettings = (props: {color: string; size?: number}) => (
   <TabBarIcon
     name="Settings"
+    color={props.color}
+    size={props.size ?? TAB_BAR_ICON_SIZE}
+  />
+);
+
+const TabBarIconChat = (props: {color: string; size?: number}) => (
+  <TabBarIcon
+    name="Chat"
     color={props.color}
     size={props.size ?? TAB_BAR_ICON_SIZE}
   />
@@ -492,6 +503,15 @@ const MainTabs = () => {
             }}
           />
         )}
+        <Tab.Screen
+          name="Chat"
+          component={KeyshareChatScreen}
+          options={{
+            header: NostrConnectHeader,
+            tabBarLabel: 'Chat',
+            tabBarIcon: TabBarIconChat,
+          }}
+        />
         <Tab.Screen
           name="Settings"
           component={WalletSettings}
@@ -886,6 +906,10 @@ const AppContent = ({
             navigationRef={navigationRef}
           />
           <IncomingUrlHandler
+            isAuthenticated={isAuthenticated}
+            navigationRef={navigationRef}
+          />
+          <NostrCoSignBridge
             isAuthenticated={isAuthenticated}
             navigationRef={navigationRef}
           />

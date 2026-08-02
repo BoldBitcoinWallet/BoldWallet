@@ -11,6 +11,23 @@ if (typeof global.stream === 'undefined') {
   global.stream = stream;
 }
 
+// TextEncoder/TextDecoder polyfill for libs that assume Web APIs (e.g., nostr-tools).
+if (typeof global.TextEncoder === 'undefined' || typeof global.TextDecoder === 'undefined') {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const {TextEncoder, TextDecoder} = require('text-encoding');
+    if (typeof global.TextEncoder === 'undefined') {
+      global.TextEncoder = TextEncoder;
+    }
+    if (typeof global.TextDecoder === 'undefined') {
+      global.TextDecoder = TextDecoder;
+    }
+  } catch (e) {
+    // Keep app running even if optional polyfill package is missing.
+    // Features that require TextDecoder may remain unavailable.
+  }
+}
+
 // Now we can import other modules
 import {InteractionManager} from 'react-native';
 import 'react-native-get-random-values';

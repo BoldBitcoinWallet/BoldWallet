@@ -28,6 +28,7 @@ export interface PairingPayload {
     testnet?: string;
   };
   fingerprint: string;
+  nostr_npub?: string;
 }
 
 type PairingResponseEnvelope = {
@@ -157,6 +158,10 @@ export async function computeExtensionPairingPayloadQr(params: {
         testnet: testnet.pub,
       },
       fingerprint,
+      nostr_npub:
+        keyshareMeta && typeof keyshareMeta.nostr_npub === 'string'
+          ? keyshareMeta.nostr_npub
+          : undefined,
       publicKey: activePub,
       chainCode,
       deviceId: 'mobile-wallet',

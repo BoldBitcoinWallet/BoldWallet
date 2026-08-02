@@ -838,6 +838,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                 keyshareInfo?.type === 'trio'
                   ? [1, 2, 3]
                   : [1, 2],
+              nostr_npub: keyshareInfo?.npub || undefined,
             },
             activeNetwork: network,
           });
