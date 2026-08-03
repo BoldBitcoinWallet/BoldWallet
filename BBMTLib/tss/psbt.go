@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -168,7 +169,9 @@ func MpcSignPSBT(
 		}
 
 		if len(input.Bip32Derivation) == 0 {
-			return "", fmt.Errorf("input %d: missing Bip32Derivation in PSBT - PSBT must contain derivation path for each input", i)
+			if recoverErr := ensureBip32Derivation(input, txOut, keyshareData.PubKey, keyshareData.ChainCodeHex); recoverErr != nil {
+				return "", fmt.Errorf("input %d: %w", i, recoverErr)
+			}
 		}
 
 		pathStr := fmt.Sprintf("%v", input.Bip32Derivation[0].Bip32Path)
@@ -599,6 +602,79 @@ func derivePathMatchesPSBTPubKey(pubKeyHex, chainCodeHex, candidate string, want
 	return bytes.Equal(derived, wantPub), derived
 }
 
+// parseBip32Path converts "m/84'/0'/0'/0/5" back into raw BIP32 path components.
+func parseBip32Path(path string) ([]uint32, error) {
+	trimmed := strings.TrimPrefix(path, "m/")
+	if trimmed == "" {
+		return nil, fmt.Errorf("empty derivation path")
+	}
+	segments := strings.Split(trimmed, "/")
+	out := make([]uint32, len(segments))
+	for i, seg := range segments {
+		hardened := strings.HasSuffix(seg, "'")
+		seg = strings.TrimSuffix(seg, "'")
+		idx, err := strconv.ParseUint(seg, 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid path segment %q: %w", segments[i], err)
+		}
+		if hardened {
+			idx += 0x80000000
+		}
+		out[i] = uint32(idx)
+	}
+	return out, nil
+}
+
+// ensureBip32Derivation reconstructs a missing per-input Bip32Derivation entry by scanning
+// standard wallet paths for a derived pubkey whose hash matches the input's previous output
+// script. Some external PSBT constructors (e.g. certain descriptor wallets) only attach a
+// global XPub and omit the per-input entry that this signer (and DispatchJoinKeysign
+// downstream) requires — recover it here instead of hard-failing on every such import.
+func ensureBip32Derivation(input *psbt.PInput, txOut *wire.TxOut, pubKeyHex, chainCodeHex string) error {
+	if len(input.Bip32Derivation) > 0 {
+		return nil
+	}
+	const maxSearchIndex = 50
+	isP2WPKH := len(txOut.PkScript) == 22 && txOut.PkScript[0] == 0x00 && txOut.PkScript[1] == 0x14
+	isP2SH := len(txOut.PkScript) == 23 && txOut.PkScript[0] == 0xa9 && txOut.PkScript[22] == 0x87
+	if !isP2WPKH && !isP2SH {
+		return fmt.Errorf("missing Bip32Derivation in PSBT and script type does not support path recovery")
+	}
+
+	for _, candidate := range enumerateStandardWalletPaths(maxSearchIndex) {
+		derived, err := derivePubKeyBytesForPath(pubKeyHex, chainCodeHex, candidate)
+		if err != nil {
+			continue
+		}
+		pubKeyHash := btcutil.Hash160(derived)
+
+		matched := isP2WPKH && bytes.Equal(txOut.PkScript[2:22], pubKeyHash)
+		if !matched && isP2SH {
+			redeemScript := make([]byte, 22)
+			redeemScript[0] = 0x00
+			redeemScript[1] = 0x14
+			copy(redeemScript[2:], pubKeyHash)
+			scriptHash := btcutil.Hash160(redeemScript)
+			matched = bytes.Equal(txOut.PkScript[2:22], scriptHash)
+		}
+		if !matched {
+			continue
+		}
+
+		pathUint32, err := parseBip32Path(candidate)
+		if err != nil {
+			return err
+		}
+		Logf("Recovered missing Bip32Derivation via standard path scan: path=%s pubkey=%x", candidate, derived[:min(8, len(derived))])
+		input.Bip32Derivation = []*psbt.Bip32Derivation{{
+			PubKey:    derived,
+			Bip32Path: pathUint32,
+		}}
+		return nil
+	}
+	return fmt.Errorf("missing Bip32Derivation in PSBT and no standard wallet path matched this input's script")
+}
+
 // findPSBTInputDerivation picks the path whose derived pubkey matches a PSBT Bip32Derivation entry.
 func findPSBTInputDerivation(
 	packet *psbt.Packet,
@@ -1008,7 +1084,9 @@ func runNostrMpcSignPSBTInternal(
 		}
 
 		if len(input.Bip32Derivation) == 0 {
-			return "", fmt.Errorf("input %d: missing Bip32Derivation in PSBT - PSBT must contain derivation path for each input", i)
+			if recoverErr := ensureBip32Derivation(input, txOut, keyshareData.PubKey, keyshareData.ChainCodeHex); recoverErr != nil {
+				return "", fmt.Errorf("input %d: %w", i, recoverErr)
+			}
 		}
 
 		pathStr := fmt.Sprintf("%v", input.Bip32Derivation[0].Bip32Path)

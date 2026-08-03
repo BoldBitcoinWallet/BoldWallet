@@ -58,7 +58,9 @@ type RouteParams = {
   psbtHex?: string;
   isInitiator?: boolean;
   forwardPeerCosign?: boolean;
+  isPeerResponse?: boolean;
   initiatorTxId?: string;
+  cosignTraceId?: string;
   payload?: {
     psbtBase64?: string;
     psbtHex?: string;
@@ -81,6 +83,10 @@ function fingerprintFromNpub(npub: string): string {
 
 function normalizeNpub(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function createCoSignTraceId(): string {
+  return `cosign-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 async function resolveRemoteKeysharePeers(localNpub: string): Promise<string[]> {
@@ -204,6 +210,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     forwardPeerCosign?: boolean;
     isInitiator?: boolean;
     initiatorTxId?: string;
+    cosignTraceId?: string;
   } | null>(null);
   const [isNostrTransportSupported, setIsNostrTransportSupported] =
     useState(true);
@@ -404,9 +411,13 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             const txId =
               (typeof route.params?.initiatorTxId === 'string' && route.params.initiatorTxId.trim()) ||
               `peer-cosign-${Date.now()}`;
+            const traceId =
+              (typeof route.params?.cosignTraceId === 'string' && route.params.cosignTraceId.trim()) ||
+              createCoSignTraceId();
 
             const payload = {
               txId,
+              traceId,
               psbtHex: nostrMessaging.psbtBase64ToHex(signedPsbtParam),
               psbtBase64: signedPsbtParam,
               amountSats: 0,
@@ -415,12 +426,24 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
               network: (network || 'mainnet') as 'mainnet' | 'testnet' | 'testnet4',
             };
 
+            console.warn('[NIP46-TLM][Sender] Join Co-Signing pressed. Fanning out to peers:', {
+              traceId,
+              peerNpubs,
+            });
+
             await nostrMessaging.sendCoSignRequestToMany(
               peerNpubs,
               fingerprintFromNpub(localNpub),
               'peer-group',
               payload,
             );
+
+            console.warn('[NIP46-TLM][Sender] Join Co-Signing publish complete', {
+              traceId,
+              txId,
+              peerCount: peerNpubs.length,
+              peers: peerNpubs,
+            });
 
             DeviceEventEmitter.emit('nostr-cosign:request', {
               ts: Date.now(),
@@ -431,6 +454,12 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
               senderFingerprint: fingerprintFromNpub(localNpub),
               recipientFingerprint: 'peer-group',
               request: payload,
+            });
+
+            console.warn('[NIP46-TLM][Sender] optimistic Awaiting Peer Approval card inserted', {
+              traceId,
+              txId,
+              eventId: `local:${txId}`,
             });
 
             DeviceEventEmitter.emit('nostr-cosign:status', {
@@ -635,20 +664,30 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       const hasNostrSupport = await resolveNostrTransportSupport();
       setIsNostrTransportSupported(hasNostrSupport);
 
+      // A device navigating here from KeyshareChat's "Review & Co-Sign" tap is
+      // responding to someone else's COSIGN_REQUEST, not originating/forwarding one —
+      // it must NOT wait for its own COSIGN_READY in MobileNostrPairing's startSignPSBT.
+      const isPeerResponse = route.params?.isPeerResponse === true;
       const shouldForwardPeerCosign =
         route.params?.isInitiator === true ||
         route.params?.forwardPeerCosign === true ||
-        !nip46Handoff;
+        (!nip46Handoff && !isPeerResponse);
 
       const initiatorTxId =
         (typeof route.params?.initiatorTxId === 'string' &&
           route.params.initiatorTxId.trim()) ||
         `peer-cosign-${Date.now()}`;
 
+      const cosignTraceId =
+        (typeof route.params?.cosignTraceId === 'string' &&
+          route.params.cosignTraceId.trim()) ||
+        undefined;
+
       dbg('[NIP46-TLM][PSBTScreen] handlePSBTSign handoff flags', {
         shouldForwardPeerCosign,
         hasNip46Handoff: !!nip46Handoff,
         initiatorTxId,
+        cosignTraceId,
       });
 
       // Store params and show transport selector
@@ -657,17 +696,19 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         forwardPeerCosign: shouldForwardPeerCosign,
         isInitiator: shouldForwardPeerCosign,
         initiatorTxId: shouldForwardPeerCosign ? initiatorTxId : undefined,
+        cosignTraceId,
       });
       setTimeout(() => {
         setIsPSBTTransportModalVisible(true);
       }, 300);
     },
-    [resolveNostrTransportSupport, route.params?.isInitiator, route.params?.forwardPeerCosign, route.params?.initiatorTxId, nip46Handoff],
+    [resolveNostrTransportSupport, route.params?.isInitiator, route.params?.forwardPeerCosign, route.params?.isPeerResponse, route.params?.initiatorTxId, nip46Handoff],
   );
   const navigateToPSBTSigning = useCallback(
     (transport: 'local' | 'nostr') => {
       if (!pendingPSBTParams) return;
-      const {psbtBase64, forwardPeerCosign, isInitiator, initiatorTxId} = pendingPSBTParams;
+      const {psbtBase64, forwardPeerCosign, isInitiator, initiatorTxId, cosignTraceId} =
+        pendingPSBTParams;
       const routeName =
         transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
       // For PSBT signing, network is not strictly required (extracted from app state in MobilesPairing),
@@ -683,6 +724,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             forwardPeerCosign: !!forwardPeerCosign,
             isInitiator: !!isInitiator,
             initiatorTxId: initiatorTxId || undefined,
+            cosignTraceId: cosignTraceId || undefined,
           },
         }),
       );
@@ -748,32 +790,45 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   }, [sharedInitialPsbt, nip46Handoff, navigation, addressType, network]);
 
   const startSignAndForwardFlow = useCallback(() => {
-    const sourcePsbt = sharedInitialPsbt || '';
-    if (!sourcePsbt) {
-      Alert.alert('Missing PSBT', 'No PSBT payload available to sign and forward.');
-      return;
+    console.warn('[NIP46-CRITICAL] "Join Co-Signing" button was physically tapped.');
+    try {
+      const sourcePsbt = sharedInitialPsbt || '';
+      console.log('[NIP46-CRITICAL] Fan-out variables:', {
+        hasPeers: true,
+        peerCount: -1,
+        hasPsbt: !!sourcePsbt,
+        hasRouteParams: !!route.params,
+        isInitiator: !!route.params?.isInitiator,
+        forwardPeerCosign: !!route.params?.forwardPeerCosign,
+      });
+      if (!sourcePsbt) {
+        Alert.alert('Missing PSBT', 'No PSBT payload available to sign and forward.');
+        return;
+      }
+
+      const initiatorTxId = `peer-cosign-${Date.now()}`;
+      dbg('[NIP46-TLM][PSBTScreen] launching initiator Sign & Forward flow', {
+        initiatorTxId,
+        psbtPrefix: sourcePsbt.slice(0, 16),
+      });
+
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'Nostr Connect',
+          params: {
+            mode: 'sign_psbt',
+            transport: 'nostr',
+            addressType,
+            psbtBase64: sourcePsbt,
+            network: network || 'mainnet',
+            forwardPeerCosign: true,
+            initiatorTxId,
+          },
+        }),
+      );
+    } catch (error) {
+      console.error('[NIP46-CRITICAL] Sync crash in onPress handler:', error);
     }
-
-    const initiatorTxId = `peer-cosign-${Date.now()}`;
-    dbg('[NIP46-TLM][PSBTScreen] launching initiator Sign & Forward flow', {
-      initiatorTxId,
-      psbtPrefix: sourcePsbt.slice(0, 16),
-    });
-
-    navigation.dispatch(
-      CommonActions.navigate({
-        name: 'Nostr Connect',
-        params: {
-          mode: 'sign_psbt',
-          transport: 'nostr',
-          addressType,
-          psbtBase64: sourcePsbt,
-          network: network || 'mainnet',
-          forwardPeerCosign: true,
-          initiatorTxId,
-        },
-      }),
-    );
   }, [sharedInitialPsbt, navigation, addressType, network]);
   useEffect(() => {
     loadKeyshareInfo();

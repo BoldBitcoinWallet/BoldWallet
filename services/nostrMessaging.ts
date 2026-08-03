@@ -8,6 +8,7 @@ const { BBMTLibNativeModule } = NativeModules;
 export type NostrMessageType =
   | 'COSIGN_REQUEST'
   | 'COSIGN_RESPONSE'
+  | 'COSIGN_READY'
   | 'CHAT_MESSAGE'
   | 'DEVICE_PING';
 
@@ -22,6 +23,7 @@ export interface NostrEnvelope<T = unknown> {
 
 export interface CoSignRequestPayload {
   txId: string;
+  traceId?: string;
   psbtHex: string;
   psbtBase64?: string;
   amountSats: number;
@@ -34,9 +36,15 @@ export interface CoSignResponsePayload {
   txId: string;
   signedPsbtHex?: string;
   signedPsbtBase64?: string;
-  broadcastTxId?: string;
   approved: boolean;
   reason?: string;
+}
+
+/** Sent by the responding device the instant it commits to entering the native TSS
+ * wait loop, so the waiting initiator wakes up and joins at (roughly) the same time. */
+export interface CoSignReadyPayload {
+  txId: string;
+  traceId?: string;
 }
 
 export type NostrConnectionState =
@@ -83,7 +91,6 @@ export interface Nip46IncomingResponse {
 
 const DEFAULT_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol'];
 const KEY_TAG = 'bold-cosign-v1';
-const NIP46_KIND = 24133;
 const NIP46_TAG = 'bold-nip46-v1';
 const FALLBACK_NSEC_KEY = 'nostr_fallback_nsec';
 const FALLBACK_NPUB_KEY = 'nostr_fallback_npub';
@@ -110,17 +117,23 @@ function randomId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
-function nip19DataToHex(data: unknown): string {
+function nip19DecodedDataToHex(data: unknown): string {
   if (typeof data === 'string') {
-    return data.trim();
+    const s = data.trim();
+    if (/^[0-9a-fA-F]+$/.test(s) && s.length % 2 === 0) {
+      return s.toLowerCase();
+    }
   }
+
   if (data instanceof Uint8Array) {
     return bytesToHex(data);
   }
-  if (Array.isArray(data)) {
-    return bytesToHex(Uint8Array.from(data as number[]));
+
+  if (Array.isArray(data) && data.every(v => typeof v === 'number')) {
+    return bytesToHex(Uint8Array.from(data));
   }
-  throw new Error('Unsupported nip19 payload format');
+
+  throw new Error(`Unsupported nip19 decoded key payload type: ${typeof data}`);
 }
 
 class NostrMessagingService {
@@ -131,9 +144,15 @@ class NostrMessagingService {
   private listeners = new Set<(msg: NostrIncomingMessage) => void>();
   private nip46RequestListeners = new Set<(msg: Nip46IncomingRequest) => void>();
   private nip46ResponseListeners = new Set<(msg: Nip46IncomingResponse) => void>();
-  private nip46SignerSecretsBySenderPubHex = new Map<string, string>();
-  private nip46RawReceiveCount = 0;
   private stateListeners = new Set<(state: NostrConnectionState) => void>();
+  private publishAckWaiters = new Map<
+    string,
+    {
+      resolve: (value: { relayUrl: string; message: string }) => void;
+      reject: (reason?: unknown) => void;
+      timeout: ReturnType<typeof setTimeout>;
+    }
+  >();
   private relays: string[] = [...DEFAULT_RELAYS];
   private localNsec = '';
   private localNpub = '';
@@ -194,18 +213,9 @@ class NostrMessagingService {
     return () => this.nip46ResponseListeners.delete(listener);
   }
 
-  getNip46RawReceiveCount(): number {
-    return this.nip46RawReceiveCount;
-  }
-
   async connect(relays?: string[]): Promise<void> {
     this.stopped = false;
     await this.ensureIdentity();
-    dbg('[NIP46-TLM][NostrMessaging] connect identity', {
-      localNpub: this.localNpub,
-      localPubHex: this.localPubHex,
-      relays: this.relays,
-    });
 
     let desired = relays;
     if (!desired || desired.length === 0) {
@@ -235,7 +245,7 @@ class NostrMessagingService {
       this.subscribeInternal(
         'dm-inbox',
         {
-          kinds: [4, NIP46_KIND],
+          kinds: [4, 1059, 24133],
           '#p': [this.localPubHex],
           since: Math.floor(Date.now() / 1000) - 30,
         },
@@ -263,9 +273,21 @@ class NostrMessagingService {
   async sendEnvelope<T>(recipientNpubOrNpubs: string | string[], envelope: NostrEnvelope<T>): Promise<void> {
     await this.ensureIdentity();
 
+    console.warn('[NIP46-CRITICAL] sendEnvelope invoked', {
+      type: envelope?.type,
+      recipientInputCount: Array.isArray(recipientNpubOrNpubs)
+        ? recipientNpubOrNpubs.length
+        : 1,
+      socketCount: this.sockets.size,
+      openSocketCount: Array.from(this.sockets.values()).filter(ws => ws.readyState === WebSocket.OPEN).length,
+      connectionState: this.connectionState,
+    });
+
     const recipients = Array.from(
       new Set(
-        (Array.isArray(recipientNpubOrNpubs) ? recipientNpubOrNpubs : [recipientNpubOrNpubs])
+        (Array.isArray(recipientNpubOrNpubs)
+          ? recipientNpubOrNpubs
+          : [recipientNpubOrNpubs])
           .map(v => v.trim())
           .filter(Boolean),
       ),
@@ -275,7 +297,7 @@ class NostrMessagingService {
       throw new Error('No valid Nostr recipients provided');
     }
 
-    const failures: Array<{ recipient: string; reason: string }> = [];
+    const failures: Array<{recipient: string; reason: string}> = [];
     let successCount = 0;
 
     for (const recipient of recipients) {
@@ -322,6 +344,13 @@ class NostrMessagingService {
     recipientFingerprint: string,
     payload: CoSignRequestPayload,
   ): Promise<void> {
+    console.warn('[NIP46-CRITICAL] sendCoSignRequestToMany called', {
+      txId: payload?.txId,
+      traceId: payload?.traceId,
+      recipientCount: Array.isArray(recipientNpubs) ? recipientNpubs.length : 0,
+      hasPsbtHex: !!payload?.psbtHex,
+      hasPsbtBase64: !!payload?.psbtBase64,
+    });
     await this.sendEnvelope(recipientNpubs, {
       id: randomId(),
       type: 'COSIGN_REQUEST',
@@ -348,58 +377,30 @@ class NostrMessagingService {
     });
   }
 
-  async sendNip46Connect(
+  async sendCoSignReady(
     recipientNpub: string,
-    secret: string,
-    permissions: string[] = ['sign_event'],
-  ): Promise<string> {
-    await this.ensureIdentity();
-    const id = randomId();
-    const request: Nip46Request = {
-      id,
-      method: 'connect',
-      params: [this.localPubHex, permissions],
-      secret,
-    };
-    await this.publishNip46Json(recipientNpub, request);
-    return id;
-  }
-
-  async sendNip46SignEvent(
-    recipientNpub: string,
-    eventToSign: unknown,
-    secret?: string,
-    requestId?: string,
-  ): Promise<string> {
-    await this.ensureIdentity();
-    const id = requestId || randomId();
-    const request: Nip46Request = {
-      id,
-      method: 'sign_event',
-      params: [eventToSign],
-      ...(secret ? { secret } : {}),
-    };
-    await this.publishNip46Json(recipientNpub, request);
-    return id;
+    senderFingerprint: string,
+    recipientFingerprint: string,
+    payload: CoSignReadyPayload,
+  ): Promise<void> {
+    await this.sendEnvelope(recipientNpub, {
+      id: randomId(),
+      type: 'COSIGN_READY',
+      senderFingerprint,
+      recipientFingerprint,
+      timestamp: Date.now(),
+      payload,
+    });
   }
 
   async sendNip46Response(recipientNpub: string, response: Nip46Response): Promise<void> {
-    await this.publishNip46Json(recipientNpub, response);
-  }
-
-  waitForNip46Response(requestId: string, timeoutMs = 45000): Promise<Nip46IncomingResponse> {
-    return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        off();
-        reject(new Error('Timed out waiting for NIP-46 response'));
-      }, timeoutMs);
-
-      const off = this.onNip46Response(msg => {
-        if (!msg?.response || msg.response.id !== requestId) return;
-        clearTimeout(timeout);
-        off();
-        resolve(msg);
-      });
+    await this.sendEnvelope(recipientNpub, {
+      id: randomId(),
+      type: 'CHAT_MESSAGE',
+      senderFingerprint: 'nip46-signer',
+      recipientFingerprint: 'nip46-client',
+      timestamp: Date.now(),
+      payload: response,
     });
   }
 
@@ -539,17 +540,25 @@ class NostrMessagingService {
   }
 
   private async nsecToHex(nsec: string): Promise<string> {
-    if (!nsec.startsWith('nsec1')) return nsec;
+    if (!nsec.startsWith('nsec1')) return nsec.trim().toLowerCase();
     const tools = await this.ensureTools();
     const decoded = tools.nip19.decode(nsec);
-    return nip19DataToHex(decoded.data);
+    const hex = nip19DecodedDataToHex(decoded.data);
+    if (hex.length !== 64) {
+      throw new Error(`Invalid nsec length after decode: expected 64 hex chars, got ${hex.length}`);
+    }
+    return hex;
   }
 
   private async npubToHex(npub: string): Promise<string> {
-    if (!npub.startsWith('npub1')) return npub;
+    if (!npub.startsWith('npub1')) return npub.trim().toLowerCase();
     const tools = await this.ensureTools();
     const decoded = tools.nip19.decode(npub);
-    return nip19DataToHex(decoded.data);
+    const hex = nip19DecodedDataToHex(decoded.data);
+    if (hex.length !== 64) {
+      throw new Error(`Invalid npub length after decode: expected 64 hex chars, got ${hex.length}`);
+    }
+    return hex;
   }
 
   private async hexToNpub(pubHex: string): Promise<string> {
@@ -572,9 +581,26 @@ class NostrMessagingService {
       try {
         const msg = JSON.parse(String(evt.data));
         if (!Array.isArray(msg)) return;
+        if (msg[0] === 'OK') {
+          const eventId = String(msg[1] || '');
+          const accepted = !!msg[2];
+          const relayMessage = String(msg[3] || '');
+          const waiter = this.publishAckWaiters.get(eventId);
+          if (waiter) {
+            clearTimeout(waiter.timeout);
+            this.publishAckWaiters.delete(eventId);
+            if (accepted) {
+              waiter.resolve({ relayUrl, message: relayMessage });
+            } else {
+              waiter.reject(new Error(`Relay rejected event ${eventId}: ${relayMessage || 'no reason provided'}`));
+            }
+          }
+          return;
+        }
         if (msg[0] === 'EVENT') {
           const subId = String(msg[1] || '');
           const event = msg[2];
+          console.log(`[NIP46-TLM][Receiver] Received Kind ${String(event?.kind)} from ${String(event?.pubkey || 'unknown')}`);
           const sub = this.subscriptions.get(subId);
           if (sub) sub.handler(event, relayUrl);
         }
@@ -639,7 +665,7 @@ class NostrMessagingService {
 
   private async signEvent(content: string, recipientHex: string, type: NostrMessageType): Promise<any> {
     const tools = await this.ensureTools();
-    const draft = {
+    const unsignedEvent = {
       kind: 4,
       created_at: Math.floor(Date.now() / 1000),
       tags: [
@@ -649,66 +675,25 @@ class NostrMessagingService {
       ],
       content,
     };
-    return tools.finalizeEvent(draft, hexToBytes(this.localPrivHex));
+    console.log('[NIP46-TLM][Sender] Publishing Event:', JSON.stringify(unsignedEvent, null, 2));
+    return tools.finalizeEvent(unsignedEvent, hexToBytes(this.localPrivHex));
   }
 
-  private async signEventWithKind(
-    content: string,
-    recipientHex: string,
-    kind: number,
-    extraTags?: Array<string[]>,
-  ): Promise<any> {
-    const tools = await this.ensureTools();
-    const draft = {
-      kind,
-      created_at: Math.floor(Date.now() / 1000),
-      tags: [
-        ['p', recipientHex],
-        ...(Array.isArray(extraTags) ? extraTags : []),
-      ],
-      content,
-    };
-    return tools.finalizeEvent(draft, hexToBytes(this.localPrivHex));
-  }
-
-  private async publishNip46Json(recipientNpub: string, payload: Nip46Request | Nip46Response): Promise<void> {
-    const recipientHex = await this.npubToHex(recipientNpub);
-    const plaintext = JSON.stringify(payload);
-    const encrypted = await this.encryptForRecipient(plaintext, recipientHex);
-    const event = await this.signEventWithKind(encrypted, recipientHex, NIP46_KIND, [
-      ['x', NIP46_TAG],
-    ]);
-
-    let delivered = 0;
-    for (const ws of this.sockets.values()) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(['EVENT', event]));
-        delivered += 1;
+  private waitForPublishAck(eventId: string, timeoutMs = 12000): Promise<{ relayUrl: string; message: string }> {
+    return new Promise((resolve, reject) => {
+      const existing = this.publishAckWaiters.get(eventId);
+      if (existing) {
+        clearTimeout(existing.timeout);
+        this.publishAckWaiters.delete(eventId);
       }
-    }
 
-    if (delivered === 0) {
-      throw new Error('No active Nostr relay connection');
-    }
-  }
+      const timeout = setTimeout(() => {
+        this.publishAckWaiters.delete(eventId);
+        reject(new Error(`Timed out waiting for relay OK ack for event ${eventId}`));
+      }, timeoutMs);
 
-  private async sendEnvelopeToSingleRecipient<T>(recipientNpub: string, envelope: NostrEnvelope<T>): Promise<void> {
-    const recipientHex = await this.npubToHex(recipientNpub);
-    const plaintext = JSON.stringify(envelope);
-    const encrypted = await this.encryptForRecipient(plaintext, recipientHex);
-    const event = await this.signEvent(encrypted, recipientHex, envelope.type);
-
-    let delivered = 0;
-    for (const ws of this.sockets.values()) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(['EVENT', event]));
-        delivered += 1;
-      }
-    }
-
-    if (delivered === 0) {
-      throw new Error('No active Nostr relay connection');
-    }
+      this.publishAckWaiters.set(eventId, { resolve, reject, timeout });
+    });
   }
 
   private async encryptForRecipient(plaintext: string, recipientHex: string): Promise<string> {
@@ -753,27 +738,14 @@ class NostrMessagingService {
 
   private async handleIncomingEvent(event: any, relayUrl: string): Promise<void> {
     if (!event || typeof event !== 'object') return;
-    dbg('[NIP46-TLM][NostrMessaging] relay frame received', {
-      relayUrl,
-      kind: Number(event.kind),
-      eventId: String(event.id || ''),
-      pubkeyPrefix: typeof event.pubkey === 'string' ? event.pubkey.slice(0, 16) : 'unknown',
-      hasContent: typeof event.content === 'string',
-    });
     if (typeof event.content !== 'string' || typeof event.pubkey !== 'string') return;
 
-    if (event.kind === NIP46_KIND) {
-      this.nip46RawReceiveCount += 1;
-      dbg('[NIP46-TLM][NostrMessaging] raw kind-24133 received', {
-        count: this.nip46RawReceiveCount,
-        relayUrl,
-        eventId: String(event.id || ''),
-      });
+    if (event.kind === 24133) {
       await this.handleIncomingNip46Event(event, relayUrl);
       return;
     }
 
-    if (event.kind !== 4) return;
+    if (event.kind !== 4 && event.kind !== 1059) return;
 
     const tags = Array.isArray(event.tags) ? event.tags : [];
     const hasClientTag = tags.some((t: any) => Array.isArray(t) && t[0] === 'x' && t[1] === KEY_TAG);
@@ -784,6 +756,14 @@ class NostrMessagingService {
       const envelope = JSON.parse(plaintext) as NostrEnvelope;
       if (!envelope?.type || !envelope?.id) return;
 
+      const payloadTraceId =
+        envelope?.payload && typeof envelope.payload === 'object'
+          ? (envelope.payload as any).traceId
+          : undefined;
+      const traceId = typeof payloadTraceId === 'string' && payloadTraceId.trim()
+        ? payloadTraceId.trim()
+        : null;
+
       const msg: NostrIncomingMessage = {
         envelope,
         senderNpub: await this.hexToNpub(event.pubkey),
@@ -791,13 +771,74 @@ class NostrMessagingService {
         eventId: String(event.id || ''),
       };
 
+      if (envelope.type === 'COSIGN_REQUEST') {
+        console.warn('[NIP46-TLM][Receiver] decoded COSIGN_REQUEST envelope', {
+          traceId,
+          eventId: msg.eventId,
+          envelopeId: envelope.id,
+          relayUrl,
+        });
+      }
+
       for (const listener of this.listeners) listener(msg);
     } catch (err) {
       dbg('NostrMessaging: failed to decode incoming event', err);
     }
   }
 
+  private async sendEnvelopeToSingleRecipient<T>(recipientNpub: string, envelope: NostrEnvelope<T>): Promise<void> {
+    const recipientHex = await this.npubToHex(recipientNpub);
+    const plaintext = JSON.stringify(envelope);
+    const encrypted = await this.encryptForRecipient(plaintext, recipientHex);
+    const event = await this.signEvent(encrypted, recipientHex, envelope.type);
+
+    const eventTags = Array.isArray(event?.tags) ? event.tags : [];
+    const hasRecipientTag = eventTags.some(
+      (t: any) => Array.isArray(t) && t[0] === 'p' && String(t[1] || '') === recipientHex,
+    );
+    if (!hasRecipientTag) {
+      throw new Error('Refusing to publish event without required recipient p-tag');
+    }
+
+    let delivered = 0;
+    const socketStates: Array<{ relayUrl: string; readyState: number }> = [];
+    for (const [relayUrl, ws] of this.sockets.entries()) {
+      socketStates.push({ relayUrl, readyState: ws.readyState });
+    }
+
+    for (const ws of this.sockets.values()) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(['EVENT', event]));
+        delivered += 1;
+      }
+    }
+
+    if (delivered === 0) {
+      console.error('[NIP46-CRITICAL] Cannot send event, WebSocket is disconnected.', {
+        type: envelope.type,
+        eventId: event.id,
+        recipientNpub,
+        socketStates,
+        connectionState: this.connectionState,
+      });
+      throw new Error('No active Nostr relay connection');
+    }
+
+    const ack = await this.waitForPublishAck(String(event.id || ''));
+    console.log('[NIP46-TLM][Sender] Relay OK ack received', {
+      eventId: event.id,
+      relayUrl: ack.relayUrl,
+      relayMessage: ack.message,
+      recipientHexPrefix: recipientHex.slice(0, 12),
+      type: envelope.type,
+    });
+  }
+
   private async handleIncomingNip46Event(event: any, relayUrl: string): Promise<void> {
+    const tags = Array.isArray(event.tags) ? event.tags : [];
+    const hasNip46Tag = tags.some((t: any) => Array.isArray(t) && t[0] === 'x' && t[1] === NIP46_TAG);
+    if (!hasNip46Tag) return;
+
     try {
       const plaintext = await this.decryptFromSender(event.content, event.pubkey);
       const decoded = JSON.parse(plaintext) as Partial<Nip46Request & Nip46Response>;
@@ -808,24 +849,9 @@ class NostrMessagingService {
           id: String(decoded.id || ''),
           method: decoded.method,
           params: Array.isArray(decoded.params) ? decoded.params : [],
-          ...(typeof decoded.secret === 'string' ? { secret: decoded.secret } : {}),
+          ...(typeof decoded.secret === 'string' ? {secret: decoded.secret} : {}),
         };
         if (!request.id) return;
-
-        if (request.method === 'connect' && request.secret) {
-          this.nip46SignerSecretsBySenderPubHex.set(event.pubkey, request.secret);
-        }
-
-        if (request.method === 'sign_event') {
-          const expectedSecret = this.nip46SignerSecretsBySenderPubHex.get(event.pubkey);
-          if (expectedSecret && request.secret !== expectedSecret) {
-            await this.sendNip46Response(senderNpub, {
-              id: request.id,
-              error: 'Invalid NIP-46 secret',
-            });
-            return;
-          }
-        }
 
         const incoming: Nip46IncomingRequest = {
           request,
@@ -842,8 +868,8 @@ class NostrMessagingService {
         const incoming: Nip46IncomingResponse = {
           response: {
             id: decoded.id,
-            ...(decoded.result !== undefined ? { result: decoded.result } : {}),
-            ...(typeof decoded.error === 'string' ? { error: decoded.error } : {}),
+            ...(decoded.result !== undefined ? {result: decoded.result} : {}),
+            ...(typeof decoded.error === 'string' ? {error: decoded.error} : {}),
           },
           senderNpub,
           senderPubHex: String(event.pubkey),

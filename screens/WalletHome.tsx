@@ -91,6 +91,7 @@ import syncCoordinator, {
 import apiQueue from '../services/ApiQueue';
 import mempoolClient from '../services/MempoolClient';
 import {nostrMessaging} from '../services/nostrMessaging';
+import {canonicalPsbtBase64} from '../services/psbtIdentity';
 import {
   parsePairingCodeFromScannedData,
   computeExtensionBindResponseQr,
@@ -104,6 +105,62 @@ type RouteParams = {
   sendAddress?: string;
   sendAmountBtc?: string;
 };
+
+function extractPsbtFromScannedPayload(qrData: string): { psbtBase64: string; source: string } | null {
+  const trimmed = (qrData || '').trim();
+  if (!trimmed) return null;
+
+  const candidates: Array<{value: string; source: string}> = [
+    {value: trimmed, source: 'raw'},
+  ];
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (parsed && typeof parsed === 'object') {
+      const obj = parsed as Record<string, any>;
+      const nested = obj.data && typeof obj.data === 'object' ? (obj.data as Record<string, any>) : null;
+      const stringFields: Array<{value: unknown; source: string}> = [
+        {value: obj.psbt, source: 'json.psbt'},
+        {value: obj.psbtBase64, source: 'json.psbtBase64'},
+        {value: obj.psbtHex, source: 'json.psbtHex'},
+        {value: nested?.psbt, source: 'json.data.psbt'},
+        {value: nested?.psbtBase64, source: 'json.data.psbtBase64'},
+        {value: nested?.psbtHex, source: 'json.data.psbtHex'},
+      ];
+
+      for (const field of stringFields) {
+        if (typeof field.value === 'string' && field.value.trim().length > 0) {
+          candidates.push({value: field.value.trim(), source: field.source});
+        }
+      }
+    }
+  } catch {
+    // not JSON, continue with raw candidate
+  }
+
+  for (const candidate of candidates) {
+    const compact = candidate.value.replace(/\s+/g, '');
+    if (!compact) continue;
+
+    try {
+      if (/^[0-9a-fA-F]+$/.test(compact) && compact.length % 2 === 0) {
+        const hexLower = compact.toLowerCase();
+        if (hexLower.startsWith('70736274')) {
+          const b64 = nostrMessaging.psbtHexToBase64(compact);
+          return {psbtBase64: canonicalPsbtBase64(b64), source: `${candidate.source}:hex`};
+        }
+      }
+
+      const normalized = canonicalPsbtBase64(compact);
+      return {psbtBase64: normalized, source: `${candidate.source}:base64`};
+    } catch {
+      // try next candidate
+    }
+  }
+
+  return null;
+}
+
 const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   // Seed from persisted config so the wallet UI can render immediately
@@ -1626,6 +1683,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const processScannedQRData = useCallback(
     (qrData: string) => {
       dbg('Scanned QR data:', qrData.substring(0, 100));
+      dbg('Scanned QR data full length:', qrData.length);
       const trimmed = qrData.trim();
 
       // Extension pairing: pairing_code=... from Bold extension QR
@@ -1636,6 +1694,35 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setIsQRScannerVisible(false);
         setPendingExtensionPairingCode(pairingCode);
         setIsExtensionPairingModalVisible(true);
+        return;
+      }
+
+      const scannedPsbt = extractPsbtFromScannedPayload(trimmed);
+      if (scannedPsbt) {
+        const initiatorTxId = `peer-cosign-${Date.now()}`;
+        dbg('[NIP46-TLM][WalletHome] scanned PSBT payload from QR, routing to PSBT flow', {
+          source: scannedPsbt.source,
+          psbtPrefix: scannedPsbt.psbtBase64.slice(0, 16),
+          psbtFullLength: scannedPsbt.psbtBase64.length,
+          initiatorTxId,
+        });
+
+        setIsQRScannerVisible(false);
+        setPendingSendParams(null);
+        setScannedFromQR(false);
+
+        navigation.dispatch(
+          CommonActions.navigate({
+            name: 'PSBT',
+            params: {
+              sharedPsbtBase64: scannedPsbt.psbtBase64,
+              psbtBase64: scannedPsbt.psbtBase64,
+              forwardPeerCosign: true,
+              isInitiator: true,
+              initiatorTxId,
+            },
+          }),
+        );
         return;
       }
 

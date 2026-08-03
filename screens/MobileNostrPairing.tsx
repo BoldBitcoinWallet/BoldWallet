@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   NativeEventEmitter,
   EmitterSubscription,
+  DeviceEventEmitter,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import Animated, {
@@ -51,14 +52,20 @@ import {
   getKeyshareMetadata,
   HapticFeedback,
   getNostrRelays,
+  getReceivePath,
   getResetToMainTabsWallet,
   resolveUseLegacyDerivationPaths,
   detectKeyshareTssBackend,
   shortenAddress,
 } from '../utils';
+import {getExternalIndex} from '../services/HdIndexService';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
 import {resolveDklsNostrSigningParties} from '../services/lanMpcSetup';
+import {
+  nostrMessaging,
+  type CoSignRequestPayload,
+} from '../services/nostrMessaging';
 import {
   resolveTssBackend,
   resolveTssBackendForKeygen,
@@ -360,8 +367,83 @@ type RouteParams = {
   utxosJson?: string; // Pre-selected UTXOs from QR (avoids re-fetch on scanner)
   changeAddress?: string; // Pre-computed change address from sender (ensures consistency)
   forwardPeerCosign?: boolean;
+  isInitiator?: boolean;
+  // Set when this navigation was constructed in response to an incoming COSIGN_REQUEST
+  // (e.g. a chat-card tap for a "regular" native send, not a PSBT). This device already
+  // sent its own COSIGN_READY before navigating here, so it must never wait for the
+  // sender's readiness and must resolve its own addressType/derivationPath locally
+  // instead of requiring the sender to have supplied them.
+  isPeerResponse?: boolean;
   initiatorTxId?: string;
+  cosignTraceId?: string;
 };
+
+function createCoSignTraceId(): string {
+  return `cosign-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Resolves the addressType/derivationPath a responding device should use for a
+ * "regular" (non-PSBT) native-send co-sign request, mirroring the computation
+ * WalletHome.handleSend performs for the initiating device. Both duo devices share
+ * the same wallet indices, so recomputing locally yields the same path — no need to
+ * transmit it over the wire.
+ */
+async function resolveLocalSendDerivation(
+  network: string,
+): Promise<{addressType: string; derivationPath: string}> {
+  const addressType =
+    appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
+  const keyshare = await getKeyshareMetadata();
+  if (!keyshare) {
+    throw new Error(
+      'No keyshare found to resolve local send derivation path',
+    );
+  }
+  const useLegacyPath = resolveUseLegacyDerivationPaths(keyshare);
+  const normalizedNetwork = network === 'testnet3' ? 'testnet' : network;
+  const externalIndex = await getExternalIndex(
+    normalizedNetwork || 'mainnet',
+    addressType,
+  );
+  const derivationPath = getReceivePath(
+    normalizedNetwork,
+    addressType,
+    useLegacyPath,
+    externalIndex,
+  );
+  return {addressType, derivationPath};
+}
+
+/**
+ * Resolves once a matching `COSIGN_READY` wake-up arrives from the co-signing peer
+ * (re-broadcast locally by `NostrCoSignBridge`), or `false` if it times out first.
+ */
+function waitForCoSignReady(txId: string, timeoutMs = 45000): Promise<boolean> {
+  return new Promise(resolve => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      sub.remove();
+      resolve(false);
+    }, timeoutMs);
+    const sub = DeviceEventEmitter.addListener('nostr-cosign:ready', (evt: any) => {
+      if (settled) return;
+      if (!evt || evt.txId !== txId) return;
+      settled = true;
+      clearTimeout(timer);
+      sub.remove();
+      resolve(true);
+    });
+  });
+}
+
+function fingerprintFromNpub(npub: string): string {
+  if (!npub) return 'mobile-wallet';
+  return `${npub.slice(0, 4)}${npub.slice(-4)}`;
+}
+
 const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isFocused = useIsFocused();
@@ -1719,6 +1801,42 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', 'Missing transaction parameters');
       return;
     }
+
+    const accidentalPsbtPayload =
+      typeof route.params?.psbtBase64 === 'string' &&
+      route.params.psbtBase64.trim().length > 0;
+    if (accidentalPsbtPayload) {
+      const psbtBase64 = route.params.psbtBase64!.trim();
+      const initiatorTxId =
+        (typeof route.params?.initiatorTxId === 'string' && route.params.initiatorTxId.trim()) ||
+        `peer-cosign-${Date.now()}`;
+
+      console.warn(
+        '[NIP46-CRITICAL] Detected PSBT payload in send_btc flow; bypassing legacy native send and rerouting to PSBT screen.',
+        {
+          initiatorTxId,
+          psbtPrefix: psbtBase64.slice(0, 16),
+        },
+      );
+
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'MainTabs',
+          params: {
+            screen: 'PSBT',
+            params: {
+              sharedPsbtBase64: psbtBase64,
+              psbtBase64,
+              forwardPeerCosign: true,
+              isInitiator: true,
+              initiatorTxId,
+            },
+          },
+        }),
+      );
+      return;
+    }
+
     try {
       assertCanStartNostrMpc();
     } catch (e) {
@@ -1747,20 +1865,30 @@ const MobileNostrPairing = ({navigation}: any) => {
     // Store original WalletService state to restore after balance fetch
     let originalWalletServiceNetwork = '';
     let originalWalletServiceApiUrl = '';
+    // Tracks the Nostr fan-out request so the catch/finally blocks can update chat status.
+    let cosignFanOutTxId: string | undefined;
     try {
+      // A responder entering via a chat-card tap (KeyshareChat.openCoSignRequest) only
+      // carries recipient/amount/fee/network from the incoming COSIGN_REQUEST \u2014 it must
+      // resolve its own addressType/derivationPath locally instead of requiring the
+      // sender (who may not even know this device's path, e.g. a watch-only extension)
+      // to have supplied them.
+      const isPeerResponseSend = route.params?.isPeerResponse === true;
+
       // Read ALL parameters from route params ONLY (no fallbacks)
       if (!route.params?.network || route.params.network.trim() === '') {
         throw new Error('Network is required in route params');
       }
       if (
-        !route.params?.addressType ||
-        route.params.addressType.trim() === ''
+        !isPeerResponseSend &&
+        (!route.params?.addressType || route.params.addressType.trim() === '')
       ) {
         throw new Error('Address type is required in route params');
       }
       if (
-        !route.params?.derivationPath ||
-        route.params.derivationPath.trim() === ''
+        !isPeerResponseSend &&
+        (!route.params?.derivationPath ||
+          route.params.derivationPath.trim() === '')
       ) {
         throw new Error('Derivation path is required in route params');
       }
@@ -1784,8 +1912,17 @@ const MobileNostrPairing = ({navigation}: any) => {
       const networkFromParams = route.params.network.trim();
       const net =
         networkFromParams === 'testnet' ? 'testnet3' : networkFromParams;
-      const addressTypeToUse = route.params.addressType.trim();
-      const path = route.params.derivationPath.trim();
+      let addressTypeToUse = route.params?.addressType?.trim() || '';
+      let path = route.params?.derivationPath?.trim() || '';
+      if (isPeerResponseSend && (!addressTypeToUse || !path)) {
+        const localDerivation = await resolveLocalSendDerivation(net);
+        addressTypeToUse = addressTypeToUse || localDerivation.addressType;
+        path = path || localDerivation.derivationPath;
+        dbg('MobileNostrPairing: resolved local send derivation for peer response', {
+          addressType: addressTypeToUse,
+          derivationPath: path,
+        });
+      }
       const toAddress = route.params.toAddress.trim();
       const satoshiAmount = route.params.satoshiAmount.trim();
       const satoshiFees = route.params.satoshiFees.trim();
@@ -1797,6 +1934,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         toAddress,
         satoshiAmount,
         satoshiFees,
+        isPeerResponseSend,
       });
       // Store original network/API
       originalNetwork =
@@ -2025,6 +2163,96 @@ const MobileNostrPairing = ({navigation}: any) => {
         partiesNpubsCSV: signingNpubsSorted,
         resolvedPeerNpub: resolvedPeerNpub.substring(0, 20) + '...',
       });
+
+      // Unified fan-out: native sends are always MPC (committeeLen > 1), so notify the
+      // co-signer over Nostr and surface an "Awaiting Peer Approval" chat card, matching
+      // the extension/PSBT flow, before driving the live signing session below.
+      // Skipped entirely for a peer-response entry: this device already received the
+      // COSIGN_REQUEST via chat and already sent its own COSIGN_READY before navigating
+      // here, so re-fanning-out (and waiting on itself) would just deadlock.
+      const committeeLen = allNpubsFromKeyshare.length;
+      if (!isPeerResponseSend && committeeLen > 1) {
+        try {
+          const fanOutTraceId =
+            (typeof route.params?.cosignTraceId === 'string' &&
+              route.params.cosignTraceId.trim()) ||
+            createCoSignTraceId();
+          const fanOutTxId =
+            (typeof route.params?.initiatorTxId === 'string' &&
+              route.params.initiatorTxId.trim()) ||
+            `native-send-${Date.now()}`;
+          const fanOutPayload: CoSignRequestPayload = {
+            txId: fanOutTxId,
+            traceId: fanOutTraceId,
+            psbtHex: '',
+            amountSats: Number(satoshiAmount),
+            feeSats: Number(satoshiFees),
+            recipientAddress: toAddress,
+            network: (networkFromParams as CoSignRequestPayload['network']) || 'mainnet',
+          };
+          const localFingerprint = fingerprintFromNpub(localNpubFromKeyshare);
+          dbg('MobileNostrPairing: fanning out native send COSIGN_REQUEST to peer', {
+            traceId: fanOutTraceId,
+            txId: fanOutTxId,
+            committeeLen,
+            peer: resolvedPeerNpub.substring(0, 20) + '...',
+          });
+          await nostrMessaging.sendCoSignRequestToMany(
+            [resolvedPeerNpub],
+            localFingerprint,
+            'peer-group',
+            fanOutPayload,
+          );
+          cosignFanOutTxId = fanOutTxId;
+          DeviceEventEmitter.emit('nostr-cosign:request', {
+            ts: Date.now(),
+            mode: 'legacy',
+            eventId: `local:${fanOutTxId}`,
+            envelopeId: `local:${fanOutTxId}`,
+            senderNpub: localNpubFromKeyshare,
+            senderFingerprint: localFingerprint,
+            recipientFingerprint: 'peer-group',
+            request: fanOutPayload,
+          });
+          DeviceEventEmitter.emit('nostr-cosign:status', {
+            mode: 'legacy',
+            txId: fanOutTxId,
+            status: 'pending',
+          });
+        } catch (fanOutErr) {
+          dbg(
+            'MobileNostrPairing: native send COSIGN_REQUEST fan-out failed (continuing with live MPC signing)',
+            fanOutErr,
+          );
+        }
+
+        // Device 1 always originates the native send in this branch (peer-response
+        // entries never reach here), so it always waits for the peer's COSIGN_READY
+        // wake-up before entering the ~25s native TSS window — otherwise the peer's
+        // UI-thread delay (UTXO sync, etc.) can cause a deadline miss even though the
+        // fan-out itself succeeded.
+        if (cosignFanOutTxId) {
+          setStatus('Awaiting peer approval…');
+          dbg('MobileNostrPairing: waiting for COSIGN_READY before native send', {
+            txId: cosignFanOutTxId,
+          });
+          const peerReady = await waitForCoSignReady(cosignFanOutTxId);
+          if (nostrAbortRef.current) {
+            setPairingActive(false);
+            return;
+          }
+          if (!peerReady) {
+            DeviceEventEmitter.emit('nostr-cosign:status', {
+              mode: 'legacy',
+              txId: cosignFanOutTxId,
+              status: 'rejected',
+            });
+            throw new Error('Peer did not respond in time');
+          }
+          setStatus('Peer ready \u2014 starting co-sign\u2026');
+        }
+      }
+
       const prepared = await prepareSendBtcMultiPathInputs({
         network: net,
         addressType: addressTypeToUse,
@@ -2083,7 +2311,21 @@ const MobileNostrPairing = ({navigation}: any) => {
         rawTxHex.length % 2 !== 0 ||
         !/^[a-fA-F0-9]+$/.test(rawTxHex)
       ) {
+        if (cosignFanOutTxId) {
+          DeviceEventEmitter.emit('nostr-cosign:status', {
+            mode: 'legacy',
+            txId: cosignFanOutTxId,
+            status: 'rejected',
+          });
+        }
         throw new Error(rawTxHex || 'Invalid signed transaction');
+      }
+      if (cosignFanOutTxId) {
+        DeviceEventEmitter.emit('nostr-cosign:status', {
+          mode: 'legacy',
+          txId: cosignFanOutTxId,
+          status: 'signed',
+        });
       }
       broadcastSuccessPayloadRef.current = {
         senderAddress,
@@ -2113,6 +2355,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       setSignedTxRawHex(rawTxHex);
     } catch (error: any) {
       dbg('Send BTC error:', error);
+      if (cosignFanOutTxId) {
+        DeviceEventEmitter.emit('nostr-cosign:status', {
+          mode: 'legacy',
+          txId: cosignFanOutTxId,
+          status: 'rejected',
+        });
+      }
       if (!nostrAbortRef.current) {
         if (
           !isMpcAbortedOrCanceledError(error) &&
@@ -2165,6 +2414,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
   };
   const startSignPSBT = async () => {
+    const joinTraceId =
+      (typeof route.params?.cosignTraceId === 'string' && route.params.cosignTraceId.trim()) ||
+      createCoSignTraceId();
+    console.warn('[NIP46-TLM][Sender] Join Co-Signing pressed (startSignPSBT)', {
+      traceId: joinTraceId,
+    });
     if (!route.params?.psbtBase64) {
       Alert.alert('Error', 'Missing PSBT data');
       return;
@@ -2194,6 +2449,8 @@ const MobileNostrPairing = ({navigation}: any) => {
     setProgress(0);
     setStatus('Starting PSBT signing…');
     let keyshare: any;
+    // Tracks the pre-sign Nostr fan-out so later branches can update the chat status.
+    let cosignFanOutTxId: string | undefined;
     try {
       keyshare = await loadNostrKeysharePrepForSession();
       // Get all npubs from keyshare for session ID
@@ -2285,6 +2542,12 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (!peerNpubForSign) {
         throw new Error('Co-signing peer npub is missing from this session.');
       }
+      console.warn('[NIP46-TLM][Sender] Join Co-Signing resolved signing peers:', {
+        traceId: joinTraceId,
+        localNpub: localNpubFromKeyshare,
+        peers: allNpubs.filter(n => n !== localNpubFromKeyshare),
+        selectedPeerNpub: selectedPeerNpub || null,
+      });
       const {partiesNpubsCSV, peerNpub: resolvedPeerNpub} =
         resolveDklsNostrSigningParties(
           localNpubFromKeyshare,
@@ -2300,6 +2563,99 @@ const MobileNostrPairing = ({navigation}: any) => {
         resolvedPeerNpub: resolvedPeerNpub.substring(0, 20) + '...',
         psbtLength: route.params.psbtBase64?.length,
       });
+
+      // CRITICAL: wake the peer BEFORE the blocking native MPC wait below. Awaiting the
+      // native call first left Device 2 never notified, so Device 1 hung until
+      // "context deadline exceeded". A fan-out failure here must not block the sign attempt.
+      try {
+        const fanOutTxId =
+          (typeof route.params?.initiatorTxId === 'string' &&
+            route.params.initiatorTxId.trim()) ||
+          `sign-psbt-${Date.now()}`;
+        const fanOutPayload: CoSignRequestPayload = {
+          txId: fanOutTxId,
+          traceId: joinTraceId,
+          psbtHex: nostrMessaging.psbtBase64ToHex(route.params.psbtBase64),
+          psbtBase64: route.params.psbtBase64,
+          amountSats: 0,
+          feeSats: 0,
+          recipientAddress: 'N/A',
+          network: (route.params?.network as CoSignRequestPayload['network']) || 'mainnet',
+        };
+        const localFingerprint = fingerprintFromNpub(localNpubFromKeyshare);
+        console.warn('[NIP46-TLM][Sender] Notifying peer before native MPC sign', {
+          traceId: joinTraceId,
+          txId: fanOutTxId,
+          peer: resolvedPeerNpub.substring(0, 20) + '...',
+        });
+        await nostrMessaging.sendCoSignRequestToMany(
+          [resolvedPeerNpub],
+          localFingerprint,
+          'peer-group',
+          fanOutPayload,
+        );
+        cosignFanOutTxId = fanOutTxId;
+        DeviceEventEmitter.emit('nostr-cosign:request', {
+          ts: Date.now(),
+          mode: 'legacy',
+          eventId: `local:${fanOutTxId}`,
+          envelopeId: `local:${fanOutTxId}`,
+          senderNpub: localNpubFromKeyshare,
+          senderFingerprint: localFingerprint,
+          recipientFingerprint: 'peer-group',
+          request: fanOutPayload,
+        });
+        DeviceEventEmitter.emit('nostr-cosign:status', {
+          mode: 'legacy',
+          txId: fanOutTxId,
+          status: 'pending',
+        });
+      } catch (fanOutErr) {
+        dbg(
+          'MobileNostrPairing: pre-sign COSIGN_REQUEST fan-out failed (continuing with native MPC signing)',
+          fanOutErr,
+        );
+      }
+
+      // Only the device that originated this request (forwarding to a peer / acting as
+      // initiator) waits for the peer's COSIGN_READY wake-up. A device that arrived here
+      // by tapping "Review & Co-Sign" on a chat card already sent its own COSIGN_READY
+      // and must proceed straight into the native call.
+      const isWaitingRole =
+        route.params?.isInitiator === true || route.params?.forwardPeerCosign === true;
+      if (isWaitingRole && cosignFanOutTxId) {
+        setStatus('Awaiting peer approval…');
+        dbg('MobileNostrPairing: waiting for COSIGN_READY before native MPC sign', {
+          txId: cosignFanOutTxId,
+        });
+        const peerReady = await waitForCoSignReady(cosignFanOutTxId);
+        if (nostrAbortRef.current) {
+          setSpendSignOutcome('aborted');
+          return;
+        }
+        if (!peerReady) {
+          dbg('MobileNostrPairing: timed out waiting for COSIGN_READY; aborting before native call', {
+            txId: cosignFanOutTxId,
+          });
+          DeviceEventEmitter.emit('nostr-cosign:status', {
+            mode: 'legacy',
+            txId: cosignFanOutTxId,
+            status: 'rejected',
+          });
+          setSpendSignOutcome('failed');
+          if (shouldShowMpcFlowAlert(nostrFlowAlertGate())) {
+            showMpcFlowAlert(
+              'Peer Not Ready',
+              'The co-signing peer did not respond in time. Please try again once they have opened the app.',
+              nostrFlowAlertGate(),
+            );
+          }
+          setStatus('PSBT signing failed');
+          return;
+        }
+        setStatus('Peer ready \u2014 starting co-sign\u2026');
+      }
+
       // Call native module for PSBT signing
       await TssProvider.nostrMpcSignPSBT(
         relaysCSV,
@@ -2309,6 +2665,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       )
         .then(async (signedPsbt: any) => {
           if (nostrAbortRef.current) {
+            if (cosignFanOutTxId) {
+              DeviceEventEmitter.emit('nostr-cosign:status', {
+                mode: 'legacy',
+                txId: cosignFanOutTxId,
+                status: 'rejected',
+              });
+            }
             setSpendSignOutcome('aborted');
             setPairingActive(false);
             return;
@@ -2318,6 +2681,13 @@ const MobileNostrPairing = ({navigation}: any) => {
             signedPsbt.includes('error') ||
             signedPsbt.includes('failed')
           ) {
+            if (cosignFanOutTxId) {
+              DeviceEventEmitter.emit('nostr-cosign:status', {
+                mode: 'legacy',
+                txId: cosignFanOutTxId,
+                status: 'rejected',
+              });
+            }
             setSpendSignOutcome('failed');
             if (
               !nostrAbortRef.current &&
@@ -2333,6 +2703,13 @@ const MobileNostrPairing = ({navigation}: any) => {
             dbg(localNpub, 'PSBT signing error', String(signedPsbt));
             return;
           }
+          if (cosignFanOutTxId) {
+            DeviceEventEmitter.emit('nostr-cosign:status', {
+              mode: 'legacy',
+              txId: cosignFanOutTxId,
+              status: 'signed',
+            });
+          }
           dbg(localNpub, 'PSBT signed successfully');
           if (route.params?.forwardPeerCosign) {
             dbg('PSBT signing complete: returning to PSBT tab for peer co-sign forward');
@@ -2345,6 +2722,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                     signedPsbt,
                     forwardPeerCosign: true,
                     initiatorTxId: route.params?.initiatorTxId,
+                    cosignTraceId: joinTraceId,
                   },
                 },
               }),
@@ -2370,6 +2748,13 @@ const MobileNostrPairing = ({navigation}: any) => {
           }
         })
         .catch(async (e: any) => {
+          if (cosignFanOutTxId) {
+            DeviceEventEmitter.emit('nostr-cosign:status', {
+              mode: 'legacy',
+              txId: cosignFanOutTxId,
+              status: 'rejected',
+            });
+          }
           if (nostrAbortRef.current) {
             setSpendSignOutcome('aborted');
             setPairingActive(false);
@@ -2390,6 +2775,13 @@ const MobileNostrPairing = ({navigation}: any) => {
         });
     } catch (error: any) {
       dbg('Sign PSBT error:', error);
+      if (cosignFanOutTxId) {
+        DeviceEventEmitter.emit('nostr-cosign:status', {
+          mode: 'legacy',
+          txId: cosignFanOutTxId,
+          status: 'rejected',
+        });
+      }
       if (nostrAbortRef.current) {
         setSpendSignOutcome('aborted');
       } else {
@@ -5943,7 +6335,44 @@ const MobileNostrPairing = ({navigation}: any) => {
             network={route.params?.network}
             buttonLabel={nostrSpendLabel}
             buttonColor={theme.colors.bitcoinOrange}
-            onPress={isSignPSBT ? startSignPSBT : startSendBTC}
+            onPress={async () => {
+              if (isSignPSBT) {
+                console.warn('[NIP46-CRITICAL] "Join Co-Signing" button was physically tapped.');
+                console.log('[NIP46-CRITICAL] Fan-out variables:', {
+                  hasPeers: Array.isArray(sendModeDevices),
+                  peerCount: Array.isArray(sendModeDevices)
+                    ? sendModeDevices.filter(d => !!d?.npub).length
+                    : 0,
+                  hasPsbt: !!route.params?.psbtBase64,
+                  hasRouteParams: !!route.params,
+                  isInitiator: !!route.params?.isInitiator,
+                  forwardPeerCosign: !!route.params?.forwardPeerCosign,
+                  selectedPeerNpub: selectedPeerNpub || null,
+                  localNpubPrefix:
+                    typeof localNpub === 'string' && localNpub
+                      ? `${localNpub.slice(0, 16)}...`
+                      : null,
+                });
+                try {
+                  await startSignPSBT();
+                } catch (error) {
+                  console.error(
+                    '[NIP46-CRITICAL] Sync crash in onPress handler:',
+                    error,
+                  );
+                }
+                return;
+              }
+
+              try {
+                await startSendBTC();
+              } catch (error) {
+                console.error(
+                  '[NIP46-CRITICAL] Sync crash in send onPress handler:',
+                  error,
+                );
+              }
+            }}
             disabled={nostrSpendDisabled}
           />
         ) : null}

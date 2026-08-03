@@ -8,6 +8,7 @@ import AppText from './AppText';
 import AppPressable from './AppPressable';
 import ChatBubble from './ChatBubble';
 import CoSignRequestCard from './CoSignRequestCard';
+import { getRecentCoSignFeedEvents, getRecentUnreadChatEvents } from './NostrCoSignBridge';
 import { useTheme } from '../theme';
 import { dbg, getKeyshareMetadata } from '../utils';
 import {
@@ -73,6 +74,23 @@ function messageRenderKey(msg: NostrIncomingMessage): string {
   return `${messageIdentity(msg)}:${msg.relayUrl}`;
 }
 
+/** Canonical cross-pathway identity for a COSIGN_REQUEST, independent of transport/relay. */
+function coSignRequestIdentity(opts: {
+  nip46RequestId?: string;
+  txId?: string;
+  eventId?: string;
+  envelopeId?: string;
+  fallbackSeed: string;
+}): string {
+  return (
+    (typeof opts.nip46RequestId === 'string' && opts.nip46RequestId.trim()) ||
+    (typeof opts.txId === 'string' && opts.txId.trim()) ||
+    (typeof opts.eventId === 'string' && opts.eventId.trim()) ||
+    (typeof opts.envelopeId === 'string' && opts.envelopeId.trim()) ||
+    opts.fallbackSeed
+  );
+}
+
 type PeerState = {
   npub: string;
   label: string;
@@ -116,6 +134,22 @@ type CoSignFeedBridgeEvent = {
   request?: Record<string, unknown>;
 };
 
+type IncomingChatEvent = {
+  type?: string;
+  mode?: 'legacy' | 'nip46' | 'chat';
+  ts?: number;
+  requestId?: string;
+  txId?: string;
+  parsedMessage?: {
+    eventId?: string;
+    senderNpub?: string;
+    senderFingerprint?: string;
+    nip46RequestId?: string;
+    nip46ReplyTo?: string;
+    request?: Record<string, unknown>;
+  };
+};
+
 const PEER_ONLINE_WINDOW_MS = 90 * 1000;
 
 const KeyshareChat: React.FC = () => {
@@ -130,6 +164,11 @@ const KeyshareChat: React.FC = () => {
   const [peers, setPeers] = useState<PeerState[]>([]);
   const peersRef = useRef<PeerState[]>([]);
   const lastCoSignOpenAtRef = useRef(0);
+  // One COSIGN_REQUEST can reach this screen via up to three independent paths
+  // (direct onMessage listener, bridge's nostr-cosign:request, bridge's
+  // nostr-chat:incoming) plus redelivery across multiple relays; this Set makes
+  // "first one wins, the rest are no-ops" regardless of which path arrives first.
+  const seenCoSignRequestIdsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     peersRef.current = peers;
@@ -225,6 +264,9 @@ const KeyshareChat: React.FC = () => {
       ) {
         return;
       }
+
+      const parsed = parsePayload(msg.envelope.payload);
+
       if (msg.envelope.type === 'COSIGN_RESPONSE') {
         const response = parsed as Record<string, unknown>;
         const txId = typeof response.txId === 'string' ? response.txId : '';
@@ -240,9 +282,18 @@ const KeyshareChat: React.FC = () => {
         return;
       }
 
-
-      const parsed = parsePayload(msg.envelope.payload);
       const senderLabel = senderPeer?.label || `${senderNpub.slice(0, 8)}...`;
+
+      if (msg.envelope.type === 'COSIGN_REQUEST') {
+        const identity = coSignRequestIdentity({
+          txId: typeof parsed.txId === 'string' ? parsed.txId : undefined,
+          eventId: msg.eventId,
+          envelopeId: msg.envelope.id,
+          fallbackSeed: messageIdentity(msg),
+        });
+        if (seenCoSignRequestIdsRef.current.has(identity)) return;
+        seenCoSignRequestIdsRef.current.add(identity);
+      }
 
       const feedItem: ChatFeedItem = {
         id: messageRenderKey(msg),
@@ -278,48 +329,125 @@ const KeyshareChat: React.FC = () => {
       }
     });
 
+    const handleCoSignFeedEvent = (raw: CoSignFeedBridgeEvent) => {
+      if (!mounted || !raw || typeof raw !== 'object') return;
+
+      const senderNpub = normalizeNpub(raw.senderNpub);
+      if (!senderNpub) return;
+
+      const senderPeer = peersRef.current.find(peer => peer.npub === senderNpub);
+      const senderLabel = senderPeer?.label || `${senderNpub.slice(0, 8)}...`;
+      const payload = parsePayload(raw.request || {});
+
+      const identity = coSignRequestIdentity({
+        nip46RequestId: typeof raw.nip46RequestId === 'string' ? raw.nip46RequestId : undefined,
+        txId: typeof payload.txId === 'string' ? payload.txId : undefined,
+        eventId: typeof raw.eventId === 'string' ? raw.eventId : undefined,
+        envelopeId: typeof raw.envelopeId === 'string' ? raw.envelopeId : undefined,
+        fallbackSeed: `${senderNpub}:${raw.ts || Date.now()}`,
+      });
+      if (seenCoSignRequestIdsRef.current.has(identity)) return;
+      seenCoSignRequestIdsRef.current.add(identity);
+
+      const feedItem: ChatFeedItem = {
+        id: `bridge-cosign:${identity}`,
+        type: 'COSIGN_REQUEST',
+        status: 'pending',
+        txId: typeof payload.txId === 'string' ? payload.txId : undefined,
+        mode: raw.mode === 'nip46' ? 'nip46' : 'legacy',
+        nip46RequestId:
+          typeof raw.nip46RequestId === 'string' ? raw.nip46RequestId : undefined,
+        nip46ReplyTo: typeof raw.nip46ReplyTo === 'string' ? raw.nip46ReplyTo : undefined,
+        senderFingerprint:
+          typeof raw.senderFingerprint === 'string'
+            ? raw.senderFingerprint
+            : fingerprintFromNpub(senderNpub),
+        senderNpub,
+        senderLabel,
+        timestamp: Number(raw.ts || Date.now()),
+        payload,
+      };
+
+      setMessages(prev => {
+        if (prev.some(item => item.id === feedItem.id)) return prev;
+        return [feedItem, ...prev].slice(0, 200);
+      });
+    };
+
     const offBridgeCoSign = DeviceEventEmitter.addListener(
       'nostr-cosign:request',
-      (raw: CoSignFeedBridgeEvent) => {
-        if (!mounted || !raw || typeof raw !== 'object') return;
+      handleCoSignFeedEvent,
+    );
 
-        const senderNpub = normalizeNpub(raw.senderNpub);
-        if (!senderNpub) return;
+    const handleUnreadChatEvent = (evt: IncomingChatEvent) => {
+      if (!mounted || !evt || typeof evt !== 'object') return;
+      console.log('[NIP46-TLM][UI] Chat component received incoming event:', evt?.parsedMessage || evt);
 
-        const senderPeer = peersRef.current.find(peer => peer.npub === senderNpub);
-        const senderLabel = senderPeer?.label || `${senderNpub.slice(0, 8)}...`;
-        const payload = parsePayload(raw.request || {});
+      if (evt.type !== 'COSIGN_REQUEST') return;
+      const parsedMessage = evt.parsedMessage;
+      if (!parsedMessage || typeof parsedMessage !== 'object') return;
 
-        const identity =
-          (typeof raw.nip46RequestId === 'string' && raw.nip46RequestId.trim()) ||
-          (typeof raw.eventId === 'string' && raw.eventId.trim()) ||
-          (typeof raw.envelopeId === 'string' && raw.envelopeId.trim()) ||
-          `${senderNpub}:${Date.now()}`;
+      const senderNpub = normalizeNpub(parsedMessage.senderNpub);
+      if (!senderNpub) return;
 
-        const feedItem: ChatFeedItem = {
-          id: `bridge-cosign:${identity}`,
-          type: 'COSIGN_REQUEST',
-          status: 'pending',
-          txId: typeof payload.txId === 'string' ? payload.txId : undefined,
-          mode: raw.mode === 'nip46' ? 'nip46' : 'legacy',
-          nip46RequestId:
-            typeof raw.nip46RequestId === 'string' ? raw.nip46RequestId : undefined,
-          nip46ReplyTo: typeof raw.nip46ReplyTo === 'string' ? raw.nip46ReplyTo : undefined,
-          senderFingerprint:
-            typeof raw.senderFingerprint === 'string'
-              ? raw.senderFingerprint
-              : fingerprintFromNpub(senderNpub),
-          senderNpub,
-          senderLabel,
-          timestamp: Number(raw.ts || Date.now()),
-          payload,
-        };
+      const payload = parsePayload(parsedMessage.request || {});
+      const senderPeer = peersRef.current.find(peer => peer.npub === senderNpub);
+      const senderLabel = senderPeer?.label || `${senderNpub.slice(0, 8)}...`;
 
-        setMessages(prev => {
-          if (prev.some(item => item.id === feedItem.id)) return prev;
-          return [feedItem, ...prev].slice(0, 200);
-        });
-      },
+      const identity = coSignRequestIdentity({
+        nip46RequestId:
+          typeof parsedMessage.nip46RequestId === 'string' ? parsedMessage.nip46RequestId : undefined,
+        txId: typeof payload.txId === 'string' ? payload.txId : undefined,
+        eventId: typeof parsedMessage.eventId === 'string' ? parsedMessage.eventId : undefined,
+        envelopeId: typeof evt.requestId === 'string' ? evt.requestId : undefined,
+        fallbackSeed: `${senderNpub}:${evt.ts || Date.now()}`,
+      });
+      if (seenCoSignRequestIdsRef.current.has(identity)) return;
+      seenCoSignRequestIdsRef.current.add(identity);
+
+      const feedItem: ChatFeedItem = {
+        id: `chat-incoming:${identity}`,
+        type: 'COSIGN_REQUEST',
+        status: 'pending',
+        txId: typeof payload.txId === 'string' ? payload.txId : undefined,
+        mode: evt.mode === 'nip46' ? 'nip46' : 'legacy',
+        nip46RequestId:
+          typeof parsedMessage.nip46RequestId === 'string'
+            ? parsedMessage.nip46RequestId
+            : undefined,
+        nip46ReplyTo:
+          typeof parsedMessage.nip46ReplyTo === 'string'
+            ? parsedMessage.nip46ReplyTo
+            : undefined,
+        senderFingerprint:
+          typeof parsedMessage.senderFingerprint === 'string'
+            ? parsedMessage.senderFingerprint
+            : fingerprintFromNpub(senderNpub),
+        senderNpub,
+        senderLabel,
+        timestamp: Number(evt.ts || Date.now()),
+        payload,
+      };
+
+      setMessages(prev => {
+        if (prev.some(item => item.id === feedItem.id)) return prev;
+        return [feedItem, ...prev].slice(0, 200);
+      });
+    };
+
+    const offIncomingChat = DeviceEventEmitter.addListener(
+      'nostr-chat:incoming',
+      handleUnreadChatEvent,
+    );
+
+    // Replay anything NostrCoSignBridge emitted while this screen wasn't mounted to
+    // catch it (e.g. the Chat tab hadn't been visited yet), so cards appear on first
+    // mount instead of requiring a manual refresh to notice a missed local event.
+    getRecentCoSignFeedEvents().forEach(evt =>
+      handleCoSignFeedEvent(evt as CoSignFeedBridgeEvent),
+    );
+    getRecentUnreadChatEvents().forEach(evt =>
+      handleUnreadChatEvent(evt as IncomingChatEvent),
     );
 
     const offCoSignStatus = DeviceEventEmitter.addListener(
@@ -356,6 +484,7 @@ const KeyshareChat: React.FC = () => {
       offState();
       offMsg();
       offBridgeCoSign.remove();
+      offIncomingChat.remove();
       offCoSignStatus.remove();
     };
   }, []);
@@ -455,7 +584,22 @@ const KeyshareChat: React.FC = () => {
         ? nostrMessaging.psbtHexToBase64(payload.psbtHex)
         : '';
 
-    if (!psbtBase64) {
+    // "Regular" co-signing: a native BTC send fan-out (e.g. from MobileNostrPairing's
+    // startSendBTC, or from a watch-only peer like the BoldChrome extension) carries no
+    // PSBT at all — just recipient/amount/fee. Previously this always hit the PSBT-only
+    // error below, so the peer never sent COSIGN_READY and the initiator always hung
+    // until its 45s timeout. Recognize this shape and route it to the send_btc responder
+    // flow instead of silently failing.
+    const amountSatsNum = Number(payload.amountSats);
+    const isRegularSendRequest =
+      !psbtBase64 &&
+      typeof payload.recipientAddress === 'string' &&
+      payload.recipientAddress.trim() !== '' &&
+      payload.recipientAddress !== 'N/A' &&
+      Number.isFinite(amountSatsNum) &&
+      amountSatsNum > 0;
+
+    if (!psbtBase64 && !isRegularSendRequest) {
       setError('This co-sign request did not contain a usable PSBT payload.');
       return;
     }
@@ -483,15 +627,51 @@ const KeyshareChat: React.FC = () => {
         nip46RequestId: item.nip46RequestId,
       });
     } else {
-      if (!msg) return;
+      // `item.sourceMessage` is only ever set by the direct onMessage listener path —
+      // cards that won the dedup race via the bridge (`nostr-cosign:request` /
+      // `nostr-chat:incoming`) never have it. Fall back to the fields already carried
+      // on `item` itself so this doesn't silently no-op for that (common) case.
       setPendingCoSignRequest({
         mode: 'legacy',
-        senderNpub: msg.senderNpub,
-        senderFingerprint: msg.envelope.senderFingerprint,
-        recipientFingerprint: msg.envelope.recipientFingerprint,
+        senderNpub: msg?.senderNpub || item.senderNpub,
+        senderFingerprint: msg?.envelope.senderFingerprint || item.senderFingerprint,
+        recipientFingerprint: msg?.envelope.recipientFingerprint || 'peer-group',
         request: payload,
-        envelopeId: msg.envelope.id,
+        envelopeId: msg?.envelope.id || item.id,
         receivedAt: Date.now(),
+      });
+    }
+
+    // Synchronized entry handshake: wake the waiting initiator the instant we commit to
+    // co-signing, so it enters the native TSS window at (roughly) the same moment we do
+    // instead of relying on human tap-timing alone. Fire-and-forget — must not block
+    // navigation into the signing screen.
+    const readyRecipientNpub =
+      item.mode === 'nip46' ? item.nip46ReplyTo || item.senderNpub : msg?.senderNpub || item.senderNpub;
+    const readyRecipientFingerprint =
+      item.mode === 'nip46'
+        ? item.senderFingerprint || 'nip46-client'
+        : msg?.envelope.senderFingerprint || item.senderFingerprint;
+    if (readyRecipientNpub) {
+      nostrMessaging
+        .sendCoSignReady(readyRecipientNpub, localFingerprint, readyRecipientFingerprint || 'peer-group', {
+          txId: payload.txId,
+          traceId: payload.traceId,
+        })
+        .then(() => {
+          dbg('[NIP46-TLM][KeyshareChat] sent COSIGN_READY to initiator', {
+            txId: payload.txId,
+            recipient: readyRecipientNpub.substring(0, 20) + '...',
+          });
+        })
+        .catch(readyErr => {
+          console.error('[NIP46-TLM][KeyshareChat] failed to publish COSIGN_READY', readyErr);
+          dbg('[NIP46-TLM][KeyshareChat] failed to send COSIGN_READY (continuing anyway)', readyErr);
+        });
+    } else {
+      dbg('[NIP46-TLM][KeyshareChat] no recipient resolved for COSIGN_READY; initiator will time out', {
+        txId: payload.txId,
+        mode: item.mode || 'legacy',
       });
     }
 
@@ -499,8 +679,40 @@ const KeyshareChat: React.FC = () => {
       mode: item.mode || 'legacy',
       requestId: item.nip46RequestId,
       senderNpub: item.senderNpub,
+      isRegularSendRequest,
       psbtPrefix: psbtBase64.slice(0, 16),
+      initiatorTxId: payload.txId,
+      cosignTraceId: payload.traceId,
     });
+
+    if (isRegularSendRequest) {
+      navigation.dispatch(
+        CommonActions.navigate({
+          name: 'MainTabs',
+          params: {
+            screen: 'Nostr Connect',
+            params: {
+              mode: 'send_btc',
+              toAddress: payload.recipientAddress,
+              satoshiAmount: String(Math.trunc(amountSatsNum)),
+              satoshiFees: String(
+                Math.max(0, Math.trunc(Number(payload.feeSats) || 0)),
+              ),
+              network: payload.network || 'mainnet',
+              // Carry the initiator's txId/traceId so both devices' native signing
+              // sessions and chat status updates correlate to the same request.
+              initiatorTxId: payload.txId,
+              cosignTraceId: payload.traceId,
+              // We are responding to someone else's request, not originating one \u2014
+              // MobileNostrPairing must resolve its own addressType/derivationPath
+              // locally and must not wait on its own COSIGN_READY.
+              isPeerResponse: true,
+            },
+          },
+        }),
+      );
+      return;
+    }
 
     navigation.dispatch(
       CommonActions.navigate({
@@ -512,6 +724,13 @@ const KeyshareChat: React.FC = () => {
             nip46RequestId: item.nip46RequestId,
             nip46ReplyTo: item.nip46ReplyTo || item.senderNpub,
             autoSign: item.mode === 'nip46',
+            // Carry the initiator's txId/traceId so both devices' native signing
+            // sessions and chat status updates correlate to the same request.
+            initiatorTxId: payload.txId,
+            cosignTraceId: payload.traceId,
+            // We are responding to someone else's request, not originating one \u2014
+            // PSBTScreen must not treat this device as the waiting initiator.
+            isPeerResponse: true,
           },
         },
       }),

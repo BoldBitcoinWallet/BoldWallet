@@ -6,6 +6,7 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
 import { dbg } from '../utils';
 import {
   nostrMessaging,
+  type CoSignReadyPayload,
   type CoSignRequestPayload,
   type CoSignResponsePayload,
   type Nip46Request,
@@ -37,18 +38,48 @@ function emitBridgeTelemetry(event: string, extra?: Record<string, unknown>): vo
   });
 }
 
+// KeyshareChat only exists while its tab is mounted; if a COSIGN_REQUEST arrives
+// while it's not (not yet visited, or torn down/rebuilt by the navigator), a plain
+// DeviceEventEmitter emission is lost forever and the card silently never appears
+// until some unrelated action happens to remount the screen. Buffer recent emissions
+// so a late/re-mounting subscriber can replay what it missed.
+const RECENT_EVENT_BUFFER_MS = 5 * 60 * 1000;
+const MAX_RECENT_EVENTS = 30;
+let recentCoSignFeedEvents: Array<Record<string, unknown>> = [];
+let recentUnreadChatEvents: Array<Record<string, unknown>> = [];
+
+function pruneAndPush(
+  buffer: Array<Record<string, unknown>>,
+  evt: Record<string, unknown>,
+): Array<Record<string, unknown>> {
+  const cutoff = Date.now() - RECENT_EVENT_BUFFER_MS;
+  return [...buffer, evt]
+    .filter(e => Number(e.ts) >= cutoff)
+    .slice(-MAX_RECENT_EVENTS);
+}
+
+/** Replays any `nostr-cosign:request` events emitted while the caller wasn't listening. */
+export function getRecentCoSignFeedEvents(): Array<Record<string, unknown>> {
+  const cutoff = Date.now() - RECENT_EVENT_BUFFER_MS;
+  return recentCoSignFeedEvents.filter(e => Number(e.ts) >= cutoff);
+}
+
+/** Replays any `nostr-chat:incoming` events emitted while the caller wasn't listening. */
+export function getRecentUnreadChatEvents(): Array<Record<string, unknown>> {
+  const cutoff = Date.now() - RECENT_EVENT_BUFFER_MS;
+  return recentUnreadChatEvents.filter(e => Number(e.ts) >= cutoff);
+}
+
 function emitCoSignFeedEvent(payload: Record<string, unknown>): void {
-  DeviceEventEmitter.emit('nostr-cosign:request', {
-    ts: Date.now(),
-    ...payload,
-  });
+  const evt = { ts: Date.now(), ...payload };
+  recentCoSignFeedEvents = pruneAndPush(recentCoSignFeedEvents, evt);
+  DeviceEventEmitter.emit('nostr-cosign:request', evt);
 }
 
 function emitUnreadChatEvent(payload: Record<string, unknown>): void {
-  DeviceEventEmitter.emit('nostr-chat:incoming', {
-    ts: Date.now(),
-    ...payload,
-  });
+  const evt = { ts: Date.now(), ...payload };
+  recentUnreadChatEvents = pruneAndPush(recentUnreadChatEvents, evt);
+  DeviceEventEmitter.emit('nostr-chat:incoming', evt);
 }
 
 function isPlaceholderPsbt(psbtBase64: string, psbtHex: string): boolean {
@@ -223,11 +254,25 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
         request: payload,
       });
 
+      console.warn('[NIP46-TLM][Receiver] emitting nostr-cosign:request to chat feed', {
+        traceId: typeof payload.traceId === 'string' ? payload.traceId : null,
+        eventId: msg.eventId,
+        envelopeId: msg.envelope.id,
+        txId: payload.txId,
+        senderNpub: msg.senderNpub,
+      });
+
       emitUnreadChatEvent({
         type: 'COSIGN_REQUEST',
         mode: 'legacy',
         txId: payload.txId,
         requestId: msg.envelope.id,
+        parsedMessage: {
+          eventId: msg.eventId,
+          senderNpub: msg.senderNpub,
+          request: payload,
+          senderFingerprint: msg.envelope.senderFingerprint,
+        },
       });
     });
 
@@ -352,6 +397,37 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
         mode: 'nip46',
         txId: payload.txId,
         requestId: request.id,
+        parsedMessage: {
+          eventId: msg.eventId,
+          senderNpub: msg.senderNpub,
+          request: payload,
+          senderFingerprint: 'nip46-client',
+          nip46RequestId: request.id,
+          nip46ReplyTo: msg.senderNpub,
+        },
+      });
+    });
+
+    // Wakes a device waiting in `startSignPSBT`/`startSendBTC` for its co-signer to
+    // commit, so both sides enter the native TSS window together.
+    const offReady = nostrMessaging.onMessage(msg => {
+      if (!mounted) return;
+      if (msg.envelope.type !== 'COSIGN_READY') return;
+
+      const payload = msg.envelope.payload as CoSignReadyPayload;
+      if (!payload?.txId) return;
+
+      dbg('[NIP46-TLM][NostrCoSignBridge] received COSIGN_READY, waking waiting signer', {
+        txId: payload.txId,
+        traceId: payload.traceId,
+        senderNpub: msg.senderNpub,
+      });
+
+      DeviceEventEmitter.emit('nostr-cosign:ready', {
+        ts: Date.now(),
+        txId: payload.txId,
+        traceId: payload.traceId,
+        senderNpub: msg.senderNpub,
       });
     });
 
@@ -359,6 +435,7 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
       mounted = false;
       offLegacy();
       offNip46();
+      offReady();
     };
   }, [isAuthenticated, navigationRef, navigateToSignerOrQueue]);
 

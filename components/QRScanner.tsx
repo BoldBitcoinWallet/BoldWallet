@@ -60,6 +60,7 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
     codeTypes: ['qr'],
     onCodeScanned: (codes: any) => {
       if (codes.length > 0 && codes[0].value) {
+        dbg('QRScanner: VisionCamera scan captured, full length:', codes[0].value.length);
         onScan(codes[0].value);
         if (mode === 'single') {
           onClose();
@@ -348,6 +349,7 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
                 'Android: Continuous scan result:',
                 event.data.substring(0, 50),
               );
+              dbg('Android: Continuous scan full length:', event.data.length);
               onScan(event.data);
             }
           },
@@ -427,6 +429,7 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
           return;
         }
         if (data) {
+          dbg('Android: Single scan result full length:', data.length);
           onScan(data);
           onClose();
         } else {
