@@ -78,7 +78,12 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
           name: 'MainTabs',
           params: {
             screen: 'PSBT',
-            params: {sharedPsbtBase64: psbtBase64},
+            params: {
+              sharedPsbtBase64: psbtBase64,
+              isInitiator: true,
+              forwardPeerCosign: true,
+              initiatorTxId: `peer-cosign-${Date.now()}`,
+            },
           },
         }),
       );

@@ -7,6 +7,7 @@ import {
   ScrollView,
   Alert,
   Animated,
+  DeviceEventEmitter,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
@@ -31,7 +32,11 @@ import {WalletService} from '../services/WalletService';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
-import { nostrMessaging, type CoSignResponsePayload } from '../services/nostrMessaging';
+import {
+  nostrMessaging,
+  type CoSignResponsePayload,
+  type Nip46Response,
+} from '../services/nostrMessaging';
 import {
   clearPendingCoSignRequest,
   getPendingCoSignRequest,
@@ -49,7 +54,115 @@ interface KeyshareInfoForPsbt {
 type RouteParams = {
   signedPsbt?: string;
   sharedPsbtBase64?: string;
+  psbtBase64?: string;
+  psbtHex?: string;
+  isInitiator?: boolean;
+  forwardPeerCosign?: boolean;
+  initiatorTxId?: string;
+  payload?: {
+    psbtBase64?: string;
+    psbtHex?: string;
+    sighash?: string;
+    hash?: string;
+    txId?: string;
+    recipientAddress?: string;
+    amountSats?: number;
+    feeSats?: number;
+  };
+  nip46RequestId?: string;
+  nip46ReplyTo?: string;
+  autoSign?: boolean;
 };
+
+function fingerprintFromNpub(npub: string): string {
+  if (!npub) return 'mobile-wallet';
+  return `${npub.slice(0, 4)}${npub.slice(-4)}`;
+}
+
+function normalizeNpub(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+async function resolveRemoteKeysharePeers(localNpub: string): Promise<string[]> {
+  const meta = await getKeyshareMetadata();
+  const keyCandidates = Array.isArray(meta?.keygen_committee_keys)
+    ? meta.keygen_committee_keys
+    : [];
+
+  const committee: string[] = [];
+  for (const key of keyCandidates) {
+    const normalized = normalizeNpub(key);
+    if (!normalized) continue;
+    if (normalized.startsWith('npub1')) {
+      committee.push(normalized);
+      continue;
+    }
+    const isHex = /^[0-9a-fA-F]+$/.test(normalized);
+    if (!isHex || typeof BBMTLibNativeModule?.hexToNpub !== 'function') {
+      continue;
+    }
+    try {
+      const converted = await BBMTLibNativeModule.hexToNpub(normalized);
+      const convertedNpub = normalizeNpub(converted);
+      if (convertedNpub.startsWith('npub1')) {
+        committee.push(convertedNpub);
+      }
+    } catch (err) {
+      dbg('[NIP46-TLM][PSBTScreen] failed to convert committee key to npub', {
+        keyPrefix: normalized.slice(0, 12),
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  const localCandidates = new Set(
+    [
+      normalizeNpub(localNpub),
+      normalizeNpub(meta?.nostr_npub),
+      normalizeNpub(meta?.local_party_key),
+    ].filter(Boolean),
+  );
+  return Array.from(new Set(committee.filter(npub => !localCandidates.has(npub))));
+}
+
+function normalizePsbtFromParams(params?: RouteParams): {
+  psbtBase64: string;
+  source: string;
+  raw: string;
+  isHex: boolean;
+} {
+  const rawCandidates: Array<{value: unknown; source: string}> = [
+    {value: params?.psbtHex, source: 'params.psbtHex'},
+    {value: params?.psbtBase64, source: 'params.psbtBase64'},
+    {value: params?.sharedPsbtBase64, source: 'params.sharedPsbtBase64'},
+    {value: params?.payload?.psbtHex, source: 'params.payload.psbtHex'},
+    {value: params?.payload?.psbtBase64, source: 'params.payload.psbtBase64'},
+  ];
+
+  const picked = rawCandidates.find(c => typeof c.value === 'string' && c.value.trim().length > 0);
+  const raw = typeof picked?.value === 'string' ? picked.value.trim() : '';
+  if (!raw) {
+    return {psbtBase64: '', source: '', raw: '', isHex: false};
+  }
+
+  const compact = raw.replace(/\s+/g, '');
+  const isHex = /^[0-9a-fA-F]+$/.test(compact) && compact.length % 2 === 0;
+  if (isHex) {
+    return {
+      psbtBase64: nostrMessaging.psbtHexToBase64(compact),
+      source: picked?.source || 'unknown',
+      raw: compact,
+      isHex: true,
+    };
+  }
+
+  return {
+    psbtBase64: canonicalPsbtBase64(compact),
+    source: picked?.source || 'unknown',
+    raw: compact,
+    isHex: false,
+  };
+}
 const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const {theme} = useTheme();
@@ -71,6 +184,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [sharedInitialPsbt, setSharedInitialPsbt] = useState<string | undefined>(
     undefined,
   );
+  const [normalizedPsbtSource, setNormalizedPsbtSource] = useState('');
+  const [pendingNip46Hash, setPendingNip46Hash] = useState<string>('');
+  const [isForwardingToPeers, setIsForwardingToPeers] = useState(false);
+  const [nip46Handoff, setNip46Handoff] = useState<{
+    requestId: string;
+    replyTo: string;
+    autoSign: boolean;
+  } | null>(null);
   const [isOutputDescriptorQrVisible, setIsOutputDescriptorQrVisible] =
     useState(false);
   const [selectedDescriptorType, setSelectedDescriptorType] = useState<
@@ -80,6 +201,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     useState<boolean>(false);
   const [pendingPSBTParams, setPendingPSBTParams] = useState<{
     psbtBase64: string;
+    forwardPeerCosign?: boolean;
+    isInitiator?: boolean;
+    initiatorTxId?: string;
   } | null>(null);
   const [isNostrTransportSupported, setIsNostrTransportSupported] =
     useState(true);
@@ -167,6 +291,11 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       setKeyshareInfo(null);
     }
   }, [network]);
+
+  useEffect(() => {
+    console.log('[NIP46-TLM][PSBTScreen] Mounted with params:', route.params);
+    dbg('[NIP46-TLM][PSBTScreen] Mounted with params', route.params || {});
+  }, []);
   // Check for signedPsbt in route params and show modal
   useEffect(() => {
     const signedPsbtParam = route.params?.signedPsbt;
@@ -176,41 +305,242 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
       const pending = getPendingCoSignRequest();
       if (pending) {
-        const response: CoSignResponsePayload = {
-          txId: pending.request.txId,
-          approved: true,
-          signedPsbtBase64: signedPsbtParam,
-          signedPsbtHex: nostrMessaging.psbtBase64ToHex(signedPsbtParam),
+        if (pending.mode === 'nip46' && pending.nip46RequestId) {
+          const nip46Response: Nip46Response = {
+            id: pending.nip46RequestId,
+            result: {
+              signedPsbtBase64: signedPsbtParam,
+              signedPsbtHex: nostrMessaging.psbtBase64ToHex(signedPsbtParam),
+              txId: pending.request.txId,
+            },
+          };
+
+          dbg('[NIP46-TLM][PSBTScreen] sending NIP-46 response', {
+            requestId: pending.nip46RequestId,
+            senderNpub: pending.senderNpub,
+            txId: pending.request.txId,
+            signedPsbtPrefix: signedPsbtParam.slice(0, 16),
+          });
+
+          void nostrMessaging
+            .sendNip46Response(pending.senderNpub, nip46Response)
+            .then(() => {
+              DeviceEventEmitter.emit('nostr-cosign:status', {
+                mode: 'nip46',
+                requestId: pending.nip46RequestId,
+                txId: pending.request.txId,
+                status: 'signed',
+              });
+              dbg('[NIP46-TLM][PSBTScreen] sent NIP-46 sign_event response over Nostr', {
+                requestId: pending.nip46RequestId,
+              });
+              console.log(
+                '[NIP46-TLM][PSBTScreen] Successfully sent NIP-46 response for ID:',
+                pending.nip46RequestId,
+              );
+              clearPendingCoSignRequest();
+              navigation.dispatch(
+                CommonActions.navigate({
+                  name: 'Keyshare Chat',
+                }),
+              );
+            })
+            .catch(err => {
+              DeviceEventEmitter.emit('nostr-cosign:status', {
+                mode: 'nip46',
+                requestId: pending.nip46RequestId,
+                txId: pending.request.txId,
+                status: 'rejected',
+              });
+              dbg('[NIP46-TLM][PSBTScreen] failed to send NIP-46 response', {
+                requestId: pending.nip46RequestId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
+        } else {
+          const response: CoSignResponsePayload = {
+            txId: pending.request.txId,
+            approved: true,
+            signedPsbtBase64: signedPsbtParam,
+            signedPsbtHex: nostrMessaging.psbtBase64ToHex(signedPsbtParam),
+          };
+
+          void nostrMessaging
+            .sendCoSignResponse(
+              pending.senderNpub,
+              pending.recipientFingerprint || 'mobile-wallet',
+              pending.senderFingerprint,
+              response,
+            )
+            .then(() => {
+              DeviceEventEmitter.emit('nostr-cosign:status', {
+                mode: 'legacy',
+                txId: pending.request.txId,
+                status: 'signed',
+              });
+              dbg('PSBTScreen: sent COSIGN_RESPONSE over Nostr');
+              clearPendingCoSignRequest();
+            })
+            .catch(err => {
+              DeviceEventEmitter.emit('nostr-cosign:status', {
+                mode: 'legacy',
+                txId: pending.request.txId,
+                status: 'rejected',
+              });
+              dbg('PSBTScreen: failed to send COSIGN_RESPONSE', err);
+            });
+        }
+      } else if (route.params?.forwardPeerCosign) {
+        const submitPeerRequest = async () => {
+          try {
+            setIsForwardingToPeers(true);
+            const localNpub = await nostrMessaging.getOrCreateLocalNpub();
+            const peerNpubs = await resolveRemoteKeysharePeers(localNpub);
+            if (peerNpubs.length === 0) {
+              Alert.alert('No Peer Keyshares', 'No remote peer npubs were found for this wallet committee.');
+              return;
+            }
+
+            const txId =
+              (typeof route.params?.initiatorTxId === 'string' && route.params.initiatorTxId.trim()) ||
+              `peer-cosign-${Date.now()}`;
+
+            const payload = {
+              txId,
+              psbtHex: nostrMessaging.psbtBase64ToHex(signedPsbtParam),
+              psbtBase64: signedPsbtParam,
+              amountSats: 0,
+              feeSats: 0,
+              recipientAddress: 'N/A',
+              network: (network || 'mainnet') as 'mainnet' | 'testnet' | 'testnet4',
+            };
+
+            await nostrMessaging.sendCoSignRequestToMany(
+              peerNpubs,
+              fingerprintFromNpub(localNpub),
+              'peer-group',
+              payload,
+            );
+
+            DeviceEventEmitter.emit('nostr-cosign:request', {
+              ts: Date.now(),
+              mode: 'legacy',
+              eventId: `local:${txId}`,
+              envelopeId: `local:${txId}`,
+              senderNpub: localNpub,
+              senderFingerprint: fingerprintFromNpub(localNpub),
+              recipientFingerprint: 'peer-group',
+              request: payload,
+            });
+
+            DeviceEventEmitter.emit('nostr-cosign:status', {
+              mode: 'legacy',
+              txId,
+              status: 'pending',
+            });
+
+            dbg('[NIP46-TLM][PSBTScreen] fan-out COSIGN_REQUEST to peers complete', {
+              txId,
+              peerCount: peerNpubs.length,
+              peers: peerNpubs,
+            });
+
+            Alert.alert('Peer Co-Sign Requested', `Forwarded partially-signed PSBT to ${peerNpubs.length} peer device(s).`);
+            navigation.dispatch(
+              CommonActions.navigate({
+                name: 'MainTabs',
+                params: {
+                  screen: 'Chat',
+                },
+              }),
+            );
+          } catch (err) {
+            dbg('[NIP46-TLM][PSBTScreen] failed to fan-out peer COSIGN_REQUEST', err);
+            Alert.alert(
+              'Failed to Request Peer Co-Sign',
+              err instanceof Error ? err.message : String(err),
+            );
+          } finally {
+            setIsForwardingToPeers(false);
+          }
         };
 
-        void nostrMessaging
-          .sendCoSignResponse(
-            pending.senderNpub,
-            pending.recipientFingerprint || 'mobile-wallet',
-            pending.senderFingerprint,
-            response,
-          )
-          .then(() => {
-            dbg('PSBTScreen: sent COSIGN_RESPONSE over Nostr');
-            clearPendingCoSignRequest();
-          })
-          .catch(err => {
-            dbg('PSBTScreen: failed to send COSIGN_RESPONSE', err);
-          });
+        void submitPeerRequest();
       }
 
       // Clear the param to prevent showing again
-      navigation.setParams({signedPsbt: undefined});
+      navigation.setParams({
+        signedPsbt: undefined,
+        forwardPeerCosign: undefined,
+        initiatorTxId: undefined,
+      });
     }
-  }, [route.params?.signedPsbt, navigation]);
+  }, [route.params?.signedPsbt, route.params?.forwardPeerCosign, route.params?.initiatorTxId, navigation, network]);
   useEffect(() => {
-    const sharedPsbt = route.params?.sharedPsbtBase64;
+    const normalized = normalizePsbtFromParams(route.params);
+    const sharedPsbt = normalized.psbtBase64;
+    const requestId =
+      typeof route.params?.nip46RequestId === 'string'
+        ? route.params.nip46RequestId.trim()
+        : '';
+    const replyTo =
+      typeof route.params?.nip46ReplyTo === 'string'
+        ? route.params.nip46ReplyTo.trim()
+        : '';
+    const autoSign = !!route.params?.autoSign;
+
+    if (requestId) {
+      setNip46Handoff({
+        requestId,
+        replyTo,
+        autoSign,
+      });
+      void loadKeyshareInfo();
+      dbg('[NIP46-TLM][PSBTScreen] detected NIP-46 handoff params', {
+        requestId,
+        replyTo,
+        autoSign,
+        hasSharedPsbt: !!sharedPsbt,
+        normalizedSource: normalized.source,
+      });
+
+      const rawHash =
+        typeof route.params?.payload?.sighash === 'string'
+          ? route.params.payload.sighash.trim()
+          : typeof route.params?.payload?.hash === 'string'
+          ? route.params.payload.hash.trim()
+          : '';
+      setPendingNip46Hash(rawHash);
+    }
+
     if (sharedPsbt) {
       setSharedInitialPsbt(sharedPsbt);
+      setNormalizedPsbtSource(normalized.source);
       setIsPSBTSectionExpanded(true);
-      navigation.setParams({sharedPsbtBase64: undefined});
+      navigation.setParams({
+        sharedPsbtBase64: undefined,
+        psbtBase64: undefined,
+        psbtHex: undefined,
+        nip46RequestId: undefined,
+        nip46ReplyTo: undefined,
+        autoSign: undefined,
+      });
+    } else if (requestId) {
+      dbg('[PSBTScreen] No valid PSBT payload string found in route.params', {
+        requestId,
+      });
     }
-  }, [route.params?.sharedPsbtBase64, navigation]);
+  }, [
+    route.params?.sharedPsbtBase64,
+    route.params?.psbtBase64,
+    route.params?.psbtHex,
+    route.params?.payload,
+    route.params?.nip46RequestId,
+    route.params?.nip46ReplyTo,
+    route.params?.autoSign,
+    navigation,
+    loadKeyshareInfo,
+  ]);
   // Share helper for exporting text as a small file (descriptor)
   const shareTextAsFile = useCallback(
     async (text: string, filename: string, title: string) => {
@@ -304,18 +634,40 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       // derivePath parameter is kept for API compatibility but not used
       const hasNostrSupport = await resolveNostrTransportSupport();
       setIsNostrTransportSupported(hasNostrSupport);
+
+      const shouldForwardPeerCosign =
+        route.params?.isInitiator === true ||
+        route.params?.forwardPeerCosign === true ||
+        !nip46Handoff;
+
+      const initiatorTxId =
+        (typeof route.params?.initiatorTxId === 'string' &&
+          route.params.initiatorTxId.trim()) ||
+        `peer-cosign-${Date.now()}`;
+
+      dbg('[NIP46-TLM][PSBTScreen] handlePSBTSign handoff flags', {
+        shouldForwardPeerCosign,
+        hasNip46Handoff: !!nip46Handoff,
+        initiatorTxId,
+      });
+
       // Store params and show transport selector
-      setPendingPSBTParams({psbtBase64: normalizedPsbt});
+      setPendingPSBTParams({
+        psbtBase64: normalizedPsbt,
+        forwardPeerCosign: shouldForwardPeerCosign,
+        isInitiator: shouldForwardPeerCosign,
+        initiatorTxId: shouldForwardPeerCosign ? initiatorTxId : undefined,
+      });
       setTimeout(() => {
         setIsPSBTTransportModalVisible(true);
       }, 300);
     },
-    [resolveNostrTransportSupport],
+    [resolveNostrTransportSupport, route.params?.isInitiator, route.params?.forwardPeerCosign, route.params?.initiatorTxId, nip46Handoff],
   );
   const navigateToPSBTSigning = useCallback(
     (transport: 'local' | 'nostr') => {
       if (!pendingPSBTParams) return;
-      const {psbtBase64} = pendingPSBTParams;
+      const {psbtBase64, forwardPeerCosign, isInitiator, initiatorTxId} = pendingPSBTParams;
       const routeName =
         transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
       // For PSBT signing, network is not strictly required (extracted from app state in MobilesPairing),
@@ -328,6 +680,9 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
             addressType,
             psbtBase64,
             network: network || 'mainnet', // Pass network for consistency (not strictly required for PSBT)
+            forwardPeerCosign: !!forwardPeerCosign,
+            isInitiator: !!isInitiator,
+            initiatorTxId: initiatorTxId || undefined,
           },
         }),
       );
@@ -335,6 +690,91 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     },
     [pendingPSBTParams, addressType, navigation, network],
   );
+
+  const startNip46CoSignFlow = useCallback(() => {
+    const pending = getPendingCoSignRequest();
+    const sourcePsbt = sharedInitialPsbt || '';
+    if (!sourcePsbt && !pendingNip46Hash) {
+      Alert.alert('Missing Payload', 'No PSBT or signable hash payload is available for this NIP-46 request.');
+      return;
+    }
+
+    const requestId =
+      (nip46Handoff?.requestId || pending?.nip46RequestId || '').trim();
+    const replyTo = (nip46Handoff?.replyTo || pending?.senderNpub || '').trim();
+
+    if (!sourcePsbt && pendingNip46Hash) {
+      if (!requestId || !replyTo) {
+        Alert.alert('Missing Request Context', 'Unable to publish NIP-46 response without request id and reply target.');
+        return;
+      }
+      const notSupported: Nip46Response = {
+        id: requestId,
+        error:
+          'Direct non-PSBT sign_event payload is not supported in mobile UI flow yet; provide a BIP-174 PSBT payload.',
+      };
+      dbg('[NIP46-TLM][PSBTScreen] responding with non-PSBT unsupported error', {
+        requestId,
+        replyTo,
+        hashPrefix: pendingNip46Hash.slice(0, 16),
+      });
+      void nostrMessaging.sendNip46Response(replyTo, notSupported);
+      Alert.alert('Unsupported Request', 'This NIP-46 request does not contain a PSBT payload. A rejection response was sent.');
+      return;
+    }
+
+    dbg('[NIP46-TLM][PSBTScreen] launching NIP-46 co-sign flow', {
+      requestId,
+      replyTo,
+      hasPendingSession: !!pending,
+      normalizedSource: normalizedPsbtSource,
+    });
+
+    setPendingPSBTParams(null);
+    navigation.dispatch(
+      CommonActions.navigate({
+        name: 'Nostr Connect',
+        params: {
+          mode: 'sign_psbt',
+          transport: 'nostr',
+          addressType,
+          psbtBase64: sourcePsbt,
+          network: network || 'mainnet',
+          nip46RequestId: requestId || undefined,
+          nip46ReplyTo: replyTo || undefined,
+        },
+      }),
+    );
+  }, [sharedInitialPsbt, nip46Handoff, navigation, addressType, network]);
+
+  const startSignAndForwardFlow = useCallback(() => {
+    const sourcePsbt = sharedInitialPsbt || '';
+    if (!sourcePsbt) {
+      Alert.alert('Missing PSBT', 'No PSBT payload available to sign and forward.');
+      return;
+    }
+
+    const initiatorTxId = `peer-cosign-${Date.now()}`;
+    dbg('[NIP46-TLM][PSBTScreen] launching initiator Sign & Forward flow', {
+      initiatorTxId,
+      psbtPrefix: sourcePsbt.slice(0, 16),
+    });
+
+    navigation.dispatch(
+      CommonActions.navigate({
+        name: 'Nostr Connect',
+        params: {
+          mode: 'sign_psbt',
+          transport: 'nostr',
+          addressType,
+          psbtBase64: sourcePsbt,
+          network: network || 'mainnet',
+          forwardPeerCosign: true,
+          initiatorTxId,
+        },
+      }),
+    );
+  }, [sharedInitialPsbt, navigation, addressType, network]);
   useEffect(() => {
     loadKeyshareInfo();
   }, [loadKeyshareInfo]);
@@ -404,7 +844,67 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         keyboardShouldPersistTaps="handled"
         overScrollMode="never"
         showsVerticalScrollIndicator={false}>
-        {keyshareInfo && (
+        {nip46Handoff && sharedInitialPsbt ? (
+          <View style={styles.nip46ActionCard}>
+            <AppText style={styles.nip46ActionTitle}>NIP-46 Co-Sign Request</AppText>
+            <AppText style={styles.nip46ActionSubtitle}>
+              Request ID: {nip46Handoff.requestId}
+            </AppText>
+            <AppText style={styles.nip46ActionSubtitle}>
+              Payload Source: {normalizedPsbtSource || 'unknown'}
+            </AppText>
+            <AppPressable
+              style={styles.nip46ActionButton}
+              onPress={startNip46CoSignFlow}
+              accessibilityRole="button"
+              accessibilityLabel="Co-Sign and broadcast NIP-46 response">
+              <AppText style={styles.nip46ActionButtonText}>
+                Co-Sign & Broadcast NIP-46 Response
+              </AppText>
+            </AppPressable>
+          </View>
+        ) : null}
+
+        {!nip46Handoff && sharedInitialPsbt ? (
+          <View style={styles.nip46ActionCard}>
+            <AppText style={styles.nip46ActionTitle}>Peer Co-Signing</AppText>
+            <AppText style={styles.nip46ActionSubtitle}>
+              Unsigned PSBT loaded from watch-only flow.
+            </AppText>
+            <AppPressable
+              style={styles.nip46ActionButton}
+              onPress={startSignAndForwardFlow}
+              accessibilityRole="button"
+              accessibilityLabel="Sign and request peer co-signature">
+              <AppText style={styles.nip46ActionButtonText}>
+                {isForwardingToPeers ? 'Forwarding to Peers...' : 'Sign & Request Peer Co-Signature'}
+              </AppText>
+            </AppPressable>
+          </View>
+        ) : null}
+
+        {nip46Handoff && !sharedInitialPsbt ? (
+          <View style={styles.nip46ActionCard}>
+            <AppText style={styles.nip46ActionTitle}>NIP-46 Co-Sign Request</AppText>
+            <AppText style={styles.nip46ActionSubtitle}>
+              Request ID: {nip46Handoff.requestId}
+            </AppText>
+            <AppText style={styles.nip46ActionSubtitle}>
+              PSBT payload not found. Hash mode: {pendingNip46Hash ? 'detected' : 'missing'}
+            </AppText>
+            <AppPressable
+              style={styles.nip46ActionButton}
+              onPress={startNip46CoSignFlow}
+              accessibilityRole="button"
+              accessibilityLabel="Send NIP-46 fallback response">
+              <AppText style={styles.nip46ActionButtonText}>
+                Send NIP-46 Fallback Response
+              </AppText>
+            </AppPressable>
+          </View>
+        ) : null}
+
+        {!nip46Handoff && keyshareInfo && (
           <View
             style={[
               styles.watchWalletCard,
@@ -763,6 +1263,36 @@ const createStyles = (theme: any) =>
       padding: 16,
       paddingBottom: 24,
       paddingTop: 12,
+    },
+    nip46ActionCard: {
+      marginBottom: 10,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.primary,
+      backgroundColor: theme.colors.cardBackground,
+      padding: 12,
+      gap: 8,
+    },
+    nip46ActionTitle: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+    },
+    nip46ActionSubtitle: {
+      fontSize: theme.fontSizes?.sm || 12,
+      color: theme.colors.textSecondary,
+    },
+    nip46ActionButton: {
+      borderRadius: 8,
+      backgroundColor: theme.colors.primary,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      alignItems: 'center',
+    },
+    nip46ActionButtonText: {
+      color: theme.colors.textOnPrimary,
+      fontFamily: theme.fontFamilies?.bold,
+      fontSize: theme.fontSizes?.sm || 13,
     },
     watchWalletCard: {
       marginBottom: 8,

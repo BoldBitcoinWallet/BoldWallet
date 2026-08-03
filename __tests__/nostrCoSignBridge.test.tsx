@@ -1,14 +1,18 @@
 import React from 'react';
-import { Alert } from 'react-native';
+import { DeviceEventEmitter } from 'react-native';
 import TestRenderer, { act } from 'react-test-renderer';
 import NostrCoSignBridge from '../components/NostrCoSignBridge';
 
 const mockConnect = jest.fn().mockResolvedValue(undefined);
 const mockDisconnect = jest.fn();
 const mockOnMessage = jest.fn();
+const mockOnNip46Request = jest.fn();
 const mockSendCoSignResponse = jest.fn().mockResolvedValue(undefined);
+const mockSendNip46Response = jest.fn().mockResolvedValue(undefined);
 const mockGetLocalNpub = jest.fn().mockReturnValue('npub1localexample');
-const mockPsbtHexToBase64 = jest.fn().mockReturnValue('cHNidP8BAA==');
+const mockPsbtHexToBase64 = jest
+  .fn()
+  .mockReturnValue('cHNidP8BAFICAAAAAQAAAAAA');
 
 const mockSetPending = jest.fn();
 const mockClearPending = jest.fn();
@@ -18,7 +22,9 @@ jest.mock('../services/nostrMessaging', () => ({
     connect: (...args: unknown[]) => mockConnect(...args),
     disconnect: (...args: unknown[]) => mockDisconnect(...args),
     onMessage: (...args: unknown[]) => mockOnMessage(...args),
+    onNip46Request: (...args: unknown[]) => mockOnNip46Request(...args),
     sendCoSignResponse: (...args: unknown[]) => mockSendCoSignResponse(...args),
+    sendNip46Response: (...args: unknown[]) => mockSendNip46Response(...args),
     getLocalNpub: (...args: unknown[]) => mockGetLocalNpub(...args),
     psbtHexToBase64: (...args: unknown[]) => mockPsbtHexToBase64(...args),
   },
@@ -56,7 +62,7 @@ describe('NostrCoSignBridge', () => {
       timestamp: Date.now(),
       payload: {
         txId: 'tx-123',
-        psbtHex: '70736274',
+        psbtHex: '70736274ff01005202000000',
         amountSats: 1200,
         feeSats: 24,
         recipientAddress: 'tb1qrecipientxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
@@ -69,24 +75,31 @@ describe('NostrCoSignBridge', () => {
   } as any;
 
   let messageListener: ((msg: any) => void | Promise<void>) | null = null;
+  let nip46Listener: ((msg: any) => void | Promise<void>) | null = null;
 
   beforeEach(() => {
     jest.clearAllMocks();
     messageListener = null;
+    nip46Listener = null;
 
     mockOnMessage.mockImplementation((listener: (msg: any) => void | Promise<void>) => {
       messageListener = listener;
       return jest.fn();
     });
 
-    jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    mockOnNip46Request.mockImplementation((listener: (msg: any) => void | Promise<void>) => {
+      nip46Listener = listener;
+      return jest.fn();
+    });
+
+    jest.spyOn(DeviceEventEmitter, 'emit').mockImplementation(() => true);
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  it('reject action emits COSIGN_RESPONSE approved=false and clears pending session', async () => {
+  it('emits chat feed + unread events for legacy COSIGN_REQUEST without opening modal', async () => {
     await act(async () => {
       TestRenderer.create(
         <NostrCoSignBridge isAuthenticated={true} navigationRef={navigationRef} />,
@@ -97,62 +110,24 @@ describe('NostrCoSignBridge', () => {
       await messageListener?.(cosignMessage);
     });
 
-    expect(Alert.alert).toHaveBeenCalled();
-    const alertCall = (Alert.alert as jest.Mock).mock.calls[0];
-    const actions = alertCall[2] as Array<{ text: string; onPress?: () => void }>;
-    const rejectAction = actions.find(a => a.text === 'Reject');
-
-    expect(rejectAction).toBeTruthy();
-
-    await act(async () => {
-      rejectAction?.onPress?.();
-    });
-
-    expect(mockSendCoSignResponse).toHaveBeenCalledWith(
-      cosignMessage.senderNpub,
-      expect.any(String),
-      cosignMessage.envelope.senderFingerprint,
+    expect(mockSendCoSignResponse).not.toHaveBeenCalled();
+    expect(navigationDispatch).not.toHaveBeenCalled();
+    expect(DeviceEventEmitter.emit).toHaveBeenCalledWith(
+      'nostr-cosign:request',
       expect.objectContaining({
-        txId: 'tx-123',
-        approved: false,
+        mode: 'legacy',
       }),
     );
-    expect(mockClearPending).toHaveBeenCalled();
-  });
-
-  it('open signer action navigates to PSBT screen with shared PSBT payload', async () => {
-    await act(async () => {
-      TestRenderer.create(
-        <NostrCoSignBridge isAuthenticated={true} navigationRef={navigationRef} />,
-      );
-    });
-
-    await act(async () => {
-      await messageListener?.(cosignMessage);
-    });
-
-    const alertCall = (Alert.alert as jest.Mock).mock.calls[0];
-    const actions = alertCall[2] as Array<{ text: string; onPress?: () => void }>;
-    const openSignerAction = actions.find(a => a.text === 'Open Signer');
-
-    expect(openSignerAction).toBeTruthy();
-
-    await act(async () => {
-      openSignerAction?.onPress?.();
-    });
-
-    expect(navigationDispatch).toHaveBeenCalledWith(
+    expect(DeviceEventEmitter.emit).toHaveBeenCalledWith(
+      'nostr-chat:incoming',
       expect.objectContaining({
-        name: 'MainTabs',
-        params: {
-          screen: 'PSBT',
-          params: { sharedPsbtBase64: 'cHNidP8BAA==' },
-        },
+        type: 'COSIGN_REQUEST',
+        mode: 'legacy',
       }),
     );
   });
 
-  it('does not show alert when COSIGN_REQUEST has no psbtHex and no psbtBase64', async () => {
+  it('ignores malformed COSIGN_REQUEST with no psbtHex and no psbtBase64', async () => {
     await act(async () => {
       TestRenderer.create(
         <NostrCoSignBridge isAuthenticated={true} navigationRef={navigationRef} />,
@@ -175,7 +150,6 @@ describe('NostrCoSignBridge', () => {
       await messageListener?.(malformed);
     });
 
-    expect(Alert.alert).not.toHaveBeenCalled();
     expect(mockSetPending).not.toHaveBeenCalled();
     expect(mockSendCoSignResponse).not.toHaveBeenCalled();
     expect(navigationDispatch).not.toHaveBeenCalled();
@@ -200,7 +174,6 @@ describe('NostrCoSignBridge', () => {
       await messageListener?.(chatMessage);
     });
 
-    expect(Alert.alert).not.toHaveBeenCalled();
     expect(mockSetPending).not.toHaveBeenCalled();
     expect(mockSendCoSignResponse).not.toHaveBeenCalled();
     expect(navigationDispatch).not.toHaveBeenCalled();
@@ -216,5 +189,48 @@ describe('NostrCoSignBridge', () => {
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
     expect(mockClearPending).toHaveBeenCalledTimes(1);
     expect(mockConnect).not.toHaveBeenCalled();
+  });
+
+  it('auto-rejects placeholder NIP-46 PSBT payload before chat handoff', async () => {
+    await act(async () => {
+      TestRenderer.create(
+        <NostrCoSignBridge isAuthenticated={true} navigationRef={navigationRef} />,
+      );
+    });
+
+    await act(async () => {
+      await nip46Listener?.({
+        request: {
+          id: 'req-nip46-1',
+          method: 'sign_event',
+          params: [
+            {
+              kind: 24133,
+              content: JSON.stringify({
+                txId: 'tx-nip46-1',
+                psbtBase64: 'cHNidP8BAA==',
+                amountSats: 500,
+                feeSats: 10,
+                recipientAddress: 'tb1qnip46recipient',
+                network: 'testnet',
+              }),
+            },
+          ],
+        },
+        senderNpub: 'npub1peerxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+        senderPubHex: 'c'.repeat(64),
+        relayUrl: 'wss://relay.damus.io',
+        eventId: 'evt-nip46-1',
+      });
+    });
+
+    expect(mockSendNip46Response).toHaveBeenCalledWith(
+      'npub1peerxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx',
+      expect.objectContaining({
+        id: 'req-nip46-1',
+        error: expect.stringContaining('placeholder'),
+      }),
+    );
+    expect(navigationDispatch).not.toHaveBeenCalled();
   });
 });

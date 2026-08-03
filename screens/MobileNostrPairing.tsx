@@ -359,6 +359,8 @@ type RouteParams = {
   network?: string; // Network from QR code (ensures same network)
   utxosJson?: string; // Pre-selected UTXOs from QR (avoids re-fetch on scanner)
   changeAddress?: string; // Pre-computed change address from sender (ensures consistency)
+  forwardPeerCosign?: boolean;
+  initiatorTxId?: string;
 };
 const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -2332,23 +2334,40 @@ const MobileNostrPairing = ({navigation}: any) => {
             return;
           }
           dbg(localNpub, 'PSBT signed successfully');
-          dbg(
-            'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
-          );
-          navigation.dispatch(
-            CommonActions.reset(
-              getResetToMainTabsWallet(
-                {signedPsbt},
-                {
-                  showPlay,
-                  showUtxos: showUtxosTab,
-                  showAddresses: showAddressesTab,
-                  showPsbt: showPsbtTab,
-                  showWallet: showWalletTab,
+          if (route.params?.forwardPeerCosign) {
+            dbg('PSBT signing complete: returning to PSBT tab for peer co-sign forward');
+            navigation.dispatch(
+              CommonActions.navigate({
+                name: 'MainTabs',
+                params: {
+                  screen: 'PSBT',
+                  params: {
+                    signedPsbt,
+                    forwardPeerCosign: true,
+                    initiatorTxId: route.params?.initiatorTxId,
+                  },
                 },
+              }),
+            );
+          } else {
+            dbg(
+              'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
+            );
+            navigation.dispatch(
+              CommonActions.reset(
+                getResetToMainTabsWallet(
+                  {signedPsbt},
+                  {
+                    showPlay,
+                    showUtxos: showUtxosTab,
+                    showAddresses: showAddressesTab,
+                    showPsbt: showPsbtTab,
+                    showWallet: showWalletTab,
+                  },
+                ),
               ),
-            ),
-          );
+            );
+          }
         })
         .catch(async (e: any) => {
           if (nostrAbortRef.current) {

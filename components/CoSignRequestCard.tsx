@@ -9,6 +9,7 @@ type Props = {
   feeSats: number;
   recipientAddress: string;
   timestamp: number;
+  status?: 'pending' | 'signing' | 'signed' | 'broadcasted' | 'rejected';
   onReviewSign: () => void;
 };
 
@@ -35,14 +36,52 @@ const CoSignRequestCard: React.FC<Props> = ({
   feeSats,
   recipientAddress,
   timestamp,
+  status = 'pending',
   onReviewSign,
 }) => {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
+  const isActionable = status === 'pending';
+  const isSigning = status === 'signing';
+  const isSigned = status === 'signed';
+  const isBroadcasted = status === 'broadcasted';
+  const headerText = isBroadcasted
+    ? 'Broadcasted'
+    : isSigned
+    ? 'Co-Signed'
+    : isSigning
+    ? 'Signing In Progress'
+    : status === 'rejected'
+    ? 'Request Rejected'
+    : 'Action Required: Co-Sign Transaction';
+  const buttonText = isBroadcasted
+    ? 'Broadcasted'
+    : isSigned
+    ? 'Co-Signed'
+    : isSigning
+    ? 'Signing...'
+    : status === 'rejected'
+    ? 'Rejected'
+    : 'Review & Sign';
+
   return (
-    <View style={styles.wrap}>
-      <AppText style={styles.header}>Action Required: Co-Sign Transaction</AppText>
+    <View
+      style={[
+        styles.wrap,
+        isBroadcasted && styles.wrapSigned,
+        isSigned && styles.wrapSigned,
+        status === 'rejected' && styles.wrapRejected,
+      ]}>
+      <AppText
+        style={[
+          styles.header,
+          isBroadcasted && styles.headerSigned,
+          isSigned && styles.headerSigned,
+          status === 'rejected' && styles.headerRejected,
+        ]}>
+        {headerText}
+      </AppText>
 
       <View style={styles.detailRow}>
         <AppText style={styles.label}>Amount</AppText>
@@ -57,8 +96,13 @@ const CoSignRequestCard: React.FC<Props> = ({
         <AppText style={styles.value}>{truncateAddress(recipientAddress)}</AppText>
       </View>
 
-      <AppPressable onPress={onReviewSign} style={styles.button}>
-        <AppText style={styles.buttonText}>Review & Sign</AppText>
+      <AppPressable
+        disabled={!isActionable}
+        onPress={onReviewSign}
+        style={[styles.button, !isActionable && styles.buttonDisabled]}>
+        <AppText style={[styles.buttonText, !isActionable && styles.buttonTextDisabled]}>
+          {buttonText}
+        </AppText>
       </AppPressable>
 
       <AppText style={styles.time}>{formatClock(timestamp)}</AppText>
@@ -76,11 +120,25 @@ const createStyles = (theme: any) =>
       padding: 12,
       marginBottom: 10,
     },
+    wrapSigned: {
+      borderColor: 'rgba(72, 187, 120, 0.65)',
+      backgroundColor: 'rgba(72, 187, 120, 0.12)',
+    },
+    wrapRejected: {
+      borderColor: 'rgba(227, 93, 91, 0.65)',
+      backgroundColor: 'rgba(227, 93, 91, 0.12)',
+    },
     header: {
       color: '#f5a623',
       fontSize: 14,
       fontFamily: theme.fontFamilies?.bold,
       marginBottom: 8,
+    },
+    headerSigned: {
+      color: '#48bb78',
+    },
+    headerRejected: {
+      color: '#e35d5b',
     },
     detailRow: {
       flexDirection: 'row',
@@ -107,10 +165,16 @@ const createStyles = (theme: any) =>
       alignItems: 'center',
       backgroundColor: '#f5a623',
     },
+    buttonDisabled: {
+      backgroundColor: 'rgba(148, 163, 184, 0.45)',
+    },
     buttonText: {
       color: '#1b1b1b',
       fontFamily: theme.fontFamilies?.bold,
       fontSize: 13,
+    },
+    buttonTextDisabled: {
+      color: '#172034',
     },
     time: {
       marginTop: 8,

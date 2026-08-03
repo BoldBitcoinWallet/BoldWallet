@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { CommonActions, useNavigation } from '@react-navigation/native';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { DeviceEventEmitter } from 'react-native';
 import { sha256 } from '@noble/hashes/sha2';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
 import AppText from './AppText';
@@ -82,12 +83,37 @@ type PeerState = {
 type ChatFeedItem = {
   id: string;
   type: NostrMessageType;
+  status?: 'pending' | 'signing' | 'signed' | 'broadcasted' | 'rejected';
+  txId?: string;
+  mode?: 'legacy' | 'nip46';
+  nip46RequestId?: string;
+  nip46ReplyTo?: string;
   senderFingerprint: string;
   senderNpub: string;
   senderLabel: string;
   timestamp: number;
   payload: Record<string, unknown>;
   sourceMessage?: NostrIncomingMessage;
+};
+
+type CoSignStatusEvent = {
+  mode?: 'legacy' | 'nip46';
+  requestId?: string;
+  txId?: string;
+  status?: 'pending' | 'signing' | 'signed' | 'broadcasted' | 'rejected';
+};
+
+type CoSignFeedBridgeEvent = {
+  ts?: number;
+  mode?: 'legacy' | 'nip46';
+  eventId?: string;
+  envelopeId?: string;
+  nip46RequestId?: string;
+  nip46ReplyTo?: string;
+  senderNpub?: string;
+  senderFingerprint?: string;
+  recipientFingerprint?: string;
+  request?: Record<string, unknown>;
 };
 
 const PEER_ONLINE_WINDOW_MS = 90 * 1000;
@@ -103,6 +129,7 @@ const KeyshareChat: React.FC = () => {
   const [messages, setMessages] = useState<ChatFeedItem[]>([]);
   const [peers, setPeers] = useState<PeerState[]>([]);
   const peersRef = useRef<PeerState[]>([]);
+  const lastCoSignOpenAtRef = useRef(0);
 
   useEffect(() => {
     peersRef.current = peers;
@@ -191,9 +218,28 @@ const KeyshareChat: React.FC = () => {
         return;
       }
 
-      if (msg.envelope.type !== 'CHAT_MESSAGE' && msg.envelope.type !== 'COSIGN_REQUEST') {
+      if (
+        msg.envelope.type !== 'CHAT_MESSAGE' &&
+        msg.envelope.type !== 'COSIGN_REQUEST' &&
+        msg.envelope.type !== 'COSIGN_RESPONSE'
+      ) {
         return;
       }
+      if (msg.envelope.type === 'COSIGN_RESPONSE') {
+        const response = parsed as Record<string, unknown>;
+        const txId = typeof response.txId === 'string' ? response.txId : '';
+        const approved = !!response.approved;
+        const hasBroadcastTxId = typeof response.broadcastTxId === 'string' && response.broadcastTxId.trim().length > 0;
+        if (txId) {
+          DeviceEventEmitter.emit('nostr-cosign:status', {
+            mode: 'legacy',
+            txId,
+            status: approved ? (hasBroadcastTxId ? 'broadcasted' : 'signed') : 'rejected',
+          });
+        }
+        return;
+      }
+
 
       const parsed = parsePayload(msg.envelope.payload);
       const senderLabel = senderPeer?.label || `${senderNpub.slice(0, 8)}...`;
@@ -201,6 +247,8 @@ const KeyshareChat: React.FC = () => {
       const feedItem: ChatFeedItem = {
         id: messageRenderKey(msg),
         type: msg.envelope.type,
+        status: msg.envelope.type === 'COSIGN_REQUEST' ? 'pending' : undefined,
+        txId: typeof parsed.txId === 'string' ? parsed.txId : undefined,
         senderFingerprint: msg.envelope.senderFingerprint,
         senderNpub,
         senderLabel,
@@ -220,13 +268,95 @@ const KeyshareChat: React.FC = () => {
         }
         return [feedItem, ...prev].slice(0, 200);
       });
+
+      if (msg.envelope.type === 'CHAT_MESSAGE' || msg.envelope.type === 'COSIGN_REQUEST') {
+        DeviceEventEmitter.emit('nostr-chat:incoming', {
+          type: msg.envelope.type,
+          mode: msg.envelope.type === 'COSIGN_REQUEST' ? 'legacy' : 'chat',
+          ts: Date.now(),
+        });
+      }
     });
+
+    const offBridgeCoSign = DeviceEventEmitter.addListener(
+      'nostr-cosign:request',
+      (raw: CoSignFeedBridgeEvent) => {
+        if (!mounted || !raw || typeof raw !== 'object') return;
+
+        const senderNpub = normalizeNpub(raw.senderNpub);
+        if (!senderNpub) return;
+
+        const senderPeer = peersRef.current.find(peer => peer.npub === senderNpub);
+        const senderLabel = senderPeer?.label || `${senderNpub.slice(0, 8)}...`;
+        const payload = parsePayload(raw.request || {});
+
+        const identity =
+          (typeof raw.nip46RequestId === 'string' && raw.nip46RequestId.trim()) ||
+          (typeof raw.eventId === 'string' && raw.eventId.trim()) ||
+          (typeof raw.envelopeId === 'string' && raw.envelopeId.trim()) ||
+          `${senderNpub}:${Date.now()}`;
+
+        const feedItem: ChatFeedItem = {
+          id: `bridge-cosign:${identity}`,
+          type: 'COSIGN_REQUEST',
+          status: 'pending',
+          txId: typeof payload.txId === 'string' ? payload.txId : undefined,
+          mode: raw.mode === 'nip46' ? 'nip46' : 'legacy',
+          nip46RequestId:
+            typeof raw.nip46RequestId === 'string' ? raw.nip46RequestId : undefined,
+          nip46ReplyTo: typeof raw.nip46ReplyTo === 'string' ? raw.nip46ReplyTo : undefined,
+          senderFingerprint:
+            typeof raw.senderFingerprint === 'string'
+              ? raw.senderFingerprint
+              : fingerprintFromNpub(senderNpub),
+          senderNpub,
+          senderLabel,
+          timestamp: Number(raw.ts || Date.now()),
+          payload,
+        };
+
+        setMessages(prev => {
+          if (prev.some(item => item.id === feedItem.id)) return prev;
+          return [feedItem, ...prev].slice(0, 200);
+        });
+      },
+    );
+
+    const offCoSignStatus = DeviceEventEmitter.addListener(
+      'nostr-cosign:status',
+      (evt: CoSignStatusEvent) => {
+        if (!mounted || !evt || typeof evt !== 'object') return;
+        const nextStatus =
+          evt.status === 'signed' ||
+          evt.status === 'broadcasted' ||
+          evt.status === 'rejected' ||
+          evt.status === 'signing'
+            ? evt.status
+            : 'pending';
+
+        setMessages(prev =>
+          prev.map(item => {
+            if (item.type !== 'COSIGN_REQUEST') return item;
+            const reqMatch =
+              evt.requestId && item.nip46RequestId && evt.requestId === item.nip46RequestId;
+            const txMatch = evt.txId && item.txId && evt.txId === item.txId;
+            if (!reqMatch && !txMatch) return item;
+            return {
+              ...item,
+              status: nextStatus,
+            };
+          }),
+        );
+      },
+    );
 
     return () => {
       mounted = false;
       clearInterval(ticker);
       offState();
       offMsg();
+      offBridgeCoSign.remove();
+      offCoSignStatus.remove();
     };
   }, []);
 
@@ -303,8 +433,17 @@ const KeyshareChat: React.FC = () => {
   };
 
   const openCoSignRequest = (item: ChatFeedItem) => {
+    if (item.status === 'signed' || item.status === 'rejected') {
+      return;
+    }
+
+    const now = Date.now();
+    if (now - lastCoSignOpenAtRef.current < 1200) {
+      return;
+    }
+    lastCoSignOpenAtRef.current = now;
+
     const msg = item.sourceMessage;
-    if (!msg) return;
 
     const payload = item.payload as unknown as CoSignRequestPayload;
     if (!payload?.txId) return;
@@ -321,19 +460,60 @@ const KeyshareChat: React.FC = () => {
       return;
     }
 
-    setPendingCoSignRequest({
-      senderNpub: msg.senderNpub,
-      senderFingerprint: msg.envelope.senderFingerprint,
-      recipientFingerprint: msg.envelope.recipientFingerprint,
-      request: payload,
-      envelopeId: msg.envelope.id,
-      receivedAt: Date.now(),
+    setMessages(prev =>
+      prev.map(message =>
+        message.id === item.id
+          ? {
+              ...message,
+              status: 'signing',
+            }
+          : message,
+      ),
+    );
+
+    if (item.mode === 'nip46' && item.nip46RequestId) {
+      setPendingCoSignRequest({
+        mode: 'nip46',
+        senderNpub: item.nip46ReplyTo || item.senderNpub,
+        senderFingerprint: item.senderFingerprint || 'nip46-client',
+        recipientFingerprint: 'nip46-signer',
+        request: payload,
+        envelopeId: item.id,
+        receivedAt: Date.now(),
+        nip46RequestId: item.nip46RequestId,
+      });
+    } else {
+      if (!msg) return;
+      setPendingCoSignRequest({
+        mode: 'legacy',
+        senderNpub: msg.senderNpub,
+        senderFingerprint: msg.envelope.senderFingerprint,
+        recipientFingerprint: msg.envelope.recipientFingerprint,
+        request: payload,
+        envelopeId: msg.envelope.id,
+        receivedAt: Date.now(),
+      });
+    }
+
+    dbg('[NIP46-TLM][KeyshareChat] opening co-sign request from feed', {
+      mode: item.mode || 'legacy',
+      requestId: item.nip46RequestId,
+      senderNpub: item.senderNpub,
+      psbtPrefix: psbtBase64.slice(0, 16),
     });
 
     navigation.dispatch(
       CommonActions.navigate({
-        name: 'PSBT',
-        params: { sharedPsbtBase64: psbtBase64 },
+        name: 'MainTabs',
+        params: {
+          screen: 'PSBT',
+          params: {
+            sharedPsbtBase64: psbtBase64,
+            nip46RequestId: item.nip46RequestId,
+            nip46ReplyTo: item.nip46ReplyTo || item.senderNpub,
+            autoSign: item.mode === 'nip46',
+          },
+        },
       }),
     );
   };
@@ -385,6 +565,7 @@ const KeyshareChat: React.FC = () => {
                     feeSats={Number(item.payload.feeSats || 0)}
                     recipientAddress={String(item.payload.recipientAddress || '')}
                     timestamp={item.timestamp}
+                    status={item.status || 'pending'}
                     onReviewSign={() => openCoSignRequest(item)}
                   />
                 </View>

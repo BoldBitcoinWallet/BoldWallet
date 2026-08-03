@@ -412,10 +412,42 @@ const MainTabs = () => {
   } = useUser();
   const showPlayTab = activeNetwork === 'mainnet' && showMempoolPlayground;
   const initialTab = showWalletTab ? 'Wallet' : showPsbtTab ? 'PSBT' : 'Device';
+  const [activeTabName, setActiveTabName] = useState(initialTab);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const sub = DeviceEventEmitter.addListener(
+      'nostr-chat:incoming',
+      () => {
+        if (activeTabName === 'Chat') return;
+        setChatUnreadCount(prev => prev + 1);
+      },
+    );
+    return () => {
+      sub.remove();
+    };
+  }, [activeTabName]);
+
+  useEffect(() => {
+    if (activeTabName === 'Chat' && chatUnreadCount > 0) {
+      setChatUnreadCount(0);
+    }
+  }, [activeTabName, chatUnreadCount]);
+
   return (
     <View style={tabBarStyles.mainTabsContainer}>
       <Tab.Navigator
         initialRouteName={initialTab}
+        screenListeners={{
+          state: e => {
+            const state = (e.data as {state?: {index?: number; routes?: Array<{name?: string}>}} | undefined)?.state;
+            const index = typeof state?.index === 'number' ? state.index : -1;
+            const routeName = index >= 0 ? state?.routes?.[index]?.name : undefined;
+            if (routeName) {
+              setActiveTabName(routeName);
+            }
+          },
+        }}
         screenOptions={{
           headerShown: true,
           headerLeft: () => null,
@@ -448,17 +480,18 @@ const MainTabs = () => {
             tabBarIcon: TabBarIconDevice,
           }}
         />
-        {showPsbtTab && (
-          <Tab.Screen
-            name="PSBT"
-            component={PSBTScreen}
-            options={{
-              header: PSBTHeader,
-              tabBarLabel: 'PSBT',
-              tabBarIcon: TabBarIconPSBT,
-            }}
-          />
-        )}
+        <Tab.Screen
+          name="PSBT"
+          component={PSBTScreen}
+          options={{
+            header: PSBTHeader,
+            tabBarLabel: 'PSBT',
+            tabBarIcon: TabBarIconPSBT,
+            tabBarItemStyle: showPsbtTab
+              ? tabBarStyles.tabBarItem
+              : ({display: 'none'} as const),
+          }}
+        />
         {showWalletTab && (
           <Tab.Screen
             name="Wallet"
@@ -510,6 +543,15 @@ const MainTabs = () => {
             header: NostrConnectHeader,
             tabBarLabel: 'Chat',
             tabBarIcon: TabBarIconChat,
+            tabBarBadge: chatUnreadCount > 0 ? ' ' : undefined,
+            tabBarBadgeStyle: {
+              minWidth: 8,
+              height: 8,
+              borderRadius: 8,
+              backgroundColor: '#ef4444',
+              top: 6,
+              right: 10,
+            },
           }}
         />
         <Tab.Screen
@@ -567,6 +609,8 @@ const MainTabs = () => {
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isNavigationReady, setIsNavigationReady] = useState(false);
+  const navigationRef = useRef<NavigationContainerRef<any>>(null);
   /** Remount wallet UI after lock (keeps UserProvider — avoids keychain reads while locked). */
   const [contentResetKey, setContentResetKey] = useState(0);
   /** Full remount including UserProvider (wallet delete / import only). */
@@ -576,6 +620,31 @@ const App = () => {
   const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(
     debugLoggingEnabledRef.current,
   );
+
+  useEffect(() => {
+    dbg('[NIP46-TLM][AppRoot] bridge telemetry listener attached');
+    const sub = DeviceEventEmitter.addListener(
+      'nostr-bridge:telemetry',
+      (payload?: { event?: string; ts?: number; [k: string]: unknown }) => {
+        dbg('[NIP46-TLM][Bridge]', payload || {});
+      },
+    );
+    return () => sub.remove();
+  }, []);
+
+  useEffect(() => {
+    dbg('[NIP46-TLM][AppRoot] auth transition', {
+      isAuthenticated,
+      initialRoute,
+    });
+  }, [isAuthenticated, initialRoute]);
+
+  useEffect(() => {
+    dbg('[NIP46-TLM][AppRoot] navigation readiness', {
+      isNavigationReady,
+    });
+  }, [isNavigationReady]);
+
   useEffect(() => {
     const sub = DeviceEventEmitter.addListener(
       'app:reload',
@@ -827,8 +896,15 @@ const App = () => {
                 key={`content-${contentResetKey}`}
                 initialRoute={initialRoute}
                 isAuthenticated={isAuthenticated}
+                navigationRef={navigationRef}
+                onNavigationReady={() => setIsNavigationReady(true)}
               />
             )}
+            <NostrCoSignBridge
+              isAuthenticated={isAuthenticated}
+              isNavigationReady={isNavigationReady}
+              navigationRef={navigationRef}
+            />
           </UserProvider>
         </ThemeProvider>
       </SafeAreaProvider>
@@ -838,12 +914,15 @@ const App = () => {
 const AppContent = ({
   initialRoute,
   isAuthenticated,
+  navigationRef,
+  onNavigationReady,
 }: {
   initialRoute: string | null;
   isAuthenticated: boolean;
+  navigationRef: React.RefObject<NavigationContainerRef<any> | null>;
+  onNavigationReady: () => void;
 }) => {
   const {theme} = useTheme();
-  const navigationRef = useRef<NavigationContainerRef<any>>(null);
   const dynamicStyles = {
     navigationContainer: {
       ...styles.navigationContainer,
@@ -853,7 +932,10 @@ const AppContent = ({
   return (
     <WalletProvider>
         <View style={dynamicStyles.navigationContainer}>
-          <NavigationContainer ref={navigationRef} linking={linking}>
+          <NavigationContainer
+            ref={navigationRef}
+            linking={linking}
+            onReady={onNavigationReady}>
             <Stack.Navigator
               initialRouteName={initialRoute || undefined}
               screenOptions={{
@@ -906,10 +988,6 @@ const AppContent = ({
             navigationRef={navigationRef}
           />
           <IncomingUrlHandler
-            isAuthenticated={isAuthenticated}
-            navigationRef={navigationRef}
-          />
-          <NostrCoSignBridge
             isAuthenticated={isAuthenticated}
             navigationRef={navigationRef}
           />
