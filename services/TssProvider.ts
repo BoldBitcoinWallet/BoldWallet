@@ -208,6 +208,7 @@ export const TssProvider = {
     satoshiFees: string,
     utxosWithPathsJSON: string,
     changeAddress: string,
+    initiatorNpubHint?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
     if (backend === 'dkls23') {
@@ -221,6 +222,7 @@ export const TssProvider = {
         satoshiFees,
         utxosWithPathsJSON,
         changeAddress,
+        initiatorNpubHint || '',
       );
     }
     return BBMTLibNativeModule.nostrMpcSendBTC(
@@ -233,6 +235,7 @@ export const TssProvider = {
       satoshiFees,
       utxosWithPathsJSON,
       changeAddress,
+      initiatorNpubHint || '',
     );
   },
 
@@ -241,6 +244,7 @@ export const TssProvider = {
     partiesNpubsCSV: string,
     npubsSorted: string,
     psbtBase64: string,
+    initiatorNpubHint?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
     if (backend === 'dkls23') {
@@ -249,6 +253,7 @@ export const TssProvider = {
         partiesNpubsCSV,
         npubsSorted,
         psbtBase64,
+        initiatorNpubHint || '',
       );
     }
     return BBMTLibNativeModule.nostrMpcSignPSBT(
@@ -256,6 +261,7 @@ export const TssProvider = {
       partiesNpubsCSV,
       npubsSorted,
       psbtBase64,
+      initiatorNpubHint || '',
     );
   },
 

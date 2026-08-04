@@ -44,14 +44,11 @@ const IncomingUrlHandler = ({isAuthenticated, navigationRef}: Props) => {
         return;
       }
       navigationRef.current?.dispatch(
-        CommonActions.navigate({
-          name: 'MainTabs',
+        CommonActions.navigate('MainTabs', {
+          screen: 'Wallet',
           params: {
-            screen: 'Wallet',
-            params: {
-              sendAddress: address,
-              sendAmountBtc: amountBtc,
-            },
+            sendAddress: address,
+            sendAmountBtc: amountBtc,
           },
         }),
       );

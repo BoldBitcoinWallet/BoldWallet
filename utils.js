@@ -1076,8 +1076,9 @@ export const getKeyshareDisplayLabel = keyshare => {
 };
 
 /**
- * Encode send bitcoin data into QR code format
- * Format: <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>|<utxosJson>|<changeAddress>
+ * Encode send bitcoin data into QR code format (v7 — minified JSON). Superseded the
+ * legacy pipe-delimited v1-v6 format; decodeSendBitcoinQR still reads pipe-delimited
+ * QR codes for backward compatibility with older extension/mobile builds.
  * @param {string} toAddress - Bitcoin address to send to
  * @param {string|number} amountSats - Amount in satoshis
  * @param {string|number} feeSats - Fee in satoshis
@@ -1087,7 +1088,8 @@ export const getKeyshareDisplayLabel = keyshare => {
  * @param {string} network - Network identifier (e.g., 'mainnet', 'testnet3')
  * @param {string} utxosJson - Optional JSON string of utxosWithPaths used for spending/fee (may be large)
  * @param {string} changeAddress - Optional pre-computed change address (ensures both devices use the same change output)
- * @returns {string} - Encoded QR data string
+ * @param {string} txId - Optional originating transaction id (ensures the scanning device joins the same MPC/Nostr room instead of minting its own)
+ * @returns {string} - Encoded QR data string (minified JSON)
  */
 export const encodeSendBitcoinQR = (
   toAddress,
@@ -1099,19 +1101,72 @@ export const encodeSendBitcoinQR = (
   network = '',
   utxosJson = '',
   changeAddress = '',
+  txId = '',
 ) => {
   const amount =
     typeof amountSats === 'string' ? amountSats : amountSats.toString();
   const fee = typeof feeSats === 'string' ? feeSats : feeSats.toString();
-  return `${toAddress}|${amount}|${fee}|${spendingHash || ''}|${
-    addressType || ''
-  }|${derivationPath || ''}|${network || ''}|${utxosJson || ''}|${
-    changeAddress || ''
-  }`;
+  const payload = {
+    txId: txId || '',
+    toAddress,
+    amountSats: amount,
+    feeSats: fee,
+    network: network || '',
+    addressType: addressType || '',
+    derivationPath: derivationPath || '',
+  };
+  if (spendingHash) payload.spendingHash = spendingHash;
+  if (utxosJson) payload.utxosJson = utxosJson;
+  if (changeAddress) payload.changeAddress = changeAddress;
+  return JSON.stringify(payload);
 };
 
 /**
- * Decode send bitcoin data from QR code format
+ * Best-effort address-type derivation from an address's prefix, used when a scanned
+ * QR payload omits `addressType` (e.g. older sender versions) so send validation
+ * doesn't have to hard-fail. Returns this wallet's internal addressType naming
+ * ('segwit-native' | 'segwit-nested' | 'legacy' — see CONFIG_KEYS.ADDRESS_TYPE /
+ * getReceivePath), NOT raw BIP script names, since that's what downstream derivation
+ * (resolveLocalSendDerivation, BBMTLibNativeModule.btcAddress) expects.
+ * @param {string} address - Bitcoin address
+ * @returns {string} - One of 'segwit-native' | 'segwit-nested' | 'legacy', or '' if unrecognized (e.g. taproot, unsupported by this wallet's HD scheme)
+ */
+export const deriveAddressTypeFromAddress = address => {
+  if (!address || typeof address !== 'string') {
+    return '';
+  }
+  const addr = address.trim();
+  if (/^(bc1q|tb1q)/i.test(addr)) return 'segwit-native';
+  if (/^[32]/.test(addr)) return 'segwit-nested';
+  if (/^[1mn]/.test(addr)) return 'legacy';
+  // bc1p/tb1p (taproot) has no corresponding addressType in this wallet's HD scheme.
+  return '';
+};
+
+/**
+ * Best-effort network derivation from an address's prefix, used when a scanned QR
+ * payload omits `network` (e.g. older sender versions) so send validation doesn't
+ * have to hard-fail.
+ * @param {string} address - Bitcoin address
+ * @returns {string} - 'mainnet' | 'testnet', or '' if unrecognized
+ */
+export const deriveNetworkFromAddress = address => {
+  if (!address || typeof address !== 'string') {
+    return '';
+  }
+  const addr = address.trim();
+  if (/^(tb1|[mn2])/i.test(addr)) return 'testnet';
+  if (/^(bc1|[13])/i.test(addr)) return 'mainnet';
+  return '';
+};
+
+/**
+ * Decode send bitcoin data from QR code.
+ * Primary format (v7): minified JSON, e.g. {"txId":"...","toAddress":"...","amountSats":"...",
+ * "feeSats":"...","network":"...","addressType":"...","derivationPath":"..."}.
+ * Falls back to the legacy pipe-delimited format when JSON.parse fails, so older
+ * extension/mobile builds' QR codes still scan correctly:
+ * Format (v6): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>|<utxosJson>|<changeAddress>|<txId>
  * Format (v5): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>|<utxosJson>|<changeAddress>
  * Format (v4): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>|<utxosJson>
  * Format (v3): <to_address>|<amount_satoshi>|<fee_satoshi>|<spendingHash>|<addressType>|<derivationPath>|<network>
@@ -1125,26 +1180,66 @@ export const decodeSendBitcoinQR = qrData => {
     return null;
   }
 
-  const parts = qrData.split('|');
-  // Support all versions (3–9 parts)
-  if (parts.length < 3 || parts.length > 9) {
-    return null;
+  let toAddress;
+  let amountSats;
+  let feeSats;
+  let spendingHash = '';
+  let addressType = '';
+  let derivationPath = '';
+  let network = '';
+  let utxosJson = '';
+  let changeAddress = '';
+  let txId = '';
+
+  let parsedFromJson = false;
+  try {
+    const obj = JSON.parse(qrData);
+    if (
+      obj &&
+      typeof obj === 'object' &&
+      !Array.isArray(obj) &&
+      obj.toAddress !== undefined &&
+      obj.amountSats !== undefined &&
+      obj.feeSats !== undefined
+    ) {
+      toAddress = obj.toAddress;
+      amountSats = obj.amountSats;
+      feeSats = obj.feeSats;
+      spendingHash = obj.spendingHash || '';
+      addressType = obj.addressType || '';
+      derivationPath = obj.derivationPath || '';
+      network = obj.network || '';
+      utxosJson = obj.utxosJson || '';
+      changeAddress = obj.changeAddress || '';
+      txId = obj.txId || '';
+      parsedFromJson = true;
+    }
+  } catch {
+    // Not JSON (or malformed) — fall back to legacy pipe-delimited parsing below.
   }
 
-  const [
-    toAddress,
-    amountSats,
-    feeSats,
-    spendingHash = '',
-    addressType = '',
-    derivationPath = '',
-    network = '',
-    utxosJson = '',
-    changeAddress = '',
-  ] = parts;
+  if (!parsedFromJson) {
+    const parts = qrData.split('|');
+    // Support all legacy versions (3–10 parts)
+    if (parts.length < 3 || parts.length > 10) {
+      return null;
+    }
+    [
+      toAddress,
+      amountSats,
+      feeSats,
+      spendingHash = '',
+      addressType = '',
+      derivationPath = '',
+      network = '',
+      utxosJson = '',
+      changeAddress = '',
+      txId = '',
+    ] = parts;
+  }
 
   // Validate address is not empty
-  if (!toAddress || toAddress.trim() === '') {
+  if (!toAddress || String(toAddress).trim() === '') {
     return null;
   }
 
@@ -1155,16 +1250,28 @@ export const decodeSendBitcoinQR = qrData => {
     return null;
   }
 
+  const trimmedToAddress = String(toAddress).trim();
+  const trimmedChangeAddress = typeof changeAddress === 'string' ? changeAddress.trim() : '';
+  const resolvedAddressType =
+    addressType && String(addressType).trim() !== ''
+      ? String(addressType).trim()
+      : deriveAddressTypeFromAddress(trimmedToAddress);
+  const resolvedNetwork =
+    network && String(network).trim() !== ''
+      ? String(network).trim()
+      : deriveNetworkFromAddress(trimmedToAddress) || deriveNetworkFromAddress(trimmedChangeAddress);
+
   return {
-    toAddress: toAddress.trim(),
+    toAddress: trimmedToAddress,
     amountSats: amount.toString(),
     feeSats: fee.toString(),
     spendingHash: spendingHash || '',
-    addressType: addressType || '',
+    addressType: resolvedAddressType || '',
     derivationPath: derivationPath || '',
-    network: network || '',
+    network: resolvedNetwork || '',
     utxosJson: utxosJson || '',
     changeAddress: changeAddress || '',
+    txId: txId || '',
   };
 };
 

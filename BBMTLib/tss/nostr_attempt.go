@@ -37,6 +37,28 @@ func initiatorNpubFromParties(partiesNpubsCSV string) (string, error) {
 	return parts[0], nil
 }
 
+func initiatorNpubFromPartiesWithHint(partiesNpubsCSV, initiatorNpubHint string) (string, string, error) {
+	hint := strings.TrimSpace(initiatorNpubHint)
+	if hint != "" {
+		normalized := normalizeSigningNpubsCSV(partiesNpubsCSV)
+		if normalized == "" {
+			return "", "", fmt.Errorf("no signing parties")
+		}
+		parts := strings.Split(normalized, ",")
+		for _, p := range parts {
+			if p == hint {
+				return hint, "hint", nil
+			}
+		}
+		return "", "", fmt.Errorf("initiator hint %q not in signing parties %q", hint, normalized)
+	}
+	initiator, err := initiatorNpubFromParties(partiesNpubsCSV)
+	if err != nil {
+		return "", "", err
+	}
+	return initiator, "lexicographic", nil
+}
+
 func nostrAttemptHandshakeRoom(txIntentKey string) (string, error) {
 	txIntentKey = strings.TrimSpace(txIntentKey)
 	if txIntentKey == "" {
@@ -96,19 +118,37 @@ func publishNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room, attemptI
 	}
 	defer client.Close("attempt publish complete")
 	messenger := nostrtransport.NewMessenger(cfg, client)
-	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 20*time.Second)
+	// Extended from 20s: mobile relay round-trips can exceed a fail-fast window
+	// under real network conditions.
+	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 100*time.Second)
 	defer cancel()
 	// Give responder time to subscribe (subscription-only, no history query).
 	time.Sleep(2 * time.Second)
-	for i := 0; i < 3; i++ {
-		if err := messenger.SendMessage(ctx, localNpub, peerNpub, attemptID); err != nil {
-			return fmt.Errorf("failed to publish attempt id: %w", err)
-		}
-		if i < 2 {
-			time.Sleep(2 * time.Second)
-		}
+	Logf("[NIP46-TLM][PreAgreement] %s publishNostrAttemptID: sending attempt_id=%s room=%s relays=%v",
+		time.Now().Format(time.RFC3339), attemptID, room, cfg.Relays)
+	if err := messenger.SendMessage(ctx, localNpub, peerNpub, attemptID); err != nil {
+		return fmt.Errorf("failed to publish attempt id: %w", err)
 	}
-	Logf("publishNostrAttemptID: published attempt_id=%s room=%s", attemptID, room)
+	// Sliding-window re-announce: if the responder's subscription missed the
+	// first publish (dropped/delayed relay message), keep re-sending every 10s
+	// for the rest of the window instead of a single fire-and-forget burst.
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := messenger.SendMessage(ctx, localNpub, peerNpub, attemptID); err != nil {
+					Logf("[NIP46-TLM][PreAgreement] %s publishNostrAttemptID: re-announce failed: %v", time.Now().Format(time.RFC3339), err)
+					continue
+				}
+				Logf("[NIP46-TLM][PreAgreement] %s publishNostrAttemptID: re-announced attempt_id=%s relays=%v", time.Now().Format(time.RFC3339), attemptID, cfg.Relays)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	Logf("[NIP46-TLM][PreAgreement] %s publishNostrAttemptID: published attempt_id=%s room=%s", time.Now().Format(time.RFC3339), attemptID, room)
 	return nil
 }
 
@@ -129,8 +169,13 @@ func waitForNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room string) (
 
 	attemptCh := make(chan string, 1)
 	errCh := make(chan error, 1)
-	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 25*time.Second)
+	// Extended from 25s to comfortably outlast publishNostrAttemptID's 100s
+	// re-announce window, so a late/re-sent attempt id still arrives in time.
+	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 110*time.Second)
 	defer cancel()
+
+	Logf("[NIP46-TLM][PreAgreement] %s waitForNostrAttemptID: listening room=%s relays=%v",
+		time.Now().Format(time.RFC3339), room, cfg.Relays)
 
 	go func() {
 		pump := nostrtransport.NewMessagePump(cfg, client)
@@ -155,11 +200,12 @@ func waitForNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room string) (
 
 	select {
 	case attemptID := <-attemptCh:
-		Logf("waitForNostrAttemptID: received attempt_id=%s room=%s", attemptID, room)
+		Logf("[NIP46-TLM][PreAgreement] %s waitForNostrAttemptID: received attempt_id=%s room=%s", time.Now().Format(time.RFC3339), attemptID, room)
 		return attemptID, nil
 	case err := <-errCh:
 		return "", fmt.Errorf("attempt handshake failed: %w", err)
 	case <-ctx.Done():
+		Logf("[NIP46-TLM][PreAgreement] %s waitForNostrAttemptID: timeout room=%s relays=%v", time.Now().Format(time.RFC3339), room, cfg.Relays)
 		return "", fmt.Errorf("timeout waiting for attempt id: %w", ctx.Err())
 	}
 }
@@ -167,12 +213,13 @@ func waitForNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room string) (
 // ensureNostrAttemptID returns a shared attempt id for this co-sign round.
 // Lexicographically first signing npub is initiator (master) and publishes attempt_id;
 // the peer waits on subscription-only pump (no stale relay history).
-func ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey string) (string, error) {
+func ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey, initiatorNpubHint string) (string, error) {
 	localNpub, err := DeriveNpubFromNsec(partyNsec)
 	if err != nil {
 		return "", err
 	}
-	initiator, err := initiatorNpubFromParties(partiesNpubsCSV)
+	normalizedParties := normalizeSigningNpubsCSV(partiesNpubsCSV)
+	initiator, initiatorSource, err := initiatorNpubFromPartiesWithHint(partiesNpubsCSV, initiatorNpubHint)
 	if err != nil {
 		return "", err
 	}
@@ -180,15 +227,21 @@ func ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey str
 	if err != nil {
 		return "", err
 	}
+	Logf("[NIP46-TLM][Attempt] %s ensureNostrAttemptID: local=%s initiator=%s initiator_source=%s initiator_hint=%q parties=%s txIntentKey=%q room=%s",
+		time.Now().Format(time.RFC3339), localNpub, initiator, initiatorSource, strings.TrimSpace(initiatorNpubHint), normalizedParties, txIntentKey, room)
 	if localNpub == initiator {
 		attemptID, err := SecureRandom(64)
 		if err != nil {
 			return "", err
 		}
+		Logf("[NIP46-TLM][Attempt] %s ensureNostrAttemptID: local is initiator, publishing attempt_id=%s room=%s",
+			time.Now().Format(time.RFC3339), attemptID, room)
 		if err := publishNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room, attemptID); err != nil {
 			return "", err
 		}
 		return attemptID, nil
 	}
+	Logf("[NIP46-TLM][Attempt] %s ensureNostrAttemptID: local is responder, waiting for attempt_id room=%s",
+		time.Now().Format(time.RFC3339), room)
 	return waitForNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room)
 }

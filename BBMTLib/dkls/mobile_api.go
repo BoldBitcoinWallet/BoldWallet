@@ -12,9 +12,9 @@ func MpcSignPSBT(
 }
 
 func NostrMpcSignPSBT(
-	relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64 string,
+	relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64, initiatorNpubHint string,
 ) (string, error) {
-	return tss.NostrMpcSignPSBT(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64)
+	return tss.NostrMpcSignPSBT(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64, initiatorNpubHint)
 }
 
 func MpcSendBTCWithUTXOs(
@@ -29,11 +29,11 @@ func MpcSendBTCWithUTXOs(
 
 func NostrMpcSendBTCWithUTXOs(
 	relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON,
-	receiverAddress, amountSatoshiStr, estimatedFeeStr, utxosWithPathsJSON, changeAddress string,
+	receiverAddress, amountSatoshiStr, estimatedFeeStr, utxosWithPathsJSON, changeAddress, initiatorNpubHint string,
 ) (string, error) {
 	return tss.NostrMpcSendBTCWithUTXOs(
 		relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON,
-		receiverAddress, amountSatoshiStr, estimatedFeeStr, utxosWithPathsJSON, changeAddress,
+		receiverAddress, amountSatoshiStr, estimatedFeeStr, utxosWithPathsJSON, changeAddress, initiatorNpubHint,
 	)
 }
 

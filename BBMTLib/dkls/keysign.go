@@ -164,7 +164,7 @@ func NostrJoinKeysignWithSighash(
 	if signingShare != share {
 		defer signingShare.Free()
 	}
-	sig, err := runSignWithSender(ctx, signingShare, sighash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID)
+	sig, err := runSignWithSender(ctx, signingShare, sighash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID, nostrKeysignRoundIdleTimeout, "nostr")
 	pumpCancel()
 	wg.Wait()
 	if err != nil {
@@ -250,7 +250,7 @@ func JoinKeysignWithSighash(
 	if signingShare != share {
 		defer signingShare.Free()
 	}
-	sig, err := runSignWithSender(context.Background(), signingShare, sighash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
+	sig, err := runSignWithSender(context.Background(), signingShare, sighash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session, lanKeysignRoundIdleTimeout, "lan")
 	close(endCh)
 	wg.Wait()
 	if err != nil {

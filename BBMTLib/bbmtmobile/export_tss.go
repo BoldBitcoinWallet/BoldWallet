@@ -276,17 +276,17 @@ func BbmtMpcSendBTCWithUTXOs(
 //export BbmtNostrMpcSendBTCWithUTXOs
 func BbmtNostrMpcSendBTCWithUTXOs(
 	relays, nsec, parties, npubsSorted, balance, keyshare,
-	receiver, amount, fees, utxos, change *C.char,
+	receiver, amount, fees, utxos, change, initiatorNpubHint *C.char,
 ) *C.char {
 	return cString(tss.NostrMpcSendBTCWithUTXOs(
 		goStr(relays), goStr(nsec), goStr(parties), goStr(npubsSorted), goStr(balance), goStr(keyshare),
-		goStr(receiver), goStr(amount), goStr(fees), goStr(utxos), goStr(change),
+		goStr(receiver), goStr(amount), goStr(fees), goStr(utxos), goStr(change), goStr(initiatorNpubHint),
 	))
 }
 
 //export BbmtNostrMpcSignPSBT
-func BbmtNostrMpcSignPSBT(relays, nsec, parties, npubsSorted, keyshare, psbt *C.char) *C.char {
+func BbmtNostrMpcSignPSBT(relays, nsec, parties, npubsSorted, keyshare, psbt, initiatorNpubHint *C.char) *C.char {
 	return cString(tss.NostrMpcSignPSBT(
-		goStr(relays), goStr(nsec), goStr(parties), goStr(npubsSorted), goStr(keyshare), goStr(psbt),
+		goStr(relays), goStr(nsec), goStr(parties), goStr(npubsSorted), goStr(keyshare), goStr(psbt), goStr(initiatorNpubHint),
 	))
 }

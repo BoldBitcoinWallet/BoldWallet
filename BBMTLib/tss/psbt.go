@@ -890,16 +890,16 @@ func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
 // Returns: base64-encoded signed PSBT
 func NostrMpcSignPSBT(
 	relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted,
-	keyshareJSON, psbtBase64 string) (result string, err error) {
+	keyshareJSON, psbtBase64, initiatorNpubHint string) (result string, err error) {
 	defer RecoverAsError("NostrMpcSignPSBT", &err, &result)
 
-	return runNostrMpcSignPSBTInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64)
+	return runNostrMpcSignPSBTInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64, initiatorNpubHint)
 }
 
 // runNostrMpcSignPSBTInternal implements the Nostr-based MPC PSBT signing
 func runNostrMpcSignPSBTInternal(
 	relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted,
-	keyshareJSON, psbtBase64 string) (result string, err error) {
+	keyshareJSON, psbtBase64, initiatorNpubHint string) (result string, err error) {
 	defer RecoverAsError("runNostrMpcSignPSBTInternal", &err, &result)
 
 	Logln("BBMTLog", "invoking NostrMpcSignPSBT...")
@@ -929,7 +929,7 @@ func runNostrMpcSignPSBTInternal(
 	psbtBase64 = canonicalB64
 
 	txIntentKey := fmt.Sprintf("%s,%s", npubsSorted, psbtHash)
-	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey)
+	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey, initiatorNpubHint)
 	if err != nil {
 		return "", fmt.Errorf("attempt handshake failed: %w", err)
 	}
@@ -1381,6 +1381,8 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 	Logf("runNostrPreAgreementPSBT: sending pre-agreement message")
 
 	// Context for the pre-agreement phase (inherits active Nostr abort context).
+	// 2 minutes accommodates mobile network latency/relay propagation delays;
+	// the re-announce loop below adds resilience against a single dropped publish.
 	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 2*time.Minute)
 	defer cancel()
 
@@ -1437,7 +1439,30 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 	if err != nil {
 		return nil, fmt.Errorf("failed to send pre-agreement message: %w", err)
 	}
-	Logf("runNostrPreAgreementPSBT: sent nonce to peer")
+	Logf("[NIP46-TLM][PreAgreement] %s runNostrPreAgreementPSBT: sent nonce relays=%v", time.Now().Format(time.RFC3339), cfg.Relays)
+
+	// Sliding-window re-announce: keep re-sending our nonce every 10s while
+	// waiting, in case the peer's subscription missed the first publish.
+	stopResend := make(chan struct{})
+	defer close(stopResend)
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := messenger.SendMessage(ctx, localNpub, peerNpub, localMessage); err != nil {
+					Logf("[NIP46-TLM][PreAgreement] %s runNostrPreAgreementPSBT: re-announce failed: %v", time.Now().Format(time.RFC3339), err)
+					continue
+				}
+				Logf("[NIP46-TLM][PreAgreement] %s runNostrPreAgreementPSBT: re-announced nonce", time.Now().Format(time.RFC3339))
+			case <-stopResend:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	// Wait for peer payload
 	var peerMessage string
@@ -1447,6 +1472,7 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 	case err := <-peerErrorCh:
 		return nil, fmt.Errorf("failed to receive peer message: %w", err)
 	case <-ctx.Done():
+		Logf("[NIP46-TLM][PreAgreement] %s runNostrPreAgreementPSBT: timeout relays=%v", time.Now().Format(time.RFC3339), cfg.Relays)
 		return nil, NostrMpcContextErr("pre-agreement", ctx.Err())
 	}
 

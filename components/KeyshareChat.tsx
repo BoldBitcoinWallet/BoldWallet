@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { CommonActions, useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native';
 import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { DeviceEventEmitter } from 'react-native';
 import { sha256 } from '@noble/hashes/sha2';
@@ -8,7 +8,11 @@ import AppText from './AppText';
 import AppPressable from './AppPressable';
 import ChatBubble from './ChatBubble';
 import CoSignRequestCard from './CoSignRequestCard';
-import { getRecentCoSignFeedEvents, getRecentUnreadChatEvents } from './NostrCoSignBridge';
+import {
+  getRecentCoSignFeedEvents,
+  getRecentCoSignFocusEvents,
+  getRecentUnreadChatEvents,
+} from './NostrCoSignBridge';
 import { useTheme } from '../theme';
 import { dbg, getKeyshareMetadata } from '../utils';
 import {
@@ -169,6 +173,9 @@ const KeyshareChat: React.FC = () => {
   // nostr-chat:incoming) plus redelivery across multiple relays; this Set makes
   // "first one wins, the rest are no-ops" regardless of which path arrives first.
   const seenCoSignRequestIdsRef = useRef<Set<string>>(new Set());
+  // Set by a tapped global co-sign notification (see NostrCoSignBridge.notifyCoSignRequest);
+  // consumed by the effect below once the matching card exists in `messages`.
+  const pendingFocusTxIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     peersRef.current = peers;
@@ -450,6 +457,19 @@ const KeyshareChat: React.FC = () => {
       handleUnreadChatEvent(evt as IncomingChatEvent),
     );
 
+    const offFocus = DeviceEventEmitter.addListener(
+      'nostr-cosign:focus',
+      (evt: { txId?: string }) => {
+        if (!mounted || !evt?.txId) return;
+        pendingFocusTxIdRef.current = evt.txId;
+      },
+    );
+    // A notification tap may have fired before this screen (re)mounted; replay it too.
+    getRecentCoSignFocusEvents().forEach(evt => {
+      const txId = (evt as { txId?: string }).txId;
+      if (txId) pendingFocusTxIdRef.current = txId;
+    });
+
     const offCoSignStatus = DeviceEventEmitter.addListener(
       'nostr-cosign:status',
       (evt: CoSignStatusEvent) => {
@@ -485,6 +505,7 @@ const KeyshareChat: React.FC = () => {
       offMsg();
       offBridgeCoSign.remove();
       offIncomingChat.remove();
+      offFocus.remove();
       offCoSignStatus.remove();
     };
   }, []);
@@ -542,18 +563,17 @@ const KeyshareChat: React.FC = () => {
         payload: { text: outgoingText },
       });
 
-      setMessages(prev => [
-        {
-          id: `optimistic:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`,
-          type: 'CHAT_MESSAGE',
-          senderFingerprint: localFingerprint,
-          senderNpub: localNpub,
-          senderLabel: 'You',
-          timestamp: Date.now(),
-          payload: { text: outgoingText },
-        },
-        ...prev,
-      ].slice(0, 200));
+      const optimisticMessage: ChatFeedItem = {
+        id: `optimistic:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`,
+        type: 'CHAT_MESSAGE',
+        senderFingerprint: localFingerprint,
+        senderNpub: localNpub,
+        senderLabel: 'You',
+        timestamp: Date.now(),
+        payload: { text: outgoingText },
+      };
+
+      setMessages(prev => [optimisticMessage, ...prev].slice(0, 200));
 
       setText('');
     } catch (err) {
@@ -562,12 +582,29 @@ const KeyshareChat: React.FC = () => {
   };
 
   const openCoSignRequest = (item: ChatFeedItem) => {
+    console.log('[NIP46-TLM][UI] openCoSignRequest invoked', {
+      itemId: item.id,
+      status: item.status,
+      mode: item.mode,
+      hasPayloadTxId: Boolean((item.payload as any)?.txId),
+      senderNpub: item.senderNpub,
+      timestamp: item.timestamp,
+    });
     if (item.status === 'signed' || item.status === 'rejected') {
+      console.log('[NIP46-TLM][UI] openCoSignRequest ignored due to terminal status', {
+        itemId: item.id,
+        status: item.status,
+      });
       return;
     }
 
     const now = Date.now();
     if (now - lastCoSignOpenAtRef.current < 1200) {
+      console.log('[NIP46-TLM][UI] openCoSignRequest throttled', {
+        itemId: item.id,
+        lastOpenAt: lastCoSignOpenAtRef.current,
+        now,
+      });
       return;
     }
     lastCoSignOpenAtRef.current = now;
@@ -575,7 +612,13 @@ const KeyshareChat: React.FC = () => {
     const msg = item.sourceMessage;
 
     const payload = item.payload as unknown as CoSignRequestPayload;
-    if (!payload?.txId) return;
+    if (!payload?.txId) {
+      console.warn('[NIP46-TLM][UI] openCoSignRequest aborted: missing payload.txId', {
+        itemId: item.id,
+        payload,
+      });
+      return;
+    }
 
     const psbtBase64 =
       typeof payload.psbtBase64 === 'string' && payload.psbtBase64
@@ -589,17 +632,29 @@ const KeyshareChat: React.FC = () => {
     // PSBT at all — just recipient/amount/fee. Previously this always hit the PSBT-only
     // error below, so the peer never sent COSIGN_READY and the initiator always hung
     // until its 45s timeout. Recognize this shape and route it to the send_btc responder
-    // flow instead of silently failing.
+    // flow instead of silently failing. `requestMode` is an explicit sender-chosen signal
+    // (e.g. BoldChrome's DKLS/PSBT toggle) that takes priority over the implicit inference.
     const amountSatsNum = Number(payload.amountSats);
-    const isRegularSendRequest =
-      !psbtBase64 &&
+    const hasRegularSendShape =
       typeof payload.recipientAddress === 'string' &&
       payload.recipientAddress.trim() !== '' &&
       payload.recipientAddress !== 'N/A' &&
       Number.isFinite(amountSatsNum) &&
       amountSatsNum > 0;
+    const isRegularSendRequest =
+      payload.requestMode === 'dkls'
+        ? hasRegularSendShape
+        : !psbtBase64 && hasRegularSendShape;
 
     if (!psbtBase64 && !isRegularSendRequest) {
+      console.warn('[NIP46-TLM][UI] openCoSignRequest aborted: no PSBT and not regular send shape', {
+        itemId: item.id,
+        txId: payload.txId,
+        requestMode: payload.requestMode,
+        recipientAddress: payload.recipientAddress,
+        amountSats: payload.amountSats,
+        feeSats: payload.feeSats,
+      });
       setError('This co-sign request did not contain a usable PSBT payload.');
       return;
     }
@@ -642,38 +697,10 @@ const KeyshareChat: React.FC = () => {
       });
     }
 
-    // Synchronized entry handshake: wake the waiting initiator the instant we commit to
-    // co-signing, so it enters the native TSS window at (roughly) the same moment we do
-    // instead of relying on human tap-timing alone. Fire-and-forget — must not block
-    // navigation into the signing screen.
+    // Do not publish COSIGN_READY on card-open. Responder must review details first and
+    // explicitly tap Start/Join in MobileNostrPairing; that tap now sends COSIGN_READY.
     const readyRecipientNpub =
       item.mode === 'nip46' ? item.nip46ReplyTo || item.senderNpub : msg?.senderNpub || item.senderNpub;
-    const readyRecipientFingerprint =
-      item.mode === 'nip46'
-        ? item.senderFingerprint || 'nip46-client'
-        : msg?.envelope.senderFingerprint || item.senderFingerprint;
-    if (readyRecipientNpub) {
-      nostrMessaging
-        .sendCoSignReady(readyRecipientNpub, localFingerprint, readyRecipientFingerprint || 'peer-group', {
-          txId: payload.txId,
-          traceId: payload.traceId,
-        })
-        .then(() => {
-          dbg('[NIP46-TLM][KeyshareChat] sent COSIGN_READY to initiator', {
-            txId: payload.txId,
-            recipient: readyRecipientNpub.substring(0, 20) + '...',
-          });
-        })
-        .catch(readyErr => {
-          console.error('[NIP46-TLM][KeyshareChat] failed to publish COSIGN_READY', readyErr);
-          dbg('[NIP46-TLM][KeyshareChat] failed to send COSIGN_READY (continuing anyway)', readyErr);
-        });
-    } else {
-      dbg('[NIP46-TLM][KeyshareChat] no recipient resolved for COSIGN_READY; initiator will time out', {
-        txId: payload.txId,
-        mode: item.mode || 'legacy',
-      });
-    }
 
     dbg('[NIP46-TLM][KeyshareChat] opening co-sign request from feed', {
       mode: item.mode || 'legacy',
@@ -686,56 +713,66 @@ const KeyshareChat: React.FC = () => {
     });
 
     if (isRegularSendRequest) {
-      navigation.dispatch(
-        CommonActions.navigate({
-          name: 'MainTabs',
-          params: {
-            screen: 'Nostr Connect',
-            params: {
-              mode: 'send_btc',
-              toAddress: payload.recipientAddress,
-              satoshiAmount: String(Math.trunc(amountSatsNum)),
-              satoshiFees: String(
-                Math.max(0, Math.trunc(Number(payload.feeSats) || 0)),
-              ),
-              network: payload.network || 'mainnet',
-              // Carry the initiator's txId/traceId so both devices' native signing
-              // sessions and chat status updates correlate to the same request.
-              initiatorTxId: payload.txId,
-              cosignTraceId: payload.traceId,
-              // We are responding to someone else's request, not originating one \u2014
-              // MobileNostrPairing must resolve its own addressType/derivationPath
-              // locally and must not wait on its own COSIGN_READY.
-              isPeerResponse: true,
-            },
-          },
-        }),
-      );
+      dbg('[NIP46-TLM][UI] navigating responder to MobileNostrPairing (Nostr Connect stack route)', {
+        txId: payload.txId,
+        traceId: payload.traceId,
+        peerNpub: (readyRecipientNpub || item.senderNpub || '').slice(0, 20),
+        mode: 'send_btc',
+      });
+      navigation.navigate('Nostr Connect', {
+        mode: 'send_btc',
+        toAddress: payload.recipientAddress,
+        satoshiAmount: String(Math.trunc(amountSatsNum)),
+        satoshiFees: String(
+          Math.max(0, Math.trunc(Number(payload.feeSats) || 0)),
+        ),
+        network: payload.network || 'mainnet',
+        // Carry the initiator's txId/traceId so both devices' native signing
+        // sessions and chat status updates correlate to the same request.
+        initiatorTxId: payload.txId,
+        cosignTraceId: payload.traceId,
+        // We are responding to someone else's request, not originating one —
+        // MobileNostrPairing must resolve its own addressType/derivationPath
+        // locally and must not wait on its own COSIGN_READY.
+        isPeerResponse: true,
+        // Sender of the incoming COSIGN_REQUEST: for trio/committee wallets this
+        // IS the co-signing peer for this round, so MobileNostrPairing can skip
+        // manual peer selection. See [NIP46-TLM][Committee] logging there.
+        peerNpub: readyRecipientNpub || item.senderNpub || undefined,
+      });
       return;
     }
 
-    navigation.dispatch(
-      CommonActions.navigate({
-        name: 'MainTabs',
-        params: {
-          screen: 'PSBT',
-          params: {
-            sharedPsbtBase64: psbtBase64,
-            nip46RequestId: item.nip46RequestId,
-            nip46ReplyTo: item.nip46ReplyTo || item.senderNpub,
-            autoSign: item.mode === 'nip46',
-            // Carry the initiator's txId/traceId so both devices' native signing
-            // sessions and chat status updates correlate to the same request.
-            initiatorTxId: payload.txId,
-            cosignTraceId: payload.traceId,
-            // We are responding to someone else's request, not originating one \u2014
-            // PSBTScreen must not treat this device as the waiting initiator.
-            isPeerResponse: true,
-          },
-        },
-      }),
-    );
+    navigation.navigate('MainTabs', {
+      screen: 'PSBT',
+      params: {
+        sharedPsbtBase64: psbtBase64,
+        nip46RequestId: item.nip46RequestId,
+        nip46ReplyTo: item.nip46ReplyTo || item.senderNpub,
+        autoSign: item.mode === 'nip46',
+        // Carry the initiator's txId/traceId so both devices' native signing
+        // sessions and chat status updates correlate to the same request.
+        initiatorTxId: payload.txId,
+        cosignTraceId: payload.traceId,
+        // We are responding to someone else's request, not originating one —
+        // PSBTScreen must not treat this device as the waiting initiator.
+        isPeerResponse: true,
+      },
+    });
   };
+
+  // Auto-open the co-sign view once the request a notification tap targeted actually
+  // shows up in the feed (it may arrive slightly after the tap/navigation).
+  useEffect(() => {
+    const targetTxId = pendingFocusTxIdRef.current;
+    if (!targetTxId) return;
+    const match = messages.find(
+      item => item.type === 'COSIGN_REQUEST' && item.txId === targetTxId && item.status === 'pending',
+    );
+    if (!match) return;
+    pendingFocusTxIdRef.current = null;
+    openCoSignRequest(match);
+  }, [messages]);
 
   return (
     <View style={styles.wrap}>
@@ -773,7 +810,7 @@ const KeyshareChat: React.FC = () => {
           messages.map(item => {
             const isMine =
               item.senderFingerprint === localFingerprint ||
-              (item.senderNpub && item.senderNpub === localNpub);
+              (!!item.senderNpub && item.senderNpub === localNpub);
 
             if (item.type === 'COSIGN_REQUEST') {
               return (
@@ -785,7 +822,16 @@ const KeyshareChat: React.FC = () => {
                     recipientAddress={String(item.payload.recipientAddress || '')}
                     timestamp={item.timestamp}
                     status={item.status || 'pending'}
-                    onReviewSign={() => openCoSignRequest(item)}
+                    onReviewSign={() => {
+                      console.log('[NIP46-TLM][UI] Review & Sign tapped from chat list', {
+                        itemId: item.id,
+                        mode: item.mode,
+                        status: item.status,
+                        senderNpub: item.senderNpub,
+                        txId: (item.payload as any)?.txId,
+                      });
+                      openCoSignRequest(item);
+                    }}
                   />
                 </View>
               );

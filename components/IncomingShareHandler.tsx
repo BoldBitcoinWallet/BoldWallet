@@ -57,10 +57,7 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
 
   const navigateToSettings = useCallback(() => {
     navigationRef.current?.dispatch(
-      CommonActions.navigate({
-        name: 'MainTabs',
-        params: {screen: 'Settings'},
-      }),
+      CommonActions.navigate('MainTabs', {screen: 'Settings'}),
     );
   }, [navigationRef]);
 
@@ -74,16 +71,13 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
     async (uri: string) => {
       const psbtBase64 = validatePsbtBase64(await readPsbtBase64FromUri(uri));
       navigationRef.current?.dispatch(
-        CommonActions.navigate({
-          name: 'MainTabs',
+        CommonActions.navigate('MainTabs', {
+          screen: 'PSBT',
           params: {
-            screen: 'PSBT',
-            params: {
-              sharedPsbtBase64: psbtBase64,
-              isInitiator: true,
-              forwardPeerCosign: true,
-              initiatorTxId: `peer-cosign-${Date.now()}`,
-            },
+            sharedPsbtBase64: psbtBase64,
+            isInitiator: true,
+            forwardPeerCosign: true,
+            initiatorTxId: `peer-cosign-${Date.now()}`,
           },
         }),
       );

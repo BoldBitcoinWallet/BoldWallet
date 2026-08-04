@@ -91,8 +91,9 @@ object DklsNative {
         npubsSorted: String,
         keyshare: String,
         psbt: String,
+        initiatorNpubHint: String,
     ): String = loaded {
-        unwrap(nostrMpcSignPsbtJni(relays, nsec, parties, npubsSorted, keyshare, psbt))
+        unwrap(nostrMpcSignPsbtJni(relays, nsec, parties, npubsSorted, keyshare, psbt, initiatorNpubHint))
     }
 
     fun mpcSendBtcWithUtxosNative(
@@ -131,11 +132,12 @@ object DklsNative {
         fees: String,
         utxos: String,
         change: String,
+        initiatorNpubHint: String,
     ): String = loaded {
         unwrap(
             nostrMpcSendBtcWithUtxosJni(
                 relays, nsec, parties, npubsSorted, balance, keyshare,
-                toAddress, amount, fees, utxos, change,
+                toAddress, amount, fees, utxos, change, initiatorNpubHint,
             ),
         )
     }
@@ -291,18 +293,20 @@ object DklsNative {
     fun bbmtNostrMpcSendBTCWithUTXOsNative(
         relays: String, nsec: String, parties: String, npubsSorted: String, balance: String,
         keyshare: String, receiver: String, amount: String, fees: String, utxos: String, change: String,
+        initiatorNpubHint: String,
     ): String = loaded {
         unwrap(
             bbmtNostrMpcSendBTCWithUTXOsJni(
                 relays, nsec, parties, npubsSorted, balance, keyshare,
-                receiver, amount, fees, utxos, change,
+                receiver, amount, fees, utxos, change, initiatorNpubHint,
             ),
         )
     }
     fun bbmtNostrMpcSignPSBTNative(
         relays: String, nsec: String, parties: String, npubsSorted: String, keyshare: String, psbt: String,
+        initiatorNpubHint: String,
     ): String = loaded {
-        unwrap(bbmtNostrMpcSignPSBTJni(relays, nsec, parties, npubsSorted, keyshare, psbt))
+        unwrap(bbmtNostrMpcSignPSBTJni(relays, nsec, parties, npubsSorted, keyshare, psbt, initiatorNpubHint))
     }
     fun bbmtCancelMpcSessionNative(sessionID: String): String = loaded {
         unwrap(bbmtCancelMpcSessionJni(sessionID))
@@ -392,6 +396,7 @@ object DklsNative {
         npubsSorted: String,
         keyshare: String,
         psbt: String,
+        initiatorNpubHint: String,
     ): String
     private external fun mpcSendBtcWithUtxosJni(
         server: String,
@@ -421,6 +426,7 @@ object DklsNative {
         fees: String,
         utxos: String,
         change: String,
+        initiatorNpubHint: String,
     ): String
     private external fun cancelMpcSessionJni(sessionID: String): String
     private external fun cancelNostrMpcJni(): String
@@ -480,9 +486,11 @@ object DklsNative {
     private external fun bbmtNostrMpcSendBTCWithUTXOsJni(
         relays: String, nsec: String, parties: String, npubsSorted: String, balance: String,
         keyshare: String, receiver: String, amount: String, fees: String, utxos: String, change: String,
+        initiatorNpubHint: String,
     ): String
     private external fun bbmtNostrMpcSignPSBTJni(
         relays: String, nsec: String, parties: String, npubsSorted: String, keyshare: String, psbt: String,
+        initiatorNpubHint: String,
     ): String
     private external fun bbmtCancelMpcSessionJni(sessionID: String): String
     private external fun bbmtCancelNostrMpcJni(): String

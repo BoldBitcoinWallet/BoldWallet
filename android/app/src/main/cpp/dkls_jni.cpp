@@ -353,22 +353,25 @@ Java_com_boldwallet_DklsNative_nostrMpcSignPsbtJni(
     jstring parties,
     jstring npubsSorted,
     jstring keyshare,
-    jstring psbt) {
+  jstring psbt,
+  jstring initiatorNpubHint) {
   const char *r = env->GetStringUTFChars(relays, nullptr);
   const char *n = env->GetStringUTFChars(nsec, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
   const char *ns = env->GetStringUTFChars(npubsSorted, nullptr);
   const char *ks = env->GetStringUTFChars(keyshare, nullptr);
   const char *pb = env->GetStringUTFChars(psbt, nullptr);
+    const char *ih = env->GetStringUTFChars(initiatorNpubHint, nullptr);
   char *out = DklsNostrMpcSignPSBT(
       const_cast<char *>(r), const_cast<char *>(n), const_cast<char *>(p),
-      const_cast<char *>(ns), const_cast<char *>(ks), const_cast<char *>(pb));
+      const_cast<char *>(ns), const_cast<char *>(ks), const_cast<char *>(pb), const_cast<char *>(ih));
   env->ReleaseStringUTFChars(relays, r);
   env->ReleaseStringUTFChars(nsec, n);
   env->ReleaseStringUTFChars(parties, p);
   env->ReleaseStringUTFChars(npubsSorted, ns);
   env->ReleaseStringUTFChars(keyshare, ks);
   env->ReleaseStringUTFChars(psbt, pb);
+  env->ReleaseStringUTFChars(initiatorNpubHint, ih);
   return to_jstring(env, out);
 }
 
@@ -441,7 +444,8 @@ Java_com_boldwallet_DklsNative_nostrMpcSendBtcWithUtxosJni(
     jstring amount,
     jstring fees,
     jstring utxos,
-    jstring change) {
+    jstring change,
+    jstring initiatorNpubHint) {
   const char *r = env->GetStringUTFChars(relays, nullptr);
   const char *n = env->GetStringUTFChars(nsec, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
@@ -453,11 +457,12 @@ Java_com_boldwallet_DklsNative_nostrMpcSendBtcWithUtxosJni(
   const char *fe = env->GetStringUTFChars(fees, nullptr);
   const char *ut = env->GetStringUTFChars(utxos, nullptr);
   const char *ch = env->GetStringUTFChars(change, nullptr);
+    const char *ih = env->GetStringUTFChars(initiatorNpubHint, nullptr);
   char *out = DklsNostrMpcSendBTCWithUTXOs(
       const_cast<char *>(r), const_cast<char *>(n), const_cast<char *>(p),
       const_cast<char *>(ns), const_cast<char *>(b), const_cast<char *>(ks),
       const_cast<char *>(ta), const_cast<char *>(am), const_cast<char *>(fe),
-      const_cast<char *>(ut), const_cast<char *>(ch));
+      const_cast<char *>(ut), const_cast<char *>(ch), const_cast<char *>(ih));
   env->ReleaseStringUTFChars(relays, r);
   env->ReleaseStringUTFChars(nsec, n);
   env->ReleaseStringUTFChars(parties, p);
@@ -469,6 +474,7 @@ Java_com_boldwallet_DklsNative_nostrMpcSendBtcWithUtxosJni(
   env->ReleaseStringUTFChars(fees, fe);
   env->ReleaseStringUTFChars(utxos, ut);
   env->ReleaseStringUTFChars(change, ch);
+  env->ReleaseStringUTFChars(initiatorNpubHint, ih);
   return to_jstring(env, out);
 }
 

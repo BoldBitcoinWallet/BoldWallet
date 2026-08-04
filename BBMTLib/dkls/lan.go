@@ -36,6 +36,18 @@ func mpcDeadline(prod time.Duration) time.Time {
 
 const maxMissingFragmentRetries = 6
 
+// Round-idle timeouts bound how long runSignWithSender waits for a peer's
+// response during a single DKLs signing round before failing with a clean
+// MPC_TIMEOUT error, instead of silently polling (tick=1..N heartbeats) all
+// the way to the 5-minute overall signDeadline(). LAN is a direct same-subnet
+// socket, so a short bound is safe. Nostr relays add real propagation/chunking
+// latency (see the pre-agreement timeout fix), so its bound is longer but
+// still far short of the overall session deadline.
+const (
+	lanKeysignRoundIdleTimeout   = 15 * time.Second
+	nostrKeysignRoundIdleTimeout = 60 * time.Second
+)
+
 // waitForRelayHTTP blocks until the LAN relay accepts HTTP or maxWait elapses.
 func waitForRelayHTTP(server string, maxWait time.Duration) {
 	deadline := time.Now().Add(maxWait)
@@ -722,7 +734,7 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		return nil
 	}, endCh, &wg)
 
-	sig, err := runSignWithSender(context.Background(), share, hash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
+	sig, err := runSignWithSender(context.Background(), share, hash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session, lanKeysignRoundIdleTimeout, "lan")
 	close(endCh)
 	wg.Wait()
 	if err != nil {
@@ -750,6 +762,8 @@ func runSignWithSender(
 	sender messageSender,
 	roundCh <-chan []libtss.Message,
 	progressSession string,
+	roundIdleTimeout time.Duration,
+	transportLabel string,
 ) (sig libtss.Signature, err error) {
 	defer recoverAsErrorClear("runSignWithSender", &err, func() { sig = libtss.Signature{} })
 	var counterparties []libtss.Identifier
@@ -776,11 +790,19 @@ func runSignWithSender(
 	peerQuiesce := 400 * time.Millisecond
 	missingFragmentRetries := 0
 	consumed := newMPCConsumedTracker()
+	stepNo := 3
 	recvBatch := func() ([]libtss.Message, error) {
-		return recvPeerMessageBatch(ctx, roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
+		roundDeadline := time.Now().Add(roundIdleTimeout)
+		if roundDeadline.After(deadline) {
+			roundDeadline = deadline
+		}
+		batch, recvErr := recvPeerMessageBatch(ctx, roundCh, selfID, needPeerMsgs, roundDeadline, peerQuiesce)
+		if recvErr != nil && ctx.Err() == nil && !time.Now().After(deadline) {
+			return nil, fmt.Errorf("MPC_TIMEOUT: no response from peer for %s (transport=%s, step=%d): %w", roundIdleTimeout, transportLabel, stepNo, recvErr)
+		}
+		return batch, recvErr
 	}
 
-	stepNo := 3
 	for {
 		if ctx.Err() != nil {
 			return libtss.Signature{}, fmt.Errorf("DKLs keysign canceled: %w", ctx.Err())
@@ -790,7 +812,7 @@ func runSignWithSender(
 				"keysign: session=%s timed out waiting for peer messages",
 				dkgSessionLogPrefix(progressSession),
 			)
-			return libtss.Signature{}, fmt.Errorf("DKLs keysign timed out waiting for peer messages")
+			return libtss.Signature{}, fmt.Errorf("MPC_TIMEOUT: DKLs keysign session timed out waiting for peer messages (transport=%s)", transportLabel)
 		}
 		var batch []libtss.Message
 		var step libtss.SignStep
@@ -859,8 +881,15 @@ func runSignWithSender(
 					missingFragmentRetries,
 					maxMissingFragmentRetries,
 				)
-				more, recvErr := recvMorePeerMessages(roundCh, selfID, deadline, peerQuiesce)
+				moreDeadline := time.Now().Add(roundIdleTimeout)
+				if moreDeadline.After(deadline) {
+					moreDeadline = deadline
+				}
+				more, recvErr := recvMorePeerMessages(roundCh, selfID, moreDeadline, peerQuiesce)
 				if recvErr != nil {
+					if ctx.Err() == nil && !time.Now().After(deadline) {
+						return libtss.Signature{}, fmt.Errorf("MPC_TIMEOUT: no additional peer fragments for %s (transport=%s, step=%d): %w", roundIdleTimeout, transportLabel, stepNo, recvErr)
+					}
 					return libtss.Signature{}, recvErr
 				}
 				dklsLogf(

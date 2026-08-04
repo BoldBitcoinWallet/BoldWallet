@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef } from 'react';
 import { DeviceEventEmitter } from 'react-native';
 import { CommonActions, type NavigationContainerRef } from '@react-navigation/native';
+import Toast from 'react-native-toast-message';
 import { sha256 } from '@noble/hashes/sha2';
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils';
 import { dbg } from '../utils';
@@ -47,6 +48,27 @@ const RECENT_EVENT_BUFFER_MS = 5 * 60 * 1000;
 const MAX_RECENT_EVENTS = 30;
 let recentCoSignFeedEvents: Array<Record<string, unknown>> = [];
 let recentUnreadChatEvents: Array<Record<string, unknown>> = [];
+let recentCoSignFocusEvents: Array<Record<string, unknown>> = [];
+
+// Relays commonly redeliver the same event on resubscribe/reconnect (observed ~every
+// 60s in the wild). Without this, every redelivery re-runs decode + emits a fresh
+// feed/toast/chat event for a request the app already surfaced. Module-level (not a
+// ref) so it survives across NostrCoSignBridge and screen remounts for the life of
+// the process.
+const MAX_PROCESSED_EVENT_IDS = 500;
+const processedCoSignEventIds = new Set<string>();
+
+/** True (and marks it processed) on first sighting of an eventId; false on redelivery. */
+function markCoSignEventProcessed(eventId: string | undefined): boolean {
+  if (!eventId) return true; // no id to dedupe on -> treat as always-new, never block delivery
+  if (processedCoSignEventIds.has(eventId)) return false;
+  processedCoSignEventIds.add(eventId);
+  if (processedCoSignEventIds.size > MAX_PROCESSED_EVENT_IDS) {
+    const oldest = processedCoSignEventIds.values().next().value;
+    if (oldest !== undefined) processedCoSignEventIds.delete(oldest);
+  }
+  return true;
+}
 
 function pruneAndPush(
   buffer: Array<Record<string, unknown>>,
@@ -69,6 +91,49 @@ export function getRecentUnreadChatEvents(): Array<Record<string, unknown>> {
   const cutoff = Date.now() - RECENT_EVENT_BUFFER_MS;
   return recentUnreadChatEvents.filter(e => Number(e.ts) >= cutoff);
 }
+
+/** Replays any `nostr-cosign:focus` events (notification taps) emitted before a caller subscribed. */
+export function getRecentCoSignFocusEvents(): Array<Record<string, unknown>> {
+  const cutoff = Date.now() - RECENT_EVENT_BUFFER_MS;
+  return recentCoSignFocusEvents.filter(e => Number(e.ts) >= cutoff);
+}
+
+function emitCoSignFocusEvent(txId: string): void {
+  const evt = { ts: Date.now(), txId };
+  recentCoSignFocusEvents = pruneAndPush(recentCoSignFocusEvents, evt);
+  DeviceEventEmitter.emit('nostr-cosign:focus', evt);
+}
+
+/**
+ * Global in-app banner for a freshly-decoded, non-duplicate COSIGN_REQUEST so the user
+ * is alerted regardless of which tab/screen is currently active. Tapping it navigates to
+ * the Chat tab and asks it to auto-open the matching request (see emitCoSignFocusEvent).
+ */
+function notifyCoSignRequest(txId: string | undefined): void {
+  Toast.show({
+    type: 'info',
+    text1: 'New co-sign request',
+    text2: txId ? `Tap to review transaction ${txId.slice(0, 12)}…` : 'Tap to review the pending request',
+    visibilityTime: 15000,
+    onPress: () => {
+      Toast.hide();
+      if (txId) emitCoSignFocusEvent(txId);
+      const navRef = latestNavigationRef.current;
+      if (navRef?.current) {
+        navRef.current.dispatch(
+          CommonActions.navigate('MainTabs', { screen: 'Chat' }),
+        );
+      }
+    },
+  });
+}
+
+// Set by NostrCoSignBridge on each render so the module-level notifyCoSignRequest
+// (called from handlers that close over a stale navigationRef across re-renders) can
+// always reach the current navigation container.
+const latestNavigationRef: { current: React.RefObject<NavigationContainerRef<any> | null> | null } = {
+  current: null,
+};
 
 function emitCoSignFeedEvent(payload: Record<string, unknown>): void {
   const evt = { ts: Date.now(), ...payload };
@@ -99,6 +164,7 @@ function fingerprintFromNpub(npub: string): string {
 
 const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigationRef }: Props) => {
   const queuedSignerNavigationsRef = useRef<QueuedSignerNavigation[]>([]);
+  latestNavigationRef.current = navigationRef;
 
   const navigateToSignerOrQueue = useCallback(
     (
@@ -118,16 +184,13 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
           nip46RequestId: opts?.nip46RequestId,
         });
         navigationRef.current.dispatch(
-          CommonActions.navigate({
-            name: 'MainTabs',
+          CommonActions.navigate('MainTabs', {
+            screen: 'PSBT',
             params: {
-              screen: 'PSBT',
-              params: {
-                sharedPsbtBase64: psbtBase64,
-                nip46RequestId: opts?.nip46RequestId,
-                nip46ReplyTo: opts?.nip46ReplyTo,
-                autoSign: !!opts?.autoSign,
-              },
+              sharedPsbtBase64: psbtBase64,
+              nip46RequestId: opts?.nip46RequestId,
+              nip46ReplyTo: opts?.nip46ReplyTo,
+              autoSign: !!opts?.autoSign,
             },
           }),
         );
@@ -175,16 +238,13 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
     });
 
     navigationRef.current.dispatch(
-      CommonActions.navigate({
-        name: 'MainTabs',
+      CommonActions.navigate('MainTabs', {
+        screen: 'PSBT',
         params: {
-          screen: 'PSBT',
-          params: {
-            sharedPsbtBase64: pending.psbtBase64,
-            nip46RequestId: pending.nip46RequestId,
-            nip46ReplyTo: pending.nip46ReplyTo,
-            autoSign: !!pending.autoSign,
-          },
+          sharedPsbtBase64: pending.psbtBase64,
+          nip46RequestId: pending.nip46RequestId,
+          nip46ReplyTo: pending.nip46ReplyTo,
+          autoSign: !!pending.autoSign,
         },
       }),
     );
@@ -228,15 +288,39 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
     const offLegacy = nostrMessaging.onMessage(async msg => {
       if (!mounted) return;
       if (msg.envelope.type !== 'COSIGN_REQUEST') return;
-
-      const payload = msg.envelope.payload as CoSignRequestPayload;
-      const psbtBase64 = payload.psbtBase64 || (payload.psbtHex ? nostrMessaging.psbtHexToBase64(payload.psbtHex) : '');
-      if (!psbtBase64) {
-        dbg('NostrCoSignBridge: request missing PSBT payload');
+      if (!markCoSignEventProcessed(msg.eventId)) {
+        dbg('[NIP46-TLM][NostrCoSignBridge] ignoring redelivered COSIGN_REQUEST (legacy)', {
+          eventId: msg.eventId,
+        });
         return;
       }
 
-      if (isPlaceholderPsbt(psbtBase64, payload.psbtHex || '')) {
+      const payload = msg.envelope.payload as CoSignRequestPayload;
+      const psbtBase64 = payload.psbtBase64 || (payload.psbtHex ? nostrMessaging.psbtHexToBase64(payload.psbtHex) : '');
+
+      // A native BTC send fan-out (e.g. from a watch-only peer like the BoldChrome
+      // extension) carries no PSBT at all — just recipient/amount/fee. Don't drop it
+      // here; KeyshareChat's own isRegularSendRequest check routes it to the native
+      // DKLS send_btc flow instead of the PSBT screen. `requestMode` is an explicit
+      // sender-chosen signal that takes priority over the implicit inference.
+      const amountSatsNum = Number(payload.amountSats);
+      const hasRegularSendShape =
+        typeof payload.recipientAddress === 'string' &&
+        payload.recipientAddress.trim() !== '' &&
+        payload.recipientAddress !== 'N/A' &&
+        Number.isFinite(amountSatsNum) &&
+        amountSatsNum > 0;
+      const isRegularSendRequest =
+        payload.requestMode === 'dkls'
+          ? hasRegularSendShape
+          : !psbtBase64 && hasRegularSendShape;
+
+      if (!psbtBase64 && !isRegularSendRequest) {
+        dbg('NostrCoSignBridge: request missing usable PSBT or send payload');
+        return;
+      }
+
+      if (psbtBase64 && isPlaceholderPsbt(psbtBase64, payload.psbtHex || '')) {
         dbg('[NIP46-TLM][NostrCoSignBridge] rejecting placeholder PSBT payload (legacy)', {
           txId: payload.txId,
           psbtPrefix: psbtBase64.slice(0, 24),
@@ -254,7 +338,7 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
         request: payload,
       });
 
-      console.warn('[NIP46-TLM][Receiver] emitting nostr-cosign:request to chat feed', {
+      dbg('[NIP46-TLM][Receiver] emitting nostr-cosign:request to chat feed', {
         traceId: typeof payload.traceId === 'string' ? payload.traceId : null,
         eventId: msg.eventId,
         envelopeId: msg.envelope.id,
@@ -274,6 +358,8 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
           senderFingerprint: msg.envelope.senderFingerprint,
         },
       });
+
+      notifyCoSignRequest(payload.txId);
     });
 
     const offNip46 = nostrMessaging.onNip46Request(async msg => {
@@ -287,6 +373,13 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
 
       const request: Nip46Request = msg.request;
       if (request.method !== 'sign_event') return;
+      if (!markCoSignEventProcessed(msg.eventId)) {
+        dbg('[NIP46-TLM][NostrCoSignBridge] ignoring redelivered sign_event request (nip46)', {
+          eventId: msg.eventId,
+          requestId: request.id,
+        });
+        return;
+      }
 
       const eventToSign = request.params?.[0] as
         | {
@@ -406,6 +499,8 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
           nip46ReplyTo: msg.senderNpub,
         },
       });
+
+      notifyCoSignRequest(payload.txId);
     });
 
     // Wakes a device waiting in `startSignPSBT`/`startSendBTC` for its co-signer to

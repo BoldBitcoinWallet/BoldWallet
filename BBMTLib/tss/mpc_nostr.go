@@ -506,10 +506,11 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	}
 	Logf("runNostrPreAgreementSendBTC: sending pre-agreement payload")
 
-	// Context for the pre-agreement phase
-	// Timeout: 16 seconds - fail fast if peer doesn't respond quickly
-	// With resilient relays, messages should arrive quickly if peer is online
-	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 16*time.Second)
+	// Context for the pre-agreement phase.
+	// Extended from 16s: mobile network latency and relay propagation delays
+	// can exceed a fail-fast window; the re-announce loop below adds resilience
+	// against a single dropped publish instead of relying on one send.
+	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 100*time.Second)
 	defer cancel()
 
 	// Channel to receive peer's message
@@ -568,7 +569,30 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	if err != nil {
 		return nil, fmt.Errorf("failed to send pre-agreement message: %w", err)
 	}
-	Logf("runNostrPreAgreementSendBTC: sent pre-agreement payload")
+	Logf("[NIP46-TLM][PreAgreement] %s runNostrPreAgreementSendBTC: sent payload relays=%v", time.Now().Format(time.RFC3339), cfg.Relays)
+
+	// Sliding-window re-announce: keep re-sending our payload every 10s while
+	// waiting, in case the peer's subscription missed the first publish.
+	stopResend := make(chan struct{})
+	defer close(stopResend)
+	go func() {
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := messenger.SendMessage(ctx, localNpub, peerNpub, localMessage); err != nil {
+					Logf("[NIP46-TLM][PreAgreement] %s runNostrPreAgreementSendBTC: re-announce failed: %v", time.Now().Format(time.RFC3339), err)
+					continue
+				}
+				Logf("[NIP46-TLM][PreAgreement] %s runNostrPreAgreementSendBTC: re-announced payload", time.Now().Format(time.RFC3339))
+			case <-stopResend:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
 
 	// Wait for peer's message
 	var peerMessage string
@@ -578,6 +602,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	case err := <-peerErrorCh:
 		return nil, fmt.Errorf("failed to receive peer message: %w", err)
 	case <-ctx.Done():
+		Logf("[NIP46-TLM][PreAgreement] %s runNostrPreAgreementSendBTC: timeout relays=%v", time.Now().Format(time.RFC3339), cfg.Relays)
 		return nil, NostrMpcContextErr("pre-agreement", ctx.Err())
 	}
 
@@ -648,13 +673,13 @@ func NostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 // changeAddress: when non-empty, change output is sent here (HD internal chain); otherwise to senderAddress.
 func NostrMpcSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, changeAddress string) (result string, err error) {
 	defer RecoverAsError("NostrMpcSendBTC", &err, &result)
-	return runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress, amountSatoshi, estimatedFee, changeAddress)
+	return runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress, amountSatoshi, estimatedFee, changeAddress, "")
 }
 
 // NostrMpcSendBTCWithUTXOs is the multi-path variant: uses pre-fetched UTXOs with per-input derivation paths.
 // utxosWithPathsJSON: JSON array of {txid, vout, value, derivation_path or derivationPath}
 // changeAddress: HD change address for change output (required)
-func NostrMpcSendBTCWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, receiverAddress, amountSatoshiStr, estimatedFeeStr, utxosWithPathsJSON, changeAddress string) (result string, err error) {
+func NostrMpcSendBTCWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, receiverAddress, amountSatoshiStr, estimatedFeeStr, utxosWithPathsJSON, changeAddress, initiatorNpubHint string) (result string, err error) {
 	defer RecoverAsError("NostrMpcSendBTCWithUTXOs", &err, &result)
 
 	amountSatoshi, parseErr := strconv.ParseInt(amountSatoshiStr, 10, 64)
@@ -665,13 +690,13 @@ func NostrMpcSendBTCWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted
 	if parseErr != nil {
 		return "", fmt.Errorf("invalid estimatedFee %q: %w", estimatedFeeStr, parseErr)
 	}
-	return runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, receiverAddress, amountSatoshi, estimatedFee, utxosWithPathsJSON, changeAddress)
+	return runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON, receiverAddress, amountSatoshi, estimatedFee, utxosWithPathsJSON, changeAddress, initiatorNpubHint)
 }
 
 // runNostrMpcSendBTCInternal implements the Nostr-based MPC Bitcoin transaction.
 // This is analogous to MpcSendBTC but uses NostrJoinKeysign instead of JoinKeysign.
 // It performs pre-agreement internally to establish sessionID and unified fees.
-func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, _, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, changeAddress string) (result string, err error) {
+func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, _, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, changeAddress, initiatorNpubHint string) (result string, err error) {
 	defer RecoverAsError("runNostrMpcSendBTCInternal", &err, &result)
 	if changeAddress == "" {
 		changeAddress = senderAddress
@@ -685,10 +710,14 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	defer endNostrMpcOperation()
 
 	txIntentKey := fmt.Sprintf("%s,%d,%s", npubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress))
-	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey)
+	Logf("[NIP46-TLM][Attempt] %s runNostrMpcSendBTCInternal: txIntentKey=%q partiesNpubsCSV=%s signingNpubs=%s amount=%d receiver=%s",
+		time.Now().Format(time.RFC3339), txIntentKey, partiesNpubsCSV, npubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress))
+	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey, initiatorNpubHint)
 	if err != nil {
 		return "", fmt.Errorf("attempt handshake failed: %w", err)
 	}
+	Logf("[NIP46-TLM][Attempt] %s runNostrMpcSendBTCInternal: resolved attempt_id=%s",
+		time.Now().Format(time.RFC3339), attemptID)
 
 	// Step 1: sessionFlag from duo signing npubs + tx intent + attempt_id.
 	sessionFlag, err := nostrSendBtcSessionFlag(npubsSorted, receiverAddress, attemptID, amountSatoshi)
@@ -1159,7 +1188,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 }
 
 // runNostrMpcSendBTCInternalWithUTXOs implements multi-path Nostr MPC send using pre-fetched UTXOs.
-func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, _, keyshareJSON, receiverAddress string, amountSatoshi, estimatedFee int64, utxosWithPathsJSON, changeAddress string) (result string, err error) {
+func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, _, keyshareJSON, receiverAddress string, amountSatoshi, estimatedFee int64, utxosWithPathsJSON, changeAddress, initiatorNpubHint string) (result string, err error) {
 	defer RecoverAsError("runNostrMpcSendBTCInternalWithUTXOs", &err, &result)
 
 	if _, err := beginNostrMpcOperation(); err != nil {
@@ -1168,10 +1197,14 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 	defer endNostrMpcOperation()
 
 	txIntentKey := fmt.Sprintf("%s,%d,%s", npubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress))
-	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey)
+	Logf("[NIP46-TLM][Attempt] %s runNostrMpcSendBTCInternalWithUTXOs: txIntentKey=%q partiesNpubsCSV=%s signingNpubs=%s amount=%d receiver=%s",
+		time.Now().Format(time.RFC3339), txIntentKey, partiesNpubsCSV, npubsSorted, amountSatoshi, strings.TrimSpace(receiverAddress))
+	attemptID, err := ensureNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, txIntentKey, initiatorNpubHint)
 	if err != nil {
 		return "", fmt.Errorf("attempt handshake failed: %w", err)
 	}
+	Logf("[NIP46-TLM][Attempt] %s runNostrMpcSendBTCInternalWithUTXOs: resolved attempt_id=%s",
+		time.Now().Format(time.RFC3339), attemptID)
 
 	sessionFlag, err := nostrSendBtcSessionFlag(npubsSorted, receiverAddress, attemptID, amountSatoshi)
 	if err != nil {

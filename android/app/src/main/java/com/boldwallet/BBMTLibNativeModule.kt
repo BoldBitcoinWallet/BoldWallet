@@ -1133,6 +1133,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         estimatedFee: String,
         utxosWithPathsJSON: String,
         changeAddress: String,
+        initiatorNpubHint: String,
         promise: Promise
     ) {
         Thread {
@@ -1152,6 +1153,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         estimatedFee,
                         utxosWithPathsJSON,
                         changeAddress ?: "",
+                        initiatorNpubHint,
                     )
                 }
                 ld("nostrMpcSendBTC", result)
@@ -1169,6 +1171,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         partiesNpubsCSV: String,
         npubsSorted: String,
         psbtBase64: String,
+        initiatorNpubHint: String,
         promise: Promise
     ) {
         Thread {
@@ -1183,6 +1186,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         npubsSorted,
                         ks,
                         psbtBase64,
+                        initiatorNpubHint,
                     )
                 }
                 ld("nostrMpcSignPSBT", result)
@@ -1434,6 +1438,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         satoshiFees: String,
         utxosWithPathsJSON: String,
         changeAddress: String,
+        initiatorNpubHint: String,
         promise: Promise,
     ) {
         Thread {
@@ -1447,6 +1452,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     DklsNative.nostrMpcSendBtcWithUtxosNative(
                         relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, ks,
                         toAddress, satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
+                        initiatorNpubHint,
                     )
                 }
                 promise.resolve(result)
@@ -1462,6 +1468,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         partiesNpubsCSV: String,
         npubsSorted: String,
         psbtBase64: String,
+        initiatorNpubHint: String,
         promise: Promise,
     ) {
         Thread {
@@ -1474,6 +1481,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
                     DklsNative.nostrMpcSignPsbtNative(
                         relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, ks, psbtBase64,
+                        initiatorNpubHint,
                     )
                 }
                 promise.resolve(result)

@@ -30,6 +30,9 @@ export interface CoSignRequestPayload {
   feeSats: number;
   recipientAddress: string;
   network: 'mainnet' | 'testnet' | 'testnet4';
+  // Explicit sender intent, in addition to the implicit signal of psbtHex being
+  // empty/populated: 'dkls' = native MPC send, 'psbt' = external PSBT co-sign/export.
+  requestMode?: 'dkls' | 'psbt';
 }
 
 export interface CoSignResponsePayload {
@@ -772,7 +775,7 @@ class NostrMessagingService {
       };
 
       if (envelope.type === 'COSIGN_REQUEST') {
-        console.warn('[NIP46-TLM][Receiver] decoded COSIGN_REQUEST envelope', {
+        dbg('[NIP46-TLM][Receiver] decoded COSIGN_REQUEST envelope', {
           traceId,
           eventId: msg.eventId,
           envelopeId: envelope.id,

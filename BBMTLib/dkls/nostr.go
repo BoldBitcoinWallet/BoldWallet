@@ -384,7 +384,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 		messenger: nm,
 		peers:     append([]string{localNpub}, signSess.NostrPeers...),
 	}
-	sig, err := runSignWithSender(ctx, share, hash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID)
+	sig, err := runSignWithSender(ctx, share, hash, []byte(sessionID), signSess.SelfID, signSess.SigningIDs, runner, roundCh, sessionID, nostrKeysignRoundIdleTimeout, "nostr")
 	pumpCancel()
 	wg.Wait()
 	if err != nil {

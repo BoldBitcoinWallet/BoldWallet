@@ -65,6 +65,18 @@ const CoSignRequestCard: React.FC<Props> = ({
     ? 'Rejected'
     : 'Review & Sign';
 
+  const handleReviewPress = () => {
+    console.log('[NIP46-TLM][UI] CoSignRequestCard button press', {
+      isActionable,
+      status,
+      amountSats,
+      feeSats,
+      recipientAddress: truncateAddress(recipientAddress),
+      timestamp,
+    });
+    onReviewSign();
+  };
+
   return (
     <View
       style={[
@@ -98,7 +110,7 @@ const CoSignRequestCard: React.FC<Props> = ({
 
       <AppPressable
         disabled={!isActionable}
-        onPress={onReviewSign}
+        onPress={handleReviewPress}
         style={[styles.button, !isActionable && styles.buttonDisabled]}>
         <AppText style={[styles.buttonText, !isActionable && styles.buttonTextDisabled]}>
           {buttonText}

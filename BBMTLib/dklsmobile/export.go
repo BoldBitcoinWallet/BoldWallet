@@ -71,10 +71,10 @@ func DklsMpcSignPSBT(server, key, parties, session, sessionKey, encKey, decKey, 
 }
 
 //export DklsNostrMpcSignPSBT
-func DklsNostrMpcSignPSBT(relays, nsec, parties, npubsSorted, keyshare, psbt *C.char) *C.char {
+func DklsNostrMpcSignPSBT(relays, nsec, parties, npubsSorted, keyshare, psbt, initiatorNpubHint *C.char) *C.char {
 	return cString(dkls.NostrMpcSignPSBT(
 		C.GoString(relays), C.GoString(nsec), C.GoString(parties), C.GoString(npubsSorted),
-		C.GoString(keyshare), C.GoString(psbt),
+		C.GoString(keyshare), C.GoString(psbt), C.GoString(initiatorNpubHint),
 	))
 }
 
@@ -94,13 +94,13 @@ func DklsMpcSendBTCWithUTXOs(
 //export DklsNostrMpcSendBTCWithUTXOs
 func DklsNostrMpcSendBTCWithUTXOs(
 	relays, nsec, parties, npubsSorted, balance, keyshare,
-	toAddress, amount, fees, utxos, change *C.char,
+	toAddress, amount, fees, utxos, change, initiatorNpubHint *C.char,
 ) *C.char {
 	return cString(dkls.NostrMpcSendBTCWithUTXOs(
 		C.GoString(relays), C.GoString(nsec), C.GoString(parties), C.GoString(npubsSorted),
 		C.GoString(balance), C.GoString(keyshare),
 		C.GoString(toAddress), C.GoString(amount), C.GoString(fees),
-		C.GoString(utxos), C.GoString(change),
+		C.GoString(utxos), C.GoString(change), C.GoString(initiatorNpubHint),
 	))
 }
 

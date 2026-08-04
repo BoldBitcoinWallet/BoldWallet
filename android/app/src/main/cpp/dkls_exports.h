@@ -17,7 +17,7 @@ extern char *DklsMpcSignPSBT(char *server, char *key, char *parties, char *sessi
                              char *sessionKey, char *encKey, char *decKey, char *keyshare,
                              char *psbt);
 extern char *DklsNostrMpcSignPSBT(char *relays, char *nsec, char *parties, char *npubsSorted,
-                                  char *keyshare, char *psbt);
+                                  char *keyshare, char *psbt, char *initiatorNpubHint);
 extern char *DklsMpcSendBTCWithUTXOs(char *server, char *key, char *parties, char *session,
                                     char *sessionKey, char *encKey, char *decKey, char *keyshare,
                                     char *btcPub, char *toAddress, char *amount, char *fees,
@@ -25,7 +25,7 @@ extern char *DklsMpcSendBTCWithUTXOs(char *server, char *key, char *parties, cha
 extern char *DklsNostrMpcSendBTCWithUTXOs(char *relays, char *nsec, char *parties,
                                           char *npubsSorted, char *balance, char *keyshare,
                                           char *toAddress, char *amount, char *fees,
-                                          char *utxos, char *change);
+                                          char *utxos, char *change, char *initiatorNpubHint);
 extern char *DklsCancelMpcSession(char *sessionID);
 extern char *DklsCancelNostrMpc(void);
 

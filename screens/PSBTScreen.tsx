@@ -211,6 +211,10 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     isInitiator?: boolean;
     initiatorTxId?: string;
     cosignTraceId?: string;
+    // Sender npub of the incoming COSIGN_REQUEST this device is responding to (unset
+    // for initiator flows). Lets MobileNostrPairing auto-select the co-signing peer
+    // for trio/committee wallets without requiring manual selection.
+    peerNpub?: string;
   } | null>(null);
   const [isNostrTransportSupported, setIsNostrTransportSupported] =
     useState(true);
@@ -347,9 +351,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
               );
               clearPendingCoSignRequest();
               navigation.dispatch(
-                CommonActions.navigate({
-                  name: 'Keyshare Chat',
-                }),
+                CommonActions.navigate('Keyshare Chat'),
               );
             })
             .catch(err => {
@@ -476,11 +478,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
             Alert.alert('Peer Co-Sign Requested', `Forwarded partially-signed PSBT to ${peerNpubs.length} peer device(s).`);
             navigation.dispatch(
-              CommonActions.navigate({
-                name: 'MainTabs',
-                params: {
-                  screen: 'Chat',
-                },
+              CommonActions.navigate('MainTabs', {
+                screen: 'Chat',
               }),
             );
           } catch (err) {
@@ -690,6 +689,19 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         cosignTraceId,
       });
 
+      // For a responder (not forwarding/initiating), the co-signing peer for this
+      // round is unambiguous: whoever sent the incoming COSIGN_REQUEST we're
+      // reviewing. Pass it through so trio/committee wallets can auto-select it in
+      // MobileNostrPairing instead of requiring manual peer selection.
+      const responderPeerNpub = !shouldForwardPeerCosign
+        ? (getPendingCoSignRequest()?.senderNpub || '').trim()
+        : '';
+      if (responderPeerNpub) {
+        dbg('[NIP46-TLM][Committee] PSBTScreen forwarding sender as co-signing peer', {
+          peer: responderPeerNpub.substring(0, 20) + '...',
+        });
+      }
+
       // Store params and show transport selector
       setPendingPSBTParams({
         psbtBase64: normalizedPsbt,
@@ -697,6 +709,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         isInitiator: shouldForwardPeerCosign,
         initiatorTxId: shouldForwardPeerCosign ? initiatorTxId : undefined,
         cosignTraceId,
+        peerNpub: responderPeerNpub || undefined,
       });
       setTimeout(() => {
         setIsPSBTTransportModalVisible(true);
@@ -707,25 +720,23 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const navigateToPSBTSigning = useCallback(
     (transport: 'local' | 'nostr') => {
       if (!pendingPSBTParams) return;
-      const {psbtBase64, forwardPeerCosign, isInitiator, initiatorTxId, cosignTraceId} =
+      const {psbtBase64, forwardPeerCosign, isInitiator, initiatorTxId, cosignTraceId, peerNpub} =
         pendingPSBTParams;
       const routeName =
         transport === 'local' ? 'Devices Pairing' : 'Nostr Connect';
       // For PSBT signing, network is not strictly required (extracted from app state in MobilesPairing),
       // but we pass it for consistency. Derivation path is extracted from PSBT's Bip32Derivation.
       navigation.dispatch(
-        CommonActions.navigate({
-          name: routeName,
-          params: {
-            mode: 'sign_psbt',
-            addressType,
-            psbtBase64,
-            network: network || 'mainnet', // Pass network for consistency (not strictly required for PSBT)
-            forwardPeerCosign: !!forwardPeerCosign,
-            isInitiator: !!isInitiator,
-            initiatorTxId: initiatorTxId || undefined,
-            cosignTraceId: cosignTraceId || undefined,
-          },
+        CommonActions.navigate(routeName, {
+          mode: 'sign_psbt',
+          addressType,
+          psbtBase64,
+          network: network || 'mainnet', // Pass network for consistency (not strictly required for PSBT)
+          forwardPeerCosign: !!forwardPeerCosign,
+          isInitiator: !!isInitiator,
+          initiatorTxId: initiatorTxId || undefined,
+          cosignTraceId: cosignTraceId || undefined,
+          peerNpub: peerNpub || undefined,
         }),
       );
       setPendingPSBTParams(null);
@@ -774,17 +785,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
     setPendingPSBTParams(null);
     navigation.dispatch(
-      CommonActions.navigate({
-        name: 'Nostr Connect',
-        params: {
-          mode: 'sign_psbt',
-          transport: 'nostr',
-          addressType,
-          psbtBase64: sourcePsbt,
-          network: network || 'mainnet',
-          nip46RequestId: requestId || undefined,
-          nip46ReplyTo: replyTo || undefined,
-        },
+      CommonActions.navigate('Nostr Connect', {
+        mode: 'sign_psbt',
+        transport: 'nostr',
+        addressType,
+        psbtBase64: sourcePsbt,
+        network: network || 'mainnet',
+        nip46RequestId: requestId || undefined,
+        nip46ReplyTo: replyTo || undefined,
       }),
     );
   }, [sharedInitialPsbt, nip46Handoff, navigation, addressType, network]);
@@ -813,17 +821,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
       });
 
       navigation.dispatch(
-        CommonActions.navigate({
-          name: 'Nostr Connect',
-          params: {
-            mode: 'sign_psbt',
-            transport: 'nostr',
-            addressType,
-            psbtBase64: sourcePsbt,
-            network: network || 'mainnet',
-            forwardPeerCosign: true,
-            initiatorTxId,
-          },
+        CommonActions.navigate('Nostr Connect', {
+          mode: 'sign_psbt',
+          transport: 'nostr',
+          addressType,
+          psbtBase64: sourcePsbt,
+          network: network || 'mainnet',
+          forwardPeerCosign: true,
+          initiatorTxId,
         }),
       );
     } catch (error) {

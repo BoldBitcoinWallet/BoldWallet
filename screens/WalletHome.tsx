@@ -180,6 +180,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     utxosJson?: string | null;
     utxoCount?: number;
     changeAddress?: string | null;
+    txId?: string;
   } | null>(null);
   const [currentDerivationPath, setCurrentDerivationPath] =
     useState<string>('');
@@ -1644,6 +1645,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     ) {
       navigationParams.changeAddress = pendingSendParams.changeAddress;
     }
+    // Carry the extension's original txId (when scanned from its QR) so this device
+    // joins the same co-sign room instead of minting its own `native-send-...` id and
+    // deadlocking the extension's waitForCoSignReady wait.
+    if (pendingSendParams.txId && pendingSendParams.txId.trim() !== '') {
+      navigationParams.initiatorTxId = pendingSendParams.txId.trim();
+    }
     dbg('=== WalletHome: Navigating to pairing screen ===', {
       routeName,
       transport,
@@ -1667,10 +1674,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       },
     });
     navigation.dispatch(
-      CommonActions.navigate({
-        name: routeName,
-        params: navigationParams,
-      }),
+      CommonActions.navigate(routeName, navigationParams),
     );
     setPendingSendParams(null);
     setScannedFromQR(false); // Reset flag
@@ -1712,15 +1716,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setScannedFromQR(false);
 
         navigation.dispatch(
-          CommonActions.navigate({
-            name: 'PSBT',
-            params: {
-              sharedPsbtBase64: scannedPsbt.psbtBase64,
-              psbtBase64: scannedPsbt.psbtBase64,
-              forwardPeerCosign: true,
-              isInitiator: true,
-              initiatorTxId,
-            },
+          CommonActions.navigate('PSBT', {
+            sharedPsbtBase64: scannedPsbt.psbtBase64,
+            psbtBase64: scannedPsbt.psbtBase64,
+            forwardPeerCosign: true,
+            isInitiator: true,
+            initiatorTxId,
           }),
         );
         return;
@@ -1799,6 +1800,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         network?: string;
         utxosJson?: string;
         changeAddress?: string;
+        txId?: string;
       } | null;
       if (
         !decoded ||
@@ -1888,6 +1890,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         utxosJson: decoded.utxosJson || null,
         utxoCount,
         changeAddress: decoded.changeAddress || null,
+        txId: decoded.txId || undefined,
       });
       setScannedFromQR(true);
       // Show transport selector immediately (no QR code shown since data came from scan)
