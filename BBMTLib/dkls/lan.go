@@ -123,6 +123,11 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 	defer tss.ClearLANTransportKeys()
 	defer recoverAsError("JoinKeygen", &err, &result)
 
+	chaincode, err = tss.NormalizeChainCodeHex(chaincode)
+	if err != nil {
+		return "", err
+	}
+
 	normalizedSessionKey, _, _, err := normalizeLANTransportKeys(session, server, sessionKey, encKey, decKey)
 	if err != nil {
 		return "", err

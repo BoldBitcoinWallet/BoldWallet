@@ -66,6 +66,7 @@ import {
   type TssBackend,
 } from '../services/tssBackend';
 import {TssProvider} from '../services/TssProvider';
+import {generateSecureHex64} from '../services/mpcAttemptId';
 import {
   assertCanStartNostrMpc,
   nostrMpcCooldownMessageFromError,
@@ -677,11 +678,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       try {
         const name = await DeviceInfo.getDeviceName();
         setDeviceName(name);
-        // Generate random partial nonce (UUID or random number)
-        // Using a combination of timestamp and random for uniqueness
-        const randomNonce = await BBMTLibNativeModule.sha256(
-          `${Date.now()}-${Math.random()}`,
-        );
+        // Cryptographically random partial nonce (feeds sessionID / sessionKey / chaincode)
+        const randomNonce = generateSecureHex64();
         setPartialNonce(randomNonce);
         dbg('Generated partialNonce:', randomNonce);
         // Only generate new keypair if not in send/sign mode (send/sign mode loads from keyshare)

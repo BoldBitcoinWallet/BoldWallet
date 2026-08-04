@@ -8,3 +8,5 @@
 - [ ] No in-place GG18 → DKLs23 migration — new keygen only
 - [ ] Recovery CLI documented in [RECOVER.md](../RECOVER.md#dkls23-libtss)
 - [ ] Operator runbook documented in [SELF_CUSTODY_OPERATIONS.md](./SELF_CUSTODY_OPERATIONS.md)
+- [x] RNG: production paths use OS CSPRNG; see [RNG_AUDIT_COLDCARD_2026.md](./RNG_AUDIT_COLDCARD_2026.md)
+- [x] Release gate / libtss CI assert `insecure-rng` is not enabled for production builds
