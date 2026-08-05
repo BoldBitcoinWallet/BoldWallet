@@ -134,30 +134,37 @@
 
 ## 4. 2×2 Competitive Positioning Map
 
-```
-                        High Usability
-                              |
-          Wallet of Satoshi ● | ● Cash App
-          Trust Wallet ●      |      ● Coinbase Wallet
-          Exodus ●            |            ● Muun
-          BlueWallet ●        |        ● ZenGo
-                              |
-     -------------------------|-------------------------
-                              |
-    Low Security              |              High Security
-                              |
-          ● Bitcoin.com       |        ● BoldWallet ◀
-          ● Mycelium           |       ● Casa
-                               |   ● Coldcard
-                               |  ● Trezor ● BitBox
-                               | ● Ledger   ● Passport
-                               |● Specter
-                               | ● Sparrow
-                               |  ● Electrum (multisig mode)
-                               |   ● Armory
-                               |    ● Wasabi
-                               |
-                        Low Usability
+```mermaid
+quadrantChart
+    title BoldWallet Competitive Positioning — Security vs Usability
+    x-axis Low Security --> High Security
+    y-axis Low Usability --> High Usability
+    quadrant-1 Sweet spot (high security, high usability)
+    quadrant-2 Easy but weak
+    quadrant-3 Weak and hard
+    quadrant-4 Strong but hard
+    Wallet of Satoshi: [0.22, 0.92]
+    Cash App: [0.30, 0.90]
+    Trust Wallet: [0.28, 0.85]
+    Coinbase Wallet: [0.45, 0.82]
+    Exodus: [0.32, 0.78]
+    Muun: [0.42, 0.80]
+    BlueWallet: [0.40, 0.72]
+    ZenGo: [0.68, 0.78]
+    BoldWallet: [0.85, 0.65]
+    Casa: [0.82, 0.55]
+    Ledger: [0.86, 0.62]
+    Trezor: [0.88, 0.55]
+    BitBox: [0.85, 0.50]
+    Passport: [0.88, 0.45]
+    Coldcard: [0.92, 0.35]
+    Wasabi: [0.70, 0.40]
+    Sparrow: [0.72, 0.42]
+    Electrum (multisig): [0.78, 0.35]
+    Specter: [0.80, 0.30]
+    Armory: [0.82, 0.20]
+    Bitcoin.com: [0.20, 0.60]
+    Mycelium: [0.30, 0.45]
 ```
 
 **BoldWallet** sits in the **high-security / medium-high-usability** quadrant, alongside Casa but with better accessibility (free, no hardware purchase). It is more secure than any single-sig mobile wallet and more usable than any multisig setup requiring multiple hardware wallets. The gap to the upper-right corner (highest security + highest usability) remains open — representing an aspirational position.
