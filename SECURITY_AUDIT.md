@@ -4,6 +4,7 @@
 **Target:** Bold Bitcoin Wallet — seedless threshold-signature Bitcoin wallet (Android / iOS)
 **Commit:** `ac9ceeb8c408c4dc221cae2d9c623338f11073bf`
 **Audit date:** 2026-06-15
+**Companion document:** `k3-audit.md` — working risk-model notes supporting the scoring in §2 and the scenario analysis in §4.
 **Method:** Single-snapshot, zero-trust, evidence-based review of the codebase as committed. No prior audit state is referenced; all claims trace to source, configuration, or documented behaviour.
 
 ---
