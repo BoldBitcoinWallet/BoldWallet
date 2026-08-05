@@ -5,7 +5,7 @@ const MEMPOOL_API_VALIDATE_TIMEOUT_MS = 10_000;
 
 /** Single allowed Mempool REST base for Bitcoin testnet (no custom / mainnet hosts). */
 export const CANONICAL_TESTNET_MEMPOOL_API_BASE =
-  'https://mempool.space/testnet/api';
+  'https://mempool.space/testnet4/api';
 
 export function isTestnetNetworkKey(network: string): boolean {
   return network === 'testnet3' || network === 'testnet';

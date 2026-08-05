@@ -44,8 +44,8 @@ type UTXOWithPath struct {
 	Scriptpubkey   string `json:"scriptpubkey,omitempty"`
 }
 
-var _btc_net = "testnet3" // default to testnet
-var _api_url = "https://mempool.space/testnet/api"
+var _btc_net = "testnet3" // default chain params remain testnet3-compatible
+var _api_url = "https://mempool.space/testnet4/api"
 var _api_urls = []string{"https://mempool.space/api", "https://benpool.space/api"}
 
 var _fee_set = "30m"
@@ -56,13 +56,17 @@ func UseFeeAPIs(urls string) (string, error) {
 }
 
 func SetNetwork(network string) (string, error) {
-	if network == "mainnet" || network == "testnet3" {
-		_btc_net = network
-		switch network {
+	normalized := network
+	if normalized == "testnet" || normalized == "testnet4" {
+		normalized = "testnet3"
+	}
+	if normalized == "mainnet" || normalized == "testnet3" {
+		_btc_net = normalized
+		switch normalized {
 		case "mainnet":
 			_api_url = "https://mempool.space/api"
 		case "testnet3":
-			_api_url = "https://mempool.space/testnet/api"
+			_api_url = "https://mempool.space/testnet4/api"
 		}
 		return _api_url, nil
 	}
@@ -70,8 +74,12 @@ func SetNetwork(network string) (string, error) {
 }
 
 func UseAPI(network, base string) (string, error) {
-	if network == "mainnet" || network == "testnet3" {
-		_btc_net = network
+	normalized := network
+	if normalized == "testnet" || normalized == "testnet4" {
+		normalized = "testnet3"
+	}
+	if normalized == "mainnet" || normalized == "testnet3" {
+		_btc_net = normalized
 		_api_url = strings.TrimSuffix(base, "/")
 		return _api_url, nil
 	}

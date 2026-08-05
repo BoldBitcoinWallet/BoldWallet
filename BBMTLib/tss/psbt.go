@@ -299,6 +299,8 @@ func MpcSignPSBT(
 			return "", fmt.Errorf("unsupported script type for input %d", i)
 		}
 
+		logInputSigningDiagnostics(i, txIn.PreviousOutPoint, txOut, inputDerivePath, sighashType, sigHash)
+
 		// MPC sign the sighash
 		sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)
 		Logf("Input %d: Signing with derivation path: %s, public key: %x...", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
@@ -450,6 +452,39 @@ func validateSignedPSBT(packet *psbt.Packet, prevOutFetcher txscript.PrevOutputF
 		return fmt.Errorf("no partial signatures to validate")
 	}
 	return nil
+}
+
+func psbtScriptTypeLabel(script []byte) string {
+	switch {
+	case txscript.IsPayToWitnessPubKeyHash(script):
+		return "p2wpkh"
+	case txscript.IsPayToTaproot(script):
+		return "p2tr"
+	case txscript.IsPayToScriptHash(script):
+		return "p2sh"
+	case txscript.IsPayToPubKeyHash(script):
+		return "p2pkh"
+	case txscript.IsWitnessProgram(script):
+		return "segwit-other"
+	default:
+		return "unknown"
+	}
+}
+
+func logInputSigningDiagnostics(inputIndex int, outPoint wire.OutPoint, txOut *wire.TxOut, derivationPath string, sighashType txscript.SigHashType, sigHash []byte) {
+	if txOut == nil {
+		return
+	}
+	Logf("[PSBT_SIGN_DEBUG] input=%d outpoint=%s:%d derivation=%s scriptType=%s witnessUtxoValue=%d sighashType=0x%02x sighashHex=%s",
+		inputIndex,
+		outPoint.Hash.String(),
+		outPoint.Index,
+		derivationPath,
+		psbtScriptTypeLabel(txOut.PkScript),
+		txOut.Value,
+		byte(sighashType),
+		hex.EncodeToString(sigHash),
+	)
 }
 
 // min returns the minimum of two integers
@@ -1213,6 +1248,8 @@ func runNostrMpcSignPSBTInternal(
 		} else {
 			return "", fmt.Errorf("unsupported script type for input %d", i)
 		}
+
+		logInputSigningDiagnostics(i, txIn.PreviousOutPoint, txOut, inputDerivePath, sighashType, sigHash)
 
 		// MPC sign the sighash via Nostr
 		sighashBase64 := base64.StdEncoding.EncodeToString(sigHash)

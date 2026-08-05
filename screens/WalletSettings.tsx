@@ -1113,7 +1113,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           appConfigRepository.get('api') ||
           (network === 'mainnet'
             ? 'https://mempool.space/api'
-            : 'https://mempool.space/testnet/api');
+            : CANONICAL_TESTNET_MEMPOOL_API_BASE);
 
         // ── Step 2: flush in-memory caches before discovery ───────────────
         // Every isAddressUsed call inside discoverHdIndexesForNetwork must
@@ -1236,7 +1236,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         appConfigRepository.get('api') ||
         (network === 'mainnet'
           ? 'https://mempool.space/api'
-          : 'https://mempool.space/testnet/api');
+          : CANONICAL_TESTNET_MEMPOOL_API_BASE);
 
       appConfigRepository.set(CONFIG_KEYS.NETWORK, network);
       appConfigRepository.set('api', apiUrl);
@@ -1386,7 +1386,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         resolvedApi =
           net === 'mainnet'
             ? 'https://mempool.space/api'
-            : 'https://mempool.space/testnet/api';
+            : CANONICAL_TESTNET_MEMPOOL_API_BASE;
         appConfigRepository.set('api', resolvedApi);
         if (net) appConfigRepository.set(`api_${net}`, resolvedApi);
       }
@@ -1491,7 +1491,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const api =
       net === 'mainnet'
         ? 'https://mempool.space/api'
-        : 'https://mempool.space/testnet/api';
+        : CANONICAL_TESTNET_MEMPOOL_API_BASE;
     setPendingAPI(api);
     setBaseAPI(api);
     if (net) {
@@ -3071,7 +3071,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   activeApiProvider ||
                   (activeNetwork === 'mainnet'
                     ? 'https://mempool.space/api'
-                    : 'https://mempool.space/testnet/api');
+                    : CANONICAL_TESTNET_MEMPOOL_API_BASE);
                 try {
                   await runRestoreIndexing(
                     activeNetwork,

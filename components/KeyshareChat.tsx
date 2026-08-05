@@ -30,6 +30,12 @@ import {
   type NostrMessageType,
 } from '../services/nostrMessaging';
 import { setPendingCoSignRequest } from '../services/nostrCoSignSession';
+import chatRepository, {
+  type ChatHydrationRow,
+  type ChatThreadStatus,
+} from '../services/repositories/ChatRepository';
+
+const CHAT_THREAD_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function fingerprintFromNpub(npub: string): string {
   if (!npub) return 'unknown';
@@ -221,6 +227,21 @@ function invoiceThreadKeyFromPayload(payload: Record<string, unknown>): string {
   return '';
 }
 
+function deriveMessageTypeFromHydration(row: ChatHydrationRow, payload: Record<string, unknown>): NostrMessageType {
+  if (row.threadType === 'cosign') {
+    if (typeof payload.approved === 'boolean') return 'COSIGN_RESPONSE';
+    return 'COSIGN_REQUEST';
+  }
+  return 'CHAT_MESSAGE';
+}
+
+function deriveMessageStatus(type: NostrMessageType, threadStatus: ChatThreadStatus): ChatFeedItem['status'] {
+  if (type !== 'COSIGN_REQUEST' && type !== 'COSIGN_RESPONSE') return undefined;
+  if (threadStatus === 'closed') return 'rejected';
+  if (threadStatus === 'approved') return 'signed';
+  return 'pending';
+}
+
 function asPositiveInt(value: unknown): number | null {
   const n = typeof value === 'string' ? Number(value.trim()) : Number(value);
   if (!Number.isFinite(n)) return null;
@@ -345,6 +366,60 @@ const KeyshareChat: React.FC = () => {
 
     const boot = async () => {
       try {
+        const minUpdatedAt = Date.now() - CHAT_THREAD_TTL_MS;
+        const hydratedRows = chatRepository.getHydrationRows(minUpdatedAt);
+        if (mounted && hydratedRows.length > 0) {
+          const seen = new Set<string>();
+          const byRequest = new Map<string, string>();
+          const byTx = new Map<string, string>();
+
+          const hydrated = hydratedRows.map(row => {
+            const payload = row.isPayload ? parsePayload(row.content) : { text: row.content };
+            const type = deriveMessageTypeFromHydration(row, payload);
+            const requestId = row.threadId.startsWith('req:') ? row.threadId.slice(4) : '';
+            const txIdFromThread = row.threadId.startsWith('tx:') ? row.threadId.slice(3) : '';
+            const txIdFromPayload = typeof payload.txId === 'string' ? payload.txId : '';
+            const txId = txIdFromThread || txIdFromPayload;
+            const invoiceThreadKey = row.threadType === 'cosign' ? row.threadId : undefined;
+            const status = deriveMessageStatus(type, row.status);
+
+            if (requestId) byRequest.set(requestId, row.threadId);
+            if (txId) byTx.set(txId, row.threadId);
+
+            return {
+              id: `db:${row.messageId}`,
+              type,
+              invoiceThreadKey,
+              status,
+              txId: txId || undefined,
+              mode: type === 'CHAT_MESSAGE' ? undefined : 'legacy',
+              nip46RequestId: requestId || undefined,
+              senderFingerprint: fingerprintFromNpub(row.senderNpub),
+              senderNpub: row.senderNpub,
+              senderLabel: row.senderNpub ? `${row.senderNpub.slice(0, 8)}...` : 'Unknown',
+              timestamp: row.timestamp,
+              payload,
+            } as ChatFeedItem;
+          });
+
+          hydrated.forEach(item => {
+            if (item.type !== 'COSIGN_REQUEST') return;
+            const identity = coSignRequestIdentity({
+              nip46RequestId: item.nip46RequestId,
+              txId: item.txId,
+              eventId: item.id,
+              envelopeId: item.id,
+              fallbackSeed: item.id,
+            });
+            seen.add(identity);
+          });
+
+          seenCoSignRequestIdsRef.current = seen;
+          invoiceThreadKeyByRequestIdRef.current = byRequest;
+          invoiceThreadKeyByTxIdRef.current = byTx;
+          setMessages(hydrated.slice(0, 200));
+        }
+
         await nostrMessaging.connect();
 
         const meta = await getKeyshareMetadata();
@@ -742,6 +817,17 @@ const KeyshareChat: React.FC = () => {
             };
           }),
         );
+
+        const invoiceKey = resolveExistingInvoiceThreadKey(evt.requestId, evt.txId);
+        if (invoiceKey) {
+          const threadStatus: ChatThreadStatus =
+            nextStatus === 'rejected'
+              ? 'closed'
+              : nextStatus === 'pending'
+              ? 'pending'
+              : 'approved';
+          chatRepository.setThreadStatus(invoiceKey, threadStatus, Date.now());
+        }
       },
     );
 
@@ -1012,6 +1098,7 @@ const KeyshareChat: React.FC = () => {
     setError('');
     const outgoingText = text.trim();
     const outgoingPayload: Record<string, unknown> = { text: outgoingText };
+    const now = Date.now();
 
     if (selectedThread?.kind === 'invoice') {
       const invoiceKey = selectedThread.invoiceKey || '';
@@ -1022,6 +1109,36 @@ const KeyshareChat: React.FC = () => {
       if (txId) outgoingPayload.txId = txId;
       outgoingPayload.threadType = 'invoice';
     }
+
+    const threadId =
+      selectedThread.kind === 'invoice'
+        ? selectedThread.invoiceKey || `tx:${String(outgoingPayload.txId || now)}`
+        : `peer:${selectedPeerNpub}`;
+    const threadStatus: ChatThreadStatus =
+      selectedThread.kind === 'invoice' ? 'approved' : 'approved';
+    const localMessageId = `local-chat:${now}:${Math.random().toString(36).slice(2, 10)}`;
+
+    chatRepository.upsertThreadAndMessage(
+      {
+        threadId,
+        peerNpub: selectedPeerNpub,
+        threadType: selectedThread.kind === 'invoice' ? 'cosign' : 'direct',
+        status: threadStatus,
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        messageId: localMessageId,
+        threadId,
+        senderNpub: localNpub || 'local',
+        content:
+          selectedThread.kind === 'invoice'
+            ? JSON.stringify(outgoingPayload)
+            : outgoingText,
+        timestamp: now,
+        isPayload: selectedThread.kind === 'invoice',
+      },
+    );
 
     try {
       await nostrMessaging.sendEnvelope(activeRecipientNpubs, {
@@ -1034,13 +1151,13 @@ const KeyshareChat: React.FC = () => {
       });
 
       const optimisticMessage: ChatFeedItem = {
-        id: `optimistic:${Date.now()}:${Math.random().toString(36).slice(2, 10)}`,
+        id: `optimistic:${localMessageId}`,
         type: 'CHAT_MESSAGE',
         invoiceThreadKey: selectedThread.kind === 'invoice' ? selectedThread.invoiceKey : undefined,
         senderFingerprint: localFingerprint,
         senderNpub: localNpub,
         senderLabel: 'You',
-        timestamp: Date.now(),
+        timestamp: now,
         payload: outgoingPayload,
       };
 
@@ -1140,6 +1257,18 @@ const KeyshareChat: React.FC = () => {
           : message,
       ),
     );
+
+    const approvalThreadId =
+      item.invoiceThreadKey ||
+      (item.nip46RequestId ? `req:${item.nip46RequestId}` : item.txId ? `tx:${item.txId}` : `evt:${item.id}`);
+    chatRepository.upsertThread({
+      threadId: approvalThreadId,
+      peerNpub: item.senderNpub || 'unknown',
+      threadType: 'cosign',
+      status: 'approved',
+      createdAt: item.timestamp || Date.now(),
+      updatedAt: Date.now(),
+    });
 
     if (item.mode === 'nip46' && item.nip46RequestId) {
       setPendingCoSignRequest({

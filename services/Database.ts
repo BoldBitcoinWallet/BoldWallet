@@ -202,6 +202,33 @@ const SCHEMA_STATEMENTS = [
     verify_url         TEXT,
     fetched_at         INTEGER NOT NULL
   )`,
+
+  // ── Keyshare Chat Threads ─────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS chat_threads (
+    thread_id    TEXT PRIMARY KEY,
+    peer_npub    TEXT NOT NULL,
+    thread_type  TEXT NOT NULL,
+    status       TEXT NOT NULL,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_chat_threads_updated_at
+     ON chat_threads (updated_at DESC)`,
+
+  // ── Keyshare Chat Messages ────────────────────────────────────────────────────
+  `CREATE TABLE IF NOT EXISTS chat_messages (
+    message_id   TEXT PRIMARY KEY,
+    thread_id    TEXT NOT NULL,
+    sender_npub  TEXT NOT NULL,
+    content      TEXT NOT NULL,
+    timestamp    INTEGER NOT NULL,
+    is_payload   INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (thread_id) REFERENCES chat_threads(thread_id) ON DELETE CASCADE
+  )`,
+
+  `CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_time
+     ON chat_messages (thread_id, timestamp DESC)`,
 ];
 
 // ---------------------------------------------------------------------------
@@ -336,6 +363,8 @@ class DatabaseService {
         'tx_outputs',
         'pending_transactions',
         'sync_metadata',
+        'chat_messages',
+        'chat_threads',
       ]) {
         tx.execute(`DELETE FROM ${table}`);
       }

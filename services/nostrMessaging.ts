@@ -2,6 +2,10 @@ import { Buffer } from 'buffer';
 import { NativeModules } from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import { dbg, getKeyshareMetadata, getNostrRelays } from '../utils';
+import chatRepository, {
+  type ChatThreadStatus,
+  type ChatThreadType,
+} from './repositories/ChatRepository';
 
 const { BBMTLibNativeModule } = NativeModules;
 
@@ -137,6 +141,67 @@ function nip19DecodedDataToHex(data: unknown): string {
   }
 
   throw new Error(`Unsupported nip19 decoded key payload type: ${typeof data}`);
+}
+
+function parseEnvelopePayload(payload: unknown): Record<string, unknown> {
+  if (payload && typeof payload === 'object') {
+    return payload as Record<string, unknown>;
+  }
+  if (typeof payload === 'string') {
+    try {
+      const parsed = JSON.parse(payload);
+      if (parsed && typeof parsed === 'object') {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return { text: payload };
+    }
+    return { text: payload };
+  }
+  return {};
+}
+
+function threadStatusFromEnvelope(type: NostrMessageType, payload: Record<string, unknown>): ChatThreadStatus {
+  if (type === 'COSIGN_RESPONSE') {
+    return payload.approved ? 'approved' : 'closed';
+  }
+  if (type === 'COSIGN_REQUEST') {
+    return 'pending';
+  }
+  return 'approved';
+}
+
+function threadIdentityForEnvelope(
+  type: NostrMessageType,
+  payload: Record<string, unknown>,
+  senderNpub: string,
+  envelopeId: string,
+  eventId: string,
+): { threadId: string; threadType: ChatThreadType } {
+  const requestId = typeof payload.nip46RequestId === 'string' ? payload.nip46RequestId.trim() : '';
+  const txId = typeof payload.txId === 'string' ? payload.txId.trim() : '';
+
+  if (type === 'COSIGN_REQUEST' || type === 'COSIGN_RESPONSE' || requestId || txId) {
+    if (requestId) return { threadId: `req:${requestId}`, threadType: 'cosign' };
+    if (txId) return { threadId: `tx:${txId}`, threadType: 'cosign' };
+    if (eventId) return { threadId: `evt:${eventId}`, threadType: 'cosign' };
+    return { threadId: `env:${envelopeId}`, threadType: 'cosign' };
+  }
+
+  return {
+    threadId: `peer:${senderNpub}`,
+    threadType: 'direct',
+  };
+}
+
+function contentFromPayload(payload: Record<string, unknown>, type: NostrMessageType): {
+  content: string;
+  isPayload: boolean;
+} {
+  if (type === 'CHAT_MESSAGE' && typeof payload.text === 'string' && payload.text.trim()) {
+    return { content: payload.text.trim(), isPayload: false };
+  }
+  return { content: JSON.stringify(payload), isPayload: true };
 }
 
 class NostrMessagingService {
@@ -331,14 +396,18 @@ class NostrMessagingService {
     recipientFingerprint: string,
     payload: CoSignRequestPayload,
   ): Promise<void> {
-    await this.sendEnvelope(recipientNpub, {
+    await this.ensureIdentity();
+    const envelope: NostrEnvelope<CoSignRequestPayload> = {
       id: randomId(),
       type: 'COSIGN_REQUEST',
       senderFingerprint,
       recipientFingerprint,
       timestamp: Date.now(),
       payload,
-    });
+    };
+
+    this.persistOutgoingMessage(recipientNpub, envelope);
+    await this.sendEnvelope(recipientNpub, envelope);
   }
 
   async sendCoSignRequestToMany(
@@ -347,6 +416,7 @@ class NostrMessagingService {
     recipientFingerprint: string,
     payload: CoSignRequestPayload,
   ): Promise<void> {
+    await this.ensureIdentity();
     console.warn('[NIP46-CRITICAL] sendCoSignRequestToMany called', {
       txId: payload?.txId,
       traceId: payload?.traceId,
@@ -354,14 +424,16 @@ class NostrMessagingService {
       hasPsbtHex: !!payload?.psbtHex,
       hasPsbtBase64: !!payload?.psbtBase64,
     });
-    await this.sendEnvelope(recipientNpubs, {
+    const envelope: NostrEnvelope<CoSignRequestPayload> = {
       id: randomId(),
       type: 'COSIGN_REQUEST',
       senderFingerprint,
       recipientFingerprint,
       timestamp: Date.now(),
       payload,
-    });
+    };
+    this.persistOutgoingMessage(recipientNpubs[0] || '', envelope);
+    await this.sendEnvelope(recipientNpubs, envelope);
   }
 
   async sendCoSignResponse(
@@ -370,14 +442,17 @@ class NostrMessagingService {
     recipientFingerprint: string,
     payload: CoSignResponsePayload,
   ): Promise<void> {
-    await this.sendEnvelope(recipientNpub, {
+    await this.ensureIdentity();
+    const envelope: NostrEnvelope<CoSignResponsePayload> = {
       id: randomId(),
       type: 'COSIGN_RESPONSE',
       senderFingerprint,
       recipientFingerprint,
       timestamp: Date.now(),
       payload,
-    });
+    };
+    this.persistOutgoingMessage(recipientNpub, envelope);
+    await this.sendEnvelope(recipientNpub, envelope);
   }
 
   async sendCoSignReady(
@@ -774,6 +849,8 @@ class NostrMessagingService {
         eventId: String(event.id || ''),
       };
 
+      this.persistIncomingMessage(msg);
+
       if (envelope.type === 'COSIGN_REQUEST') {
         dbg('[NIP46-TLM][Receiver] decoded COSIGN_REQUEST envelope', {
           traceId,
@@ -786,6 +863,86 @@ class NostrMessagingService {
       for (const listener of this.listeners) listener(msg);
     } catch (err) {
       dbg('NostrMessaging: failed to decode incoming event', err);
+    }
+  }
+
+  private persistIncomingMessage(msg: NostrIncomingMessage): void {
+    try {
+      const now = Date.now();
+      const payload = parseEnvelopePayload(msg.envelope.payload);
+      const thread = threadIdentityForEnvelope(
+        msg.envelope.type,
+        payload,
+        msg.senderNpub,
+        String(msg.envelope.id || ''),
+        String(msg.eventId || ''),
+      );
+      const status = threadStatusFromEnvelope(msg.envelope.type, payload);
+      const timestamp = Number(msg.envelope.timestamp || now);
+      const { content, isPayload } = contentFromPayload(payload, msg.envelope.type);
+      const messageId = msg.eventId
+        ? `nostr:${msg.eventId}`
+        : `envelope:${msg.envelope.id}:${timestamp}`;
+
+      chatRepository.upsertThreadAndMessage(
+        {
+          threadId: thread.threadId,
+          peerNpub: msg.senderNpub || 'unknown',
+          threadType: thread.threadType,
+          status,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          messageId,
+          threadId: thread.threadId,
+          senderNpub: msg.senderNpub || 'unknown',
+          content,
+          timestamp,
+          isPayload,
+        },
+      );
+    } catch (err) {
+      dbg('NostrMessaging: persistIncomingMessage failed', err);
+    }
+  }
+
+  private persistOutgoingMessage<T>(recipientNpub: string, envelope: NostrEnvelope<T>): void {
+    try {
+      const now = Date.now();
+      const payload = parseEnvelopePayload(envelope.payload);
+      const thread = threadIdentityForEnvelope(
+        envelope.type,
+        payload,
+        recipientNpub,
+        String(envelope.id || ''),
+        '',
+      );
+      const status = threadStatusFromEnvelope(envelope.type, payload);
+      const timestamp = Number(envelope.timestamp || now);
+      const { content, isPayload } = contentFromPayload(payload, envelope.type);
+      const messageId = `local:${String(envelope.id || `${timestamp}`)}`;
+
+      chatRepository.upsertThreadAndMessage(
+        {
+          threadId: thread.threadId,
+          peerNpub: recipientNpub || 'unknown',
+          threadType: thread.threadType,
+          status,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        },
+        {
+          messageId,
+          threadId: thread.threadId,
+          senderNpub: this.localNpub || 'local',
+          content,
+          timestamp,
+          isPayload,
+        },
+      );
+    } catch (err) {
+      dbg('NostrMessaging: persistOutgoingMessage failed', err);
     }
   }
 
