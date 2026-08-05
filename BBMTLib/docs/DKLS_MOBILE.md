@@ -98,7 +98,7 @@ cd BBMTLib && ./build-dkls.sh ios
 | Trio | Nostr | three npubs in session |
 | Any | Opt-out | GG18 preparams + legacy keyshare shape |
 
-Scripts: `./scripts-dkls/main.go local-keygen` (duo), `local-keygen-3` (trio).
+Scripts: `./scripts-dkls/main.go local-keygen <chaincode-hex>` (duo), `local-keygen-3 <chaincode-hex>` (trio). A random chaincode is mandatory — `main.go random` generates one; there is no constant fallback.
 
 ### Trio spend / keysign (aligned with GG18)
 

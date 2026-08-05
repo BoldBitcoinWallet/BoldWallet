@@ -39,7 +39,9 @@ pass "hello-dkg in-process DKG+sign"
 
 OUT_DIR="${ROOT}/scripts-dkls/test-output"
 mkdir -p "$OUT_DIR"
-/tmp/dkls-scripts local-keygen "$OUT_DIR/chaincode.hex" > "$OUT_DIR/party1.json"
+CC="$(/tmp/dkls-scripts random)"
+echo "$CC" > "$OUT_DIR/chaincode.hex"
+/tmp/dkls-scripts local-keygen "$CC" > "$OUT_DIR/party1.json"
 [ -s "$OUT_DIR/party1.json" ] || fail "local-keygen empty output"
 pass "local-keygen"
 

@@ -62,19 +62,34 @@ func main() {
 
 	// Generate session ID if not provided
 	if *sessionID == "" {
-		*sessionID, _ = tss.SecureRandom(64)
+		var err error
+		*sessionID, err = tss.SecureRandom(64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: CSPRNG failure generating session ID: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Fprintf(os.Stderr, "Generated session ID: %s\n", *sessionID)
 	}
 
 	// Generate session key if not provided
 	if *sessionKey == "" {
-		*sessionKey, _ = tss.SecureRandom(64)
+		var err error
+		*sessionKey, err = tss.SecureRandom(64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: CSPRNG failure generating session key: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Fprintf(os.Stderr, "Generated session key: %s\n", *sessionKey)
 	}
 
 	// Generate chaincode if not provided
 	if *chaincode == "" {
-		*chaincode, _ = tss.SecureRandom(64)
+		var err error
+		*chaincode, err = tss.SecureRandom(64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error: CSPRNG failure generating chaincode: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Fprintf(os.Stderr, "Generated chaincode: %s\n", *chaincode)
 	}
 

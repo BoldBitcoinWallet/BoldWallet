@@ -17,7 +17,11 @@ import (
 )
 
 func randomSeed(length int) string {
-	out, _ := tss.SecureRandom(length)
+	out, err := tss.SecureRandom(length)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error: CSPRNG failure (SecureRandom): %v\n", err)
+		os.Exit(1)
+	}
 	return out
 }
 
