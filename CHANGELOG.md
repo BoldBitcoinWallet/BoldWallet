@@ -1,5 +1,40 @@
 # Changelog
 
+## [4.0.4] - 2026-08-06
+
+> **Patch release:** Device RNG awareness — the wallet now surfaces a real-time assessment of each device's random number generator quality, grounded in actual hardware detection rather than assumed defaults.
+
+### Added
+- **`EntropyInfoCard` bottom sheet** — swipe-up info card showing live device entropy metadata: platform, OS version, device model, crypto framework, RNG source, hardware security module status, entropy pool health, and a clear **Strong / Weak** verdict; accessible from wallet settings.
+- **Hardware-grounded RNG assessment** — `rng_assessment` is derived from actual device probes on both platforms rather than a hardcoded constant:
+  - **Android**: reads `/proc/sys/kernel/random/entropy_avail`; factors in StrongBox Keymaster availability (API 28+); `entropy_avail` unreadable (fully-seeded CRNG on modern kernels) → **Strong**; ≥ 256 bits → **Strong**; 128–255 bits + StrongBox hardware → **Strong**; 128–255 bits without StrongBox → **Weak**; < 128 bits → **Weak**.
+  - **iOS**: uses Secure Enclave availability probe (`SecItemCopyMatching` with `kSecAttrTokenIDSecureEnclave`); real device with SE → **Strong**; simulator or SE unavailable → **Weak**.
+- **Binary Strong / Weak scale** — no ambiguous "Adequate" or "Unknown" labels; a Bitcoin vault demands a clear verdict. `DeviceEntropyMetadata.rng_assessment` type narrowed to `'Strong' | 'Weak'`.
+- **Assessment-aware UI colors** — badge, icon tint, and assessment text use `colors.received` (green) for Strong and `colors.danger` (red) for Weak; the card is unmistakable regardless of theme.
+
+### Technical Details
+- **Version**: `package.json` **4.0.4**; Android **`versionCode` 64** / **`versionName` 4.0.4**; iOS build **64** / **`MARKETING_VERSION` 4.0.4**.
+- **Modified files**: `native_modules/index.ts`, `components/EntropyInfoCard.tsx`, `android/.../BBMTLibNativeModule.kt`, `ios/BBMTLibNativeModule.swift`.
+
+---
+
+## [4.0.3] - 2026-08-05
+
+> **Patch release:** Co-signing transport UX hardening — QR shorthand is now always reachable when sending Bitcoin or signing a PSBT, Nostr is gated by real keyshare capability, and pairing screen contrast and CTA colors are corrected for dark mode.
+
+### Changed
+- **Transport selector always opens on send and PSBT** — removed the direct bypass that previously skipped straight to local pairing when the keyshare has no `nostr_npub`; `TransportModeSelector` now opens for every co-sign flow so QR shorthand is always available for handoff.
+- **Nostr capability gating** — `TransportModeSelector` accepts `nostrEnabled` and `defaultTransport` props; when Nostr is unsupported the card is visually disabled (`opacity 0.45`), taps are blocked, Local is pre-selected, and a short explanatory label is shown; Continue is immediately active.
+- **Nostr support resolved from keyshare** — both `WalletHome` (`handleSend`, `processScannedQRData`) and `PSBTScreen` (`handlePSBTSign`) now call a shared `resolveNostrTransportSupport()` helper that reads `nostr_npub` from keyshare metadata before opening the modal; errors default to Nostr disabled.
+- **Pairing sticky CTA — Bitcoin orange** — `PairingSpendStickyFooter` accepts an optional `buttonColor` prop; Start/Join co-signing buttons in both `MobilesPairing` and `MobileNostrPairing` now pass `theme.colors.bitcoinOrange` for consistent action emphasis across light and dark mode.
+- **Local pairing dark-mode readiness text** — "Both devices must be ready." moved to a dedicated `readinessText` style that uses `colors.white` in dark mode instead of the previous near-invisible default text color.
+
+### Technical Details
+- **Version**: `package.json` **4.0.3**; Android **`versionCode` 63** / **`versionName` 4.0.3**; iOS build **63** / **`MARKETING_VERSION` 4.0.3**.
+- **Modified files**: `components/TransportModeSelector.tsx`, `components/PairingSpendStickyFooter.tsx`, `screens/WalletHome.tsx`, `screens/PSBTScreen.tsx`, `screens/MobilesPairing.tsx`, `screens/MobileNostrPairing.tsx`.
+
+---
+
 ## [4.0.2] - 2026-07-10
 
 > **Feature release:** Branta.pro address verification SDK integration for merchant identification and verification display on Bitcoin sends. Verified merchant logos and links auto-detect from Branta-enhanced BIP-21 URIs in both WalletHome and SendBitcoinModal scanners, with seamless address/amount extraction and silent fallback on network errors.
