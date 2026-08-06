@@ -63,6 +63,11 @@ import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
 import {resolveDklsNostrSigningParties} from '../services/lanMpcSetup';
 import {
+  canonicalizeSigningNpubsCSV,
+  deriveDklsPsbtIntentKey,
+  deriveDklsSendTxIntentKey,
+} from '../services/nostrMpcContext';
+import {
   nostrMessaging,
   type CoSignRequestPayload,
 } from '../services/nostrMessaging';
@@ -100,6 +105,7 @@ import {
   resetMpcHookSession,
   type MpcProgressUtxoState,
 } from '../services/mpcProgress';
+import nostrMpcSession from '../services/nostrMpcSession';
 import {
   mpcSessionShortLabel,
   processMpcHookMessage,
@@ -107,6 +113,7 @@ import {
   staleTransportHintForKeygen,
   trackMpcHookForTransportLiveness,
 } from '../services/mpcProgressUi';
+import {canonicalPsbtBase64, psbtIdentityHash} from '../services/psbtIdentity';
 import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
 import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
@@ -117,11 +124,13 @@ import {useUser} from '../context/UserContext';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
+import chatRepository from '../services/repositories/ChatRepository';
 import database from '../services/Database';
 import transactionRepository from '../services/repositories/TransactionRepository';
 import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
 import {safeUnlink} from '../services/rnfsSafe';
+import {getPendingCoSignRequest} from '../services/nostrCoSignSession';
 const {BBMTLibNativeModule} = NativeModules;
 
 /** Normalize keygen_committee_keys from native/bridge (array, JSON string, or numeric-key object). */
@@ -136,9 +145,11 @@ function normalizeKeygenCommitteeKeys(raw: unknown): string[] {
   }
   if (typeof raw === 'string') {
     try {
-      const p = JSON.parse(raw);
-      return Array.isArray(p)
-        ? p.filter((k): k is string => typeof k === 'string' && k.length > 0)
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed)
+        ? parsed.filter(
+            (k): k is string => typeof k === 'string' && k.length > 0,
+          )
         : [];
     } catch {
       return [];
@@ -380,10 +391,192 @@ type RouteParams = {
   peerNpub?: string;
   initiatorTxId?: string;
   cosignTraceId?: string;
+  // True when initiator re-enters from chat after peer approval to resume a
+  // previously dispatched co-sign request without re-fanning-out.
+  resumePendingRequest?: boolean;
 };
 
 function createCoSignTraceId(): string {
   return `cosign-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function txScopedGuardKeyForSend(params?: RouteParams): string {
+  const explicitTxId =
+    typeof params?.initiatorTxId === 'string' ? params.initiatorTxId.trim() : '';
+  if (explicitTxId) {
+    return explicitTxId;
+  }
+  const toAddress = typeof params?.toAddress === 'string' ? params.toAddress.trim() : '';
+  const amount = typeof params?.satoshiAmount === 'string' ? params.satoshiAmount.trim() : '';
+  const fee = typeof params?.satoshiFees === 'string' ? params.satoshiFees.trim() : '';
+  const network = typeof params?.network === 'string' ? params.network.trim() : '';
+  return `send:${network}:${toAddress}:${amount}:${fee}`;
+}
+
+type ResponderSendContext = {
+  network: string;
+  toAddress: string;
+  satoshiAmount: string;
+  satoshiFees: string;
+  utxosJson?: string;
+  changeAddress?: string;
+  senderDerivationPath?: string;
+  senderAddressType?: string;
+  signingNpubsCSV?: string;
+  txTemplateHash?: string;
+  utxoSetHash?: string;
+  initiatorTxId?: string;
+  cosignTraceId?: string;
+  peerNpub?: string;
+  sources: string[];
+};
+
+function nonEmpty(input: unknown): string {
+  return typeof input === 'string' ? input.trim() : '';
+}
+
+async function deriveSendTemplateHashes(input: {
+  signingNpubsCSV: string;
+  network: string;
+  toAddress: string;
+  satoshiAmount: string;
+  satoshiFees: string;
+  changeAddress: string;
+  senderDerivationPath: string;
+  senderAddressType: string;
+  utxosWithPathsJSON: string;
+}): Promise<{ utxoSetHash: string; txTemplateHash: string }> {
+  const canonicalNpubs = canonicalizeSigningNpubsCSV(input.signingNpubsCSV);
+  const canonicalTemplate = JSON.stringify({
+    v: 1,
+    signingNpubsCSV: canonicalNpubs,
+    network: nonEmpty(input.network),
+    toAddress: nonEmpty(input.toAddress),
+    satoshiAmount: String(Number(input.satoshiAmount) || 0),
+    satoshiFees: String(Number(input.satoshiFees) || 0),
+    changeAddress: nonEmpty(input.changeAddress),
+    senderDerivationPath: nonEmpty(input.senderDerivationPath),
+    senderAddressType: nonEmpty(input.senderAddressType),
+    utxosWithPathsJSON: nonEmpty(input.utxosWithPathsJSON),
+  });
+  const utxoSetHash = await BBMTLibNativeModule.sha256(
+    nonEmpty(input.utxosWithPathsJSON),
+  );
+  const txTemplateHash = await BBMTLibNativeModule.sha256(canonicalTemplate);
+  return { utxoSetHash, txTemplateHash };
+}
+
+async function resolveResponderSendContext(
+  params?: RouteParams,
+): Promise<ResponderSendContext | null> {
+  if (!params || params.isPeerResponse !== true) return null;
+
+  let network = nonEmpty(params.network);
+  let toAddress = nonEmpty(params.toAddress);
+  let satoshiAmount = nonEmpty(params.satoshiAmount);
+  let satoshiFees = nonEmpty(params.satoshiFees);
+  let utxosJson = nonEmpty(params.utxosJson);
+  let changeAddress = nonEmpty(params.changeAddress);
+  let senderDerivationPath = nonEmpty(params.derivationPath);
+  let senderAddressType = nonEmpty(params.addressType);
+  let signingNpubsCSV = '';
+  let txTemplateHash = '';
+  let utxoSetHash = '';
+  let initiatorTxId = nonEmpty(params.initiatorTxId);
+  let cosignTraceId = nonEmpty(params.cosignTraceId);
+  let peerNpub = nonEmpty(params.peerNpub);
+
+  const sources = ['route'];
+  const pending = getPendingCoSignRequest();
+  if (pending?.request) {
+    const req = pending.request;
+    if (!initiatorTxId) initiatorTxId = nonEmpty(req.txId);
+    if (!cosignTraceId) cosignTraceId = nonEmpty(req.traceId);
+    if (!network) network = nonEmpty(req.network);
+    if (!toAddress) toAddress = nonEmpty(req.recipientAddress);
+    if (!satoshiAmount && Number.isFinite(Number(req.amountSats))) {
+      satoshiAmount = String(Math.trunc(Number(req.amountSats)));
+    }
+    if (!satoshiFees && Number.isFinite(Number(req.feeSats))) {
+      satoshiFees = String(Math.max(0, Math.trunc(Number(req.feeSats))));
+    }
+    if (!peerNpub) peerNpub = nonEmpty(pending.senderNpub);
+    const reqUtxosJson = nonEmpty(req.utxosJson);
+    const reqChangeAddress = nonEmpty(req.changeAddress);
+    const reqSenderPath = nonEmpty(req.senderDerivationPath);
+    const reqSenderType = nonEmpty(req.senderAddressType);
+    const reqSigningNpubs = nonEmpty(req.signingNpubsCSV);
+    const reqTemplateHash = nonEmpty(req.txTemplateHash);
+    const reqUtxoSetHash = nonEmpty(req.utxoSetHash);
+    if (reqUtxosJson) {
+      utxosJson = reqUtxosJson;
+    }
+    if (reqChangeAddress) {
+      changeAddress = reqChangeAddress;
+    }
+    if (reqSenderPath) {
+      senderDerivationPath = reqSenderPath;
+    }
+    if (reqSenderType) {
+      senderAddressType = reqSenderType;
+    }
+    if (reqSigningNpubs) {
+      signingNpubsCSV = reqSigningNpubs;
+    }
+    if (reqTemplateHash) {
+      txTemplateHash = reqTemplateHash;
+    }
+    if (reqUtxoSetHash) {
+      utxoSetHash = reqUtxoSetHash;
+    }
+    sources.push('pending-session');
+  }
+
+  if (!initiatorTxId || !cosignTraceId || !toAddress || !satoshiAmount) {
+    const dbCtx = chatRepository.findLatestCoSignRequestContext({
+      txId: initiatorTxId,
+      traceId: cosignTraceId,
+    });
+    if (dbCtx) {
+      if (!initiatorTxId) initiatorTxId = nonEmpty(dbCtx.txId);
+      if (!cosignTraceId) cosignTraceId = nonEmpty(dbCtx.traceId);
+      if (!network) network = nonEmpty(dbCtx.network);
+      if (!toAddress) toAddress = nonEmpty(dbCtx.recipientAddress);
+      if (!satoshiAmount) satoshiAmount = String(Math.trunc(dbCtx.amountSats));
+      if (!satoshiFees) satoshiFees = String(Math.max(0, Math.trunc(dbCtx.feeSats)));
+      if (!peerNpub) peerNpub = nonEmpty(dbCtx.senderNpub) || nonEmpty(dbCtx.peerNpub);
+      if (!utxosJson) utxosJson = nonEmpty(dbCtx.utxosJson);
+      if (!changeAddress) changeAddress = nonEmpty(dbCtx.changeAddress);
+      if (!senderDerivationPath) senderDerivationPath = nonEmpty(dbCtx.senderDerivationPath);
+      if (!senderAddressType) senderAddressType = nonEmpty(dbCtx.senderAddressType);
+      if (!signingNpubsCSV) signingNpubsCSV = nonEmpty(dbCtx.signingNpubsCSV);
+      if (!txTemplateHash) txTemplateHash = nonEmpty(dbCtx.txTemplateHash);
+      if (!utxoSetHash) utxoSetHash = nonEmpty(dbCtx.utxoSetHash);
+      sources.push('chat-db');
+    }
+  }
+
+  if (!network || !toAddress || !satoshiAmount || !satoshiFees) {
+    return null;
+  }
+
+  return {
+    network,
+    toAddress,
+    satoshiAmount,
+    satoshiFees,
+    utxosJson: utxosJson || undefined,
+    changeAddress: changeAddress || undefined,
+    senderDerivationPath: senderDerivationPath || undefined,
+    senderAddressType: senderAddressType || undefined,
+    signingNpubsCSV: signingNpubsCSV || undefined,
+    txTemplateHash: txTemplateHash || undefined,
+    utxoSetHash: utxoSetHash || undefined,
+    initiatorTxId: initiatorTxId || undefined,
+    cosignTraceId: cosignTraceId || undefined,
+    peerNpub: peerNpub || undefined,
+    sources,
+  };
 }
 
 /**
@@ -423,44 +616,30 @@ async function resolveLocalSendDerivation(
  * Resolves once a matching `COSIGN_READY` wake-up arrives from the co-signing peer
  * (re-broadcast locally by `NostrCoSignBridge`), or `false` if it times out first.
  */
-function waitForCoSignReady(txId: string, timeoutMs = 45000): Promise<boolean> {
+function waitForCoSignReady(
+  txId: string,
+  traceId?: string,
+  timeoutMs = 45000,
+): Promise<boolean> {
   console.warn('[NIP46-TLM][PromiseChain] waitForCoSignReady: start', {
     txId,
+    traceId,
     timeoutMs,
   });
-  return new Promise(resolve => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      sub.remove();
-      console.warn('[NIP46-TLM][PromiseChain] waitForCoSignReady: timeout', {
-        txId,
-        timeoutMs,
-      });
-      resolve(false);
-    }, timeoutMs);
-    const sub = DeviceEventEmitter.addListener('nostr-cosign:ready', (evt: any) => {
-      if (settled) return;
-      if (!evt || evt.txId !== txId) {
-        dbg('[NIP46-TLM][PromiseChain] waitForCoSignReady: ignored ready event (txId mismatch)', {
-          expectedTxId: txId,
-          receivedTxId: evt?.txId,
-          traceId: evt?.traceId,
-          senderNpub: evt?.senderNpub,
-        });
-        return;
-      }
-      settled = true;
-      clearTimeout(timer);
-      sub.remove();
+  nostrMpcSession.startSession(txId, traceId);
+  return nostrMpcSession.waitForPeerReady(txId, traceId, timeoutMs).then(ready => {
+    if (ready) {
       console.warn('[NIP46-TLM][PromiseChain] waitForCoSignReady: matched', {
         txId,
-        traceId: evt?.traceId,
-        senderNpub: evt?.senderNpub,
+        traceId,
       });
-      resolve(true);
+      return true;
+    }
+    console.warn('[NIP46-TLM][PromiseChain] waitForCoSignReady: timeout', {
+      txId,
+      timeoutMs,
     });
+    return false;
   });
 }
 
@@ -670,6 +849,122 @@ const MobileNostrPairing = ({navigation}: any) => {
     focused: isFocusedRef.current,
     flowActive: isPairingRef.current,
   });
+  const activeNostrTxGuardRef = useRef<{flow: 'send' | 'sign'; txKey: string} | null>(null);
+  const pendingInitiatorSendRef = useRef<{
+    txId: string;
+    traceId?: string;
+    peerNpub: string;
+    createdAt: number;
+  } | null>(null);
+  const [pendingInitiatorSendTxId, setPendingInitiatorSendTxId] =
+    useState<string | null>(null);
+  const [pendingInitiatorPeerReadyObserved, setPendingInitiatorPeerReadyObserved] =
+    useState(false);
+  const spendManualConfirmRef = useRef<{send: boolean; sign: boolean}>({
+    send: false,
+    sign: false,
+  });
+  const markSpendManualConfirm = useCallback((flow: 'send' | 'sign') => {
+    spendManualConfirmRef.current[flow] = true;
+  }, []);
+  const clearPendingInitiatorSend = useCallback(() => {
+    pendingInitiatorSendRef.current = null;
+    setPendingInitiatorSendTxId(null);
+    setPendingInitiatorPeerReadyObserved(false);
+  }, []);
+  const tryBeginNostrTxGuard = useCallback(
+    (flow: 'send' | 'sign', txKey: string): boolean => {
+      const current = activeNostrTxGuardRef.current;
+      if (current && current.flow === flow && current.txKey === txKey) {
+        dbg('[PSBT_SIGN_DEBUG][GUARD] blocked duplicate start for same tx', {
+          flow,
+          txKey,
+        });
+        return false;
+      }
+      activeNostrTxGuardRef.current = {flow, txKey};
+      return true;
+    },
+    [],
+  );
+  const endNostrTxGuard = useCallback((flow: 'send' | 'sign') => {
+    if (activeNostrTxGuardRef.current?.flow === flow) {
+      activeNostrTxGuardRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isSendBitcoin || route.params?.isPeerResponse === true) {
+      clearPendingInitiatorSend();
+    }
+  }, [isSendBitcoin, route.params?.isPeerResponse, clearPendingInitiatorSend]);
+
+  useEffect(() => {
+    if (!isSendBitcoin) return;
+    if (route.params?.isPeerResponse === true) return;
+    if (route.params?.resumePendingRequest !== true) return;
+
+    const txId =
+      typeof route.params?.initiatorTxId === 'string'
+        ? route.params.initiatorTxId.trim()
+        : '';
+    if (!txId) return;
+
+    const traceId =
+      typeof route.params?.cosignTraceId === 'string' &&
+      route.params.cosignTraceId.trim()
+        ? route.params.cosignTraceId.trim()
+        : undefined;
+    const peerNpub =
+      typeof route.params?.peerNpub === 'string' && route.params.peerNpub.trim()
+        ? route.params.peerNpub.trim()
+        : pendingInitiatorSendRef.current?.peerNpub || '';
+
+    pendingInitiatorSendRef.current = {
+      txId,
+      traceId,
+      peerNpub,
+      createdAt: Date.now(),
+    };
+    setPendingInitiatorSendTxId(txId);
+    setPendingInitiatorPeerReadyObserved(
+      nostrMpcSession.hasPeerReady(txId, traceId),
+    );
+    setStatus('Waiting for peer approval...');
+  }, [
+    isSendBitcoin,
+    route.params?.resumePendingRequest,
+    route.params?.isPeerResponse,
+    route.params?.initiatorTxId,
+    route.params?.cosignTraceId,
+    route.params?.peerNpub,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingInitiatorSendRef.current;
+    if (!pendingInitiatorSendTxId || !pending) {
+      setPendingInitiatorPeerReadyObserved(false);
+      return;
+    }
+
+    setPendingInitiatorPeerReadyObserved(
+      nostrMpcSession.hasPeerReady(pending.txId, pending.traceId),
+    );
+
+    const sub = DeviceEventEmitter.addListener(
+      'nostr-mpc:state',
+      (event: any) => {
+        if (!event || event.txId !== pending.txId) return;
+        if (event.state === 'computing_nonces') {
+          setPendingInitiatorPeerReadyObserved(true);
+        }
+      },
+    );
+
+    return () => {
+      sub.remove();
+    };
+  }, [pendingInitiatorSendTxId]);
 
   const abortActiveNostrMpc = React.useCallback(() => {
     Alert.alert(
@@ -1823,6 +2118,36 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
   };
   const startSendBTC = async () => {
+    const isPeerResponseSendEntry = route.params?.isPeerResponse === true;
+    if (!isPeerResponseSendEntry && !spendManualConfirmRef.current.send) {
+      dbg('[NIP46-TLM][ManualGate] blocked startSendBTC without explicit user confirmation', {
+        isPeerResponseSendEntry,
+      });
+      setStatus('Awaiting your confirmation…');
+      return;
+    }
+    spendManualConfirmRef.current.send = false;
+
+    if (!isPeerResponseSendEntry) {
+      const pending = pendingInitiatorSendRef.current;
+      if (pending) {
+        const readyObserved = nostrMpcSession.hasPeerReady(
+          pending.txId,
+          pending.traceId,
+        );
+        if (!readyObserved) {
+          dbg('[NIP46-TLM][ManualGate] blocked initiator continue until peer-ready is observed', {
+            txId: pending.txId,
+            traceId: pending.traceId,
+          });
+          setPendingInitiatorPeerReadyObserved(false);
+          setStatus('Still waiting for peer ready… return to chat and wait for approval.');
+          return;
+        }
+        setPendingInitiatorPeerReadyObserved(true);
+      }
+    }
+
     if (!route.params) {
       Alert.alert('Error', 'Missing transaction parameters');
       return;
@@ -1866,6 +2191,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Please wait', alertMessageForNostrSendError(e));
       return;
     }
+    const sendGuardKey = txScopedGuardKeyForSend(route.params);
+    if (!tryBeginNostrTxGuard('send', sendGuardKey)) {
+      Alert.alert('Please wait', 'A signing flow for this transaction is already running.');
+      return;
+    }
     let backend = spendBackend;
     if (!backend) {
       backend = await resolveTssBackend();
@@ -1890,6 +2220,8 @@ const MobileNostrPairing = ({navigation}: any) => {
     let originalWalletServiceApiUrl = '';
     // Tracks the Nostr fan-out request so the catch/finally blocks can update chat status.
     let cosignFanOutTxId: string | undefined;
+    let sendSessionSucceeded = false;
+    let handoffPendingManualConfirm = false;
     try {
       // A responder entering via a chat-card tap (KeyshareChat.openCoSignRequest) only
       // carries recipient/amount/fee/network from the incoming COSIGN_REQUEST \u2014 it must
@@ -1897,9 +2229,23 @@ const MobileNostrPairing = ({navigation}: any) => {
       // sender (who may not even know this device's path, e.g. a watch-only extension)
       // to have supplied them.
       const isPeerResponseSend = route.params?.isPeerResponse === true;
+      const responderCtx = isPeerResponseSend
+        ? await resolveResponderSendContext(route.params)
+        : null;
+      if (isPeerResponseSend && responderCtx) {
+        dbg('[NIP46-TLM][ResponderHydration] hydrated responder send context', {
+          txId: responderCtx.initiatorTxId,
+          traceId: responderCtx.cosignTraceId,
+          peerNpub: responderCtx.peerNpub?.slice(0, 20),
+          sources: responderCtx.sources,
+        });
+      }
 
       // Read ALL parameters from route params ONLY (no fallbacks)
-      if (!route.params?.network || route.params.network.trim() === '') {
+      const routeNetwork = isPeerResponseSend
+        ? nonEmpty(responderCtx?.network || route.params?.network)
+        : nonEmpty(route.params?.network);
+      if (!routeNetwork) {
         throw new Error('Network is required in route params');
       }
       if (
@@ -1915,24 +2261,27 @@ const MobileNostrPairing = ({navigation}: any) => {
       ) {
         throw new Error('Derivation path is required in route params');
       }
-      if (!route.params?.toAddress || route.params.toAddress.trim() === '') {
+      const routeToAddress = isPeerResponseSend
+        ? nonEmpty(responderCtx?.toAddress || route.params?.toAddress)
+        : nonEmpty(route.params?.toAddress);
+      if (!routeToAddress) {
         throw new Error('Destination address is required in route params');
       }
-      if (
-        !route.params?.satoshiAmount ||
-        route.params.satoshiAmount.trim() === ''
-      ) {
+      const routeAmount = isPeerResponseSend
+        ? nonEmpty(responderCtx?.satoshiAmount || route.params?.satoshiAmount)
+        : nonEmpty(route.params?.satoshiAmount);
+      if (!routeAmount) {
         throw new Error('Amount is required in route params');
       }
-      if (
-        !route.params?.satoshiFees ||
-        route.params.satoshiFees.trim() === ''
-      ) {
+      const routeFees = isPeerResponseSend
+        ? nonEmpty(responderCtx?.satoshiFees || route.params?.satoshiFees)
+        : nonEmpty(route.params?.satoshiFees);
+      if (!routeFees) {
         throw new Error('Fees are required in route params');
       }
       // Extract all params from route
       // CRITICAL: Normalize network to native format ('testnet3' not 'testnet') for BBMTLib
-      const networkFromParams = route.params.network.trim();
+      const networkFromParams = routeNetwork;
       const net =
         networkFromParams === 'testnet' ? 'testnet3' : networkFromParams;
       let addressTypeToUse = route.params?.addressType?.trim() || '';
@@ -1946,9 +2295,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           derivationPath: path,
         });
       }
-      const toAddress = route.params.toAddress.trim();
-      const satoshiAmount = route.params.satoshiAmount.trim();
-      const satoshiFees = route.params.satoshiFees.trim();
+      const toAddress = routeToAddress;
+      const satoshiAmount = routeAmount;
+      const satoshiFees = routeFees;
       dbg('MobileNostrPairing: Using route params ONLY:', {
         networkFromParams,
         network: net,
@@ -1990,6 +2339,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
       let keyshare: any;
       let rawTxHex: string | undefined;
+      let preparedChangeAddress = '';
+      let preparedUtxosWithPathsJSON = '';
       let broadcastInputs:
         | Array<{
             txid: string;
@@ -2015,6 +2366,27 @@ const MobileNostrPairing = ({navigation}: any) => {
         net,
         addressTypeToUse,
       );
+      const prepared = await prepareSendBtcMultiPathInputs({
+        network: net,
+        addressType:
+          (isPeerResponseSend
+            ? nonEmpty(responderCtx?.senderAddressType)
+            : '') || addressTypeToUse,
+        utxosJsonFromRoute:
+          (isPeerResponseSend
+            ? nonEmpty(responderCtx?.utxosJson)
+            : '') || route.params?.utxosJson,
+        changeAddressFromRoute:
+          (isPeerResponseSend
+            ? nonEmpty(responderCtx?.changeAddress)
+            : '') || route.params?.changeAddress,
+        senderDerivationPath:
+          (isPeerResponseSend
+            ? nonEmpty(responderCtx?.senderDerivationPath)
+            : '') || path,
+      });
+      preparedChangeAddress = prepared.changeAddress;
+      preparedUtxosWithPathsJSON = prepared.utxosWithPathsJSON;
       // Build signing npubs (local + one peer). Nostr send is always a duo session.
       const allNpubsFromKeyshare: string[] = [];
       const sortedKeys = [...keyshare.keygen_committee_keys].sort();
@@ -2060,9 +2432,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       // round is exactly 2 parties: local + one peer), so no election/hashing across
       // the full committee is needed, and manual peer selection can be skipped.
       const responseSendPeerNpub =
-        typeof route.params?.peerNpub === 'string'
+        nonEmpty(responderCtx?.peerNpub) ||
+        (typeof route.params?.peerNpub === 'string'
           ? route.params.peerNpub.trim()
-          : '';
+          : '');
       if (responseSendPeerNpub) {
         const matchedResponsePeer = allNpubsFromKeyshare.find(
           n =>
@@ -2208,24 +2581,68 @@ const MobileNostrPairing = ({navigation}: any) => {
           peerNpubForSign,
           keyshare,
         );
-      const signingNpubsSorted = partiesNpubsCSV;
+      const signingNpubsSorted = canonicalizeSigningNpubsCSV(partiesNpubsCSV);
       const relaysCSV = relays.join(',');
       const initiatorNpubHint = isPeerResponseSend
         ? resolvedPeerNpub
         : localNpubFromKeyshare;
+      const templateHashes = await deriveSendTemplateHashes({
+        signingNpubsCSV: signingNpubsSorted,
+        network: networkFromParams,
+        toAddress,
+        satoshiAmount,
+        satoshiFees,
+        changeAddress: preparedChangeAddress,
+        senderDerivationPath: path,
+        senderAddressType: addressTypeToUse,
+        utxosWithPathsJSON: preparedUtxosWithPathsJSON,
+      });
       dbg('Nostr send BTC — signing npubs:', {
         partiesNpubsCSV: signingNpubsSorted,
         resolvedPeerNpub: resolvedPeerNpub.substring(0, 20) + '...',
         initiatorNpubHint: initiatorNpubHint.substring(0, 20) + '...',
+        utxoSetHash: templateHashes.utxoSetHash,
+        txTemplateHash: templateHashes.txTemplateHash,
       });
+
+      if (isPeerResponseSend) {
+        const expectedSigning = canonicalizeSigningNpubsCSV(
+          nonEmpty(responderCtx?.signingNpubsCSV),
+        );
+        const expectedTemplateHash = nonEmpty(responderCtx?.txTemplateHash);
+        const expectedUtxoSetHash = nonEmpty(responderCtx?.utxoSetHash);
+        if (expectedSigning && expectedSigning !== signingNpubsSorted) {
+          throw new Error(
+            'Co-signing peer set mismatch detected. Re-open the request and confirm both devices are using the same signing pair.',
+          );
+        }
+        if (
+          expectedTemplateHash &&
+          expectedTemplateHash !== templateHashes.txTemplateHash
+        ) {
+          throw new Error(
+            'Transaction template mismatch detected between devices. Refresh the request and retry before signing.',
+          );
+        }
+        if (
+          expectedUtxoSetHash &&
+          expectedUtxoSetHash !== templateHashes.utxoSetHash
+        ) {
+          throw new Error(
+            'UTXO selection mismatch detected between devices. Re-sync UTXOs and retry co-signing.',
+          );
+        }
+      }
       if (isPeerResponseSend) {
         const responderTxId =
-          typeof route.params?.initiatorTxId === 'string'
+          nonEmpty(responderCtx?.initiatorTxId) ||
+          (typeof route.params?.initiatorTxId === 'string'
             ? route.params.initiatorTxId.trim()
-            : '';
+            : '');
         if (responderTxId) {
           const localFingerprint = fingerprintFromNpub(localNpubFromKeyshare);
           const responderTraceId =
+            nonEmpty(responderCtx?.cosignTraceId) ||
             (typeof route.params?.cosignTraceId === 'string' &&
               route.params.cosignTraceId.trim()) ||
             undefined;
@@ -2249,9 +2666,11 @@ const MobileNostrPairing = ({navigation}: any) => {
           dbg('MobileNostrPairing: responder has no initiatorTxId; skipping explicit COSIGN_READY publish');
         }
       }
-      const txIntentKeyForAttempt = `${signingNpubsSorted},${Number(
-        satoshiAmount,
-      )},${toAddress.trim()}`;
+      const txIntentKeyForAttempt = deriveDklsSendTxIntentKey({
+        signingNpubsCSV: signingNpubsSorted,
+        amountSats: satoshiAmount,
+        toAddress,
+      });
       try {
         const roomHash = await BBMTLibNativeModule.sha256(
           `bbw-attempt-v1:${txIntentKeyForAttempt}`,
@@ -2280,59 +2699,114 @@ const MobileNostrPairing = ({navigation}: any) => {
       // COSIGN_REQUEST via chat and already sent its own COSIGN_READY before navigating
       // here, so re-fanning-out (and waiting on itself) would just deadlock.
       const committeeLen = allNpubsFromKeyshare.length;
+      let cosignFanOutTraceId: string | undefined =
+        pendingInitiatorSendRef.current?.traceId;
       if (!isPeerResponseSend && committeeLen > 1) {
-        try {
-          const fanOutTraceId =
-            (typeof route.params?.cosignTraceId === 'string' &&
-              route.params.cosignTraceId.trim()) ||
-            createCoSignTraceId();
-          const fanOutTxId =
-            (typeof route.params?.initiatorTxId === 'string' &&
-              route.params.initiatorTxId.trim()) ||
-            `native-send-${Date.now()}`;
-          const fanOutPayload: CoSignRequestPayload = {
-            txId: fanOutTxId,
-            traceId: fanOutTraceId,
-            psbtHex: '',
-            amountSats: Number(satoshiAmount),
-            feeSats: Number(satoshiFees),
-            recipientAddress: toAddress,
-            network: (networkFromParams as CoSignRequestPayload['network']) || 'mainnet',
-          };
-          const localFingerprint = fingerprintFromNpub(localNpubFromKeyshare);
-          dbg('MobileNostrPairing: fanning out native send COSIGN_REQUEST to peer', {
-            traceId: fanOutTraceId,
-            txId: fanOutTxId,
-            committeeLen,
-            peer: resolvedPeerNpub.substring(0, 20) + '...',
+        const existingPending = pendingInitiatorSendRef.current;
+        if (!existingPending) {
+          try {
+            const fanOutTraceId =
+              (typeof route.params?.cosignTraceId === 'string' &&
+                route.params.cosignTraceId.trim()) ||
+              createCoSignTraceId();
+            cosignFanOutTraceId = fanOutTraceId;
+            const fanOutTxId =
+              (typeof route.params?.initiatorTxId === 'string' &&
+                route.params.initiatorTxId.trim()) ||
+              `native-send-${Date.now()}`;
+            const fanOutPayload: CoSignRequestPayload = {
+              txId: fanOutTxId,
+              traceId: fanOutTraceId,
+              psbtHex: '',
+              amountSats: Number(satoshiAmount),
+              feeSats: Number(satoshiFees),
+              recipientAddress: toAddress,
+              network: (networkFromParams as CoSignRequestPayload['network']) || 'mainnet',
+              requestMode: 'dkls',
+              utxosJson: preparedUtxosWithPathsJSON,
+              changeAddress: preparedChangeAddress,
+              senderDerivationPath: path,
+              senderAddressType: addressTypeToUse,
+              signingNpubsCSV: signingNpubsSorted,
+              txTemplateHash: templateHashes.txTemplateHash,
+              utxoSetHash: templateHashes.utxoSetHash,
+            };
+            const localFingerprint = fingerprintFromNpub(localNpubFromKeyshare);
+            dbg('MobileNostrPairing: fanning out native send COSIGN_REQUEST to peer', {
+              traceId: fanOutTraceId,
+              txId: fanOutTxId,
+              committeeLen,
+              peer: resolvedPeerNpub.substring(0, 20) + '...',
+            });
+            await nostrMessaging.sendCoSignRequestToMany(
+              [resolvedPeerNpub],
+              localFingerprint,
+              'peer-group',
+              fanOutPayload,
+            );
+            cosignFanOutTxId = fanOutTxId;
+            pendingInitiatorSendRef.current = {
+              txId: fanOutTxId,
+              traceId: fanOutTraceId,
+              peerNpub: resolvedPeerNpub,
+              createdAt: Date.now(),
+            };
+            setPendingInitiatorSendTxId(fanOutTxId);
+            DeviceEventEmitter.emit('nostr-cosign:request', {
+              ts: Date.now(),
+              mode: 'legacy',
+              eventId: `local:${fanOutTxId}`,
+              envelopeId: `local:${fanOutTxId}`,
+              senderNpub: localNpubFromKeyshare,
+              senderFingerprint: localFingerprint,
+              recipientFingerprint: 'peer-group',
+              request: fanOutPayload,
+            });
+            DeviceEventEmitter.emit('nostr-cosign:status', {
+              mode: 'legacy',
+              txId: fanOutTxId,
+              status: 'pending',
+            });
+            // Route initiator back to chat/pending thread immediately after request dispatch.
+            DeviceEventEmitter.emit('nostr-cosign:focus', {
+              ts: Date.now(),
+              txId: fanOutTxId,
+              openRequest: false,
+            });
+            navigation.dispatch(
+              CommonActions.navigate('MainTabs', {
+                screen: 'Chat',
+              }),
+            );
+            setTimeout(() => {
+              DeviceEventEmitter.emit('nostr-cosign:focus', {
+                ts: Date.now(),
+                txId: fanOutTxId,
+                openRequest: false,
+              });
+            }, 250);
+            handoffPendingManualConfirm = true;
+            setStatus('Request sent — continue in chat and wait for peer approval.');
+            return;
+          } catch (fanOutErr) {
+            dbg(
+              'MobileNostrPairing: native send COSIGN_REQUEST fan-out failed (continuing with live MPC signing)',
+              fanOutErr,
+            );
+          }
+        } else {
+          if (existingPending.peerNpub !== resolvedPeerNpub) {
+            throw new Error(
+              'Co-signing peer changed while request was pending. Start a new co-sign request.',
+            );
+          }
+          cosignFanOutTxId = existingPending.txId;
+          cosignFanOutTraceId = existingPending.traceId;
+          dbg('MobileNostrPairing: continuing initiator flow after explicit confirm', {
+            txId: existingPending.txId,
+            traceId: existingPending.traceId,
+            peer: existingPending.peerNpub.substring(0, 20) + '...',
           });
-          await nostrMessaging.sendCoSignRequestToMany(
-            [resolvedPeerNpub],
-            localFingerprint,
-            'peer-group',
-            fanOutPayload,
-          );
-          cosignFanOutTxId = fanOutTxId;
-          DeviceEventEmitter.emit('nostr-cosign:request', {
-            ts: Date.now(),
-            mode: 'legacy',
-            eventId: `local:${fanOutTxId}`,
-            envelopeId: `local:${fanOutTxId}`,
-            senderNpub: localNpubFromKeyshare,
-            senderFingerprint: localFingerprint,
-            recipientFingerprint: 'peer-group',
-            request: fanOutPayload,
-          });
-          DeviceEventEmitter.emit('nostr-cosign:status', {
-            mode: 'legacy',
-            txId: fanOutTxId,
-            status: 'pending',
-          });
-        } catch (fanOutErr) {
-          dbg(
-            'MobileNostrPairing: native send COSIGN_REQUEST fan-out failed (continuing with live MPC signing)',
-            fanOutErr,
-          );
         }
 
         // Device 1 always originates the native send in this branch (peer-response
@@ -2342,10 +2816,22 @@ const MobileNostrPairing = ({navigation}: any) => {
         // fan-out itself succeeded.
         if (cosignFanOutTxId) {
           setStatus('Awaiting peer approval…');
+          nostrMpcSession.startSession(
+            cosignFanOutTxId,
+            cosignFanOutTraceId,
+          );
+          nostrMpcSession.setState(cosignFanOutTxId, 'awaiting_peer', {
+            source: 'mobile-send-wait',
+            traceId: cosignFanOutTraceId,
+          });
           dbg('MobileNostrPairing: waiting for COSIGN_READY before native send', {
             txId: cosignFanOutTxId,
+            traceId: cosignFanOutTraceId,
           });
-          const peerReady = await waitForCoSignReady(cosignFanOutTxId);
+          const peerReady = await waitForCoSignReady(
+            cosignFanOutTxId,
+            cosignFanOutTraceId,
+          );
           if (nostrAbortRef.current) {
             setPairingActive(false);
             return;
@@ -2356,21 +2842,18 @@ const MobileNostrPairing = ({navigation}: any) => {
               txId: cosignFanOutTxId,
               status: 'rejected',
             });
+            nostrMpcSession.endSession(cosignFanOutTxId, false);
             throw new Error('Peer did not respond in time');
           }
+          nostrMpcSession.setState(cosignFanOutTxId, 'signing', {
+            source: 'mobile-send-peer-ready',
+          });
           setStatus('Peer ready \u2014 starting co-sign\u2026');
         }
       }
 
-      const prepared = await prepareSendBtcMultiPathInputs({
-        network: net,
-        addressType: addressTypeToUse,
-        utxosJsonFromRoute: route.params?.utxosJson,
-        changeAddressFromRoute: route.params?.changeAddress,
-        senderDerivationPath: path,
-      });
-      const changeAddress = prepared.changeAddress;
-      const utxosWithPathsJSON = prepared.utxosWithPathsJSON;
+      const changeAddress = preparedChangeAddress;
+      const utxosWithPathsJSON = preparedUtxosWithPathsJSON;
 
       /** RN iOS bridge expects NSString for every arg; coerce so Hermes never passes undefined/number. */
       const nostrNativeStr = (v: unknown) =>
@@ -2436,6 +2919,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           txId: cosignFanOutTxId,
           status: 'signed',
         });
+        nostrMpcSession.setState(cosignFanOutTxId, 'broadcasting', {
+          source: 'mobile-send-signed',
+        });
       }
       broadcastSuccessPayloadRef.current = {
         senderAddress,
@@ -2458,11 +2944,14 @@ const MobileNostrPairing = ({navigation}: any) => {
           : {}),
       };
       skipRestoreInFinallyRef.current = true;
+      sendSessionSucceeded = true;
       if (nostrAbortRef.current) {
+        clearPendingInitiatorSend();
         setPairingActive(false);
         return;
       }
       setSignedTxRawHex(rawTxHex);
+      clearPendingInitiatorSend();
     } catch (error: any) {
       dbg('Send BTC error:', error);
       if (cosignFanOutTxId) {
@@ -2471,6 +2960,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           txId: cosignFanOutTxId,
           status: 'rejected',
         });
+        nostrMpcSession.endSession(cosignFanOutTxId, false);
       }
       if (!nostrAbortRef.current) {
         if (
@@ -2484,11 +2974,18 @@ const MobileNostrPairing = ({navigation}: any) => {
           );
         }
       }
+      clearPendingInitiatorSend();
       setStatus('Transaction signing failed');
     } finally {
       if (skipRestoreInFinallyRef.current) {
         skipRestoreInFinallyRef.current = false;
         setPairingActive(false);
+        endNostrTxGuard('send');
+        return;
+      }
+      if (handoffPendingManualConfirm) {
+        setPairingActive(false);
+        endNostrTxGuard('send');
         return;
       }
       // CRITICAL: Restore original network after transaction completes (success or failure)
@@ -2521,9 +3018,23 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       }
       setPairingActive(false);
+      endNostrTxGuard('send');
+      if (cosignFanOutTxId) {
+        nostrMpcSession.endSession(cosignFanOutTxId, sendSessionSucceeded);
+      }
     }
   };
   const startSignPSBT = async () => {
+    const isPeerResponseSignEntry = route.params?.isPeerResponse === true;
+    if (!isPeerResponseSignEntry && !spendManualConfirmRef.current.sign) {
+      dbg('[NIP46-TLM][ManualGate] blocked startSignPSBT without explicit user confirmation', {
+        isPeerResponseSignEntry,
+      });
+      setStatus('Awaiting your confirmation…');
+      return;
+    }
+    spendManualConfirmRef.current.sign = false;
+
     const joinTraceId =
       (typeof route.params?.cosignTraceId === 'string' && route.params.cosignTraceId.trim()) ||
       createCoSignTraceId();
@@ -2534,10 +3045,67 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Error', 'Missing PSBT data');
       return;
     }
+
+    let canonicalRoutePsbt = '';
+    let signGuardKey = '';
+    let psbtIdentity = '';
+    try {
+      canonicalRoutePsbt = canonicalPsbtBase64(route.params.psbtBase64);
+      const psbtHex = Buffer.from(canonicalRoutePsbt, 'base64').toString('hex');
+      const sha256Hex = await BBMTLibNativeModule.sha256(psbtHex);
+      psbtIdentity = await psbtIdentityHash(canonicalRoutePsbt);
+      signGuardKey =
+        (typeof route.params?.initiatorTxId === 'string' && route.params.initiatorTxId.trim()) ||
+        `psbt:${psbtIdentity}`;
+
+      dbg('[PSBT_SIGN_DEBUG][MOBILE][SIGN_ENTRY]', {
+        traceId: joinTraceId,
+        guardKey: signGuardKey,
+        base64Len: canonicalRoutePsbt.length,
+        hexLen: psbtHex.length,
+        sha256Hex,
+        identityHash: psbtIdentity,
+        base64Head: canonicalRoutePsbt.slice(0, 32),
+        base64Tail: canonicalRoutePsbt.slice(-32),
+        hexHead: psbtHex.slice(0, 64),
+        hexTail: psbtHex.slice(-64),
+      });
+
+      try {
+        const detailsJson = await BBMTLibNativeModule.parsePSBTDetails(canonicalRoutePsbt);
+        const parsed = JSON.parse(detailsJson);
+        const input0 = Array.isArray(parsed?.inputs) ? parsed.inputs[0] : null;
+        const derivePath0 = Array.isArray(parsed?.derivePaths) ? parsed.derivePaths[0] : undefined;
+        dbg('[PSBT_SIGN_DEBUG][MOBILE][INPUT0]', {
+          traceId: joinTraceId,
+          derivePath0,
+          txid: input0?.txid || input0?.hash || null,
+          vout: input0?.vout ?? input0?.index ?? null,
+          amount: input0?.amount ?? input0?.value ?? null,
+          witnessValue:
+            input0?.witnessUtxo?.value ?? input0?.witness_utxo?.value ?? null,
+          scriptHex:
+            input0?.witnessUtxo?.scriptPubKey ||
+            input0?.witness_utxo?.script ||
+            input0?.scriptPubKey ||
+            null,
+        });
+      } catch (parseErr) {
+        dbg('[PSBT_SIGN_DEBUG][MOBILE][INPUT0] parse failed', parseErr);
+      }
+    } catch (e) {
+      Alert.alert('Error', e instanceof Error ? e.message : 'Invalid PSBT payload');
+      return;
+    }
+
     try {
       assertCanStartNostrMpc();
     } catch (e) {
       Alert.alert('Please wait', alertMessageForNostrSendError(e));
+      return;
+    }
+    if (!tryBeginNostrTxGuard('sign', signGuardKey)) {
+      Alert.alert('Please wait', 'A PSBT co-signing flow for this transaction is already running.');
       return;
     }
     let backend = spendBackend;
@@ -2561,6 +3129,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     let keyshare: any;
     // Tracks the pre-sign Nostr fan-out so later branches can update the chat status.
     let cosignFanOutTxId: string | undefined;
+    let signSessionSucceeded = false;
     try {
       keyshare = await loadNostrKeysharePrepForSession();
       // Get all npubs from keyshare for session ID
@@ -2690,7 +3259,11 @@ const MobileNostrPairing = ({navigation}: any) => {
           peerNpubForSign,
           keyshare,
         );
-      const signingNpubsSorted = partiesNpubsCSV;
+      const signingNpubsSorted = canonicalizeSigningNpubsCSV(partiesNpubsCSV);
+      const psbtIntentKeyForAttempt = deriveDklsPsbtIntentKey({
+        signingNpubsCSV: signingNpubsSorted,
+        psbtIdentity,
+      });
       const relaysCSV = relays.join(',');
       const isPeerResponseSign = route.params?.isPeerResponse === true;
       const initiatorNpubHint = isPeerResponseSign
@@ -2700,9 +3273,16 @@ const MobileNostrPairing = ({navigation}: any) => {
         relays: relaysCSV,
         parties: partiesNpubsCSV.substring(0, 50) + '...',
         signingNpubs: signingNpubsSorted.substring(0, 30) + '...',
+        psbtIntentKey: psbtIntentKeyForAttempt,
         resolvedPeerNpub: resolvedPeerNpub.substring(0, 20) + '...',
         initiatorNpubHint: initiatorNpubHint.substring(0, 20) + '...',
-        psbtLength: route.params.psbtBase64?.length,
+        psbtLength: canonicalRoutePsbt.length,
+      });
+      console.warn('[NIP46-TLM][Attempt] MobileNostrPairing.startSignPSBT: derived attempt context', {
+        traceId: joinTraceId,
+        txId: route.params?.initiatorTxId,
+        signingNpubsSorted,
+        psbtIntentKey: psbtIntentKeyForAttempt,
       });
 
       if (isPeerResponseSign) {
@@ -2739,17 +3319,19 @@ const MobileNostrPairing = ({navigation}: any) => {
 
       // Initiator/forwarder notifies the peer before entering the blocking native call.
       // A responder that arrived from an existing chat request must not fan-out again.
+      let cosignFanOutTraceId: string | undefined;
       if (!isPeerResponseSign) {
         try {
           const fanOutTxId =
             (typeof route.params?.initiatorTxId === 'string' &&
               route.params.initiatorTxId.trim()) ||
             `sign-psbt-${Date.now()}`;
+          cosignFanOutTraceId = joinTraceId;
           const fanOutPayload: CoSignRequestPayload = {
             txId: fanOutTxId,
-            traceId: joinTraceId,
-            psbtHex: nostrMessaging.psbtBase64ToHex(route.params.psbtBase64),
-            psbtBase64: route.params.psbtBase64,
+            traceId: cosignFanOutTraceId,
+            psbtHex: nostrMessaging.psbtBase64ToHex(canonicalRoutePsbt),
+            psbtBase64: canonicalRoutePsbt,
             amountSats: 0,
             feeSats: 0,
             recipientAddress: 'N/A',
@@ -2783,6 +3365,26 @@ const MobileNostrPairing = ({navigation}: any) => {
             txId: fanOutTxId,
             status: 'pending',
           });
+
+          // Device 1 should not remain blocked on this screen while awaiting peer action.
+          DeviceEventEmitter.emit('nostr-cosign:focus', {
+            ts: Date.now(),
+            txId: fanOutTxId,
+            openRequest: false,
+          });
+          navigation.dispatch(
+            CommonActions.navigate('MainTabs', {
+              screen: 'Chat',
+            }),
+          );
+          setTimeout(() => {
+            DeviceEventEmitter.emit('nostr-cosign:focus', {
+              ts: Date.now(),
+              txId: fanOutTxId,
+              openRequest: false,
+            });
+          }, 250);
+          setStatus('Request sent — continue in chat');
         } catch (fanOutErr) {
           dbg(
             'MobileNostrPairing: pre-sign COSIGN_REQUEST fan-out failed (continuing with native MPC signing)',
@@ -2799,10 +3401,19 @@ const MobileNostrPairing = ({navigation}: any) => {
         route.params?.isInitiator === true || route.params?.forwardPeerCosign === true;
       if (isWaitingRole && cosignFanOutTxId) {
         setStatus('Awaiting peer approval…');
+        nostrMpcSession.startSession(cosignFanOutTxId, cosignFanOutTraceId);
+        nostrMpcSession.setState(cosignFanOutTxId, 'awaiting_peer', {
+          source: 'mobile-sign-wait',
+          traceId: cosignFanOutTraceId,
+        });
         dbg('MobileNostrPairing: waiting for COSIGN_READY before native MPC sign', {
           txId: cosignFanOutTxId,
+          traceId: cosignFanOutTraceId,
         });
-        const peerReady = await waitForCoSignReady(cosignFanOutTxId);
+        const peerReady = await waitForCoSignReady(
+          cosignFanOutTxId,
+          cosignFanOutTraceId,
+        );
         if (nostrAbortRef.current) {
           setSpendSignOutcome('aborted');
           return;
@@ -2816,6 +3427,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             txId: cosignFanOutTxId,
             status: 'rejected',
           });
+          nostrMpcSession.endSession(cosignFanOutTxId, false);
           setSpendSignOutcome('failed');
           if (shouldShowMpcFlowAlert(nostrFlowAlertGate())) {
             showMpcFlowAlert(
@@ -2827,15 +3439,17 @@ const MobileNostrPairing = ({navigation}: any) => {
           setStatus('PSBT signing failed');
           return;
         }
+        nostrMpcSession.setState(cosignFanOutTxId, 'signing', {
+          source: 'mobile-sign-peer-ready',
+        });
         setStatus('Peer ready \u2014 starting co-sign\u2026');
       }
-
       // Call native module for PSBT signing
       await TssProvider.nostrMpcSignPSBT(
         relaysCSV,
         partiesNpubsCSV,
         signingNpubsSorted,
-        route.params.psbtBase64,
+        canonicalRoutePsbt,
         initiatorNpubHint,
       )
         .then(async (signedPsbt: any) => {
@@ -2862,6 +3476,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                 txId: cosignFanOutTxId,
                 status: 'rejected',
               });
+              nostrMpcSession.endSession(cosignFanOutTxId, false);
             }
             setSpendSignOutcome('failed');
             if (
@@ -2884,6 +3499,10 @@ const MobileNostrPairing = ({navigation}: any) => {
               txId: cosignFanOutTxId,
               status: 'signed',
             });
+            nostrMpcSession.setState(cosignFanOutTxId, 'broadcasting', {
+              source: 'mobile-sign-signed',
+            });
+            signSessionSucceeded = true;
           }
           dbg(localNpub, 'PSBT signed successfully');
           if (route.params?.forwardPeerCosign) {
@@ -2926,6 +3545,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               txId: cosignFanOutTxId,
               status: 'rejected',
             });
+            nostrMpcSession.endSession(cosignFanOutTxId, false);
           }
           if (nostrAbortRef.current) {
             setSpendSignOutcome('aborted');
@@ -2953,6 +3573,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           txId: cosignFanOutTxId,
           status: 'rejected',
         });
+        nostrMpcSession.endSession(cosignFanOutTxId, false);
       }
       if (nostrAbortRef.current) {
         setSpendSignOutcome('aborted');
@@ -2972,6 +3593,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       setStatus('PSBT signing failed');
     } finally {
       setPairingActive(false);
+      endNostrTxGuard('sign');
+      if (cosignFanOutTxId) {
+        nostrMpcSession.endSession(cosignFanOutTxId, signSessionSucceeded);
+      }
     }
   };
   // Backup functions
@@ -4744,14 +5369,23 @@ const MobileNostrPairing = ({navigation}: any) => {
     (!threeKeyshareWallet || !!selectedPeerNpub);
   const showSpendStickyFooter =
     isSpendPeersReady && !isPairing && !mpcDone;
-  const nostrSpendDisabled = !isSpendPeersReady;
   const nostrLocalDevice = sendModeDevices.find(d => d.isLocal);
   const nostrIsKeyShare1 = nostrLocalDevice?.keyshareLabel === 'KeyShare1';
+  const waitingInitiatorPeerReady =
+    isSendBitcoin &&
+    nostrIsKeyShare1 &&
+    !!pendingInitiatorSendTxId &&
+    !pendingInitiatorPeerReadyObserved;
+  const nostrSpendDisabled = !isSpendPeersReady || waitingInitiatorPeerReady;
   const nostrSpendLabel = isSendBitcoin || isSignPSBT
     ? nostrIsKeyShare1
       ? isSignPSBT
         ? 'Start PSBT Signing'
-        : 'Start Co-Signing'
+        : pendingInitiatorSendTxId
+          ? pendingInitiatorPeerReadyObserved
+            ? 'Confirm Co-Sign'
+            : 'Waiting for Peer Ready'
+          : 'Start Co-Signing'
       : isSignPSBT
         ? 'Join PSBT Signing'
         : 'Join Co-Signing'
@@ -5232,7 +5866,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                         ) : null}
                         <AppPressable
                           style={styles.backupButton}
-                          onPress={() => startSignPSBT()}>
+                          onPress={() => {
+                            markSpendManualConfirm('sign');
+                            startSignPSBT();
+                          }}>
                           <Text style={styles.backupButtonText}>Try again</Text>
                         </AppPressable>
                       </View>
@@ -6509,6 +7146,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             buttonColor={theme.colors.bitcoinOrange}
             onPress={async () => {
               if (isSignPSBT) {
+                markSpendManualConfirm('sign');
                 console.warn('[NIP46-CRITICAL] "Join Co-Signing" button was physically tapped.');
                 console.log('[NIP46-CRITICAL] Fan-out variables:', {
                   hasPeers: Array.isArray(sendModeDevices),
@@ -6537,6 +7175,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               }
 
               try {
+                markSpendManualConfirm('send');
                 await startSendBTC();
               } catch (error) {
                 console.error(

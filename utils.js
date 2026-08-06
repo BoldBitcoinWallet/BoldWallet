@@ -832,7 +832,10 @@ export const explorerWebBaseFromApiUrl = apiUrl => {
 
 // API Endpoints Configuration
 const MAINNET_APIS = ['https://mempool.space/api'];
-const TESTNET_APIS = ['https://mempool.space/testnet/api'];
+const TESTNET_APIS = [
+  'https://mempool.space/testnet4/api',
+  'https://mempool.space/testnet/api',
+];
 
 // Function to fetch dynamic API endpoints from GitHub
 export const fetchDynamicAPIEndpoints = async () => {

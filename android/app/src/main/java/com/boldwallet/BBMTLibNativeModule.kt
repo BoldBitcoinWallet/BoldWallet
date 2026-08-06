@@ -1140,6 +1140,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             try {
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 if (rejectBbmtUnavailable(promise, "nostrMpcSendBTC")) return@Thread
+                ld(
+                    "nostrMpcSendBTC",
+                    "parties=${partiesNpubsCSV} npubsSorted=${npubsSorted} utxosJsonLen=${utxosWithPathsJSON.length} receiver=${receiverAddress} amount=${amountSatoshi} fee=${estimatedFee}"
+                )
                 val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
                     DklsNative.bbmtNostrMpcSendBTCWithUTXOsNative(
                         relaysCSV,
@@ -1178,6 +1182,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             try {
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 if (rejectBbmtUnavailable(promise, "nostrMpcSignPSBT")) return@Thread
+                ld(
+                    "nostrMpcSignPSBT",
+                    "parties=${partiesNpubsCSV} npubsSorted=${npubsSorted} psbtBase64Len=${psbtBase64.length}"
+                )
                 val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
                     DklsNative.bbmtNostrMpcSignPSBTNative(
                         relaysCSV,

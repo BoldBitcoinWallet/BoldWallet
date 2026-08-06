@@ -415,13 +415,37 @@ func SelectUTXOsWithPaths(utxos []UTXOWithPath, totalAmount int64, strategy stri
 		}
 		return false
 	})
+	byValueAsc := func(i, j int) bool {
+		if utxos[i].Value != utxos[j].Value {
+			return utxos[i].Value < utxos[j].Value
+		}
+		if utxos[i].TxID != utxos[j].TxID {
+			return utxos[i].TxID < utxos[j].TxID
+		}
+		if utxos[i].Vout != utxos[j].Vout {
+			return utxos[i].Vout < utxos[j].Vout
+		}
+		return utxos[i].DerivationPath < utxos[j].DerivationPath
+	}
+	byValueDesc := func(i, j int) bool {
+		if utxos[i].Value != utxos[j].Value {
+			return utxos[i].Value > utxos[j].Value
+		}
+		if utxos[i].TxID != utxos[j].TxID {
+			return utxos[i].TxID < utxos[j].TxID
+		}
+		if utxos[i].Vout != utxos[j].Vout {
+			return utxos[i].Vout < utxos[j].Vout
+		}
+		return utxos[i].DerivationPath < utxos[j].DerivationPath
+	}
 	switch strategy {
 	case "smallest":
-		sort.Slice(utxos, func(i, j int) bool { return utxos[i].Value < utxos[j].Value })
+		sort.Slice(utxos, byValueAsc)
 	case "largest":
-		sort.Slice(utxos, func(i, j int) bool { return utxos[i].Value > utxos[j].Value })
+		sort.Slice(utxos, byValueDesc)
 	default:
-		sort.Slice(utxos, func(i, j int) bool { return utxos[i].Value > utxos[j].Value })
+		sort.Slice(utxos, byValueDesc)
 	}
 
 	var selected []UTXOWithPath

@@ -27,6 +27,61 @@ type RawUtxoEntry = {
   scriptpubkey?: string;
 };
 
+function canonicalizeUtxos(
+  utxos: Array<UtxoWithPath & {scriptpubkey?: string}>,
+): Array<UtxoWithPath & {scriptpubkey?: string}> {
+  const byOutpoint = new Map<string, UtxoWithPath & {scriptpubkey?: string}>();
+
+  for (const raw of utxos) {
+    const txid = String(raw.txid || '').trim().toLowerCase();
+    const vout = Number(raw.vout);
+    const value = Number(raw.value);
+    if (!txid || !Number.isInteger(vout) || vout < 0 || !Number.isFinite(value) || value <= 0) {
+      continue;
+    }
+
+    const normalized: UtxoWithPath & {scriptpubkey?: string} = {
+      ...raw,
+      txid,
+      vout,
+      value,
+      derivationPath: String(raw.derivationPath || '').trim(),
+      address: String(raw.address || '').trim(),
+      scriptpubkey: String((raw as {scriptpubkey?: string}).scriptpubkey || '').trim().toLowerCase(),
+    };
+
+    const outpointKey = `${txid}:${vout}`;
+    const current = byOutpoint.get(outpointKey);
+    if (!current) {
+      byOutpoint.set(outpointKey, normalized);
+      continue;
+    }
+
+    const chooseNormalized =
+      (!current.scriptpubkey && !!normalized.scriptpubkey) ||
+      (!current.derivationPath && !!normalized.derivationPath);
+    if (chooseNormalized) {
+      byOutpoint.set(outpointKey, normalized);
+    }
+  }
+
+  return Array.from(byOutpoint.values()).sort((a, b) => {
+    if (a.value !== b.value) {
+      return a.value - b.value;
+    }
+    if (a.txid !== b.txid) {
+      return a.txid < b.txid ? -1 : 1;
+    }
+    if (a.vout !== b.vout) {
+      return a.vout - b.vout;
+    }
+    if (a.derivationPath !== b.derivationPath) {
+      return a.derivationPath < b.derivationPath ? -1 : 1;
+    }
+    return 0;
+  });
+}
+
 function parseRouteUtxosJson(raw: string): UtxoWithPath[] | null {
   try {
     const parsed = JSON.parse(raw) as RawUtxoEntry[];
@@ -60,7 +115,8 @@ function parseRouteUtxosJson(raw: string): UtxoWithPath[] | null {
 function utxosToNativeJson(
   utxos: Array<UtxoWithPath & {scriptpubkey?: string}>,
 ): string {
-  const forNative = utxos.map(u => ({
+  const canonical = canonicalizeUtxos(utxos);
+  const forNative = canonical.map(u => ({
     txid: u.txid,
     vout: u.vout,
     value: u.value,

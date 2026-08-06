@@ -13,6 +13,7 @@ import {
   type Nip46Request,
   type Nip46Response,
 } from '../services/nostrMessaging';
+import nostrMpcSession from '../services/nostrMpcSession';
 import { clearPendingCoSignRequest } from '../services/nostrCoSignSession';
 
 type Props = {
@@ -98,8 +99,8 @@ export function getRecentCoSignFocusEvents(): Array<Record<string, unknown>> {
   return recentCoSignFocusEvents.filter(e => Number(e.ts) >= cutoff);
 }
 
-function emitCoSignFocusEvent(txId: string): void {
-  const evt = { ts: Date.now(), txId };
+function emitCoSignFocusEvent(txId: string, openRequest = true): void {
+  const evt = { ts: Date.now(), txId, openRequest };
   recentCoSignFocusEvents = pruneAndPush(recentCoSignFocusEvents, evt);
   DeviceEventEmitter.emit('nostr-cosign:focus', evt);
 }
@@ -117,7 +118,7 @@ function notifyCoSignRequest(txId: string | undefined): void {
     visibilityTime: 15000,
     onPress: () => {
       Toast.hide();
-      if (txId) emitCoSignFocusEvent(txId);
+      if (txId) emitCoSignFocusEvent(txId, true);
       const navRef = latestNavigationRef.current;
       if (navRef?.current) {
         navRef.current.dispatch(
@@ -287,10 +288,41 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
 
     const offLegacy = nostrMessaging.onMessage(async msg => {
       if (!mounted) return;
-      if (msg.envelope.type !== 'COSIGN_REQUEST') return;
+      if (
+        msg.envelope.type !== 'COSIGN_REQUEST' &&
+        msg.envelope.type !== 'COSIGN_RESPONSE'
+      ) {
+        return;
+      }
       if (!markCoSignEventProcessed(msg.eventId)) {
-        dbg('[NIP46-TLM][NostrCoSignBridge] ignoring redelivered COSIGN_REQUEST (legacy)', {
+        dbg('[NIP46-TLM][NostrCoSignBridge] ignoring redelivered legacy cosign event', {
           eventId: msg.eventId,
+          type: msg.envelope.type,
+        });
+        return;
+      }
+
+      if (msg.envelope.type === 'COSIGN_RESPONSE') {
+        const payload = msg.envelope.payload as CoSignResponsePayload;
+        const nextStatus = payload.approved ? 'signed' : 'rejected';
+
+        DeviceEventEmitter.emit('nostr-cosign:status', {
+          mode: 'legacy',
+          txId: payload.txId,
+          status: nextStatus,
+        });
+
+        emitUnreadChatEvent({
+          type: 'COSIGN_RESPONSE',
+          mode: 'legacy',
+          txId: payload.txId,
+          requestId: msg.envelope.id,
+          parsedMessage: {
+            eventId: msg.eventId,
+            senderNpub: msg.senderNpub,
+            request: payload,
+            senderFingerprint: msg.envelope.senderFingerprint,
+          },
         });
         return;
       }
@@ -507,21 +539,58 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
     // commit, so both sides enter the native TSS window together.
     const offReady = nostrMessaging.onMessage(msg => {
       if (!mounted) return;
-      if (msg.envelope.type !== 'COSIGN_READY') return;
+      const type = String(msg.envelope.type || '');
+      if (type !== 'COSIGN_READY' && type !== 'MPC_PAYLOAD') return;
 
-      const payload = msg.envelope.payload as CoSignReadyPayload;
-      if (!payload?.txId) return;
+      const payload =
+        msg.envelope.payload && typeof msg.envelope.payload === 'object'
+          ? (msg.envelope.payload as Record<string, unknown>)
+          : {};
+      const txId = typeof payload.txId === 'string' ? payload.txId : '';
+      const traceId = typeof payload.traceId === 'string' ? payload.traceId : undefined;
+      if (!txId) return;
 
-      dbg('[NIP46-TLM][NostrCoSignBridge] received COSIGN_READY, waking waiting signer', {
-        txId: payload.txId,
-        traceId: payload.traceId,
+      if (type === 'COSIGN_READY') {
+        dbg('[NIP46-TLM][NostrCoSignBridge] received COSIGN_READY, waking waiting signer', {
+          txId,
+          traceId,
+          senderNpub: msg.senderNpub,
+        });
+
+        DeviceEventEmitter.emit('nostr-cosign:ready', {
+          ts: Date.now(),
+          txId,
+          traceId,
+          senderNpub: msg.senderNpub,
+        });
+
+        DeviceEventEmitter.emit('nostr-cosign:status', {
+          mode: 'legacy',
+          txId,
+          status: 'signing',
+        });
+
+        nostrMpcSession.markPeerReady(txId, {
+          traceId,
+          senderNpub: msg.senderNpub,
+        });
+        return;
+      }
+
+      dbg('[NIP46-TLM][NostrCoSignBridge] received MPC_PAYLOAD, notifying active signer', {
+        txId,
+        traceId,
         senderNpub: msg.senderNpub,
       });
 
-      DeviceEventEmitter.emit('nostr-cosign:ready', {
-        ts: Date.now(),
-        txId: payload.txId,
-        traceId: payload.traceId,
+      DeviceEventEmitter.emit('nostr-cosign:status', {
+        mode: 'legacy',
+        txId,
+        status: 'signing',
+      });
+
+      nostrMpcSession.markPayloadReceived(txId, type, {
+        traceId,
         senderNpub: msg.senderNpub,
       });
     });

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -174,6 +174,18 @@ type CoSignStatusEvent = {
   status?: 'pending' | 'signing' | 'signed' | 'broadcasted' | 'rejected';
 };
 
+type NostrMpcStateEvent = {
+  txId?: string;
+  state?:
+    | 'idle'
+    | 'awaiting_peer'
+    | 'computing_nonces'
+    | 'signing'
+    | 'broadcasting'
+    | 'completed'
+    | 'failed';
+};
+
 type CoSignFeedBridgeEvent = {
   ts?: number;
   mode?: 'legacy' | 'nip46';
@@ -210,10 +222,20 @@ function invoiceThreadKeyForItem(item: ChatFeedItem): string {
   if (byRequest) return `req:${byRequest}`;
 
   const byTx = typeof item.txId === 'string' ? item.txId.trim() : '';
+  const byTrace =
+    item.payload && typeof item.payload.traceId === 'string'
+      ? item.payload.traceId.trim()
+      : '';
+  if (byTx && byTrace) return `tx:${byTx}:trace:${byTrace}`;
   if (byTx) return `tx:${byTx}`;
 
   const payloadTx =
     item.payload && typeof item.payload.txId === 'string' ? item.payload.txId.trim() : '';
+  const payloadTrace =
+    item.payload && typeof item.payload.traceId === 'string'
+      ? item.payload.traceId.trim()
+      : '';
+  if (payloadTx && payloadTrace) return `tx:${payloadTx}:trace:${payloadTrace}`;
   if (payloadTx) return `tx:${payloadTx}`;
 
   return `evt:${item.id}`;
@@ -223,8 +245,95 @@ function invoiceThreadKeyFromPayload(payload: Record<string, unknown>): string {
   const reqId = typeof payload.nip46RequestId === 'string' ? payload.nip46RequestId.trim() : '';
   if (reqId) return `req:${reqId}`;
   const txId = typeof payload.txId === 'string' ? payload.txId.trim() : '';
+  const traceId = typeof payload.traceId === 'string' ? payload.traceId.trim() : '';
+  if (txId && traceId) return `tx:${txId}:trace:${traceId}`;
   if (txId) return `tx:${txId}`;
   return '';
+}
+
+function compactAddress(address: string): string {
+  const a = typeof address === 'string' ? address.trim() : '';
+  if (!a) return '';
+  if (a.length <= 14) return a;
+  return `${a.slice(0, 8)}...${a.slice(-6)}`;
+}
+
+function formatSats(amountSats: unknown): string {
+  const n = Number(amountSats);
+  if (!Number.isFinite(n) || n <= 0) return '0';
+  return Math.trunc(n).toLocaleString('en-US');
+}
+
+function keyHashSeed(seed: string): string {
+  return bytesToHex(sha256(utf8ToBytes(seed))).slice(0, 12);
+}
+
+function coSignThreadTitle(requestItem?: ChatFeedItem, fallbackKey?: string): string {
+  const payload = requestItem?.payload || {};
+  const amount = Number(payload.amountSats);
+  const recipient =
+    typeof payload.recipientAddress === 'string' ? payload.recipientAddress.trim() : '';
+  const txId =
+    (typeof requestItem?.txId === 'string' && requestItem.txId.trim()) ||
+    (typeof payload.txId === 'string' ? payload.txId.trim() : '');
+
+  if (Number.isFinite(amount) && amount > 0 && recipient && recipient !== 'N/A') {
+    return `Send ${formatSats(amount)} sats to ${compactAddress(recipient)}`;
+  }
+
+  if (
+    typeof payload.psbtBase64 === 'string' ||
+    typeof payload.psbtHex === 'string'
+  ) {
+    const psbtRef = txId || (fallbackKey || '').replace(/^.*:/, '');
+    const shortRef = psbtRef ? psbtRef.slice(0, 10) : 'request';
+    return `PSBT Co-Sign #${shortRef}`;
+  }
+
+  if (txId) {
+    return `Co-Sign #${txId.slice(0, 10)}`;
+  }
+
+  if (fallbackKey) {
+    const ref = fallbackKey.replace(/^.*:/, '').slice(0, 10);
+    return ref ? `Co-Sign #${ref}` : 'Co-Sign Request';
+  }
+
+  return 'Co-Sign Request';
+}
+
+function coSignThreadPreview(item?: ChatFeedItem): string {
+  if (!item) return 'Co-sign request';
+  if (item.type === 'CHAT_MESSAGE') return payloadText(item.payload);
+  const amount = Number(item.payload.amountSats);
+  const recipient =
+    typeof item.payload.recipientAddress === 'string'
+      ? item.payload.recipientAddress.trim()
+      : '';
+  if (Number.isFinite(amount) && amount > 0) {
+    if (recipient && recipient !== 'N/A') {
+      return `Request: ${formatSats(amount)} sats to ${compactAddress(recipient)}`;
+    }
+    return `Request: ${formatSats(amount)} sats`;
+  }
+  return 'Co-sign thread';
+}
+
+function resolvePeerFromSigningCsv(
+  payload: Record<string, unknown>,
+  localNpub: string,
+): string {
+  const csv =
+    typeof payload.signingNpubsCSV === 'string'
+      ? payload.signingNpubsCSV.trim()
+      : '';
+  if (!csv) return '';
+  const peers = csv
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean)
+    .filter(n => n !== localNpub);
+  return peers[0] || '';
 }
 
 function deriveMessageTypeFromHydration(row: ChatHydrationRow, payload: Record<string, unknown>): NostrMessageType {
@@ -281,6 +390,7 @@ function deriveThreshold(meta: Record<string, unknown>, committeeSize: number): 
 
 const KeyshareChat: React.FC = () => {
   const navigation = useNavigation<any>();
+  const isFocused = useIsFocused();
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
@@ -294,9 +404,11 @@ const KeyshareChat: React.FC = () => {
   const [provisionedKeyshareCount, setProvisionedKeyshareCount] = useState(0);
   const [activeKeyshareCount, setActiveKeyshareCount] = useState(0);
   const [activeChatId, setActiveChatId] = useState('');
+  const [unreadByThread, setUnreadByThread] = useState<Record<string, number>>({});
   const peersRef = useRef<PeerState[]>([]);
   const invoiceThreadKeyByRequestIdRef = useRef<Map<string, string>>(new Map());
   const invoiceThreadKeyByTxIdRef = useRef<Map<string, string>>(new Map());
+  const invoiceThreadKeyByTxTraceRef = useRef<Map<string, string>>(new Map());
   const lastCoSignOpenAtRef = useRef(0);
   // One COSIGN_REQUEST can reach this screen via up to three independent paths
   // (direct onMessage listener, bridge's nostr-cosign:request, bridge's
@@ -306,10 +418,12 @@ const KeyshareChat: React.FC = () => {
   // Set by a tapped global co-sign notification (see NostrCoSignBridge.notifyCoSignRequest);
   // consumed by the effect below once the matching card exists in `messages`.
   const pendingFocusTxIdRef = useRef<string | null>(null);
+  const pendingFocusOpenRequestRef = useRef<boolean>(true);
 
   const resolveExistingInvoiceThreadKey = (
     requestId?: string,
     txId?: string,
+    traceId?: string,
   ): string | undefined => {
     const req = typeof requestId === 'string' ? requestId.trim() : '';
     if (req) {
@@ -318,6 +432,11 @@ const KeyshareChat: React.FC = () => {
     }
 
     const tx = typeof txId === 'string' ? txId.trim() : '';
+    const trace = typeof traceId === 'string' ? traceId.trim() : '';
+    if (tx && trace) {
+      const byComposite = invoiceThreadKeyByTxTraceRef.current.get(`${tx}::${trace}`);
+      if (byComposite) return byComposite;
+    }
     if (tx) {
       const byTx = invoiceThreadKeyByTxIdRef.current.get(tx);
       if (byTx) return byTx;
@@ -329,28 +448,63 @@ const KeyshareChat: React.FC = () => {
   const registerInvoiceThreadKey = (opts: {
     requestId?: string;
     txId?: string;
+    traceId?: string;
+    senderNpub?: string;
+    timestamp?: number;
     fallbackIdentity: string;
   }): string => {
     const req = typeof opts.requestId === 'string' ? opts.requestId.trim() : '';
     const tx = typeof opts.txId === 'string' ? opts.txId.trim() : '';
+    const trace = typeof opts.traceId === 'string' ? opts.traceId.trim() : '';
 
-    const existing = resolveExistingInvoiceThreadKey(req, tx);
+    const existing = resolveExistingInvoiceThreadKey(req, tx, trace);
     if (existing) return existing;
 
     if (req) {
       const key = `req:${req}`;
       invoiceThreadKeyByRequestIdRef.current.set(req, key);
       if (tx) invoiceThreadKeyByTxIdRef.current.set(tx, key);
+      if (tx && trace) {
+        invoiceThreadKeyByTxTraceRef.current.set(`${tx}::${trace}`, key);
+      }
       return key;
     }
 
-    if (tx) {
-      const key = `tx:${tx}`;
+    if (tx && trace) {
+      const key = `tx:${tx}:trace:${trace}`;
+      invoiceThreadKeyByTxTraceRef.current.set(`${tx}::${trace}`, key);
       invoiceThreadKeyByTxIdRef.current.set(tx, key);
       return key;
     }
 
-    return `evt:${opts.fallbackIdentity}`;
+    if (tx) {
+      const ts = Number(opts.timestamp || Date.now());
+      const sender = typeof opts.senderNpub === 'string' ? opts.senderNpub.trim() : '';
+      const txSeed = keyHashSeed(`${tx}|${sender}|${ts}|${opts.fallbackIdentity}`);
+      const key = `tx:${tx}:h:${txSeed}`;
+      invoiceThreadKeyByTxIdRef.current.set(tx, key);
+      return key;
+    }
+
+    const evtSeed = keyHashSeed(`${opts.fallbackIdentity}|${opts.timestamp || Date.now()}`);
+    return `evt:${evtSeed}`;
+  };
+
+  const refreshUnreadCounts = () => {
+    const rows = chatRepository.getUnreadCountByThread();
+    const next: Record<string, number> = {};
+    rows.forEach(row => {
+      if (!row.threadId) return;
+      next[row.threadId] = row.unreadCount;
+    });
+    setUnreadByThread(next);
+  };
+
+  const threadIdFromChatId = (chatId: string): string => {
+    if (!chatId) return '';
+    if (chatId.startsWith('peer:')) return chatId;
+    if (chatId.startsWith('invoice:')) return chatId.slice('invoice:'.length);
+    return '';
   };
 
   useEffect(() => {
@@ -372,21 +526,33 @@ const KeyshareChat: React.FC = () => {
           const seen = new Set<string>();
           const byRequest = new Map<string, string>();
           const byTx = new Map<string, string>();
+          const byTxTrace = new Map<string, string>();
 
-          const hydrated = hydratedRows.map(row => {
+          const hydrated = hydratedRows.flatMap(row => {
             const payload = row.isPayload ? parsePayload(row.content) : { text: row.content };
+            const payloadKeys = Object.keys(payload);
+            const isLegacyPingArtifact =
+              row.threadType === 'direct' &&
+              row.isPayload &&
+              payload.online === true &&
+              payloadKeys.length === 1;
+            if (isLegacyPingArtifact) {
+              return [];
+            }
             const type = deriveMessageTypeFromHydration(row, payload);
             const requestId = row.threadId.startsWith('req:') ? row.threadId.slice(4) : '';
             const txIdFromThread = row.threadId.startsWith('tx:') ? row.threadId.slice(3) : '';
             const txIdFromPayload = typeof payload.txId === 'string' ? payload.txId : '';
             const txId = txIdFromThread || txIdFromPayload;
+            const traceId = typeof payload.traceId === 'string' ? payload.traceId.trim() : '';
             const invoiceThreadKey = row.threadType === 'cosign' ? row.threadId : undefined;
             const status = deriveMessageStatus(type, row.status);
 
             if (requestId) byRequest.set(requestId, row.threadId);
             if (txId) byTx.set(txId, row.threadId);
+            if (txId && traceId) byTxTrace.set(`${txId}::${traceId}`, row.threadId);
 
-            return {
+            return [{
               id: `db:${row.messageId}`,
               type,
               invoiceThreadKey,
@@ -399,7 +565,7 @@ const KeyshareChat: React.FC = () => {
               senderLabel: row.senderNpub ? `${row.senderNpub.slice(0, 8)}...` : 'Unknown',
               timestamp: row.timestamp,
               payload,
-            } as ChatFeedItem;
+            } as ChatFeedItem];
           });
 
           hydrated.forEach(item => {
@@ -417,10 +583,12 @@ const KeyshareChat: React.FC = () => {
           seenCoSignRequestIdsRef.current = seen;
           invoiceThreadKeyByRequestIdRef.current = byRequest;
           invoiceThreadKeyByTxIdRef.current = byTx;
+          invoiceThreadKeyByTxTraceRef.current = byTxTrace;
           setMessages(hydrated.slice(0, 200));
         }
 
         await nostrMessaging.connect();
+        refreshUnreadCounts();
 
         const meta = await getKeyshareMetadata();
         const metaRecord = (meta || {}) as Record<string, unknown>;
@@ -525,22 +693,47 @@ const KeyshareChat: React.FC = () => {
         const responseRequestId =
           typeof response.nip46RequestId === 'string' ? response.nip46RequestId : undefined;
         const txId = typeof response.txId === 'string' ? response.txId : '';
+        const traceId = typeof response.traceId === 'string' ? response.traceId : undefined;
         const invoiceThreadKey =
-          resolveExistingInvoiceThreadKey(responseRequestId, txId) ||
+          resolveExistingInvoiceThreadKey(responseRequestId, txId, traceId) ||
           registerInvoiceThreadKey({
             requestId: responseRequestId,
             txId,
+            traceId,
+            senderNpub,
+            timestamp: Number(msg.envelope.timestamp || Date.now()),
             fallbackIdentity: messageIdentity(msg),
           });
         const approved = !!response.approved;
         const hasBroadcastTxId = typeof response.broadcastTxId === 'string' && response.broadcastTxId.trim().length > 0;
+        const responseStatus: ChatFeedItem['status'] = approved
+          ? (hasBroadcastTxId ? 'broadcasted' : 'signed')
+          : 'rejected';
         if (txId) {
           DeviceEventEmitter.emit('nostr-cosign:status', {
             mode: 'legacy',
             txId,
-            status: approved ? (hasBroadcastTxId ? 'broadcasted' : 'signed') : 'rejected',
+            status: responseStatus,
           });
         }
+
+        setMessages(prev =>
+          prev.map(item => {
+            if (item.type !== 'COSIGN_REQUEST') return item;
+            if (item.invoiceThreadKey !== invoiceThreadKey) return item;
+            return {
+              ...item,
+              status: responseStatus,
+            };
+          }),
+        );
+
+        const responseThreadStatus: ChatThreadStatus = approved ? 'approved' : 'closed';
+        chatRepository.setThreadStatus(
+          invoiceThreadKey,
+          responseThreadStatus,
+          Date.now(),
+        );
 
         const senderLabel = senderPeer?.label || `${senderNpub.slice(0, 8)}...`;
         const responseItem: ChatFeedItem = {
@@ -593,17 +786,25 @@ const KeyshareChat: React.FC = () => {
           ? parsed.nip46RequestId
           : undefined;
       const txId = typeof parsed.txId === 'string' ? parsed.txId : undefined;
+      const traceId =
+        msg.envelope.type === 'COSIGN_REQUEST' && typeof parsed.traceId === 'string'
+          ? parsed.traceId
+          : undefined;
       const invoiceThreadKey =
         msg.envelope.type === 'COSIGN_REQUEST'
           ? registerInvoiceThreadKey({
               requestId,
               txId,
+              traceId,
+              senderNpub,
+              timestamp: Number(msg.envelope.timestamp || Date.now()),
               fallbackIdentity: messageIdentity(msg),
             })
           : msg.envelope.type === 'CHAT_MESSAGE'
           ? resolveExistingInvoiceThreadKey(
               typeof parsed.nip46RequestId === 'string' ? parsed.nip46RequestId : undefined,
               txId,
+              typeof parsed.traceId === 'string' ? parsed.traceId : undefined,
             )
           : undefined;
 
@@ -666,6 +867,9 @@ const KeyshareChat: React.FC = () => {
       const invoiceThreadKey = registerInvoiceThreadKey({
         requestId: typeof raw.nip46RequestId === 'string' ? raw.nip46RequestId : undefined,
         txId: typeof payload.txId === 'string' ? payload.txId : undefined,
+        traceId: typeof payload.traceId === 'string' ? payload.traceId : undefined,
+        senderNpub,
+        timestamp: Number(raw.ts || Date.now()),
         fallbackIdentity: identity,
       });
 
@@ -730,6 +934,9 @@ const KeyshareChat: React.FC = () => {
         requestId:
           typeof parsedMessage.nip46RequestId === 'string' ? parsedMessage.nip46RequestId : undefined,
         txId: typeof payload.txId === 'string' ? payload.txId : undefined,
+        traceId: typeof payload.traceId === 'string' ? payload.traceId : undefined,
+        senderNpub,
+        timestamp: Number(evt.ts || Date.now()),
         fallbackIdentity: identity,
       });
 
@@ -769,6 +976,14 @@ const KeyshareChat: React.FC = () => {
       handleUnreadChatEvent,
     );
 
+    const offUnreadChanged = DeviceEventEmitter.addListener(
+      'chat:unread-changed',
+      () => {
+        if (!mounted) return;
+        refreshUnreadCounts();
+      },
+    );
+
     // Replay anything NostrCoSignBridge emitted while this screen wasn't mounted to
     // catch it (e.g. the Chat tab hadn't been visited yet), so cards appear on first
     // mount instead of requiring a manual refresh to notice a missed local event.
@@ -781,15 +996,20 @@ const KeyshareChat: React.FC = () => {
 
     const offFocus = DeviceEventEmitter.addListener(
       'nostr-cosign:focus',
-      (evt: { txId?: string }) => {
+      (evt: { txId?: string; openRequest?: boolean }) => {
         if (!mounted || !evt?.txId) return;
         pendingFocusTxIdRef.current = evt.txId;
+        pendingFocusOpenRequestRef.current = evt.openRequest !== false;
       },
     );
     // A notification tap may have fired before this screen (re)mounted; replay it too.
     getRecentCoSignFocusEvents().forEach(evt => {
-      const txId = (evt as { txId?: string }).txId;
-      if (txId) pendingFocusTxIdRef.current = txId;
+      const txId = (evt as { txId?: string; openRequest?: boolean }).txId;
+      const openRequest = (evt as { openRequest?: boolean }).openRequest !== false;
+      if (txId) {
+        pendingFocusTxIdRef.current = txId;
+        pendingFocusOpenRequestRef.current = openRequest;
+      }
     });
 
     const offCoSignStatus = DeviceEventEmitter.addListener(
@@ -804,13 +1024,16 @@ const KeyshareChat: React.FC = () => {
             ? evt.status
             : 'pending';
 
+        const invoiceKey = resolveExistingInvoiceThreadKey(evt.requestId, evt.txId);
+
         setMessages(prev =>
           prev.map(item => {
             if (item.type !== 'COSIGN_REQUEST') return item;
             const reqMatch =
               evt.requestId && item.nip46RequestId && evt.requestId === item.nip46RequestId;
             const txMatch = evt.txId && item.txId && evt.txId === item.txId;
-            if (!reqMatch && !txMatch) return item;
+            const invoiceMatch = !!invoiceKey && item.invoiceThreadKey === invoiceKey;
+            if (!reqMatch && !txMatch && !invoiceMatch) return item;
             return {
               ...item,
               status: nextStatus,
@@ -818,12 +1041,53 @@ const KeyshareChat: React.FC = () => {
           }),
         );
 
-        const invoiceKey = resolveExistingInvoiceThreadKey(evt.requestId, evt.txId);
         if (invoiceKey) {
           const threadStatus: ChatThreadStatus =
             nextStatus === 'rejected'
               ? 'closed'
-              : nextStatus === 'pending'
+              : nextStatus === 'pending' || nextStatus === 'signing'
+              ? 'pending'
+              : 'approved';
+          chatRepository.setThreadStatus(invoiceKey, threadStatus, Date.now());
+        }
+      },
+    );
+
+    const offMpcState = DeviceEventEmitter.addListener(
+      'nostr-mpc:state',
+      (evt: NostrMpcStateEvent) => {
+        if (!mounted || !evt || typeof evt !== 'object') return;
+        const txId = typeof evt.txId === 'string' ? evt.txId : '';
+        if (!txId) return;
+
+        const nextStatus: ChatFeedItem['status'] =
+          evt.state === 'computing_nonces' || evt.state === 'signing'
+            ? 'signing'
+            : evt.state === 'broadcasting'
+            ? 'signed'
+            : evt.state === 'completed'
+            ? 'broadcasted'
+            : evt.state === 'failed'
+            ? 'rejected'
+            : 'pending';
+
+        setMessages(prev =>
+          prev.map(item => {
+            if (item.type !== 'COSIGN_REQUEST') return item;
+            if (item.txId !== txId) return item;
+            return {
+              ...item,
+              status: nextStatus,
+            };
+          }),
+        );
+
+        const invoiceKey = resolveExistingInvoiceThreadKey(undefined, txId);
+        if (invoiceKey) {
+          const threadStatus: ChatThreadStatus =
+            nextStatus === 'rejected'
+              ? 'closed'
+              : nextStatus === 'pending' || nextStatus === 'signing'
               ? 'pending'
               : 'approved';
           chatRepository.setThreadStatus(invoiceKey, threadStatus, Date.now());
@@ -838,10 +1102,20 @@ const KeyshareChat: React.FC = () => {
       offMsg();
       offBridgeCoSign.remove();
       offIncomingChat.remove();
+      offUnreadChanged.remove();
       offFocus.remove();
       offCoSignStatus.remove();
+      offMpcState.remove();
     };
   }, []);
+
+  useEffect(() => {
+    if (!isFocused || !activeChatId) return;
+    const threadId = threadIdFromChatId(activeChatId);
+    if (!threadId) return;
+    chatRepository.markThreadAsRead(threadId);
+    refreshUnreadCounts();
+  }, [activeChatId, isFocused]);
 
   const localNpub = normalizeNpub(nostrMessaging.getLocalNpub());
   const localFingerprint = useMemo(
@@ -866,7 +1140,13 @@ const KeyshareChat: React.FC = () => {
     const activeFromPings = peers.filter(peer => peer.isOnline).map(peer => peer.npub);
     const activeFromInvoices = new Set(
       messages
-        .filter(item => item.type === 'COSIGN_REQUEST' && item.status !== 'signed' && item.status !== 'rejected')
+        .filter(
+          item =>
+            item.type === 'COSIGN_REQUEST' &&
+            item.status !== 'signed' &&
+            item.status !== 'broadcasted' &&
+            item.status !== 'rejected',
+        )
         .map(item => item.senderNpub)
         .filter(Boolean),
     );
@@ -901,6 +1181,7 @@ const KeyshareChat: React.FC = () => {
         .filter(item => item.senderNpub === peer.npub && item.type === 'CHAT_MESSAGE')
         .sort((a, b) => b.timestamp - a.timestamp);
       const latestChat = chatItems[0];
+      const threadId = `peer:${peer.npub}`;
 
       return {
         id: `peer-thread:${peer.npub}`,
@@ -910,7 +1191,7 @@ const KeyshareChat: React.FC = () => {
         title: peer.label,
         preview: latestChat ? payloadText(latestChat.payload) : 'Tap to start encrypted chat.',
         timestamp: latestChat?.timestamp || peer.lastPingAt || 0,
-        unreadCount: chatItems.length,
+        unreadCount: unreadByThread[threadId] || 0,
         pinned: false,
         online: peer.isOnline,
         lastItem: latestChat,
@@ -918,7 +1199,7 @@ const KeyshareChat: React.FC = () => {
     });
 
     return rows.sort((a, b) => b.timestamp - a.timestamp);
-  }, [activePeers, messages]);
+  }, [activePeers, messages, unreadByThread]);
 
   const invoiceThreads = useMemo<ThreadSummary[]>(() => {
     const grouped = new Map<string, ChatFeedItem[]>();
@@ -946,17 +1227,16 @@ const KeyshareChat: React.FC = () => {
       const responseItems = sorted.filter(item => item.type === 'COSIGN_RESPONSE');
       const peer = peerMap.get(latest.senderNpub);
       const title = requestItem?.txId
-        ? `Invoice ${requestItem.txId.slice(0, 8)}`
-        : `Co-Sign ${invoiceKey.slice(0, 12)}`;
+        ? coSignThreadTitle(requestItem, invoiceKey)
+        : coSignThreadTitle(requestItem, invoiceKey);
       const pendingCount = sorted.filter(
-        item => item.type === 'COSIGN_REQUEST' && item.status !== 'signed' && item.status !== 'rejected',
+        item =>
+          item.type === 'COSIGN_REQUEST' &&
+          item.status !== 'signed' &&
+          item.status !== 'broadcasted' &&
+          item.status !== 'rejected',
       ).length;
-      const amount = Number(requestItem?.payload?.amountSats || 0);
-      const latestPreview = latest.type === 'CHAT_MESSAGE'
-        ? payloadText(latest.payload)
-        : amount > 0
-        ? `Co-sign ${amount} sats`
-        : 'Co-sign thread';
+      const latestPreview = coSignThreadPreview(latest);
       const respondedSigners = new Set(responseItems.map(item => item.senderNpub).filter(Boolean));
       const approvedSigners = new Set(
         responseItems
@@ -982,7 +1262,7 @@ const KeyshareChat: React.FC = () => {
         title,
         preview: latestPreview,
         timestamp: latest.timestamp,
-        unreadCount: sorted.length,
+        unreadCount: unreadByThread[invoiceKey] || 0,
         pinned: pendingCount > 0,
         online: peer?.isOnline ?? false,
         thresholdProgress,
@@ -997,7 +1277,7 @@ const KeyshareChat: React.FC = () => {
       if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
       return b.timestamp - a.timestamp;
     });
-  }, [messages, peerMap, signingThreshold]);
+  }, [messages, peerMap, signingThreshold, unreadByThread]);
 
   const threads = useMemo<ThreadSummary[]>(() => {
     const all = [...invoiceThreads, ...peerThreads];
@@ -1054,6 +1334,11 @@ const KeyshareChat: React.FC = () => {
   const openThreadRow = (thread: ThreadSummary) => {
     setError('');
     setActiveChatId(thread.chatId);
+    const threadId = thread.kind === 'invoice' ? thread.invoiceKey || '' : `peer:${thread.npub}`;
+    if (threadId) {
+      chatRepository.markThreadAsRead(threadId);
+      refreshUnreadCounts();
+    }
     dbg('[KeyshareChat] activeChatId set from thread tap', {
       chatId: thread.chatId,
       kind: thread.kind,
@@ -1115,7 +1400,7 @@ const KeyshareChat: React.FC = () => {
         ? selectedThread.invoiceKey || `tx:${String(outgoingPayload.txId || now)}`
         : `peer:${selectedPeerNpub}`;
     const threadStatus: ChatThreadStatus =
-      selectedThread.kind === 'invoice' ? 'approved' : 'approved';
+      selectedThread.kind === 'invoice' ? 'pending' : 'approved';
     const localMessageId = `local-chat:${now}:${Math.random().toString(36).slice(2, 10)}`;
 
     chatRepository.upsertThreadAndMessage(
@@ -1137,6 +1422,7 @@ const KeyshareChat: React.FC = () => {
             : outgoingText,
         timestamp: now,
         isPayload: selectedThread.kind === 'invoice',
+        isRead: true,
       },
     );
 
@@ -1178,10 +1464,84 @@ const KeyshareChat: React.FC = () => {
       senderNpub: item.senderNpub,
       timestamp: item.timestamp,
     });
-    if (item.status === 'signed' || item.status === 'rejected') {
+    if (
+      item.status === 'signed' ||
+      item.status === 'broadcasted' ||
+      item.status === 'rejected'
+    ) {
       console.log('[NIP46-TLM][UI] openCoSignRequest ignored due to terminal status', {
         itemId: item.id,
         status: item.status,
+      });
+      return;
+    }
+
+    const isSender = !!localNpub && item.senderNpub === localNpub;
+    if (isSender) {
+      const payload = item.payload as unknown as CoSignRequestPayload;
+      const amountSatsNum = Number(payload.amountSats);
+      const hasRegularSendShape =
+        typeof payload.recipientAddress === 'string' &&
+        payload.recipientAddress.trim() !== '' &&
+        payload.recipientAddress !== 'N/A' &&
+        Number.isFinite(amountSatsNum) &&
+        amountSatsNum > 0;
+      const isRegularSendRequest =
+        payload.requestMode === 'dkls'
+          ? hasRegularSendShape
+          : !payload.psbtBase64 && !payload.psbtHex && hasRegularSendShape;
+
+      if (!isRegularSendRequest) {
+        dbg('[NIP46-TLM][UI] blocked self-review action for non-send request', {
+          itemId: item.id,
+          txId: item.txId,
+        });
+        return;
+      }
+
+      if (item.status !== 'signing') {
+        setError('Waiting for peer approval. Keep chatting until peer taps Review & Sign.');
+        dbg('[NIP46-TLM][UI] sender tapped outgoing request before peer approval', {
+          itemId: item.id,
+          txId: payload.txId,
+          status: item.status,
+        });
+        return;
+      }
+
+      const peerNpub = resolvePeerFromSigningCsv(
+        payload as unknown as Record<string, unknown>,
+        localNpub,
+      );
+
+      navigation.navigate('Nostr Connect', {
+        mode: 'send_btc',
+        toAddress: payload.recipientAddress,
+        satoshiAmount: String(Math.trunc(amountSatsNum)),
+        satoshiFees: String(
+          Math.max(0, Math.trunc(Number(payload.feeSats) || 0)),
+        ),
+        network: payload.network || 'mainnet',
+        initiatorTxId: payload.txId,
+        cosignTraceId: payload.traceId,
+        utxosJson:
+          typeof payload.utxosJson === 'string' ? payload.utxosJson : undefined,
+        changeAddress:
+          typeof payload.changeAddress === 'string'
+            ? payload.changeAddress
+            : undefined,
+        addressType:
+          typeof payload.senderAddressType === 'string'
+            ? payload.senderAddressType
+            : undefined,
+        derivationPath:
+          typeof payload.senderDerivationPath === 'string'
+            ? payload.senderDerivationPath
+            : undefined,
+        peerNpub: peerNpub || undefined,
+        isPeerResponse: false,
+        isInitiator: true,
+        resumePendingRequest: true,
       });
       return;
     }
@@ -1265,7 +1625,7 @@ const KeyshareChat: React.FC = () => {
       threadId: approvalThreadId,
       peerNpub: item.senderNpub || 'unknown',
       threadType: 'cosign',
-      status: 'approved',
+      status: 'pending',
       createdAt: item.timestamp || Date.now(),
       updatedAt: Date.now(),
     });
@@ -1331,6 +1691,22 @@ const KeyshareChat: React.FC = () => {
         // sessions and chat status updates correlate to the same request.
         initiatorTxId: payload.txId,
         cosignTraceId: payload.traceId,
+        // Carry initiator-native transaction construction context so the
+        // responder signs identical inputs/outputs for DKLS rounds.
+        utxosJson:
+          typeof payload.utxosJson === 'string' ? payload.utxosJson : undefined,
+        changeAddress:
+          typeof payload.changeAddress === 'string'
+            ? payload.changeAddress
+            : undefined,
+        addressType:
+          typeof payload.senderAddressType === 'string'
+            ? payload.senderAddressType
+            : undefined,
+        derivationPath:
+          typeof payload.senderDerivationPath === 'string'
+            ? payload.senderDerivationPath
+            : undefined,
         // We are responding to someone else's request, not originating one —
         // MobileNostrPairing must resolve its own addressType/derivationPath
         // locally and must not wait on its own COSIGN_READY.
@@ -1371,8 +1747,12 @@ const KeyshareChat: React.FC = () => {
     );
     if (!match) return;
     pendingFocusTxIdRef.current = null;
+    const openRequest = pendingFocusOpenRequestRef.current;
+    pendingFocusOpenRequestRef.current = true;
     setActiveChatId(`invoice:${match.invoiceThreadKey || invoiceThreadKeyForItem(match)}`);
-    openCoSignRequest(match);
+    if (openRequest) {
+      openCoSignRequest(match);
+    }
   }, [messages]);
 
   return (
@@ -1435,6 +1815,7 @@ const KeyshareChat: React.FC = () => {
                         recipientAddress={String(item.payload.recipientAddress || '')}
                         timestamp={item.timestamp}
                         status={item.status || 'pending'}
+                        isSender={isMine}
                         onReviewSign={() => {
                           console.log('[NIP46-TLM][UI] Review & Sign tapped from chat list', {
                             itemId: item.id,

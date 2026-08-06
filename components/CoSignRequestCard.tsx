@@ -11,6 +11,7 @@ type Props = {
   timestamp: number;
   status?: 'pending' | 'signing' | 'signed' | 'broadcasted' | 'rejected';
   onReviewSign: () => void;
+  isSender?: boolean;
 };
 
 function truncateAddress(address: string): string {
@@ -38,20 +39,27 @@ const CoSignRequestCard: React.FC<Props> = ({
   timestamp,
   status = 'pending',
   onReviewSign,
+  isSender = false,
 }) => {
   const { theme } = useTheme();
   const styles = useMemo(() => createStyles(theme), [theme]);
 
-  const isActionable = status === 'pending';
+  const isSenderWaitingApproval = isSender && status === 'pending';
+  const isSenderReadyToContinue = isSender && status === 'signing';
+  const isActionable =
+    (!isSender && status === 'pending') || isSenderReadyToContinue;
   const isSigning = status === 'signing';
   const isSigned = status === 'signed';
   const isBroadcasted = status === 'broadcasted';
+  const isTerminal = isSigned || isBroadcasted || status === 'rejected';
   const headerText = isBroadcasted
     ? 'Broadcasted'
     : isSigned
     ? 'Co-Signed'
     : isSigning
     ? 'Signing In Progress'
+    : isSender && status === 'pending'
+    ? 'Waiting for Peer Co-Sign'
     : status === 'rejected'
     ? 'Request Rejected'
     : 'Action Required: Co-Sign Transaction';
@@ -59,8 +67,12 @@ const CoSignRequestCard: React.FC<Props> = ({
     ? 'Broadcasted'
     : isSigned
     ? 'Co-Signed'
+    : isSenderReadyToContinue
+    ? 'Continue Co-Sign'
     : isSigning
     ? 'Signing...'
+    : isSenderWaitingApproval
+    ? 'Wait for Peer Approval'
     : status === 'rejected'
     ? 'Rejected'
     : 'Review & Sign';
@@ -108,14 +120,40 @@ const CoSignRequestCard: React.FC<Props> = ({
         <AppText style={styles.value}>{truncateAddress(recipientAddress)}</AppText>
       </View>
 
-      <AppPressable
-        disabled={!isActionable}
-        onPress={handleReviewPress}
-        style={[styles.button, !isActionable && styles.buttonDisabled]}>
-        <AppText style={[styles.buttonText, !isActionable && styles.buttonTextDisabled]}>
-          {buttonText}
-        </AppText>
-      </AppPressable>
+      {isTerminal ? (
+        <View
+          style={[
+            styles.statusPill,
+            isBroadcasted
+              ? styles.statusPillBroadcasted
+              : isSigned
+              ? styles.statusPillSigned
+              : styles.statusPillRejected,
+          ]}
+        >
+          <AppText
+            style={[
+              styles.statusPillText,
+              isBroadcasted
+                ? styles.statusPillTextBroadcasted
+                : isSigned
+                ? styles.statusPillTextSigned
+                : styles.statusPillTextRejected,
+            ]}
+          >
+            {buttonText}
+          </AppText>
+        </View>
+      ) : (
+        <AppPressable
+          disabled={!isActionable}
+          onPress={handleReviewPress}
+          style={[styles.button, !isActionable && styles.buttonDisabled]}>
+          <AppText style={[styles.buttonText, !isActionable && styles.buttonTextDisabled]}>
+            {buttonText}
+          </AppText>
+        </AppPressable>
+      )}
 
       <AppText style={styles.time}>{formatClock(timestamp)}</AppText>
     </View>
@@ -187,6 +225,39 @@ const createStyles = (theme: any) =>
     },
     buttonTextDisabled: {
       color: '#172034',
+    },
+    statusPill: {
+      marginTop: 10,
+      width: '100%',
+      borderRadius: 10,
+      paddingVertical: 10,
+      alignItems: 'center',
+      borderWidth: 1,
+    },
+    statusPillSigned: {
+      borderColor: 'rgba(72, 187, 120, 0.45)',
+      backgroundColor: 'rgba(72, 187, 120, 0.12)',
+    },
+    statusPillBroadcasted: {
+      borderColor: 'rgba(34, 197, 94, 0.55)',
+      backgroundColor: 'rgba(34, 197, 94, 0.14)',
+    },
+    statusPillRejected: {
+      borderColor: 'rgba(227, 93, 91, 0.5)',
+      backgroundColor: 'rgba(227, 93, 91, 0.14)',
+    },
+    statusPillText: {
+      fontFamily: theme.fontFamilies?.bold,
+      fontSize: 13,
+    },
+    statusPillTextSigned: {
+      color: '#48bb78',
+    },
+    statusPillTextBroadcasted: {
+      color: '#22c55e',
+    },
+    statusPillTextRejected: {
+      color: '#e35d5b',
     },
     time: {
       marginTop: 8,

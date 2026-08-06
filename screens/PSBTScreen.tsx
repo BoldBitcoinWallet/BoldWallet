@@ -17,7 +17,7 @@ import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {PSBTLoader} from './PSBTModal';
-import {canonicalPsbtBase64} from '../services/psbtIdentity';
+import {canonicalPsbtBase64, psbtIdentityHash} from '../services/psbtIdentity';
 import {dbg, generateAllOutputDescriptors, getKeyshareMetadata} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
 import TransportModeSelector from '../components/TransportModeSelector';
@@ -470,6 +470,12 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
               status: 'pending',
             });
 
+            DeviceEventEmitter.emit('nostr-cosign:focus', {
+              ts: Date.now(),
+              txId,
+              openRequest: false,
+            });
+
             dbg('[NIP46-TLM][PSBTScreen] fan-out COSIGN_REQUEST to peers complete', {
               txId,
               peerCount: peerNpubs.length,
@@ -482,6 +488,13 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 screen: 'Chat',
               }),
             );
+            setTimeout(() => {
+              DeviceEventEmitter.emit('nostr-cosign:focus', {
+                ts: Date.now(),
+                txId,
+                openRequest: false,
+              });
+            }, 250);
           } catch (err) {
             dbg('[NIP46-TLM][PSBTScreen] failed to fan-out peer COSIGN_REQUEST', err);
             Alert.alert(
@@ -542,6 +555,30 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }
 
     if (sharedPsbt) {
+      void (async () => {
+        try {
+          const canonical = canonicalPsbtBase64(sharedPsbt);
+          const hex = Buffer.from(canonical, 'base64').toString('hex');
+          const sha256Hex = await BBMTLibNativeModule.sha256(hex);
+          const identity = await psbtIdentityHash(canonical);
+          dbg('[PSBT_SIGN_DEBUG][MOBILE][INGRESS]', {
+            source: normalized.source || 'unknown',
+            sourceIsHex: normalized.isHex,
+            rawLen: normalized.raw.length,
+            base64Len: canonical.length,
+            hexLen: hex.length,
+            sha256Hex,
+            identityHash: identity,
+            base64Head: canonical.slice(0, 32),
+            base64Tail: canonical.slice(-32),
+            hexHead: hex.slice(0, 64),
+            hexTail: hex.slice(-64),
+          });
+        } catch (e) {
+          dbg('[PSBT_SIGN_DEBUG][MOBILE][INGRESS] failed to compute hash snapshot', e);
+        }
+      })();
+
       setSharedInitialPsbt(sharedPsbt);
       setNormalizedPsbtSource(normalized.source);
       setIsPSBTSectionExpanded(true);

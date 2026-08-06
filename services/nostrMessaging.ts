@@ -13,6 +13,7 @@ export type NostrMessageType =
   | 'COSIGN_REQUEST'
   | 'COSIGN_RESPONSE'
   | 'COSIGN_READY'
+  | 'MPC_PAYLOAD'
   | 'CHAT_MESSAGE'
   | 'DEVICE_PING';
 
@@ -37,6 +38,15 @@ export interface CoSignRequestPayload {
   // Explicit sender intent, in addition to the implicit signal of psbtHex being
   // empty/populated: 'dkls' = native MPC send, 'psbt' = external PSBT co-sign/export.
   requestMode?: 'dkls' | 'psbt';
+  // Optional context for native DKLS send so responders can reconstruct the same
+  // transaction inputs/outputs without relying on local UTXO refresh timing.
+  utxosJson?: string;
+  changeAddress?: string;
+  senderDerivationPath?: string;
+  senderAddressType?: string;
+  signingNpubsCSV?: string;
+  txTemplateHash?: string;
+  utxoSetHash?: string;
 }
 
 export interface CoSignResponsePayload {
@@ -101,6 +111,7 @@ const KEY_TAG = 'bold-cosign-v1';
 const NIP46_TAG = 'bold-nip46-v1';
 const FALLBACK_NSEC_KEY = 'nostr_fallback_nsec';
 const FALLBACK_NPUB_KEY = 'nostr_fallback_npub';
+const MAX_RECENT_EVENT_IDS = 1000;
 
 function bytesToHex(bytes: Uint8Array): string {
   return Array.from(bytes)
@@ -162,10 +173,19 @@ function parseEnvelopePayload(payload: unknown): Record<string, unknown> {
 }
 
 function threadStatusFromEnvelope(type: NostrMessageType, payload: Record<string, unknown>): ChatThreadStatus {
+  const requestId = typeof payload.nip46RequestId === 'string' ? payload.nip46RequestId.trim() : '';
+  const txId = typeof payload.txId === 'string' ? payload.txId.trim() : '';
+  const hasCoSignContext = !!requestId || !!txId;
+
   if (type === 'COSIGN_RESPONSE') {
     return payload.approved ? 'approved' : 'closed';
   }
   if (type === 'COSIGN_REQUEST') {
+    return 'pending';
+  }
+  // Chat messages linked to an existing co-sign thread must not implicitly
+  // transition that thread to "approved".
+  if (hasCoSignContext) {
     return 'pending';
   }
   return 'approved';
@@ -204,6 +224,38 @@ function contentFromPayload(payload: Record<string, unknown>, type: NostrMessage
   return { content: JSON.stringify(payload), isPayload: true };
 }
 
+function shouldPersistEnvelopeType(type: NostrMessageType): boolean {
+  return (
+    type === 'CHAT_MESSAGE' ||
+    type === 'COSIGN_REQUEST' ||
+    type === 'COSIGN_RESPONSE'
+  );
+}
+
+function coordinationTagsFromEnvelope<T>(
+  envelope: NostrEnvelope<T>,
+): string[][] {
+  const tags: string[][] = [];
+  const payload =
+    envelope.payload && typeof envelope.payload === 'object'
+      ? (envelope.payload as Record<string, unknown>)
+      : null;
+  if (!payload) return tags;
+
+  const txId = typeof payload.txId === 'string' ? payload.txId.trim() : '';
+  const traceId =
+    typeof payload.traceId === 'string' ? payload.traceId.trim() : '';
+  const reqId =
+    typeof payload.nip46RequestId === 'string'
+      ? payload.nip46RequestId.trim()
+      : '';
+
+  if (txId) tags.push(['txid', txId]);
+  if (traceId) tags.push(['trace', traceId]);
+  if (reqId) tags.push(['req', reqId]);
+  return tags;
+}
+
 class NostrMessagingService {
   private tools: any | null = null;
   private sockets = new Map<string, WebSocket>();
@@ -228,6 +280,23 @@ class NostrMessagingService {
   private localPubHex = '';
   private stopped = false;
   private connectionState: NostrConnectionState = 'disconnected';
+  private recentIncomingEventIds = new Set<string>();
+
+  private shouldProcessIncomingEventId(eventId: string): boolean {
+    const id = String(eventId || '').trim();
+    if (!id) return true;
+    if (this.recentIncomingEventIds.has(id)) {
+      return false;
+    }
+    this.recentIncomingEventIds.add(id);
+    if (this.recentIncomingEventIds.size > MAX_RECENT_EVENT_IDS) {
+      const oldest = this.recentIncomingEventIds.values().next().value;
+      if (typeof oldest === 'string') {
+        this.recentIncomingEventIds.delete(oldest);
+      }
+    }
+    return true;
+  }
 
   private loadToolsModule(): any {
     try {
@@ -741,7 +810,12 @@ class NostrMessagingService {
     }
   }
 
-  private async signEvent(content: string, recipientHex: string, type: NostrMessageType): Promise<any> {
+  private async signEvent(
+    content: string,
+    recipientHex: string,
+    type: NostrMessageType,
+    extraTags: string[][] = [],
+  ): Promise<any> {
     const tools = await this.ensureTools();
     const unsignedEvent = {
       kind: 4,
@@ -750,6 +824,7 @@ class NostrMessagingService {
         ['p', recipientHex],
         ['x', KEY_TAG],
         ['t', type],
+        ...extraTags,
       ],
       content,
     };
@@ -817,6 +892,26 @@ class NostrMessagingService {
   private async handleIncomingEvent(event: any, relayUrl: string): Promise<void> {
     if (!event || typeof event !== 'object') return;
     if (typeof event.content !== 'string' || typeof event.pubkey !== 'string') return;
+    const eventId = String(event.id || '').trim();
+
+    if (eventId && !this.shouldProcessIncomingEventId(eventId)) {
+      dbg('[NIP46-TLM][Receiver] memory dedup skipped duplicate relay event', {
+        eventId,
+        relayUrl,
+      });
+      return;
+    }
+
+    if (eventId) {
+      const messageId = `nostr:${eventId}`;
+      if (chatRepository.hasMessageId(messageId)) {
+        dbg('[NIP46-TLM][Receiver] dedup skipped already persisted event', {
+          eventId,
+          relayUrl,
+        });
+        return;
+      }
+    }
 
     if (event.kind === 24133) {
       await this.handleIncomingNip46Event(event, relayUrl);
@@ -846,7 +941,7 @@ class NostrMessagingService {
         envelope,
         senderNpub: await this.hexToNpub(event.pubkey),
         relayUrl,
-        eventId: String(event.id || ''),
+        eventId,
       };
 
       this.persistIncomingMessage(msg);
@@ -868,6 +963,9 @@ class NostrMessagingService {
 
   private persistIncomingMessage(msg: NostrIncomingMessage): void {
     try {
+      if (!shouldPersistEnvelopeType(msg.envelope.type)) {
+        return;
+      }
       const now = Date.now();
       const payload = parseEnvelopePayload(msg.envelope.payload);
       const thread = threadIdentityForEnvelope(
@@ -900,6 +998,7 @@ class NostrMessagingService {
           content,
           timestamp,
           isPayload,
+          isRead: false,
         },
       );
     } catch (err) {
@@ -909,6 +1008,9 @@ class NostrMessagingService {
 
   private persistOutgoingMessage<T>(recipientNpub: string, envelope: NostrEnvelope<T>): void {
     try {
+      if (!shouldPersistEnvelopeType(envelope.type)) {
+        return;
+      }
       const now = Date.now();
       const payload = parseEnvelopePayload(envelope.payload);
       const thread = threadIdentityForEnvelope(
@@ -939,6 +1041,7 @@ class NostrMessagingService {
           content,
           timestamp,
           isPayload,
+          isRead: true,
         },
       );
     } catch (err) {
@@ -950,7 +1053,13 @@ class NostrMessagingService {
     const recipientHex = await this.npubToHex(recipientNpub);
     const plaintext = JSON.stringify(envelope);
     const encrypted = await this.encryptForRecipient(plaintext, recipientHex);
-    const event = await this.signEvent(encrypted, recipientHex, envelope.type);
+    const coordinationTags = coordinationTagsFromEnvelope(envelope);
+    const event = await this.signEvent(
+      encrypted,
+      recipientHex,
+      envelope.type,
+      coordinationTags,
+    );
 
     const eventTags = Array.isArray(event?.tags) ? event.tags : [];
     const hasRecipientTag = eventTags.some(

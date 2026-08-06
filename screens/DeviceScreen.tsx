@@ -82,7 +82,7 @@ const DeviceScreen: React.FC = () => {
         segwitCompatible: descriptors.segwitCompatible,
       };
       const tssBackend = detectKeyshareTssBackend(
-        keyshare as Record<string, unknown>,
+        keyshare as unknown as Record<string, unknown>,
       );
       setKeyshareInfo({
         label,

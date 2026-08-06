@@ -28,6 +28,7 @@ import {
 import {initializeHaptics} from './utils';
 import database from './services/Database';
 import {runMigrationIfNeeded} from './services/LocalCacheMigration';
+import chatRepository from './services/repositories/ChatRepository';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   Alert,
@@ -415,24 +416,28 @@ const MainTabs = () => {
   const [activeTabName, setActiveTabName] = useState(initialTab);
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
+  const refreshChatUnreadCount = useCallback(() => {
+    const next = chatRepository.getTotalUnreadCount();
+    setChatUnreadCount(next);
+  }, []);
+
   useEffect(() => {
+    refreshChatUnreadCount();
     const sub = DeviceEventEmitter.addListener(
-      'nostr-chat:incoming',
+      'chat:unread-changed',
       () => {
-        if (activeTabName === 'Chat') return;
-        setChatUnreadCount(prev => prev + 1);
+        refreshChatUnreadCount();
       },
     );
     return () => {
       sub.remove();
     };
-  }, [activeTabName]);
+  }, [refreshChatUnreadCount]);
 
   useEffect(() => {
-    if (activeTabName === 'Chat' && chatUnreadCount > 0) {
-      setChatUnreadCount(0);
-    }
-  }, [activeTabName, chatUnreadCount]);
+    if (activeTabName !== 'Chat') return;
+    refreshChatUnreadCount();
+  }, [activeTabName, refreshChatUnreadCount]);
 
   return (
     <View style={tabBarStyles.mainTabsContainer}>
@@ -543,10 +548,15 @@ const MainTabs = () => {
             header: NostrConnectHeader,
             tabBarLabel: 'Chat',
             tabBarIcon: TabBarIconChat,
-            tabBarBadge: chatUnreadCount > 0 ? ' ' : undefined,
+            tabBarBadge:
+              chatUnreadCount > 0
+                ? chatUnreadCount > 99
+                  ? '99+'
+                  : String(chatUnreadCount)
+                : undefined,
             tabBarBadgeStyle: {
-              minWidth: 8,
-              height: 8,
+              minWidth: 18,
+              height: 18,
               borderRadius: 8,
               backgroundColor: '#ef4444',
               top: 6,

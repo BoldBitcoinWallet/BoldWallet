@@ -224,6 +224,7 @@ const SCHEMA_STATEMENTS = [
     content      TEXT NOT NULL,
     timestamp    INTEGER NOT NULL,
     is_payload   INTEGER NOT NULL DEFAULT 0,
+    is_read      INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (thread_id) REFERENCES chat_threads(thread_id) ON DELETE CASCADE
   )`,
 
@@ -272,6 +273,8 @@ class DatabaseService {
           // can display human-readable timestamps for confirmed UTXOs loaded
           // from the DB (without this the row always showed "Unconfirmed").
           'ALTER TABLE utxos ADD COLUMN block_time INTEGER',
+          // v3.2: chat read receipts.
+          'ALTER TABLE chat_messages ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0',
         ];
         for (const stmt of COLUMN_MIGRATIONS) {
           try {
