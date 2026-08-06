@@ -1483,6 +1483,73 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    /** Returns device entropy source metadata as a JSON string.
+     *  Always resolves — assessment is informational, not gating. */
+    @ReactMethod
+    fun getDeviceEntropyMetadata(promise: Promise) {
+        try {
+            val platform = "android"
+            val osVersion = android.os.Build.VERSION.RELEASE
+            val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+
+            val cryptoFramework = "Android Keystore / Conscrypt (java.security.SecureRandom)"
+            val rngSource = "/dev/urandom → Linux kernel CSPRNG (SHA-1 DRBG reseeded from entropy pool)"
+
+            // Check StrongBox availability (API 28+)
+            var hasStrongBox = false
+            val hwRng: String = try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    hasStrongBox = reactApplicationContext
+                        .packageManager
+                        .hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE)
+                    if (hasStrongBox) "StrongBox Keymaster (available)" else "StrongBox Keymaster (unavailable)"
+                } else {
+                    "StrongBox Keymaster (API < 28 — not supported)"
+                }
+            } catch (_: Throwable) {
+                "StrongBox Keymaster (check failed)"
+            }
+
+            // Attempt to read /proc/sys/kernel/random/entropy_avail
+            val entropyAvailBits: Int? = try {
+                val entropyFile = java.io.File("/proc/sys/kernel/random/entropy_avail")
+                if (entropyFile.exists() && entropyFile.canRead()) entropyFile.readText().trim().toIntOrNull()
+                else null
+            } catch (_: Throwable) { null }
+
+            val entropyPoolHealth: String = if (entropyAvailBits != null)
+                "Kernel entropy pool — entropy_avail: $entropyAvailBits"
+            else
+                "Kernel CSPRNG — entropy pool (entropy_avail not readable)"
+
+            // On modern kernels entropy_avail is unreadable once the CRNG is seeded (always strong).
+            // StrongBox (hardware SE) upgrades a borderline entropy reading to Strong.
+            val rngAssessment: String = when {
+                entropyAvailBits == null  -> "Strong"   // unreadable = CRNG fully seeded
+                entropyAvailBits >= 256   -> "Strong"
+                entropyAvailBits >= 128   -> if (hasStrongBox) "Strong" else "Weak"
+                else                      -> "Weak"
+            }
+
+            val metadata = org.json.JSONObject().apply {
+                put("platform", platform)
+                put("os_version", osVersion)
+                put("device_model", deviceModel)
+                put("crypto_framework", cryptoFramework)
+                put("rng_source", rngSource)
+                put("hardware_rng", hwRng)
+                put("entropy_pool_health", entropyPoolHealth)
+                put("rng_assessment", rngAssessment)
+            }
+
+            ld("getDeviceEntropyMetadata", "resolved rng_assessment=$rngAssessment")
+            promise.resolve(metadata.toString())
+        } catch (e: Throwable) {
+            ld("getDeviceEntropyMetadata", "error: ${e.stackTraceToString()}")
+            promise.reject("METADATA_ERROR", "Failed to read entropy metadata: ${e.message}", e)
+        }
+    }
+
     @ReactMethod
     fun parsePSBTDetails(psbtBase64: String, promise: Promise) {
         Thread {

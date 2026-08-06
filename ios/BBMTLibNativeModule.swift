@@ -1295,6 +1295,89 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
   }
 
+  /// Returns device entropy source metadata as a JSON string.
+  /// Always resolves (never rejects) — assessment is informational, not gating.
+  @objc func getDeviceEntropyMetadata(_ resolve: @escaping RCTPromiseResolveBlock, rejecter reject: @escaping RCTPromiseRejectBlock) {
+    let device = UIDevice.current
+    let processInfo = ProcessInfo.processInfo
+
+    let platform = "ios"
+    let osVersion = "\(device.systemName) \(device.systemVersion)"
+    let deviceModel = Self.deviceModelIdentifier()
+
+    // On iOS, the CSPRNG is SecRandomCopyBytes backed by the kernel CSPRNG
+    // which draws from /dev/random (entropy pool fed by hardware + timing jitter).
+    let cryptoFramework = "Apple Security Framework (SecRandomCopyBytes)"
+    let rngSource = "SecRandomCopyBytes → kernel CSPRNG (/dev/random)"
+
+    // Secure Enclave availability
+    let hwRng: String
+    #if targetEnvironment(simulator)
+    hwRng = "Secure Enclave (unavailable — simulator)"
+    #else
+    // Check if we can access the Secure Enclave for key operations
+    let hasSE: Bool = {
+      let query: [String: Any] = [
+        kSecClass as String: kSecClassKey,
+        kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+        kSecAttrTokenID as String: kSecAttrTokenIDSecureEnclave,
+        kSecAttrKeySizeInBits as String: 256,
+        kSecReturnRef as String: false,
+      ]
+      // Don't actually create a key — just check if the attribute is accepted
+      return SecItemCopyMatching(query as CFDictionary, nil) != errSecParam
+    }()
+    hwRng = hasSE ? "Secure Enclave (available)" : "Secure Enclave (unavailable)"
+    #endif
+
+    // Entropy pool health — on iOS the kernel CSPRNG doesn't expose entropy_avail
+    // in a userspace-readable way, but the CSPRNG is continuously reseeded and
+    // SecRandomCopyBytes blocks until sufficient entropy is available.
+    let entropyPoolHealth = "Kernel CSPRNG — continuously reseeded (no userspace counter)"
+
+    // Simulator has no hardware entropy source; real devices with SE are always Strong.
+    #if targetEnvironment(simulator)
+    let rngAssessment = "Weak"
+    #else
+    let rngAssessment = hasSE ? "Strong" : "Weak"
+    #endif
+
+    let metadata: [String: Any] = [
+      "platform": platform,
+      "os_version": osVersion,
+      "device_model": deviceModel,
+      "crypto_framework": cryptoFramework,
+      "rng_source": rngSource,
+      "hardware_rng": hwRng,
+      "entropy_pool_health": entropyPoolHealth,
+      "rng_assessment": rngAssessment,
+    ]
+
+    do {
+      let jsonData = try JSONSerialization.data(withJSONObject: metadata, options: [])
+      if let jsonStr = String(data: jsonData, encoding: .utf8) {
+        sendLogEvent("getDeviceEntropyMetadata", "resolved rng_assessment=\(rngAssessment)")
+        resolve(jsonStr)
+      } else {
+        reject("ENCODE_ERROR", "Failed to encode entropy metadata as UTF-8", nil)
+      }
+    } catch {
+      reject("SERIALIZE_ERROR", "Failed to serialize entropy metadata: \(error.localizedDescription)", error)
+    }
+  }
+
+  /// Returns the device model identifier (e.g. "iPhone15,2") in a privacy-safe manner.
+  private static func deviceModelIdentifier() -> String {
+    var sysInfo = utsname()
+    uname(&sysInfo)
+    let mirror = Mirror(reflecting: sysInfo.machine)
+    let identifier = mirror.children.reduce("") { id, child in
+      guard let value = child.value as? Int8, value != 0 else { return id }
+      return id + String(UnicodeScalar(UInt8(value)))
+    }
+    return identifier.isEmpty ? "unknown" : identifier
+  }
+
   @objc override func startObserving() {
     TssSetHookListener(self)
     TssSetEventListener(self)

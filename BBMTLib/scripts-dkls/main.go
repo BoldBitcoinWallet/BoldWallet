@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"fmt"
 	"os"
 	"strings"
@@ -20,7 +21,11 @@ func main() {
 
 	switch mode {
 	case "random":
-		out, _ := randomHex(64)
+		out, err := randomHex(64)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "random: %v\n", err)
+			os.Exit(1)
+		}
 		fmt.Print(out)
 	case "nostr-keypair":
 		skHex := nostr.GeneratePrivateKey()
@@ -48,6 +53,11 @@ func main() {
 		}
 		fmt.Println(result)
 	case "local-keygen":
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "Usage: %s local-keygen <chaincode-hex>\n", os.Args[0])
+			os.Exit(1)
+		}
+		chaincode := os.Args[2]
 		shares, pub, err := dkls.RunDKGInProcess([]byte("scripts-dkls-keygen"))
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "keygen: %v\n", err)
@@ -55,10 +65,6 @@ func main() {
 		}
 		defer shares[0].Free()
 		defer shares[1].Free()
-		chaincode := "00"
-		if len(os.Args) > 2 {
-			chaincode = os.Args[2]
-		}
 		ks, err := dkls.KeyshareJSONFromHandle(shares[0], chaincode, []string{"party1", "party2"}, "party1", "", "")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "export: %v\n", err)
@@ -67,6 +73,11 @@ func main() {
 		fmt.Println(ks)
 		_ = pub
 	case "local-keygen-3":
+		if len(os.Args) < 3 {
+			fmt.Fprintf(os.Stderr, "Usage: %s local-keygen-3 <chaincode-hex>\n", os.Args[0])
+			os.Exit(1)
+		}
+		chaincode := os.Args[2]
 		shares, pub, err := dkls.RunDKGInProcessWithThreshold([]byte("scripts-dkls-keygen-trio"), dkls.ThresholdTrio())
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "keygen trio: %v\n", err)
@@ -74,10 +85,6 @@ func main() {
 		}
 		for _, s := range shares {
 			defer s.Free()
-		}
-		chaincode := "00"
-		if len(os.Args) > 2 {
-			chaincode = os.Args[2]
 		}
 		committee := []string{"KeyShare1", "KeyShare2", "KeyShare3"}
 		ks, err := dkls.KeyshareJSONFromHandle(shares[0], chaincode, committee, "KeyShare1", "", "")
@@ -146,19 +153,12 @@ func main() {
 
 func randomHex(n int) (string, error) {
 	b := make([]byte, n/2)
-	if _, err := randRead(b); err != nil {
-		return "", err
+	// crypto/rand.Read has io.ReadFull semantics: a short read always
+	// returns a non-nil error, so checking err also covers short reads.
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("CSPRNG read failed (refusing partial entropy): %w", err)
 	}
 	return fmt.Sprintf("%x", b), nil
-}
-
-func randRead(b []byte) (int, error) {
-	f, err := os.Open("/dev/urandom")
-	if err != nil {
-		return 0, err
-	}
-	defer f.Close()
-	return f.Read(b)
 }
 
 func runNostrKeygenCLI() {

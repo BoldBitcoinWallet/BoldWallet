@@ -66,6 +66,7 @@ import {
   type TssBackend,
 } from '../services/tssBackend';
 import {TssProvider} from '../services/TssProvider';
+import {generateSecureHex64} from '../services/mpcAttemptId';
 import {
   assertCanStartNostrMpc,
   nostrMpcCooldownMessageFromError,
@@ -105,6 +106,7 @@ import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
+import EntropyInfoCard from '../components/EntropyInfoCard';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import appConfigRepository, {
@@ -522,6 +524,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [isQRModalVisible, setIsQRModalVisible] = useState(false);
   const [showRelayConfig, setShowRelayConfig] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showEntropyCard, setShowEntropyCard] = useState(false);
 
   const [txDetailsExpanded, setTxDetailsExpanded] = useState(false);
   const {
@@ -677,11 +680,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       try {
         const name = await DeviceInfo.getDeviceName();
         setDeviceName(name);
-        // Generate random partial nonce (UUID or random number)
-        // Using a combination of timestamp and random for uniqueness
-        const randomNonce = await BBMTLibNativeModule.sha256(
-          `${Date.now()}-${Math.random()}`,
-        );
+        // Cryptographically random partial nonce (feeds sessionID / sessionKey / chaincode)
+        const randomNonce = generateSecureHex64();
         setPartialNonce(randomNonce);
         dbg('Generated partialNonce:', randomNonce);
         // Only generate new keypair if not in send/sign mode (send/sign mode loads from keyshare)
@@ -3192,6 +3192,46 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 8,
       paddingVertical: 8,
     },
+    keygenTopBadgesRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginBottom: 8,
+    },
+    keygenBackendBadgeWrap: {
+      alignSelf: 'center',
+    },
+    entropyBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      alignSelf: 'center',
+      minHeight: 28,
+      backgroundColor: theme.colors.warningBg,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.border
+          : theme.colors.warning + '50',
+    },
+    entropyBadgeIcon: {
+      width: 14,
+      height: 14,
+      marginRight: 6,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    entropyBadgeText: {
+      fontFamily: theme.fontFamilies?.bold,
+      fontSize: theme.fontSizes?.sm || 12,
+      color: theme.colors.text,
+    },
     stepRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -4679,8 +4719,26 @@ const MobileNostrPairing = ({navigation}: any) => {
                       />
                     </View>
                   )}
-                  {!isSendBitcoin && !isSignPSBT && keygenBackend ? (
-                    <TssBackendBadge backend={keygenBackend} />
+                  {!isSendBitcoin && !isSignPSBT ? (
+                    <View style={styles.keygenTopBadgesRow}>
+                      {keygenBackend ? (
+                        <View style={styles.keygenBackendBadgeWrap}>
+                          <TssBackendBadge backend={keygenBackend} />
+                        </View>
+                      ) : null}
+                      <AppPressable
+                        style={styles.entropyBadge}
+                        onPress={() => setShowEntropyCard(true)}>
+                        <Image
+                          source={require('../assets/dice-icon.png')}
+                          style={styles.entropyBadgeIcon}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.entropyBadgeText}>
+                          Device Entropy
+                        </Text>
+                      </AppPressable>
+                    </View>
                   ) : null}
                   {/* Step Indicator */}
                   {!isSendBitcoin && !isSignPSBT && (
@@ -6153,6 +6211,10 @@ const MobileNostrPairing = ({navigation}: any) => {
           setSignedTxRawHex(null);
           navigation.goBack();
         }}
+      />
+      <EntropyInfoCard
+        visible={showEntropyCard}
+        onClose={() => setShowEntropyCard(false)}
       />
     </SafeAreaView>
   );

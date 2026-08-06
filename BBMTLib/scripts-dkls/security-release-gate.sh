@@ -15,6 +15,20 @@ if [ -z "${EXPECTED_REF}" ] || [ "${ACTUAL_REF}" != "${EXPECTED_REF}" ]; then
   exit 1
 fi
 
+echo "==> Security release gate: libtss insecure-rng not enabled"
+if [ -x ../libtss/scripts/check-no-insecure-rng.sh ]; then
+  bash ../libtss/scripts/check-no-insecure-rng.sh
+elif [ -f ../libtss/scripts/check-no-insecure-rng.sh ]; then
+  bash ../libtss/scripts/check-no-insecure-rng.sh
+else
+  # Fallback when sibling script is not yet on the pinned revision.
+  if rg -n 'insecure-rng' ../libtss/Cargo.toml ../libtss/libtss/Cargo.toml ../libtss/libtss-ffi/Cargo.toml 2>/dev/null; then
+    echo "error: insecure-rng referenced in production libtss Cargo.toml files" >&2
+    exit 1
+  fi
+  echo "==> insecure-rng fallback check passed"
+fi
+
 echo "==> Security release gate: MPC package tests"
 (cd BBMTLib && go test ./tss/... ./dkls/...)
 

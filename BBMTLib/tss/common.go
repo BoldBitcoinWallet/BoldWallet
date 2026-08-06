@@ -54,24 +54,49 @@ func isHex64(s string) bool {
 	return true
 }
 
-// normalizeChainCodeHex returns a 64-char hex chain code for GG18 keygen.
+func isAllZeroHex(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, c := range s {
+		if c != '0' {
+			return false
+		}
+	}
+	return true
+}
+
+// NormalizeChainCodeHex validates and returns a 64-char lowercase hex chain code.
+// Accepts raw 64-char hex or LAN handshake `{attemptId64}:{seed64}` (uses seed).
+// Rejects empty, invalid, too-short, and all-zero values.
+func NormalizeChainCodeHex(chaincode string) (string, error) {
+	return normalizeChainCodeHex(chaincode)
+}
+
+// normalizeChainCodeHex returns a 64-char hex chain code for GG18/DKLs keygen.
 // Accepts raw 64-char hex or LAN handshake `{attemptId64}:{seed64}` (uses seed).
 func normalizeChainCodeHex(chaincode string) (string, error) {
 	chaincode = strings.TrimSpace(chaincode)
 	if chaincode == "" {
 		return "", fmt.Errorf("ChainCodeHex is empty")
 	}
+	var out string
 	if isHex64(chaincode) {
-		return strings.ToLower(chaincode), nil
-	}
-	if idx := strings.Index(chaincode, ":"); idx > 0 {
+		out = strings.ToLower(chaincode)
+	} else if idx := strings.Index(chaincode, ":"); idx > 0 {
 		attemptID := chaincode[:idx]
 		seed := chaincode[idx+1:]
 		if isHex64(attemptID) && isHex64(seed) {
-			return strings.ToLower(seed), nil
+			out = strings.ToLower(seed)
 		}
 	}
-	return "", fmt.Errorf("invalid chain code hex")
+	if out == "" {
+		return "", fmt.Errorf("invalid chain code hex")
+	}
+	if isAllZeroHex(out) {
+		return "", fmt.Errorf("ChainCodeHex must not be all zeros")
+	}
+	return out, nil
 }
 
 // GetHexEncodedPubKey returns the hexadecimal encoded string representation of an ECDSA/EDDSA public key.

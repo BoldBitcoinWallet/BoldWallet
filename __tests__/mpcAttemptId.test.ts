@@ -20,6 +20,14 @@ describe('mpcAttemptId', () => {
     const id = generateMpcAttemptId();
     expect(isValidMpcAttemptId(id)).toBe(true);
   });
+
+  it('generateMpcAttemptId uses full 256-bit entropy without duplicated halves', () => {
+    const id = generateMpcAttemptId();
+    expect(id.length).toBe(64);
+    expect(id.slice(0, 32)).not.toBe(id.slice(32));
+    // Two independent draws should almost always differ
+    expect(generateMpcAttemptId()).not.toBe(generateMpcAttemptId());
+  });
 });
 
 describe('lanSession attempt_id', () => {
