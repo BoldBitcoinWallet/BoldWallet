@@ -22,7 +22,7 @@ BoldWallet is a seedless multi-party computation (MPC) wallet for Bitcoin: keys 
 - **Fail-stop entropy handling** — `MustGetRandomInt` panics on entropy failure rather than degrading; `io.ReadFull`/`rand.Read` errors are propagated and, in all production call sites, handled.
 - **Secret-share storage** — shares persist in iOS Keychain / Android Keystore-backed EncryptedSharedPreferences via `react-native-encrypted-storage`; signing reads shares natively without crossing the JS bridge.
 - **Encrypted P2P transport** — Nostr and LAN paths use ECIES and application-layer encryption; relay operators are untrusted.
-- **Release hygiene** — a security release gate (`scripts-dkls/security-release-gate.sh`) scans for the `insecure-rng` feature, verifies pinned `libtss` revision, and scans logs for sensitive material; FIPS-mode builds set `GODEBUG=fips140=on`.
+- **Double-device transaction confirmation** — both co-signing devices independently display the full transaction details (inputs, outputs, amounts, addresses) before signing; the user must explicitly approve on *each* device. A compromised device cannot silently sign: the second device's confirmation screen is independently rendered from the PSBT, not from the first device's UI.
 
 **The single most critical residual risk** is not cryptographic but **human-behavioural: UI deception / transaction substitution**. If one device is fully compromised, malware can display a legitimate-looking transaction while submitting a different PSBT for co-signing. The model mitigates this — the second device independently displays and confirms transaction details — but the mitigation's effectiveness depends on the user actually verifying the second screen. This risk is inherent to the multi-device model, not a defect in the cryptography, and is actively *reduced* relative to single-device wallets (there, a compromised phone silently signs anything).
 
@@ -91,8 +91,8 @@ Findings are ordered by severity. **Positive controls** (explicitly verified-abs
 ### BWL-002 — UI deception surface (transaction substitution) — Medium (behavioural, architectural)
 
 - **Affected component:** React Native UI (`screens/`), signing flow (`BBMTLib/tss/`, `dkls/`)
-- **Description:** The transaction that a compromised device *displays* is not cryptographically bound to the transaction that device *submits* for co-signing, from the user's perspective. The control lives in the second device: it independently renders and confirms the PSBT details before co-signing.
-- **Impact:** If a user signs on a compromised device and fails to verify the second device's confirmation screen, funds can be moved to an attacker address. This is the highest-probability fund-loss path in the product (Score B, path B3).
+- **Description:** BoldWallet enforces **double-device transaction confirmation**: both co-signing devices independently parse, render, and display the full PSBT (inputs, outputs, amounts, addresses) before signing. The user must explicitly approve the transaction on *each* device. The control is structural — the second device renders from the PSBT bytes, not from the first device's UI state — so a compromised device cannot spoof what the second device displays. However, the transaction that a compromised device *displays* to the user is not cryptographically bound to the transaction it *submits* for co-signing; malware on one device could show a legitimate transaction while proposing a different PSBT.
+- **Impact:** If a user signs on a compromised device and fails to verify the second device's confirmation screen, funds can be moved to an attacker address. The double-device confirmation flow makes this substantially harder than single-device wallets (where malware signs silently), but the residual depends on user behaviour: *both* confirmations must be actively verified. This is the highest-probability fund-loss path in the product (Score B, path B3).
 - **Recommendation:** Keep second-device confirmation mandatory for all transactions; consider displaying a human-readable address/amount summary on the *signing* device derived from the same PSBT hash; add a PSBT hash display on both devices so users can compare; treat any flow that collapses the two confirmations into one device as a release blocker.
 
 ### BWL-003 — 2-of-2 liveness — Low (availability)
@@ -168,7 +168,7 @@ Chaincodes are validated (`normalizeChainCodeHex` rejects empty, non-hex, and al
 |---|----------|---------|---------------|
 | S1 | Broken/backdoored OS RNG on one device | That device's CSPRNG-derived contributions (share, nonces, OT seeds) are predictable *if* the failure is silent. Even then, the attacker holds at most one predictable share; signing still requires the second device's CSPRNG. **No Coldcard-class total compromise is possible.** | Low — threshold structure caps the damage; requires a silent OS-level RNG failure on one device only |
 | S2 | Fully compromised phone (1 device) | Attacker exfiltrates one keyshare (1-of-2 or 1-of-3). Cryptographically useless alone: cannot sign, derive, or reconstruct the group key. Attacker can initiate sessions but every signature needs the other device. | Low-to-moderate — the main residual is that the compromised device can *propose* transactions (see S3) |
-| S3 | UI deception / transaction substitution | Malware on the compromised device displays a legitimate-looking transaction to the user while submitting a different PSBT. If the user signs without verifying the second device's confirmation, funds move to the attacker. | **Highest residual risk in the product.** Mitigation is behavioural: the second device independently renders and confirms the PSBT. Recommend PSBT-hash display on both devices (BWL-002) |
+| S3 | UI deception / transaction substitution | Malware on the compromised device displays a legitimate-looking transaction to the user while submitting a different PSBT. If the user signs without verifying the second device's independent confirmation, funds move to the attacker. BoldWallet's **double-device confirmation** — where both devices independently parse and render the PSBT — makes this substantially harder than in single-device wallets where malware can silently sign. | **Highest residual risk in the product.** Mitigation is behavioural: the second device independently renders and confirms the PSBT. Recommend PSBT-hash display on both devices (BWL-002) |
 | S4 | Malicious/rogue co-signer | DKG is secure against a malicious party (verifiable secret sharing; proofs verified). A rogue party learns only its own share. In 2-of-2 the counterparty is a trusted partner by construction; in 2-of-3, two colluding parties are required for theft, which is outside the one-device assumption. | Low |
 | S5 | Transport interception (Nostr / LAN) | Attacker controlling relays or a LAN segment observes only ECIES-encrypted traffic; no key material or share data is recoverable. Session IDs are 256-bit CSPRNG values; LAN cipher key derivation from them is not practically exploitable (BWL-009). | Low |
 | S6 | Rooted/jailbroken device | Keystore/Keychain hardening degrades under root; attacker extracts one share. Consequence capped at one share by the threshold structure. | Low-to-moderate — depends on root + physical/logical access; cap remains |
@@ -195,14 +195,15 @@ Chaincodes are validated (`normalizeChainCodeHex` rejects empty, non-hex, and al
 Not close on the Coldcard vector: a single-sig software wallet holds one private key on one device. One RNG failure, one malware infection, or one backup leak equals total, irreversible fund loss. BoldWallet's threshold structure means:
 - one compromised device ≠ funds at risk (vs. total loss);
 - one broken RNG on one device ≠ key compromise (vs. total loss);
-- no recovery phrase to phish (vs. seed-phrase phishing, the dominant real-world theft vector for single-sig wallets).
+- no recovery phrase to phish (vs. seed-phrase phishing, the dominant real-world theft vector for single-sig wallets);
+- **double-device transaction confirmation** — both devices independently display and require approval of the full transaction details; a single compromised device cannot silently authorize a spend (vs. single-device wallets where malware signs with no second check).
 
 ### 5.3 vs. other MPC/TSS wallets
 
 BoldWallet's architecture is consistent with the published posture of leading MPC vendors (e.g., Fireblocks, ZenGo, Coinbase Wallet-as-a-Service):
-- **ZenGo** (2-of-2 threshold with server) — same threshold argument; BoldWallet differs by being self-custodied end-to-end (no custodial server party).
-- **Fireblocks** (enterprise MPC) — comparable threshold guarantees; BoldWallet operates fully client-side on user hardware.
-- The industry consensus we would echo: MPC wallets eliminate the single-point-of-failure and the seed-phrase attack surface, at the cost of a more complex protocol surface and the behavioural confirmation requirement (S3).
+- **ZenGo** (2-of-2 threshold with server) — same threshold argument; BoldWallet differs by being self-custodied end-to-end (no custodial server party), and by requiring **double-device transaction confirmation** (both co-signing devices independently display and the user must approve on each) rather than single-device approval.
+- **Fireblocks** (enterprise MPC) — comparable threshold guarantees; BoldWallet operates fully client-side on user hardware, and adds the cross-device verification layer at spend time.
+- The industry consensus we would echo: MPC wallets eliminate the single-point-of-failure and the seed-phrase attack surface, at the cost of a more complex protocol surface and the behavioural confirmation requirement (S3). BoldWallet's **double-device confirmation** is a distinguishing security feature — it structurally prevents a single compromised device from silently signing, a protection not uniformly present in competing MPC wallets.
 
 **Honest weaknesses of BoldWallet relative to the field:**
 1. **UI-deception surface (BWL-002)** — the behavioural confirmation dependency is real and is the top residual risk.
@@ -215,12 +216,12 @@ BoldWallet's architecture is consistent with the published posture of leading MP
 
 ## 6. Final Verdict & Recommendations
 
-**Overall posture:** Strong. This is one of the few consumer wallet architectures in which a Coldcard-class RNG failure is not merely mitigated but *structurally impossible*, and in which a fully compromised device is, by itself, cryptographically powerless. The residual risks are behavioural (UI deception), availability (2-of-2 liveness), and supply-chain (fork/build integrity) — not cryptographic entropy.
+**Overall posture:** Strong. This is one of the few consumer wallet architectures in which a Coldcard-class RNG failure is not merely mitigated but *structurally impossible*, and in which a fully compromised device is, by itself, cryptographically powerless. The **double-device transaction confirmation** flow — where both co-signing devices independently render the full PSBT and require explicit user approval — structurally prevents silent signing by a single compromised device, a protection absent from virtually all single-device wallets and many MPC competitors. The residual risks are behavioural (UI deception), availability (2-of-2 liveness), and supply-chain (fork/build integrity) — not cryptographic entropy.
 
 **Recommendation for deployment: Ready for production**, subject to:
 
 1. **Default to 2-of-3** where the user can support it (availability + reduced reliance on a single confirmation device).
-2. **Mandatory, non-collapsible second-device confirmation** for all transactions, with PSBT-hash display on both devices (address BWL-002).
+2. **Mandatory, non-collapsible double-device confirmation** for all transactions — both co-signing devices must independently display full inputs, outputs, amounts, and addresses, and require explicit user approval on each device. Add PSBT-hash display on both devices for users to cross-check (address BWL-002). Do not add any flow that collapses confirmations to a single device.
 3. **No new entropy/injection APIs** — maintain the current no-seed surface as a standing requirement.
 4. **Release hygiene** — keep the security release gate mandatory for all builds; keep forks signed and diffed against upstream.
 
