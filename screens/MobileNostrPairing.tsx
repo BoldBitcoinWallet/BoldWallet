@@ -106,6 +106,7 @@ import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
+import EntropyInfoCard from '../components/EntropyInfoCard';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import appConfigRepository, {
@@ -523,6 +524,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [isQRModalVisible, setIsQRModalVisible] = useState(false);
   const [showRelayConfig, setShowRelayConfig] = useState(false);
   const [showHelpModal, setShowHelpModal] = useState(false);
+  const [showEntropyCard, setShowEntropyCard] = useState(false);
 
   const [txDetailsExpanded, setTxDetailsExpanded] = useState(false);
   const {
@@ -3190,6 +3192,40 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 8,
       paddingVertical: 8,
     },
+    keygenTopBadgesRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginBottom: 8,
+    },
+    keygenBackendBadgeWrap: {
+      alignSelf: 'center',
+    },
+    entropyBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'center',
+      backgroundColor: theme.colors.warningBg,
+      paddingVertical: 4,
+      paddingHorizontal: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.border
+          : theme.colors.warning + '50',
+    },
+    entropyBadgeIcon: {
+      width: 14,
+      height: 14,
+      marginRight: 6,
+    },
+    entropyBadgeText: {
+      fontFamily: theme.fontFamilies?.bold,
+      fontSize: theme.fontSizes?.sm || 12,
+      color: theme.colors.text,
+    },
     stepRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -4677,8 +4713,26 @@ const MobileNostrPairing = ({navigation}: any) => {
                       />
                     </View>
                   )}
-                  {!isSendBitcoin && !isSignPSBT && keygenBackend ? (
-                    <TssBackendBadge backend={keygenBackend} />
+                  {!isSendBitcoin && !isSignPSBT ? (
+                    <View style={styles.keygenTopBadgesRow}>
+                      {keygenBackend ? (
+                        <View style={styles.keygenBackendBadgeWrap}>
+                          <TssBackendBadge backend={keygenBackend} />
+                        </View>
+                      ) : null}
+                      <AppPressable
+                        style={styles.entropyBadge}
+                        onPress={() => setShowEntropyCard(true)}>
+                        <Image
+                          source={require('../assets/dice-icon.png')}
+                          style={styles.entropyBadgeIcon}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.entropyBadgeText}>
+                          Device Entropy Sources
+                        </Text>
+                      </AppPressable>
+                    </View>
                   ) : null}
                   {/* Step Indicator */}
                   {!isSendBitcoin && !isSignPSBT && (
@@ -6151,6 +6205,10 @@ const MobileNostrPairing = ({navigation}: any) => {
           setSignedTxRawHex(null);
           navigation.goBack();
         }}
+      />
+      <EntropyInfoCard
+        visible={showEntropyCard}
+        onClose={() => setShowEntropyCard(false)}
       />
     </SafeAreaView>
   );
