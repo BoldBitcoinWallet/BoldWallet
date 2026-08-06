@@ -1335,9 +1335,12 @@ class BBMTLibNativeModule: RCTEventEmitter {
     // SecRandomCopyBytes blocks until sufficient entropy is available.
     let entropyPoolHealth = "Kernel CSPRNG — continuously reseeded (no userspace counter)"
 
-    // RNG assessment — always "Strong" on iOS; the CSPRNG is hardware-seeded
-    // and there is no deterministic fallback path in production.
-    let rngAssessment = "Strong"
+    // Simulator has no hardware entropy source; real devices with SE are always Strong.
+    #if targetEnvironment(simulator)
+    let rngAssessment = "Weak"
+    #else
+    let rngAssessment = hasSE ? "Strong" : "Weak"
+    #endif
 
     let metadata: [String: Any] = [
       "platform": platform,

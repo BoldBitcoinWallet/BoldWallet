@@ -10,7 +10,7 @@ export type DeviceEntropyMetadata = {
   rng_source: string; // e.g. "SecRandomCopyBytes → kernel CSPRNG (/dev/random)"
   hardware_rng: string; // e.g. "Secure Enclave (available)"
   entropy_pool_health: string; // e.g. "Kernel CSPRNG — continuously reseeded"
-  rng_assessment: 'Strong' | 'Adequate' | 'Unknown';
+  rng_assessment: 'Strong' | 'Weak';
 };
 
 /**

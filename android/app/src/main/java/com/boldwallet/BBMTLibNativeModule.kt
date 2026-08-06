@@ -1496,9 +1496,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             val rngSource = "/dev/urandom → Linux kernel CSPRNG (SHA-1 DRBG reseeded from entropy pool)"
 
             // Check StrongBox availability (API 28+)
+            var hasStrongBox = false
             val hwRng: String = try {
                 if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
-                    val hasStrongBox = reactApplicationContext
+                    hasStrongBox = reactApplicationContext
                         .packageManager
                         .hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE)
                     if (hasStrongBox) "StrongBox Keymaster (available)" else "StrongBox Keymaster (unavailable)"
@@ -1510,21 +1511,25 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             }
 
             // Attempt to read /proc/sys/kernel/random/entropy_avail
-            val entropyPoolHealth: String = try {
+            val entropyAvailBits: Int? = try {
                 val entropyFile = java.io.File("/proc/sys/kernel/random/entropy_avail")
-                if (entropyFile.exists() && entropyFile.canRead()) {
-                    val avail = entropyFile.readText().trim()
-                    "Kernel entropy pool — entropy_avail: $avail"
-                } else {
-                    "Kernel CSPRNG — entropy pool (entropy_avail not readable)"
-                }
-            } catch (_: Throwable) {
-                "Kernel CSPRNG — entropy pool (entropy_avail not readable)"
-            }
+                if (entropyFile.exists() && entropyFile.canRead()) entropyFile.readText().trim().toIntOrNull()
+                else null
+            } catch (_: Throwable) { null }
 
-            // Always "Strong" on modern Android — SecureRandom is backed by /dev/urandom
-            // which on Linux 5.4+ is based on the ChaCha20 DRNG (continuously reseeded).
-            val rngAssessment = "Strong"
+            val entropyPoolHealth: String = if (entropyAvailBits != null)
+                "Kernel entropy pool — entropy_avail: $entropyAvailBits"
+            else
+                "Kernel CSPRNG — entropy pool (entropy_avail not readable)"
+
+            // On modern kernels entropy_avail is unreadable once the CRNG is seeded (always strong).
+            // StrongBox (hardware SE) upgrades a borderline entropy reading to Strong.
+            val rngAssessment: String = when {
+                entropyAvailBits == null  -> "Strong"   // unreadable = CRNG fully seeded
+                entropyAvailBits >= 256   -> "Strong"
+                entropyAvailBits >= 128   -> if (hasStrongBox) "Strong" else "Weak"
+                else                      -> "Weak"
+            }
 
             val metadata = org.json.JSONObject().apply {
                 put("platform", platform)

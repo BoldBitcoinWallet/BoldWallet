@@ -108,7 +108,7 @@ export default function EntropyInfoCard({visible, onClose}: EntropyInfoCardProps
   }, [visible]);
 
   const isStrong = metadata?.rng_assessment === 'Strong';
-  const assessmentColor = colors.bitcoinOrange;
+  const assessmentColor = isStrong ? colors.received : colors.danger;
   const assessIcon = isStrong
     ? require('../assets/assess-ok-icon.png')
     : require('../assets/assess-risk-icon.png');
