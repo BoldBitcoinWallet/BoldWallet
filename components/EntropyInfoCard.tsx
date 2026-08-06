@@ -331,6 +331,7 @@ const makeStyles = (
       width: 28,
       height: 28,
       marginRight: spacing.small,
+      tintColor: colors.bitcoinOrange,
     },
     title: {
       fontSize: fontSizes.lg,

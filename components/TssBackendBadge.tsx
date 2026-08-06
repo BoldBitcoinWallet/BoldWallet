@@ -33,6 +33,8 @@ const TssBackendBadge: React.FC<Props> = ({backend}) => {
 const badgeStyles = {
   container: {
     alignSelf: 'center' as const,
+    minHeight: 28,
+    justifyContent: 'center' as const,
   },
   label: {
     flex: 0,

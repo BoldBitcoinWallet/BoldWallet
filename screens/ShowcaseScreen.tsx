@@ -866,6 +866,10 @@ const ShowcaseScreen = ({navigation}: any) => {
       width: 16,
       height: 16,
       marginRight: 6,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     entropyBadgeText: {
       fontFamily: theme.fontFamilies?.bold,
@@ -959,7 +963,7 @@ const ShowcaseScreen = ({navigation}: any) => {
               resizeMode="contain"
             />
             <Text style={styles.entropyBadgeText}>
-              Device Entropy Sources
+              Device Entropy
             </Text>
           </AppPressable>
         </View>

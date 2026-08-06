@@ -3205,9 +3205,11 @@ const MobileNostrPairing = ({navigation}: any) => {
     entropyBadge: {
       flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
       alignSelf: 'center',
+      minHeight: 28,
       backgroundColor: theme.colors.warningBg,
-      paddingVertical: 4,
+      paddingVertical: 6,
       paddingHorizontal: 10,
       borderRadius: 12,
       borderWidth: 1,
@@ -3220,6 +3222,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: 14,
       height: 14,
       marginRight: 6,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     entropyBadgeText: {
       fontFamily: theme.fontFamilies?.bold,
@@ -4729,7 +4735,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           resizeMode="contain"
                         />
                         <Text style={styles.entropyBadgeText}>
-                          Device Entropy Sources
+                          Device Entropy
                         </Text>
                       </AppPressable>
                     </View>
