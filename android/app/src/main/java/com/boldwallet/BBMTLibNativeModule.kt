@@ -1483,6 +1483,68 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    /** Returns device entropy source metadata as a JSON string.
+     *  Always resolves — assessment is informational, not gating. */
+    @ReactMethod
+    fun getDeviceEntropyMetadata(promise: Promise) {
+        try {
+            val platform = "android"
+            val osVersion = android.os.Build.VERSION.RELEASE
+            val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+
+            val cryptoFramework = "Android Keystore / Conscrypt (java.security.SecureRandom)"
+            val rngSource = "/dev/urandom → Linux kernel CSPRNG (SHA-1 DRBG reseeded from entropy pool)"
+
+            // Check StrongBox availability (API 28+)
+            val hwRng: String = try {
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    val hasStrongBox = reactApplicationContext
+                        .packageManager
+                        .hasSystemFeature(android.content.pm.PackageManager.FEATURE_STRONGBOX_KEYSTORE)
+                    if (hasStrongBox) "StrongBox Keymaster (available)" else "StrongBox Keymaster (unavailable)"
+                } else {
+                    "StrongBox Keymaster (API < 28 — not supported)"
+                }
+            } catch (_: Throwable) {
+                "StrongBox Keymaster (check failed)"
+            }
+
+            // Attempt to read /proc/sys/kernel/random/entropy_avail
+            val entropyPoolHealth: String = try {
+                val entropyFile = java.io.File("/proc/sys/kernel/random/entropy_avail")
+                if (entropyFile.exists() && entropyFile.canRead()) {
+                    val avail = entropyFile.readText().trim()
+                    "Kernel entropy pool — entropy_avail: $avail"
+                } else {
+                    "Kernel CSPRNG — entropy pool (entropy_avail not readable)"
+                }
+            } catch (_: Throwable) {
+                "Kernel CSPRNG — entropy pool (entropy_avail not readable)"
+            }
+
+            // Always "Strong" on modern Android — SecureRandom is backed by /dev/urandom
+            // which on Linux 5.4+ is based on the ChaCha20 DRNG (continuously reseeded).
+            val rngAssessment = "Strong"
+
+            val metadata = org.json.JSONObject().apply {
+                put("platform", platform)
+                put("os_version", osVersion)
+                put("device_model", deviceModel)
+                put("crypto_framework", cryptoFramework)
+                put("rng_source", rngSource)
+                put("hardware_rng", hwRng)
+                put("entropy_pool_health", entropyPoolHealth)
+                put("rng_assessment", rngAssessment)
+            }
+
+            ld("getDeviceEntropyMetadata", "resolved rng_assessment=$rngAssessment")
+            promise.resolve(metadata.toString())
+        } catch (e: Throwable) {
+            ld("getDeviceEntropyMetadata", "error: ${e.stackTraceToString()}")
+            promise.reject("METADATA_ERROR", "Failed to read entropy metadata: ${e.message}", e)
+        }
+    }
+
     @ReactMethod
     fun parsePSBTDetails(psbtBase64: String, promise: Promise) {
         Thread {

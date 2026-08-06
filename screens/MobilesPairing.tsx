@@ -114,6 +114,7 @@ import {
 } from '../services/mpcProgressUi';
 import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
 import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
+import EntropyInfoCard from '../components/EntropyInfoCard';
 import {
   emptyMpcTransportSubprogress,
   type MpcTransportSubprogressState,
@@ -287,6 +288,9 @@ const MobilesPairing = ({navigation}: any) => {
   }, [isFocused]);
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const isSignPSBT = route.params?.mode === 'sign_psbt';
+  const [showEntropyCard, setShowEntropyCard] = useState(
+    !isSendBitcoin && !isSignPSBT,
+  );
   const isSpendFlow = isSendBitcoin || isSignPSBT;
   const setupMode = route.params?.mode;
   /** Trio = 3-device LAN wallet setup (keygen) only. Spend/sign co-signing is always duo. */
@@ -4013,6 +4017,11 @@ const MobilesPairing = ({navigation}: any) => {
             )}
             {!isSendBitcoin && !isSignPSBT && (
               <>
+                {/* Entropy Source Awareness Card — shown before wallet setup */}
+                <EntropyInfoCard
+                  visible={showEntropyCard}
+                  onClose={() => setShowEntropyCard(false)}
+                />
                 {/* Preparation Panel */}
                 {peerIP &&
                   ((isPreParamsReady && !mpcDone && (
@@ -4762,6 +4771,11 @@ const MobilesPairing = ({navigation}: any) => {
           setSignedTxRawHex(null);
           navigation.goBack();
         }}
+      />
+      {/* Entropy awareness bottom sheet — shown before wallet setup, not during spend/sign */}
+      <EntropyInfoCard
+        visible={showEntropyCard}
+        onClose={() => setShowEntropyCard(false)}
       />
     </SafeAreaView>
   );
