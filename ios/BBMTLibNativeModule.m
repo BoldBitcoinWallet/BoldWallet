@@ -374,4 +374,8 @@ RCT_EXTERN_METHOD(getKeyshareNostrPrepJSON:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(hasKeyshareInSecureStorage:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// Device entropy source metadata (informational, not gating)
+RCT_EXTERN_METHOD(getDeviceEntropyMetadata:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 @end

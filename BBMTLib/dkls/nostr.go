@@ -31,6 +31,11 @@ func (m *nostrMessenger) Send(from, to, body string) error {
 func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, chaincode string) (result string, err error) {
 	defer recoverAsError("NostrJoinKeygen", &err, &result)
 
+	chaincode, err = tss.NormalizeChainCodeHex(chaincode)
+	if err != nil {
+		return "", err
+	}
+
 	localNpub, err := tss.DeriveNpubFromNsec(partyNsec)
 	if err != nil {
 		return "", err

@@ -32,6 +32,16 @@ func TestNormalizeChainCodeHex(t *testing.T) {
 	if _, err := normalizeChainCodeHex(attempt + ":short"); err == nil {
 		t.Fatal("expected error for short seed")
 	}
+	zeros := repeatChar('0', 64)
+	if _, err := normalizeChainCodeHex(zeros); err == nil {
+		t.Fatal("expected error for all-zero chain code")
+	}
+	if _, err := normalizeChainCodeHex(attempt + ":" + zeros); err == nil {
+		t.Fatal("expected error for all-zero LAN seed")
+	}
+	if _, err := NormalizeChainCodeHex(seed); err != nil {
+		t.Fatalf("NormalizeChainCodeHex: %v", err)
+	}
 }
 
 func repeatChar(c byte, n int) string {

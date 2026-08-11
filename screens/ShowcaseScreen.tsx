@@ -28,6 +28,7 @@ import {
   WalletAlreadyLoadedError,
 } from '../services/keyshareImport';
 import LegalModal from '../components/LegalModal';
+import EntropyInfoCard from '../components/EntropyInfoCard';
 import TransportModeSelector from '../components/TransportModeSelector';
 import TssBackendSelector from '../components/TssBackendSelector';
 import {
@@ -59,6 +60,7 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
   );
+  const [showEntropyCard, setShowEntropyCard] = useState(false);
   const {theme} = useTheme();
   const {setActiveNetwork} = useUser();
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
@@ -845,6 +847,35 @@ const ShowcaseScreen = ({navigation}: any) => {
           ? theme.colors.primary + '80'
           : theme.colors.bitcoinOrange + '80',
     },
+    entropyBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      alignSelf: 'center',
+      backgroundColor: theme.colors.warningBg,
+      paddingVertical: 4,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      marginTop: 8,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.border
+          : theme.colors.warning + '50',
+    },
+    entropyBadgeIcon: {
+      width: 16,
+      height: 16,
+      marginRight: 6,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    entropyBadgeText: {
+      fontFamily: theme.fontFamilies?.bold,
+      fontSize: theme.fontSizes?.sm || 12,
+      color: theme.colors.text,
+    },
   });
   return (
     <View style={styles.container}>
@@ -923,6 +954,18 @@ const ShowcaseScreen = ({navigation}: any) => {
               </Text>
             </Text>
           </View>
+          <AppPressable
+            style={styles.entropyBadge}
+            onPress={() => setShowEntropyCard(true)}>
+            <Image
+              source={require('../assets/dice-icon.png')}
+              style={styles.entropyBadgeIcon}
+              resizeMode="contain"
+            />
+            <Text style={styles.entropyBadgeText}>
+              Device Entropy
+            </Text>
+          </AppPressable>
         </View>
         {walletAlreadyLoaded ? (
           <View style={styles.walletLoadedBanner}>
@@ -1361,6 +1404,10 @@ const ShowcaseScreen = ({navigation}: any) => {
           </View>
         </View>
       </Modal>
+      <EntropyInfoCard
+        visible={showEntropyCard}
+        onClose={() => setShowEntropyCard(false)}
+      />
     </View>
   );
 };

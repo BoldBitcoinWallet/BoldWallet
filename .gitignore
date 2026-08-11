@@ -435,3 +435,9 @@ third_party/
 # Docker cache
 .docker-cache/
 build.log/libtss
+
+# rust
+target/*
+Cargo.lock
+Cargo.toml
+src/*

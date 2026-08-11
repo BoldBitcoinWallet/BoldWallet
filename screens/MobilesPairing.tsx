@@ -114,6 +114,7 @@ import {
 } from '../services/mpcProgressUi';
 import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
 import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
+import EntropyInfoCard from '../components/EntropyInfoCard';
 import {
   emptyMpcTransportSubprogress,
   type MpcTransportSubprogressState,
@@ -287,6 +288,7 @@ const MobilesPairing = ({navigation}: any) => {
   }, [isFocused]);
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const isSignPSBT = route.params?.mode === 'sign_psbt';
+  const [showEntropyCard, setShowEntropyCard] = useState(false);
   const isSpendFlow = isSendBitcoin || isSignPSBT;
   const setupMode = route.params?.mode;
   /** Trio = 3-device LAN wallet setup (keygen) only. Spend/sign co-signing is always duo. */
@@ -3168,7 +3170,43 @@ const MobilesPairing = ({navigation}: any) => {
     },
     keygenBackendBadgeWrap: {
       alignSelf: 'center',
+    },
+    keygenTopBadgesRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
       marginBottom: 8,
+    },
+    entropyBadge: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      alignSelf: 'center',
+      minHeight: 28,
+      backgroundColor: theme.colors.warningBg,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.border
+          : theme.colors.warning + '50',
+    },
+    entropyBadgeIcon: {
+      width: 14,
+      height: 14,
+      marginRight: 6,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    entropyBadgeText: {
+      fontFamily: theme.fontFamilies?.bold,
+      fontSize: theme.fontSizes?.sm || 12,
+      color: theme.colors.text,
     },
     hidden: {
       display: 'none',
@@ -3632,11 +3670,25 @@ const MobilesPairing = ({navigation}: any) => {
                 </Text>
                 {!isSendBitcoin && !isSignPSBT && (
                   <>
-                    {keygenBackend ? (
-                      <View style={styles.keygenBackendBadgeWrap}>
-                        <TssBackendBadge backend={keygenBackend} />
-                      </View>
-                    ) : null}
+                    <View style={styles.keygenTopBadgesRow}>
+                      {keygenBackend ? (
+                        <View style={styles.keygenBackendBadgeWrap}>
+                          <TssBackendBadge backend={keygenBackend} />
+                        </View>
+                      ) : null}
+                      <AppPressable
+                        style={styles.entropyBadge}
+                        onPress={() => setShowEntropyCard(true)}>
+                        <Image
+                          source={require('../assets/dice-icon.png')}
+                          style={styles.entropyBadgeIcon}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.entropyBadgeText}>
+                          Device Entropy
+                        </Text>
+                      </AppPressable>
+                    </View>
                     <AppPressable
                       onPress={() => {
                         navigation.dispatch(
@@ -4762,6 +4814,11 @@ const MobilesPairing = ({navigation}: any) => {
           setSignedTxRawHex(null);
           navigation.goBack();
         }}
+      />
+      {/* Entropy awareness bottom sheet — shown before wallet setup, not during spend/sign */}
+      <EntropyInfoCard
+        visible={showEntropyCard}
+        onClose={() => setShowEntropyCard(false)}
       />
     </SafeAreaView>
   );
