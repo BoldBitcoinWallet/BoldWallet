@@ -19,7 +19,12 @@
  *   // Optional: stop all timers (e.g. when app backgrounds fully):
  *   syncCoordinator.stop();
  */
-import {AppState, type AppStateStatus} from 'react-native';
+import {
+  AppState,
+  DeviceEventEmitter,
+  type AppStateStatus,
+  type EmitterSubscription,
+} from 'react-native';
 import balanceSyncer, {
   type AddressEntry as BalanceEntry,
 } from './BalanceSyncer';
@@ -85,7 +90,27 @@ class SyncCoordinator {
   private _appStateSubscription: ReturnType<
     typeof AppState.addEventListener
   > | null = null;
+  private _mpcStateSubscription: EmitterSubscription | null = null;
+  private _activeMpcTxIds = new Set<string>();
+  private _lastMpcPauseLogAt = 0;
   private _running = false;
+
+  private _isMpcInFlight(): boolean {
+    return this._activeMpcTxIds.size > 0;
+  }
+
+  private _shouldPauseForMpc(syncLabel: string): boolean {
+    if (!this._isMpcInFlight()) return false;
+    const now = Date.now();
+    if (now - this._lastMpcPauseLogAt > 10_000) {
+      this._lastMpcPauseLogAt = now;
+      dbg('SyncCoordinator: pausing sync while co-sign is active', {
+        syncLabel,
+        activeCoSignSessions: this._activeMpcTxIds.size,
+      });
+    }
+    return true;
+  }
 
   /**
    * Start background sync with the given config.
@@ -95,6 +120,27 @@ class SyncCoordinator {
     this.stop();
     this._config = config;
     this._running = true;
+
+    this._mpcStateSubscription = DeviceEventEmitter.addListener(
+      'nostr-mpc:state',
+      payload => {
+        const txId =
+          typeof payload?.txId === 'string' ? payload.txId.trim() : '';
+        const state =
+          typeof payload?.state === 'string' ? payload.state.trim() : '';
+        if (!txId) return;
+        const isInFlight =
+          state === 'awaiting_peer' ||
+          state === 'computing_nonces' ||
+          state === 'signing' ||
+          state === 'broadcasting';
+        if (isInFlight) {
+          this._activeMpcTxIds.add(txId);
+          return;
+        }
+        this._activeMpcTxIds.delete(txId);
+      },
+    );
 
     // Immediate first sync — force HD re-discovery to fix any stale/diverged indexes
     this._syncAll(true);
@@ -164,12 +210,19 @@ class SyncCoordinator {
       this._appStateSubscription.remove();
       this._appStateSubscription = null;
     }
+    if (this._mpcStateSubscription) {
+      this._mpcStateSubscription.remove();
+      this._mpcStateSubscription = null;
+    }
+    this._activeMpcTxIds.clear();
     dbg('SyncCoordinator: stopped');
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
   private async _syncAll(forceHdDiscovery = false): Promise<void> {
+    if (this._shouldPauseForMpc('all')) return;
+
     // HD discovery first — may expand the address set for subsequent syncs
     await this._syncHdDiscovery(forceHdDiscovery);
 
@@ -186,6 +239,7 @@ class SyncCoordinator {
 
   private async _syncHdDiscovery(force = false): Promise<void> {
     if (!this._config) return;
+    if (this._shouldPauseForMpc('hd-discovery')) return;
     const {network, addressType, apiBase} = this._config;
     try {
       const hdState = walletRepository.getHdState(network, addressType);
@@ -248,6 +302,7 @@ class SyncCoordinator {
 
   private async _syncBalances(): Promise<void> {
     if (!this._config) return;
+    if (this._shouldPauseForMpc('balances')) return;
     try {
       const network = this._config.network;
       const addressType =
@@ -277,6 +332,7 @@ class SyncCoordinator {
 
   private async _syncTxs(): Promise<void> {
     if (!this._config) return;
+    if (this._shouldPauseForMpc('transactions')) return;
     try {
       const network = this._config.network;
       const addressType =
@@ -308,6 +364,7 @@ class SyncCoordinator {
 
   private async _syncUtxos(): Promise<void> {
     if (!this._config) return;
+    if (this._shouldPauseForMpc('utxos')) return;
     try {
       const network = this._config.network;
       const addressType =
@@ -353,6 +410,7 @@ class SyncCoordinator {
 
   private async _syncPrice(): Promise<void> {
     if (!this._config) return;
+    if (this._shouldPauseForMpc('price')) return;
     try {
       await priceSyncer.syncCurrentPrice(this._config.apiBase);
     } catch (err) {
