@@ -223,13 +223,16 @@ class NostrMessagingService {
   private nativeBridgeSubscription?: EmitterSubscription;
   private routedEventSubscription?: EmitterSubscription;
   private relays: string[] = [...DEFAULT_RELAYS];
+  private reconnectPromise: Promise<void> | null = null;
+  private lastReconnectAtMs = 0;
+  private lastStaleHeartbeatLogAtMs = 0;
 
   private roomPolicy(): NostrServiceRoomPolicy {
     return {
-      reconnectInitialMs: 500,
-      reconnectMaxMs: 5000,
-      heartbeatEveryMs: 10000,
-      heartbeatTimeoutMs: 45000,
+      reconnectInitialMs: 200,
+      reconnectMaxMs: 1200,
+      heartbeatEveryMs: 1000,
+      heartbeatTimeoutMs: 12000,
     };
   }
 
@@ -314,6 +317,27 @@ class NostrMessagingService {
     }
   }
 
+  async ensureActiveSubscription(reason = 'unspecified'): Promise<void> {
+    await this.connect();
+    try {
+      await TssProvider.nostrServiceSubscribe(this.roomHash);
+    } catch (err) {
+      if (!this.isRecoverablePublishError(err)) {
+        throw err;
+      }
+      dbg('[NIP46-TLM][NostrMessaging] active subscription refresh failed; reconnecting', {
+        reason,
+        roomHash: this.roomHash,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await this.reconnectWithRelayFallback({
+        force: true,
+        reason: `ensure-active-subscription:${reason}`,
+      });
+      await TssProvider.nostrServiceSubscribe(this.roomHash);
+    }
+  }
+
   disconnect(): void {
     const activeRoom = this.roomHash;
     this.connectPromise = null;
@@ -345,7 +369,10 @@ class NostrMessagingService {
         reason: err instanceof Error ? err.message : String(err),
       });
 
-      await this.reconnectWithRelayFallback();
+      await this.reconnectWithRelayFallback({
+        force: true,
+        reason: 'publish-retry',
+      });
       await TssProvider.nostrServicePublish(this.roomHash, envelope);
     }
   }
@@ -363,7 +390,39 @@ class NostrMessagingService {
     );
   }
 
-  private async reconnectWithRelayFallback(): Promise<void> {
+  private async reconnectWithRelayFallback(input?: {
+    force?: boolean;
+    reason?: string;
+  }): Promise<void> {
+    const force = input?.force === true;
+    const reason = input?.reason || 'unspecified';
+    const now = Date.now();
+    const reconnectCooldownMs = 5000;
+
+    if (this.reconnectPromise) {
+      return this.reconnectPromise;
+    }
+
+    if (!force && now - this.lastReconnectAtMs < reconnectCooldownMs) {
+      dbg('[NIP46-TLM][NostrMessaging] reconnect request skipped by cooldown', {
+        roomHash: this.roomHash,
+        reason,
+        sinceLastReconnectMs: now - this.lastReconnectAtMs,
+        reconnectCooldownMs,
+      });
+      return;
+    }
+
+    this.lastReconnectAtMs = now;
+    this.reconnectPromise = this.performReconnectWithRelayFallback(reason);
+    try {
+      await this.reconnectPromise;
+    } finally {
+      this.reconnectPromise = null;
+    }
+  }
+
+  private async performReconnectWithRelayFallback(reason: string): Promise<void> {
     await this.ensureIdentity();
 
     const relayCandidates: string[][] = [];
@@ -419,16 +478,17 @@ class NostrMessagingService {
         this.setConnectionState('connected');
         dbg('[NIP46-TLM][NostrMessaging] reconnect fallback succeeded', {
           roomHash: this.roomHash,
+          reason,
           relays: relaySet,
         });
         return;
       } catch (reconnectErr) {
-        const reason = reconnectErr instanceof Error ? reconnectErr.message : String(reconnectErr);
-        failures.push(`${relaysCSV} => ${reason}`);
+        const attemptReason = reconnectErr instanceof Error ? reconnectErr.message : String(reconnectErr);
+        failures.push(`${relaysCSV} => ${attemptReason}`);
         dbg('[NIP46-TLM][NostrMessaging] reconnect fallback attempt failed', {
           roomHash: this.roomHash,
           relays: relaySet,
-          reason,
+          reason: attemptReason,
         });
       }
     }
@@ -620,7 +680,10 @@ class NostrMessagingService {
   private async ensureHealthyTransportBeforePublish(): Promise<void> {
     if (this.connectionState === 'degraded') {
       dbg('[NIP46-TLM][NostrMessaging] pre-publish health check detected degraded state; reconnecting');
-      await this.reconnectWithRelayFallback();
+      await this.reconnectWithRelayFallback({
+        force: true,
+        reason: 'pre-publish-degraded',
+      });
       return;
     }
 
@@ -636,7 +699,10 @@ class NostrMessagingService {
         roomHash: this.roomHash,
         reason: probeErr instanceof Error ? probeErr.message : String(probeErr),
       });
-      await this.reconnectWithRelayFallback();
+      await this.reconnectWithRelayFallback({
+        force: true,
+        reason: 'pre-publish-probe-failed',
+      });
     }
   }
 
@@ -654,12 +720,40 @@ class NostrMessagingService {
       this.setConnectionState('connecting');
       return;
     }
-    if (eventType === 'ROOM_HEARTBEAT' || eventType === 'ROOM_RECOVERED') {
+    if (eventType === 'ROOM_HEARTBEAT') {
+      const payload = event.payload && typeof event.payload === 'object'
+        ? (event.payload as Record<string, unknown>)
+        : {};
+      const stale = payload.stale === true;
+      this.setConnectionState(stale ? 'degraded' : 'connected');
+      if (stale) {
+        const now = Date.now();
+        if (now - this.lastStaleHeartbeatLogAtMs > 10000) {
+          this.lastStaleHeartbeatLogAtMs = now;
+          dbg('[NIP46-TLM][NostrMessaging] stale heartbeat observed; deferring reconnect until publish/probe failure', {
+            roomHash: this.roomHash,
+            idleMs:
+              typeof payload.idleMs === 'number' ? payload.idleMs : undefined,
+            heartbeatTimeoutMs:
+              typeof payload.heartbeatTimeoutMs === 'number'
+                ? payload.heartbeatTimeoutMs
+                : undefined,
+          });
+        }
+      }
+      return;
+    }
+    if (eventType === 'ROOM_RECOVERED') {
       this.setConnectionState('connected');
       return;
     }
     if (eventType === 'ROOM_STALE') {
       this.setConnectionState('degraded');
+      void this.reconnectWithRelayFallback({
+        reason: 'room-stale-event',
+      }).catch(err => {
+        dbg('[NIP46-TLM][NostrMessaging] room stale reconnect failed', err);
+      });
       return;
     }
 
@@ -680,14 +774,21 @@ class NostrMessagingService {
     const envelope = this.coerceEnvelope(eventType as NostrMessageType, payloadObject, event);
     const resolvedSenderNpub = this.resolveSenderNpub(event, payloadObject, envelope);
     const stableEventId = this.buildStableInboundEventId(event, envelope, payloadObject, eventType);
-    if (this.shouldDropInboundEvent(stableEventId)) {
+    const semanticEventId = this.buildSemanticInboundEventId(
+      event,
+      envelope,
+      payloadObject,
+      eventType,
+      resolvedSenderNpub,
+    );
+    if (this.shouldDropInboundEvent(stableEventId, semanticEventId)) {
       return;
     }
     const msg: NostrIncomingMessage = {
       envelope,
       senderNpub: resolvedSenderNpub,
       relayUrl: source,
-      eventId: stableEventId,
+      eventId: semanticEventId || stableEventId,
     };
 
     this.persistIncomingMessage(msg);
@@ -830,16 +931,76 @@ class NostrMessagingService {
     return `${room}:fallback:${eventType}:${sender}:${JSON.stringify(payloadObject)}`;
   }
 
-  private shouldDropInboundEvent(stableEventId: string): boolean {
-    const key = String(stableEventId || '').trim();
-    if (!key) return false;
+  private buildSemanticInboundEventId(
+    event: NativeServiceEvent,
+    envelope: NostrEnvelope,
+    payloadObject: Record<string, unknown>,
+    eventType: string,
+    resolvedSenderNpub: string,
+  ): string {
+    if (
+      eventType !== 'COSIGN_REQUEST' &&
+      eventType !== 'COSIGN_RESPONSE' &&
+      eventType !== 'COSIGN_READY' &&
+      eventType !== 'MPC_PAYLOAD'
+    ) {
+      return '';
+    }
+
+    const room = String(event.roomHash || this.roomHash || 'room').trim();
+    const envelopePayload = parseEnvelopePayload(envelope.payload);
+    const txId =
+      typeof envelopePayload.txId === 'string'
+        ? envelopePayload.txId.trim()
+        : typeof payloadObject.txId === 'string'
+        ? payloadObject.txId.trim()
+        : typeof event.txId === 'string'
+        ? event.txId.trim()
+        : '';
+    if (!txId) {
+      return '';
+    }
+    const traceId =
+      typeof envelopePayload.traceId === 'string'
+        ? envelopePayload.traceId.trim()
+        : typeof payloadObject.traceId === 'string'
+        ? payloadObject.traceId.trim()
+        : typeof event.traceId === 'string'
+        ? event.traceId.trim()
+        : '';
+    const senderFingerprint =
+      normalizeMaybeString(envelope.senderFingerprint) ||
+      normalizeMaybeString((envelopePayload as any).senderFingerprint) ||
+      normalizeMaybeString(payloadObject.senderFingerprint) ||
+      'unknown';
+    const senderIdentity = String(resolvedSenderNpub || '').trim() || senderFingerprint;
+    const approvalKey =
+      eventType === 'COSIGN_RESPONSE'
+        ? `:approved:${String((envelopePayload as any).approved === true)}`
+        : '';
+
+    return `${room}:semantic:type:${eventType}:tx:${txId}:trace:${traceId}:sender:${senderIdentity}${approvalKey}`;
+  }
+
+  private shouldDropInboundEvent(stableEventId: string, semanticEventId?: string): boolean {
+    const keys = [semanticEventId, stableEventId]
+      .map(v => String(v || '').trim())
+      .filter(Boolean);
+    if (keys.length === 0) return false;
+
     const now = Date.now();
     const ttlMs = 12_000;
-    const prev = this.seenInboundEvents.get(key);
-    if (prev && now - prev.ts <= ttlMs) {
-      return true;
+
+    for (const key of keys) {
+      const prev = this.seenInboundEvents.get(key);
+      if (prev && now - prev.ts <= ttlMs) {
+        return true;
+      }
     }
-    this.seenInboundEvents.set(key, {ts: now});
+
+    for (const key of keys) {
+      this.seenInboundEvents.set(key, {ts: now});
+    }
 
     if (this.seenInboundEvents.size > 4000) {
       const cutoff = now - ttlMs;
@@ -850,7 +1011,9 @@ class NostrMessagingService {
       }
       if (this.seenInboundEvents.size > 4000) {
         this.seenInboundEvents.clear();
-        this.seenInboundEvents.set(key, {ts: now});
+        for (const key of keys) {
+          this.seenInboundEvents.set(key, {ts: now});
+        }
       }
     }
 

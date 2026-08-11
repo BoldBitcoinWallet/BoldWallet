@@ -20,10 +20,10 @@ const (
 	staleRoomTTL            = 15 * time.Minute
 	roomInboundDedupeTTL    = 8 * time.Second
 	maxRoomInboundDedupeIDs = 4096
-	defaultReconnectInitial = 500 * time.Millisecond
-	defaultReconnectMax     = 5 * time.Second
-	defaultHeartbeatEvery   = 10 * time.Second
-	defaultHeartbeatTimeout = 45 * time.Second
+	defaultReconnectInitial = 200 * time.Millisecond
+	defaultReconnectMax     = 1200 * time.Millisecond
+	defaultHeartbeatEvery   = 1 * time.Second
+	defaultHeartbeatTimeout = 3 * time.Second
 )
 
 // CoSignRequest is the canonical outgoing/incoming request shape for co-sign rounds.

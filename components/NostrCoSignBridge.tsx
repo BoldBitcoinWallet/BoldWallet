@@ -105,21 +105,35 @@ function markReadyOrPayloadProcessed(
   txId: string,
   traceId: string | undefined,
   senderNpub: string,
+  senderFingerprint: string,
 ): boolean {
   const now = Date.now();
-  const stableKey = [
+  const senderIdentity =
+    String(senderNpub || '').trim() || String(senderFingerprint || '').trim() || 'unknown-sender';
+  const semanticKey = [
+    String(type || '').trim(),
+    String(txId || '').trim(),
+    String(traceId || '').trim(),
+    senderIdentity,
+  ].join('::');
+  const strictEventKey = [
     String(eventId || '').trim() || 'no-event-id',
     String(type || '').trim(),
     String(txId || '').trim(),
     String(traceId || '').trim(),
-    String(senderNpub || '').trim(),
+    senderIdentity,
   ].join('::');
 
-  const prev = processedReadyPayloadEventKeys.get(stableKey);
-  if (prev && now - prev <= READY_PAYLOAD_DEDUPE_TTL_MS) {
+  const semanticPrev = processedReadyPayloadEventKeys.get(semanticKey);
+  const strictPrev = processedReadyPayloadEventKeys.get(strictEventKey);
+  if (
+    (semanticPrev && now - semanticPrev <= READY_PAYLOAD_DEDUPE_TTL_MS) ||
+    (strictPrev && now - strictPrev <= READY_PAYLOAD_DEDUPE_TTL_MS)
+  ) {
     return false;
   }
-  processedReadyPayloadEventKeys.set(stableKey, now);
+  processedReadyPayloadEventKeys.set(semanticKey, now);
+  processedReadyPayloadEventKeys.set(strictEventKey, now);
 
   if (processedReadyPayloadEventKeys.size > MAX_PROCESSED_READY_PAYLOAD_KEYS) {
     const cutoff = now - READY_PAYLOAD_DEDUPE_TTL_MS;
@@ -130,7 +144,8 @@ function markReadyOrPayloadProcessed(
     }
     if (processedReadyPayloadEventKeys.size > MAX_PROCESSED_READY_PAYLOAD_KEYS) {
       processedReadyPayloadEventKeys.clear();
-      processedReadyPayloadEventKeys.set(stableKey, now);
+      processedReadyPayloadEventKeys.set(semanticKey, now);
+      processedReadyPayloadEventKeys.set(strictEventKey, now);
     }
   }
 
@@ -306,6 +321,9 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
 
     const offLegacy = nostrMessaging.onMessage(async msg => {
       if (!mounted) return;
+      void nostrMessaging.ensureActiveSubscription('bridge-legacy-event').catch(err => {
+        dbg('[NostrCoSignBridge] active subscription refresh failed (legacy)', err);
+      });
       if (
         msg.envelope.type !== 'COSIGN_REQUEST' &&
         msg.envelope.type !== 'COSIGN_RESPONSE'
@@ -408,6 +426,9 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
 
     const offReady = nostrMessaging.onMessage(msg => {
       if (!mounted) return;
+      void nostrMessaging.ensureActiveSubscription('bridge-ready-event').catch(err => {
+        dbg('[NostrCoSignBridge] active subscription refresh failed (ready)', err);
+      });
       const type = String(msg.envelope.type || '');
       if (type !== 'COSIGN_READY' && type !== 'MPC_PAYLOAD') return;
 
@@ -423,7 +444,16 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
         msg.senderNpub,
         String(msg.envelope.senderFingerprint || ''),
       ) || msg.senderNpub;
-      if (!markReadyOrPayloadProcessed(msg.eventId, type, txId, traceId, resolvedSenderNpub)) {
+      if (
+        !markReadyOrPayloadProcessed(
+          msg.eventId,
+          type,
+          txId,
+          traceId,
+          resolvedSenderNpub,
+          String(msg.envelope.senderFingerprint || ''),
+        )
+      ) {
         dbg('[NostrCoSignBridge] ignoring duplicate ready/payload event', {
           type,
           txId,
