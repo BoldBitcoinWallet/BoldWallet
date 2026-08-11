@@ -1214,8 +1214,6 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun nostrServiceStart(
         relaysCSV: String,
-        localNsec: String,
-        localNpub: String,
         peersNpubsCSV: String,
         roomHash: String,
         policyJson: String,
@@ -1224,6 +1222,17 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "nostrServiceStart")) return@Thread
+                val (localNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
+                val prep = JSONObject(keyshareJSON)
+                val localNpub = prep.optString("nostr_npub", "").trim()
+                if (localNpub.isEmpty()) {
+                    promise.reject(
+                        "NOSTR_SERVICE_START_ERROR",
+                        "Missing nostr_npub in keyshare metadata",
+                        null,
+                    )
+                    return@Thread
+                }
                 val result = DklsNative.bbmtNostrServiceStartNative(
                     relaysCSV,
                     localNsec,

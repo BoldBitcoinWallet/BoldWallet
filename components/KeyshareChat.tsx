@@ -106,14 +106,14 @@ function messageRenderKey(msg: NostrIncomingMessage): string {
 
 /** Canonical cross-pathway identity for a COSIGN_REQUEST, independent of transport/relay. */
 function coSignRequestIdentity(opts: {
-  nip46RequestId?: string;
+  requestId?: string;
   txId?: string;
   eventId?: string;
   envelopeId?: string;
   fallbackSeed: string;
 }): string {
   return (
-    (typeof opts.nip46RequestId === 'string' && opts.nip46RequestId.trim()) ||
+    (typeof opts.requestId === 'string' && opts.requestId.trim()) ||
     (typeof opts.txId === 'string' && opts.txId.trim()) ||
     (typeof opts.eventId === 'string' && opts.eventId.trim()) ||
     (typeof opts.envelopeId === 'string' && opts.envelopeId.trim()) ||
@@ -156,9 +156,8 @@ type ChatFeedItem = {
   invoiceThreadKey?: string;
   status?: 'pending' | 'signing' | 'signed' | 'broadcasted' | 'rejected';
   txId?: string;
-  mode?: 'legacy' | 'nip46';
-  nip46RequestId?: string;
-  nip46ReplyTo?: string;
+  mode?: 'legacy';
+  requestId?: string;
   senderFingerprint: string;
   senderNpub: string;
   senderLabel: string;
@@ -168,7 +167,7 @@ type ChatFeedItem = {
 };
 
 type CoSignStatusEvent = {
-  mode?: 'legacy' | 'nip46';
+  mode?: 'legacy';
   requestId?: string;
   txId?: string;
   status?: 'pending' | 'signing' | 'signed' | 'broadcasted' | 'rejected';
@@ -188,11 +187,10 @@ type NostrMpcStateEvent = {
 
 type CoSignFeedBridgeEvent = {
   ts?: number;
-  mode?: 'legacy' | 'nip46';
+  mode?: 'legacy';
   eventId?: string;
   envelopeId?: string;
-  nip46RequestId?: string;
-  nip46ReplyTo?: string;
+  requestId?: string;
   senderNpub?: string;
   senderFingerprint?: string;
   recipientFingerprint?: string;
@@ -201,16 +199,15 @@ type CoSignFeedBridgeEvent = {
 
 type IncomingChatEvent = {
   type?: string;
-  mode?: 'legacy' | 'nip46' | 'chat';
+  mode?: 'legacy' | 'chat';
   ts?: number;
-  requestId?: string;
+  envelopeId?: string;
   txId?: string;
   parsedMessage?: {
     eventId?: string;
     senderNpub?: string;
     senderFingerprint?: string;
-    nip46RequestId?: string;
-    nip46ReplyTo?: string;
+    requestId?: string;
     request?: Record<string, unknown>;
   };
 };
@@ -218,7 +215,7 @@ type IncomingChatEvent = {
 const PEER_ONLINE_WINDOW_MS = 90 * 1000;
 
 function invoiceThreadKeyForItem(item: ChatFeedItem): string {
-  const byRequest = typeof item.nip46RequestId === 'string' ? item.nip46RequestId.trim() : '';
+  const byRequest = typeof item.requestId === 'string' ? item.requestId.trim() : '';
   if (byRequest) return `req:${byRequest}`;
 
   const byTx = typeof item.txId === 'string' ? item.txId.trim() : '';
@@ -242,7 +239,7 @@ function invoiceThreadKeyForItem(item: ChatFeedItem): string {
 }
 
 function invoiceThreadKeyFromPayload(payload: Record<string, unknown>): string {
-  const reqId = typeof payload.nip46RequestId === 'string' ? payload.nip46RequestId.trim() : '';
+  const reqId = typeof payload.requestId === 'string' ? payload.requestId.trim() : '';
   if (reqId) return `req:${reqId}`;
   const txId = typeof payload.txId === 'string' ? payload.txId.trim() : '';
   const traceId = typeof payload.traceId === 'string' ? payload.traceId.trim() : '';
@@ -559,7 +556,7 @@ const KeyshareChat: React.FC = () => {
               status,
               txId: txId || undefined,
               mode: type === 'CHAT_MESSAGE' ? undefined : 'legacy',
-              nip46RequestId: requestId || undefined,
+              requestId: requestId || undefined,
               senderFingerprint: fingerprintFromNpub(row.senderNpub),
               senderNpub: row.senderNpub,
               senderLabel: row.senderNpub ? `${row.senderNpub.slice(0, 8)}...` : 'Unknown',
@@ -571,7 +568,7 @@ const KeyshareChat: React.FC = () => {
           hydrated.forEach(item => {
             if (item.type !== 'COSIGN_REQUEST') return;
             const identity = coSignRequestIdentity({
-              nip46RequestId: item.nip46RequestId,
+              requestId: item.requestId,
               txId: item.txId,
               eventId: item.id,
               envelopeId: item.id,
@@ -691,7 +688,7 @@ const KeyshareChat: React.FC = () => {
       if (msg.envelope.type === 'COSIGN_RESPONSE') {
         const response = parsed as Record<string, unknown>;
         const responseRequestId =
-          typeof response.nip46RequestId === 'string' ? response.nip46RequestId : undefined;
+          typeof response.requestId === 'string' ? response.requestId : undefined;
         const txId = typeof response.txId === 'string' ? response.txId : '';
         const traceId = typeof response.traceId === 'string' ? response.traceId : undefined;
         const invoiceThreadKey =
@@ -740,7 +737,7 @@ const KeyshareChat: React.FC = () => {
           id: messageRenderKey(msg),
           type: 'COSIGN_RESPONSE',
           invoiceThreadKey,
-          nip46RequestId: responseRequestId,
+          requestId: responseRequestId,
           txId,
           senderFingerprint: msg.envelope.senderFingerprint,
           senderNpub,
@@ -768,10 +765,10 @@ const KeyshareChat: React.FC = () => {
 
       if (msg.envelope.type === 'COSIGN_REQUEST') {
         const requestId =
-          typeof parsed.nip46RequestId === 'string' ? parsed.nip46RequestId : undefined;
+          typeof parsed.requestId === 'string' ? parsed.requestId : undefined;
         const txId = typeof parsed.txId === 'string' ? parsed.txId : undefined;
         const identity = coSignRequestIdentity({
-          nip46RequestId: requestId,
+          requestId: requestId,
           txId,
           eventId: msg.eventId,
           envelopeId: msg.envelope.id,
@@ -782,8 +779,8 @@ const KeyshareChat: React.FC = () => {
       }
 
       const requestId =
-        msg.envelope.type === 'COSIGN_REQUEST' && typeof parsed.nip46RequestId === 'string'
-          ? parsed.nip46RequestId
+        msg.envelope.type === 'COSIGN_REQUEST' && typeof parsed.requestId === 'string'
+          ? parsed.requestId
           : undefined;
       const txId = typeof parsed.txId === 'string' ? parsed.txId : undefined;
       const traceId =
@@ -802,7 +799,7 @@ const KeyshareChat: React.FC = () => {
             })
           : msg.envelope.type === 'CHAT_MESSAGE'
           ? resolveExistingInvoiceThreadKey(
-              typeof parsed.nip46RequestId === 'string' ? parsed.nip46RequestId : undefined,
+              typeof parsed.requestId === 'string' ? parsed.requestId : undefined,
               txId,
               typeof parsed.traceId === 'string' ? parsed.traceId : undefined,
             )
@@ -814,7 +811,7 @@ const KeyshareChat: React.FC = () => {
         invoiceThreadKey,
         status: msg.envelope.type === 'COSIGN_REQUEST' ? 'pending' : undefined,
         txId,
-        nip46RequestId: requestId,
+        requestId: requestId,
         senderFingerprint: msg.envelope.senderFingerprint,
         senderNpub,
         senderLabel,
@@ -855,7 +852,7 @@ const KeyshareChat: React.FC = () => {
       const payload = parsePayload(raw.request || {});
 
       const identity = coSignRequestIdentity({
-        nip46RequestId: typeof raw.nip46RequestId === 'string' ? raw.nip46RequestId : undefined,
+        requestId: typeof raw.requestId === 'string' ? raw.requestId : undefined,
         txId: typeof payload.txId === 'string' ? payload.txId : undefined,
         eventId: typeof raw.eventId === 'string' ? raw.eventId : undefined,
         envelopeId: typeof raw.envelopeId === 'string' ? raw.envelopeId : undefined,
@@ -865,7 +862,7 @@ const KeyshareChat: React.FC = () => {
       seenCoSignRequestIdsRef.current.add(identity);
 
       const invoiceThreadKey = registerInvoiceThreadKey({
-        requestId: typeof raw.nip46RequestId === 'string' ? raw.nip46RequestId : undefined,
+        requestId: typeof raw.requestId === 'string' ? raw.requestId : undefined,
         txId: typeof payload.txId === 'string' ? payload.txId : undefined,
         traceId: typeof payload.traceId === 'string' ? payload.traceId : undefined,
         senderNpub,
@@ -879,10 +876,9 @@ const KeyshareChat: React.FC = () => {
         invoiceThreadKey,
         status: 'pending',
         txId: typeof payload.txId === 'string' ? payload.txId : undefined,
-        mode: raw.mode === 'nip46' ? 'nip46' : 'legacy',
-        nip46RequestId:
-          typeof raw.nip46RequestId === 'string' ? raw.nip46RequestId : undefined,
-        nip46ReplyTo: typeof raw.nip46ReplyTo === 'string' ? raw.nip46ReplyTo : undefined,
+        mode: 'legacy',
+        requestId:
+          typeof raw.requestId === 'string' ? raw.requestId : undefined,
         senderFingerprint:
           typeof raw.senderFingerprint === 'string'
             ? raw.senderFingerprint
@@ -920,11 +916,11 @@ const KeyshareChat: React.FC = () => {
       const senderLabel = senderPeer?.label || `${senderNpub.slice(0, 8)}...`;
 
       const identity = coSignRequestIdentity({
-        nip46RequestId:
-          typeof parsedMessage.nip46RequestId === 'string' ? parsedMessage.nip46RequestId : undefined,
+        requestId:
+          typeof parsedMessage.requestId === 'string' ? parsedMessage.requestId : undefined,
         txId: typeof payload.txId === 'string' ? payload.txId : undefined,
         eventId: typeof parsedMessage.eventId === 'string' ? parsedMessage.eventId : undefined,
-        envelopeId: typeof evt.requestId === 'string' ? evt.requestId : undefined,
+        envelopeId: typeof evt.envelopeId === 'string' ? evt.envelopeId : undefined,
         fallbackSeed: `${senderNpub}:${evt.ts || Date.now()}`,
       });
       if (seenCoSignRequestIdsRef.current.has(identity)) return;
@@ -932,7 +928,7 @@ const KeyshareChat: React.FC = () => {
 
       const invoiceThreadKey = registerInvoiceThreadKey({
         requestId:
-          typeof parsedMessage.nip46RequestId === 'string' ? parsedMessage.nip46RequestId : undefined,
+          typeof parsedMessage.requestId === 'string' ? parsedMessage.requestId : undefined,
         txId: typeof payload.txId === 'string' ? payload.txId : undefined,
         traceId: typeof payload.traceId === 'string' ? payload.traceId : undefined,
         senderNpub,
@@ -946,14 +942,10 @@ const KeyshareChat: React.FC = () => {
         invoiceThreadKey,
         status: 'pending',
         txId: typeof payload.txId === 'string' ? payload.txId : undefined,
-        mode: evt.mode === 'nip46' ? 'nip46' : 'legacy',
-        nip46RequestId:
-          typeof parsedMessage.nip46RequestId === 'string'
-            ? parsedMessage.nip46RequestId
-            : undefined,
-        nip46ReplyTo:
-          typeof parsedMessage.nip46ReplyTo === 'string'
-            ? parsedMessage.nip46ReplyTo
+        mode: 'legacy',
+        requestId:
+          typeof parsedMessage.requestId === 'string'
+            ? parsedMessage.requestId
             : undefined,
         senderFingerprint:
           typeof parsedMessage.senderFingerprint === 'string'
@@ -1030,7 +1022,7 @@ const KeyshareChat: React.FC = () => {
           prev.map(item => {
             if (item.type !== 'COSIGN_REQUEST') return item;
             const reqMatch =
-              evt.requestId && item.nip46RequestId && evt.requestId === item.nip46RequestId;
+              evt.requestId && item.requestId && evt.requestId === item.requestId;
             const txMatch = evt.txId && item.txId && evt.txId === item.txId;
             const invoiceMatch = !!invoiceKey && item.invoiceThreadKey === invoiceKey;
             if (!reqMatch && !txMatch && !invoiceMatch) return item;
@@ -1390,7 +1382,7 @@ const KeyshareChat: React.FC = () => {
       const requestId = invoiceKey.startsWith('req:') ? invoiceKey.slice(4) : '';
       const txFromKey = invoiceKey.startsWith('tx:') ? invoiceKey.slice(3) : '';
       const txId = selectedThread.openItem?.txId || txFromKey;
-      if (requestId) outgoingPayload.nip46RequestId = requestId;
+      if (requestId) outgoingPayload.requestId = requestId;
       if (txId) outgoingPayload.txId = txId;
       outgoingPayload.threadType = 'invoice';
     }
@@ -1620,7 +1612,7 @@ const KeyshareChat: React.FC = () => {
 
     const approvalThreadId =
       item.invoiceThreadKey ||
-      (item.nip46RequestId ? `req:${item.nip46RequestId}` : item.txId ? `tx:${item.txId}` : `evt:${item.id}`);
+      (item.requestId ? `req:${item.requestId}` : item.txId ? `tx:${item.txId}` : `evt:${item.id}`);
     chatRepository.upsertThread({
       threadId: approvalThreadId,
       peerNpub: item.senderNpub || 'unknown',
@@ -1630,41 +1622,25 @@ const KeyshareChat: React.FC = () => {
       updatedAt: Date.now(),
     });
 
-    if (item.mode === 'nip46' && item.nip46RequestId) {
-      setPendingCoSignRequest({
-        mode: 'nip46',
-        senderNpub: item.nip46ReplyTo || item.senderNpub,
-        senderFingerprint: item.senderFingerprint || 'nip46-client',
-        recipientFingerprint: 'nip46-signer',
-        request: payload,
-        envelopeId: item.id,
-        receivedAt: Date.now(),
-        nip46RequestId: item.nip46RequestId,
-      });
-    } else {
-      // `item.sourceMessage` is only ever set by the direct onMessage listener path —
-      // cards that won the dedup race via the bridge (`nostr-cosign:request` /
-      // `nostr-chat:incoming`) never have it. Fall back to the fields already carried
-      // on `item` itself so this doesn't silently no-op for that (common) case.
-      setPendingCoSignRequest({
-        mode: 'legacy',
-        senderNpub: msg?.senderNpub || item.senderNpub,
-        senderFingerprint: msg?.envelope.senderFingerprint || item.senderFingerprint,
-        recipientFingerprint: msg?.envelope.recipientFingerprint || 'peer-group',
-        request: payload,
-        envelopeId: msg?.envelope.id || item.id,
-        receivedAt: Date.now(),
-      });
-    }
+    // `item.sourceMessage` is only ever set by the direct onMessage listener path —
+    // cards that won the dedup race via the bridge (`nostr-cosign:request` /
+    // `nostr-chat:incoming`) never have it. Fall back to the fields already carried
+    // on `item` itself so this doesn't silently no-op for that (common) case.
+    setPendingCoSignRequest({
+      mode: 'legacy',
+      senderNpub: msg?.senderNpub || item.senderNpub,
+      senderFingerprint: msg?.envelope.senderFingerprint || item.senderFingerprint,
+      recipientFingerprint: msg?.envelope.recipientFingerprint || 'peer-group',
+      request: payload,
+      envelopeId: msg?.envelope.id || item.id,
+      receivedAt: Date.now(),
+    });
 
     // Do not publish COSIGN_READY on card-open. Responder must review details first and
     // explicitly tap Start/Join in MobileNostrPairing; that tap now sends COSIGN_READY.
-    const readyRecipientNpub =
-      item.mode === 'nip46' ? item.nip46ReplyTo || item.senderNpub : msg?.senderNpub || item.senderNpub;
+    const readyRecipientNpub = msg?.senderNpub || item.senderNpub;
 
     dbg('[NIP46-TLM][KeyshareChat] opening co-sign request from feed', {
-      mode: item.mode || 'legacy',
-      requestId: item.nip46RequestId,
       senderNpub: item.senderNpub,
       isRegularSendRequest,
       psbtPrefix: psbtBase64.slice(0, 16),
@@ -1723,9 +1699,6 @@ const KeyshareChat: React.FC = () => {
       screen: 'PSBT',
       params: {
         sharedPsbtBase64: psbtBase64,
-        nip46RequestId: item.nip46RequestId,
-        nip46ReplyTo: item.nip46ReplyTo || item.senderNpub,
-        autoSign: item.mode === 'nip46',
         // Carry the initiator's txId/traceId so both devices' native signing
         // sessions and chat status updates correlate to the same request.
         initiatorTxId: payload.txId,

@@ -274,8 +274,6 @@ export const TssProvider = {
 
   async nostrServiceStart(
     relaysCSV: string,
-    localNsec: string,
-    localNpub: string,
     peersNpubsCSV: string,
     roomHash: string,
     policy?: NostrServiceRoomPolicy,
@@ -283,8 +281,6 @@ export const TssProvider = {
     const policyJson = policy ? JSON.stringify(policy) : '';
     return BBMTLibNativeModule.nostrServiceStart(
       relaysCSV,
-      localNsec,
-      localNpub,
       peersNpubsCSV,
       roomHash,
       policyJson,
