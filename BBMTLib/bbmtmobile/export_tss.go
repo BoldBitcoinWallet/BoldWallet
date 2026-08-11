@@ -2,7 +2,14 @@ package main
 
 import "C"
 
-import "github.com/BoldBitcoinWallet/BBMTLib/tss"
+import (
+	"encoding/json"
+	"errors"
+	"strings"
+
+	"github.com/BoldBitcoinWallet/BBMTLib/pkg/nostrservice"
+	"github.com/BoldBitcoinWallet/BBMTLib/tss"
+)
 
 func goStr(p *C.char) string {
 	if p == nil {
@@ -289,4 +296,53 @@ func BbmtNostrMpcSignPSBT(relays, nsec, parties, npubsSorted, keyshare, psbt, in
 	return cString(tss.NostrMpcSignPSBT(
 		goStr(relays), goStr(nsec), goStr(parties), goStr(npubsSorted), goStr(keyshare), goStr(psbt), goStr(initiatorNpubHint),
 	))
+}
+
+//export BbmtNostrServiceStart
+func BbmtNostrServiceStart(relays, nsec, npub, peers, roomHash, policyJSON *C.char) *C.char {
+	var policy nostrservice.RoomPolicy
+	policyRaw := goStr(policyJSON)
+	if strings.TrimSpace(policyRaw) != "" {
+		if err := json.Unmarshal([]byte(policyRaw), &policy); err != nil {
+			return cString("", err)
+		}
+	}
+	err := nostrservice.GetService().StartRoom(nostrservice.RoomConfig{
+		RoomHash:      goStr(roomHash),
+		RelaysCSV:     goStr(relays),
+		LocalNsec:     goStr(nsec),
+		LocalNpub:     goStr(npub),
+		PeersNpubsCSV: goStr(peers),
+		Policy:        policy,
+	})
+	return cString("ok", err)
+}
+
+//export BbmtNostrServiceSubscribe
+func BbmtNostrServiceSubscribe(roomHash *C.char) *C.char {
+	err := nostrservice.GetService().EnsureRoomSubscription(goStr(roomHash))
+	if err != nil {
+		return cString("", err)
+	}
+	return cString("ok", nil)
+}
+
+//export BbmtNostrServicePublish
+func BbmtNostrServicePublish(roomHash, payloadJSON *C.char) *C.char {
+	payloadRaw := goStr(payloadJSON)
+	if payloadRaw == "" {
+		return cString("", errors.New("payload json is required"))
+	}
+	var payload any
+	if err := json.Unmarshal([]byte(payloadRaw), &payload); err != nil {
+		return cString("", err)
+	}
+	err := nostrservice.GetService().PublishMessage(goStr(roomHash), payload)
+	return cString("ok", err)
+}
+
+//export BbmtNostrServiceStop
+func BbmtNostrServiceStop(roomHash *C.char) *C.char {
+	err := nostrservice.GetService().StopRoom(goStr(roomHash))
+	return cString("ok", err)
 }

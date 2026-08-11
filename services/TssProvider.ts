@@ -21,6 +21,13 @@ export {
   resolveTssBackendForKeygen,
 } from './tssBackend';
 
+export type NostrServiceRoomPolicy = {
+  reconnectInitialMs?: number;
+  reconnectMaxMs?: number;
+  heartbeatEveryMs?: number;
+  heartbeatTimeoutMs?: number;
+};
+
 export const TssProvider = {
   resolveTssBackend,
   resolveTssBackendForKeygen,
@@ -263,6 +270,40 @@ export const TssProvider = {
       psbtBase64,
       initiatorNpubHint || '',
     );
+  },
+
+  async nostrServiceStart(
+    relaysCSV: string,
+    localNsec: string,
+    localNpub: string,
+    peersNpubsCSV: string,
+    roomHash: string,
+    policy?: NostrServiceRoomPolicy,
+  ): Promise<string> {
+    const policyJson = policy ? JSON.stringify(policy) : '';
+    return BBMTLibNativeModule.nostrServiceStart(
+      relaysCSV,
+      localNsec,
+      localNpub,
+      peersNpubsCSV,
+      roomHash,
+      policyJson,
+    );
+  },
+
+  async nostrServiceSubscribe(roomHash: string): Promise<string> {
+    return BBMTLibNativeModule.nostrServiceSubscribe(roomHash);
+  },
+
+  async nostrServicePublish(roomHash: string, payload: unknown): Promise<string> {
+    return BBMTLibNativeModule.nostrServicePublish(
+      roomHash,
+      JSON.stringify(payload ?? {}),
+    );
+  },
+
+  async nostrServiceStop(roomHash: string): Promise<string> {
+    return BBMTLibNativeModule.nostrServiceStop(roomHash);
   },
 
   async cancelMpcSession(sessionID: string): Promise<MpcCancelResult> {

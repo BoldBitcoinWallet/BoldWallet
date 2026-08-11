@@ -61,6 +61,7 @@ import {promptWalletBiometricAuth} from './services/walletBiometricAuth';
 import IncomingShareHandler from './components/IncomingShareHandler';
 import IncomingUrlHandler from './components/IncomingUrlHandler';
 import NostrCoSignBridge from './components/NostrCoSignBridge';
+import {consumeNativeNostrServiceEvent} from './services/nostrServiceEvents';
 // Initialize react-native-screens for Fabric compatibility
 enableScreens(true);
 const {BBMTLibNativeModule} = NativeModules;
@@ -784,6 +785,16 @@ const App = () => {
       dbg('error scanning mDNS', e);
     }
   }, []);
+  useEffect(() => {
+    const channel = Platform.OS === 'android' ? 'BBMT_DROID' : 'BBMT_APPLE';
+    const sub = DeviceEventEmitter.addListener(channel, event => {
+      consumeNativeNostrServiceEvent(event);
+    });
+    return () => {
+      sub.remove();
+    };
+  }, []);
+
   useEffect(() => {
     let subscription: EmitterSubscription | undefined;
     // Sync ref with state to ensure consistency

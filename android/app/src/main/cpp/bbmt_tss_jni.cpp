@@ -486,6 +486,57 @@ Java_com_boldwallet_DklsNative_bbmtNostrMpcSignPSBTJni(
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtNostrServiceStartJni(
+    JNIEnv *env, jclass, jstring relays, jstring nsec, jstring npub, jstring peers,
+    jstring roomHash, jstring policyJson) {
+  const char *r = env->GetStringUTFChars(relays, nullptr);
+  const char *n = env->GetStringUTFChars(nsec, nullptr);
+  const char *np = env->GetStringUTFChars(npub, nullptr);
+  const char *p = env->GetStringUTFChars(peers, nullptr);
+  const char *rh = env->GetStringUTFChars(roomHash, nullptr);
+  const char *pj = env->GetStringUTFChars(policyJson, nullptr);
+  char *out = BbmtNostrServiceStart(
+      const_cast<char *>(r), const_cast<char *>(n), const_cast<char *>(np),
+      const_cast<char *>(p), const_cast<char *>(rh), const_cast<char *>(pj));
+  env->ReleaseStringUTFChars(relays, r);
+  env->ReleaseStringUTFChars(nsec, n);
+  env->ReleaseStringUTFChars(npub, np);
+  env->ReleaseStringUTFChars(peers, p);
+  env->ReleaseStringUTFChars(roomHash, rh);
+  env->ReleaseStringUTFChars(policyJson, pj);
+  return to_jstring(env, out);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtNostrServiceSubscribeJni(
+    JNIEnv *env, jclass, jstring roomHash) {
+  const char *rh = env->GetStringUTFChars(roomHash, nullptr);
+  char *out = BbmtNostrServiceSubscribe(const_cast<char *>(rh));
+  env->ReleaseStringUTFChars(roomHash, rh);
+  return to_jstring(env, out);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtNostrServicePublishJni(
+    JNIEnv *env, jclass, jstring roomHash, jstring payloadJson) {
+  const char *rh = env->GetStringUTFChars(roomHash, nullptr);
+  const char *pj = env->GetStringUTFChars(payloadJson, nullptr);
+  char *out = BbmtNostrServicePublish(const_cast<char *>(rh), const_cast<char *>(pj));
+  env->ReleaseStringUTFChars(roomHash, rh);
+  env->ReleaseStringUTFChars(payloadJson, pj);
+  return to_jstring(env, out);
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtNostrServiceStopJni(
+    JNIEnv *env, jclass, jstring roomHash) {
+  const char *rh = env->GetStringUTFChars(roomHash, nullptr);
+  char *out = BbmtNostrServiceStop(const_cast<char *>(rh));
+  env->ReleaseStringUTFChars(roomHash, rh);
+  return to_jstring(env, out);
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtCancelMpcSessionJni(JNIEnv *env, jclass, jstring sessionID) {
   const char *s = env->GetStringUTFChars(sessionID, nullptr);
   jstring out = to_jstring(env, BbmtCancelMpcSession(const_cast<char *>(s)));

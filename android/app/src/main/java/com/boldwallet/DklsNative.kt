@@ -308,6 +308,25 @@ object DklsNative {
     ): String = loaded {
         unwrap(bbmtNostrMpcSignPSBTJni(relays, nsec, parties, npubsSorted, keyshare, psbt, initiatorNpubHint))
     }
+    fun bbmtNostrServiceStartNative(
+        relays: String,
+        nsec: String,
+        npub: String,
+        peers: String,
+        roomHash: String,
+        policyJson: String,
+    ): String = loaded {
+        unwrap(bbmtNostrServiceStartJni(relays, nsec, npub, peers, roomHash, policyJson))
+    }
+    fun bbmtNostrServiceSubscribeNative(roomHash: String): String = loaded {
+        unwrap(bbmtNostrServiceSubscribeJni(roomHash))
+    }
+    fun bbmtNostrServicePublishNative(roomHash: String, payloadJson: String): String = loaded {
+        unwrap(bbmtNostrServicePublishJni(roomHash, payloadJson))
+    }
+    fun bbmtNostrServiceStopNative(roomHash: String): String = loaded {
+        unwrap(bbmtNostrServiceStopJni(roomHash))
+    }
     fun bbmtCancelMpcSessionNative(sessionID: String): String = loaded {
         unwrap(bbmtCancelMpcSessionJni(sessionID))
     }
@@ -492,6 +511,17 @@ object DklsNative {
         relays: String, nsec: String, parties: String, npubsSorted: String, keyshare: String, psbt: String,
         initiatorNpubHint: String,
     ): String
+    private external fun bbmtNostrServiceStartJni(
+        relays: String,
+        nsec: String,
+        npub: String,
+        peers: String,
+        roomHash: String,
+        policyJson: String,
+    ): String
+    private external fun bbmtNostrServiceSubscribeJni(roomHash: String): String
+    private external fun bbmtNostrServicePublishJni(roomHash: String, payloadJson: String): String
+    private external fun bbmtNostrServiceStopJni(roomHash: String): String
     private external fun bbmtCancelMpcSessionJni(sessionID: String): String
     private external fun bbmtCancelNostrMpcJni(): String
     private external fun bbmtDisableLogsJni()

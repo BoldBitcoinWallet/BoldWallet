@@ -51,6 +51,11 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     /** Called from JNI (libbbmtmobile) so MPC hooks reach React Native. */
     fun deliverMpcHook(msg: String) {
+        val prefix = "NOSTR_SERVICE_EVENT:"
+        if (msg.startsWith(prefix)) {
+            sendLogEvent("NostrServiceEvent", msg.removePrefix(prefix))
+            return
+        }
         sendLogEvent("TssHook", msg)
     }
 
@@ -1202,6 +1207,77 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             } catch (e: Throwable) {
                 ld("nostrMpcSignPSBT", "error: ${e.stackTraceToString()}")
                 promise.reject("NOSTR_MPC_SIGN_PSBT_ERROR", "Failed to sign PSBT via Nostr: ${e.message}", e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun nostrServiceStart(
+        relaysCSV: String,
+        localNsec: String,
+        localNpub: String,
+        peersNpubsCSV: String,
+        roomHash: String,
+        policyJson: String,
+        promise: Promise,
+    ) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "nostrServiceStart")) return@Thread
+                val result = DklsNative.bbmtNostrServiceStartNative(
+                    relaysCSV,
+                    localNsec,
+                    localNpub,
+                    peersNpubsCSV,
+                    roomHash,
+                    policyJson,
+                )
+                ld("nostrServiceStart", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("NOSTR_SERVICE_START_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun nostrServiceSubscribe(roomHash: String, promise: Promise) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "nostrServiceSubscribe")) return@Thread
+                val result = DklsNative.bbmtNostrServiceSubscribeNative(roomHash)
+                ld("nostrServiceSubscribe", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("NOSTR_SERVICE_SUBSCRIBE_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun nostrServicePublish(roomHash: String, payloadJson: String, promise: Promise) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "nostrServicePublish")) return@Thread
+                val result = DklsNative.bbmtNostrServicePublishNative(roomHash, payloadJson)
+                ld("nostrServicePublish", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("NOSTR_SERVICE_PUBLISH_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun nostrServiceStop(roomHash: String, promise: Promise) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "nostrServiceStop")) return@Thread
+                val result = DklsNative.bbmtNostrServiceStopNative(roomHash)
+                ld("nostrServiceStop", result)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("NOSTR_SERVICE_STOP_ERROR", e.message, e)
             }
         }.start()
     }
