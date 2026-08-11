@@ -145,6 +145,7 @@ type ThreadSummary = {
   online: boolean;
   thresholdProgress?: string;
   thresholdProgressState?: 'none' | 'partial' | 'met';
+  isCompleted?: boolean;
   invoiceKey?: string;
   lastItem?: ChatFeedItem;
   openItem?: ChatFeedItem;
@@ -1257,13 +1258,6 @@ const KeyshareChat: React.FC = () => {
       const title = requestItem?.txId
         ? coSignThreadTitle(requestItem, invoiceKey)
         : coSignThreadTitle(requestItem, invoiceKey);
-      const pendingCount = sorted.filter(
-        item =>
-          item.type === 'COSIGN_REQUEST' &&
-          item.status !== 'signed' &&
-          item.status !== 'broadcasted' &&
-          item.status !== 'rejected',
-      ).length;
       const latestPreview = coSignThreadPreview(latest);
       const respondedSigners = new Set(responseItems.map(item => item.senderNpub).filter(Boolean));
       const approvedSigners = new Set(
@@ -1272,8 +1266,25 @@ const KeyshareChat: React.FC = () => {
           .map(item => item.senderNpub)
           .filter(Boolean),
       );
-      const requiredApprovals = Math.max(signingThreshold || 1, 1);
+      // Progress badge tracks approvals needed from remote co-signers.
+      // For a 2-of-2 wallet, one remote approval should complete the request.
+      const requiredApprovals = Math.max((signingThreshold || 1) - 1, 1);
       const approvedCount = approvedSigners.size;
+      const hasTerminalSuccess =
+        sorted.some(
+          item =>
+            item.type === 'COSIGN_REQUEST' &&
+            (item.status === 'signed' || item.status === 'broadcasted'),
+        ) || approvedCount >= requiredApprovals;
+      const pendingCount = hasTerminalSuccess
+        ? 0
+        : sorted.filter(
+            item =>
+              item.type === 'COSIGN_REQUEST' &&
+              item.status !== 'signed' &&
+              item.status !== 'broadcasted' &&
+              item.status !== 'rejected',
+          ).length;
       const thresholdProgress = `${approvedCount}/${requiredApprovals} approvals`;
       const thresholdProgressState: ThreadSummary['thresholdProgressState'] =
         approvedCount <= 0
@@ -1292,6 +1303,7 @@ const KeyshareChat: React.FC = () => {
         timestamp: latest.timestamp,
         unreadCount: unreadByThread[invoiceKey] || 0,
         pinned: pendingCount > 0,
+        isCompleted: hasTerminalSuccess,
         online: peer?.isOnline ?? false,
         thresholdProgress,
         thresholdProgressState,
@@ -2060,7 +2072,11 @@ const KeyshareChat: React.FC = () => {
                     return (
                       <AppPressable
                         key={item.id}
-                        style={[styles.threadRow, active ? styles.threadRowActive : null]}
+                        style={[
+                          styles.threadRow,
+                          item.isCompleted ? styles.threadRowCompleted : null,
+                          active ? styles.threadRowActive : null,
+                        ]}
                         onPress={() => openThreadRow(item)}
                         hitSlop={6}
                         pressRetentionOffset={14}
@@ -2074,14 +2090,33 @@ const KeyshareChat: React.FC = () => {
 
                         <View style={styles.threadMain}>
                           <View style={styles.threadTopLine}>
-                            <AppText style={styles.threadTitle} numberOfLines={1}>
+                            <AppText
+                              style={[
+                                styles.threadTitle,
+                                item.isCompleted ? styles.threadTitleCompleted : null,
+                              ]}
+                              numberOfLines={1}
+                            >
                               {item.title}
                             </AppText>
-                            <AppText style={styles.threadTime}>{formatThreadClock(item.timestamp)}</AppText>
+                            <AppText
+                              style={[
+                                styles.threadTime,
+                                item.isCompleted ? styles.threadTimeCompleted : null,
+                              ]}
+                            >
+                              {formatThreadClock(item.timestamp)}
+                            </AppText>
                           </View>
 
                           <View style={styles.threadBottomLine}>
-                            <AppText style={styles.threadPreview} numberOfLines={1}>
+                            <AppText
+                              style={[
+                                styles.threadPreview,
+                                item.isCompleted ? styles.threadPreviewCompleted : null,
+                              ]}
+                              numberOfLines={1}
+                            >
                               {item.preview}
                             </AppText>
                             <View style={styles.threadBadges}>
@@ -2219,6 +2254,10 @@ const createStyles = (theme: any) =>
     threadRowActive: {
       backgroundColor: 'rgba(45,126,247,0.24)',
     },
+    threadRowCompleted: {
+      backgroundColor: 'rgba(63,189,136,0.12)',
+      opacity: 0.72,
+    },
     detailHeader: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -2299,10 +2338,19 @@ const createStyles = (theme: any) =>
       color: '#9ca9ba',
       fontSize: 11,
     },
+    threadTimeCompleted: {
+      color: '#7fa996',
+    },
     threadPreview: {
       flex: 1,
       color: '#bcc8d7',
       fontSize: 12,
+    },
+    threadTitleCompleted: {
+      color: '#9fd8ba',
+    },
+    threadPreviewCompleted: {
+      color: '#8ab89f',
     },
     threadBadges: {
       flexDirection: 'row',

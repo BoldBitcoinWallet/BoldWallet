@@ -66,6 +66,22 @@ type CoSignRequestContext = {
 };
 
 class ChatRepository {
+  private extractTxIdFromThreadId(threadId: string): string {
+    const key = String(threadId || '').trim();
+    if (!key.startsWith('tx:')) return '';
+
+    const txTraceMatch = key.match(/^tx:([^:]+):trace:.+$/);
+    if (txTraceMatch?.[1]) return txTraceMatch[1].trim();
+
+    const txHashMatch = key.match(/^tx:([^:]+):h:[^:]+$/);
+    if (txHashMatch?.[1]) return txHashMatch[1].trim();
+
+    const txOnlyMatch = key.match(/^tx:([^:]+)$/);
+    if (txOnlyMatch?.[1]) return txOnlyMatch[1].trim();
+
+    return '';
+  }
+
   private notifyUnreadChanged(): void {
     DeviceEventEmitter.emit('chat:unread-changed', { ts: Date.now() });
   }
@@ -218,11 +234,19 @@ class ChatRepository {
     try {
       const trimmed = String(threadId || '').trim();
       if (!trimmed) return;
+      const txId = this.extractTxIdFromThreadId(trimmed);
+      const txBase = txId ? `tx:${txId}` : '';
+      const txPrefixLike = txBase ? `${txBase}:%` : '';
+
       database.execute(
         `UPDATE chat_messages
            SET is_read = 1
-         WHERE thread_id = ? AND is_read = 0`,
-        [trimmed],
+         WHERE is_read = 0
+           AND (
+             thread_id = ?
+             OR (? <> '' AND (thread_id = ? OR thread_id LIKE ?))
+           )`,
+        [trimmed, txBase, txBase, txPrefixLike],
       );
       this.notifyUnreadChanged();
     } catch (err) {

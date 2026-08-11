@@ -125,6 +125,9 @@ const DEFAULT_RELAYS = [
   'wss://nos.lol',
 ];
 
+const CRITICAL_MPC_DEFER_TTL_MS = 45_000;
+const CRITICAL_MPC_MAX_STALE_IDLE_MS = 15_000;
+
 function randomId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -222,10 +225,23 @@ class NostrMessagingService {
   private peerNpubs: string[] = [];
   private nativeBridgeSubscription?: EmitterSubscription;
   private routedEventSubscription?: EmitterSubscription;
+  private mpcStateSubscription?: EmitterSubscription;
   private relays: string[] = [...DEFAULT_RELAYS];
   private reconnectPromise: Promise<void> | null = null;
   private lastReconnectAtMs = 0;
   private lastStaleHeartbeatLogAtMs = 0;
+  private activeCriticalMpcTxDeadlinesMs = new Map<string, number>();
+  private lastDeferredRoomStaleLogAtMs = 0;
+
+  private isCriticalMpcInFlight(): boolean {
+    const now = Date.now();
+    for (const [txId, untilMs] of this.activeCriticalMpcTxDeadlinesMs.entries()) {
+      if (untilMs <= now) {
+        this.activeCriticalMpcTxDeadlinesMs.delete(txId);
+      }
+    }
+    return this.activeCriticalMpcTxDeadlinesMs.size > 0;
+  }
 
   private roomPolicy(): NostrServiceRoomPolicy {
     return {
@@ -433,7 +449,13 @@ class NostrMessagingService {
 
     try {
       const dynamicRelays = await getNostrRelays(true);
-      const filtered = Array.from(new Set((dynamicRelays || []).map(r => String(r || '').trim()).filter(Boolean)));
+      const filtered: string[] = Array.from(
+        new Set(
+          (Array.isArray(dynamicRelays) ? dynamicRelays : [])
+            .map((r: unknown) => String(r || '').trim())
+            .filter((r): r is string => r.length > 0),
+        ),
+      );
       if (filtered.length > 0) {
         relayCandidates.push(filtered);
       }
@@ -611,13 +633,44 @@ class NostrMessagingService {
         this.consumeServiceEvent(event, 'routed');
       });
     }
+
+    if (!this.mpcStateSubscription) {
+      this.mpcStateSubscription = DeviceEventEmitter.addListener(
+        'nostr-mpc:state',
+        (event: any) => {
+          const txId =
+            typeof event?.txId === 'string' ? event.txId.trim() : '';
+          const state =
+            typeof event?.state === 'string' ? event.state.trim() : '';
+          if (!txId) return;
+
+          const isCritical =
+            state === 'awaiting_peer' ||
+            state === 'computing_nonces' ||
+            state === 'signing' ||
+            state === 'broadcasting';
+          if (isCritical) {
+            this.activeCriticalMpcTxDeadlinesMs.set(
+              txId,
+              Date.now() + CRITICAL_MPC_DEFER_TTL_MS,
+            );
+            return;
+          }
+
+          this.activeCriticalMpcTxDeadlinesMs.delete(txId);
+        },
+      );
+    }
   }
 
   private detachNativeListeners(): void {
     this.nativeBridgeSubscription?.remove();
     this.routedEventSubscription?.remove();
+    this.mpcStateSubscription?.remove();
     this.nativeBridgeSubscription = undefined;
     this.routedEventSubscription = undefined;
+    this.mpcStateSubscription = undefined;
+    this.activeCriticalMpcTxDeadlinesMs.clear();
   }
 
   private async ensureIdentity(): Promise<void> {
@@ -633,8 +686,11 @@ class NostrMessagingService {
     const localNpub = typeof prep.nostr_npub === 'string' ? prep.nostr_npub.trim() : '';
 
     const meta = await getKeyshareMetadata();
-    const committeeFromMeta = Array.isArray(meta?.nostr_committee_npubs)
-      ? meta.nostr_committee_npubs.filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0)
+    const committeeFromMetaSource =
+      (meta as {nostr_committee_npubs?: unknown} | null | undefined)
+        ?.nostr_committee_npubs;
+    const committeeFromMeta = Array.isArray(committeeFromMetaSource)
+      ? committeeFromMetaSource.filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0)
       : [];
     const committeeFromPrep = Array.isArray(prep.keygen_committee_keys)
       ? prep.keygen_committee_keys.filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0)
@@ -749,6 +805,41 @@ class NostrMessagingService {
     }
     if (eventType === 'ROOM_STALE') {
       this.setConnectionState('degraded');
+      const payload =
+        event.payload && typeof event.payload === 'object'
+          ? (event.payload as Record<string, unknown>)
+          : {};
+      const idleMs =
+        typeof payload.idleMs === 'number' ? payload.idleMs : undefined;
+      const shouldForceReconnectDuringCriticalMpc =
+        typeof idleMs === 'number' && idleMs >= CRITICAL_MPC_MAX_STALE_IDLE_MS;
+
+      if (this.isCriticalMpcInFlight() && !shouldForceReconnectDuringCriticalMpc) {
+        const now = Date.now();
+        if (now - this.lastDeferredRoomStaleLogAtMs > 3000) {
+          this.lastDeferredRoomStaleLogAtMs = now;
+          dbg(
+            '[NIP46-TLM][NostrMessaging] ROOM_STALE observed during active MPC signing; deferring reconnect until publish/probe failure',
+            {
+              roomHash: this.roomHash,
+              idleMs,
+              activeMpcSessions: this.activeCriticalMpcTxDeadlinesMs.size,
+            },
+          );
+        }
+        return;
+      }
+      if (this.isCriticalMpcInFlight() && shouldForceReconnectDuringCriticalMpc) {
+        dbg(
+          '[NIP46-TLM][NostrMessaging] ROOM_STALE idle exceeded threshold during active MPC; forcing reconnect',
+          {
+            roomHash: this.roomHash,
+            idleMs,
+            activeMpcSessions: this.activeCriticalMpcTxDeadlinesMs.size,
+            thresholdMs: CRITICAL_MPC_MAX_STALE_IDLE_MS,
+          },
+        );
+      }
       void this.reconnectWithRelayFallback({
         reason: 'room-stale-event',
       }).catch(err => {

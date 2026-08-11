@@ -123,17 +123,28 @@ function markReadyOrPayloadProcessed(
     String(traceId || '').trim(),
     senderIdentity,
   ].join('::');
+  const coarseReadyKey =
+    String(type || '').trim() === 'COSIGN_READY'
+      ? ['COSIGN_READY', String(txId || '').trim(), String(traceId || '').trim()].join('::')
+      : '';
 
   const semanticPrev = processedReadyPayloadEventKeys.get(semanticKey);
   const strictPrev = processedReadyPayloadEventKeys.get(strictEventKey);
+  const coarsePrev = coarseReadyKey
+    ? processedReadyPayloadEventKeys.get(coarseReadyKey)
+    : undefined;
   if (
     (semanticPrev && now - semanticPrev <= READY_PAYLOAD_DEDUPE_TTL_MS) ||
-    (strictPrev && now - strictPrev <= READY_PAYLOAD_DEDUPE_TTL_MS)
+    (strictPrev && now - strictPrev <= READY_PAYLOAD_DEDUPE_TTL_MS) ||
+    (coarsePrev && now - coarsePrev <= READY_PAYLOAD_DEDUPE_TTL_MS)
   ) {
     return false;
   }
   processedReadyPayloadEventKeys.set(semanticKey, now);
   processedReadyPayloadEventKeys.set(strictEventKey, now);
+  if (coarseReadyKey) {
+    processedReadyPayloadEventKeys.set(coarseReadyKey, now);
+  }
 
   if (processedReadyPayloadEventKeys.size > MAX_PROCESSED_READY_PAYLOAD_KEYS) {
     const cutoff = now - READY_PAYLOAD_DEDUPE_TTL_MS;
@@ -146,6 +157,9 @@ function markReadyOrPayloadProcessed(
       processedReadyPayloadEventKeys.clear();
       processedReadyPayloadEventKeys.set(semanticKey, now);
       processedReadyPayloadEventKeys.set(strictEventKey, now);
+      if (coarseReadyKey) {
+        processedReadyPayloadEventKeys.set(coarseReadyKey, now);
+      }
     }
   }
 

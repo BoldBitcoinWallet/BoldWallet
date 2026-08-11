@@ -1045,6 +1045,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     flowActive: isPairingRef.current,
   });
   const activeNostrTxGuardRef = useRef<{flow: 'send' | 'sign'; txKey: string} | null>(null);
+  const responderReadySentAtRef = useRef<Map<string, number>>(new Map());
   const pendingInitiatorSendRef = useRef<{
     txId: string;
     traceId?: string;
@@ -2399,37 +2400,29 @@ const MobileNostrPairing = ({navigation}: any) => {
     if (!isPeerResponseSendEntry) {
       const pending = pendingInitiatorSendRef.current;
       if (pending) {
-        const pendingDispatchCycleId = createDispatchCycleId(
-          pending.txId,
-          pending.traceId,
-        );
         const readyObserved = nostrMpcSession.hasPeerReady(
           pending.txId,
           pending.traceId,
         );
         if (!readyObserved) {
-          dbg('[NIP46-TLM][ManualGate] waiting event-driven for peer-ready before continuing', {
+          dbg('[NIP46-TLM][ManualGate] pending request still awaiting peer approval; keeping user in chat-wait state', {
             txId: pending.txId,
             traceId: pending.traceId,
           });
           setPendingInitiatorPeerReadyObserved(false);
-          setStatus('Still waiting for peer ready…');
-          const woke = await waitForCoSignReady(
-            pending.txId,
-            pending.traceId,
-            12000,
-            pendingDispatchCycleId,
-          );
-          if (!woke) {
-            clearPendingInitiatorSend();
-            setStatus('Peer has not acknowledged yet. Tap Confirm Co-Sign to resend the request.');
-            return;
-          }
-          setPendingInitiatorPeerReadyObserved(true);
-          dbg('[NIP46-TLM][ManualGate] peer-ready observed via event-driven wait', {
+          const pendingPeerLabel = resolvePeerStatusLabel(pending.peerNpub);
+          setStatus(`Awaiting approval from ${pendingPeerLabel}…`);
+          DeviceEventEmitter.emit('nostr-cosign:focus', {
+            ts: Date.now(),
             txId: pending.txId,
-            traceId: pending.traceId,
+            openRequest: false,
           });
+          navigation.dispatch(
+            CommonActions.navigate('MainTabs', {
+              screen: 'Chat',
+            }),
+          );
+          return;
         } else {
           setPendingInitiatorPeerReadyObserved(true);
         }
@@ -2870,21 +2863,33 @@ const MobileNostrPairing = ({navigation}: any) => {
             (typeof route.params?.cosignTraceId === 'string' &&
               route.params.cosignTraceId.trim()) ||
             undefined;
+          const readyKey = `${responderTxId}::${responderTraceId || ''}`;
+          const lastReadySentAt = responderReadySentAtRef.current.get(readyKey) || 0;
+          const canSendReady = Date.now() - lastReadySentAt > 60_000;
           setStatus('Notifying initiator…');
-          dbg('MobileNostrPairing: responder publishing COSIGN_READY on explicit user confirm', {
-            txId: responderTxId,
-            traceId: responderTraceId,
-            peer: resolvedPeerNpub.substring(0, 20) + '...',
-          });
-          await nostrMessaging.sendCoSignReady(
-            resolvedPeerNpub,
-            localFingerprint,
-            'peer-group',
-            {
+          if (canSendReady) {
+            dbg('MobileNostrPairing: responder publishing COSIGN_READY on explicit user confirm', {
               txId: responderTxId,
               traceId: responderTraceId,
-            },
-          );
+              peer: resolvedPeerNpub.substring(0, 20) + '...',
+            });
+            await nostrMessaging.sendCoSignReady(
+              resolvedPeerNpub,
+              localFingerprint,
+              'peer-group',
+              {
+                txId: responderTxId,
+                traceId: responderTraceId,
+              },
+            );
+            responderReadySentAtRef.current.set(readyKey, Date.now());
+          } else {
+            dbg('MobileNostrPairing: skipping duplicate responder COSIGN_READY emit for tx/trace', {
+              txId: responderTxId,
+              traceId: responderTraceId,
+              sinceLastMs: Date.now() - lastReadySentAt,
+            });
+          }
           setStatus('Initiator notified — starting co-sign…');
         } else {
           dbg('MobileNostrPairing: responder has no initiatorTxId; skipping explicit COSIGN_READY publish');
@@ -3109,10 +3114,8 @@ const MobileNostrPairing = ({navigation}: any) => {
               existingPending.traceId,
             )
           ) {
-            const localFingerprint = fingerprintFromNpub(localNpubFromKeyshare);
             const peerLabel = resolvePeerStatusLabel(resolvedPeerNpub);
-            const resendBranchStartedAt = Date.now();
-            console.warn('[NIP46-TLM][Resend] pending session not acknowledged; triggering re-dispatch', {
+            console.warn('[NIP46-TLM][Resend] pending session not acknowledged; suppressing automatic re-dispatch to avoid duplicate requests', {
               txId: existingPending.txId,
               traceId: existingPending.traceId,
               dispatchCycleId,
@@ -3122,72 +3125,20 @@ const MobileNostrPairing = ({navigation}: any) => {
               requiredRemoteCount,
               recipientCount: normalizedTargetSigners.length,
             });
-            const resendPayload: CoSignRequestPayload = {
-              txId: existingPending.txId,
-              traceId: existingPending.traceId || cosignFanOutTraceId,
-              psbtHex: '',
-              amountSats: Number(satoshiAmount),
-              feeSats: Number(satoshiFees),
-              recipientAddress: toAddress,
-              network: (networkFromParams as CoSignRequestPayload['network']) || 'mainnet',
-              requestMode: 'dkls',
-              utxosJson: preparedUtxosWithPathsJSON,
-              changeAddress: preparedChangeAddress,
-              senderDerivationPath: path,
-              senderAddressType: addressTypeToUse,
-              signingNpubsCSV: signingNpubsSorted,
-              targetSigners: normalizedTargetSigners,
-              requiredSignerCount: requiredRemoteCount + 1,
-              txTemplateHash: templateHashes.txTemplateHash,
-              utxoSetHash: templateHashes.utxoSetHash,
-            };
-            setStatus('Re-sending request to peer…');
-            setCoSignHandshakeUi({
-              active: true,
-              phase: 'sending',
-              peerLabel,
-              attempt: 1,
-              maxAttempts: 2,
-            });
-            await dispatchCoSignRequestWithRetry({
-              recipientNpubs: normalizedTargetSigners,
-              senderFingerprint: localFingerprint,
-              recipientFingerprint: 'peer-group',
-              payload: resendPayload,
-              dispatchCycleId,
-              maxAttempts: 2,
-              onAttempt: (attempt, maxAttempts) => {
-                setCoSignHandshakeUi({
-                  active: true,
-                  phase: 'sending',
-                  peerLabel,
-                  attempt,
-                  maxAttempts,
-                });
-                if (attempt > 1) {
-                  setStatus(`Retrying relay delivery (${attempt}/${maxAttempts})…`);
-                }
-              },
-              shouldAbortRetry: () =>
-                nostrMpcSession.hasPeerReady(
-                  existingPending.txId,
-                  existingPending.traceId,
-                ),
-            });
-            const resendElapsedMs = Date.now() - resendBranchStartedAt;
-            const peerReadyAfterResend = nostrMpcSession.hasPeerReady(
-              existingPending.txId,
-              existingPending.traceId,
-            );
-            console.warn('[NIP46-TLM][Resend] re-dispatch cycle finished', {
-              txId: existingPending.txId,
-              traceId: existingPending.traceId,
-              dispatchCycleId,
-              elapsedMs: resendElapsedMs,
-              peerReadyAfterResend,
-            });
             resetCoSignHandshakeUi();
-            setStatus(`Request delivered — waiting for ${peerLabel} approval…`);
+            setStatus(`Awaiting approval from ${peerLabel}…`);
+            DeviceEventEmitter.emit('nostr-cosign:focus', {
+              ts: Date.now(),
+              txId: existingPending.txId,
+              openRequest: false,
+            });
+            navigation.dispatch(
+              CommonActions.navigate('MainTabs', {
+                screen: 'Chat',
+              }),
+            );
+            handoffPendingManualConfirm = true;
+            return;
           }
           dbg('MobileNostrPairing: continuing initiator flow after explicit confirm', {
             txId: existingPending.txId,
@@ -3372,6 +3323,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('Send BTC error:', error);
       resetCoSignHandshakeUi();
       if (isCoSignDispatchError(error)) {
+        const dispatchErrorFocusTxId =
+          typeof error?.txId === 'string' ? error.txId.trim() : '';
         setStatus('Request delivery failed — retry or resend from chat.');
         Alert.alert(
           'Co-sign Request Not Delivered',
@@ -3381,18 +3334,24 @@ const MobileNostrPairing = ({navigation}: any) => {
             {
               text: 'Open Chat',
               onPress: () => {
-                if (error.txId) {
+                if (dispatchErrorFocusTxId) {
                   DeviceEventEmitter.emit('nostr-cosign:focus', {
                     ts: Date.now(),
-                    txId: error.txId,
+                    txId: dispatchErrorFocusTxId,
                     openRequest: true,
                   });
                 }
-                navigation.dispatch(
-                  CommonActions.navigate('MainTabs', {
+                try {
+                  navigation.navigate('MainTabs', {
                     screen: 'Chat',
-                  }),
-                );
+                  });
+                } catch {
+                  navigation.dispatch(
+                    CommonActions.navigate('MainTabs', {
+                      screen: 'Chat',
+                    }),
+                  );
+                }
               },
             },
             {
@@ -3747,21 +3706,33 @@ const MobileNostrPairing = ({navigation}: any) => {
             (typeof route.params?.cosignTraceId === 'string' &&
               route.params.cosignTraceId.trim()) ||
             undefined;
+          const readyKey = `${responderTxId}::${responderTraceId || ''}`;
+          const lastReadySentAt = responderReadySentAtRef.current.get(readyKey) || 0;
+          const canSendReady = Date.now() - lastReadySentAt > 60_000;
           setStatus('Notifying initiator…');
-          dbg('MobileNostrPairing: PSBT responder publishing COSIGN_READY on explicit user confirm', {
-            txId: responderTxId,
-            traceId: responderTraceId,
-            peer: resolvedPeerNpub.substring(0, 20) + '...',
-          });
-          await nostrMessaging.sendCoSignReady(
-            resolvedPeerNpub,
-            localFingerprint,
-            'peer-group',
-            {
+          if (canSendReady) {
+            dbg('MobileNostrPairing: PSBT responder publishing COSIGN_READY on explicit user confirm', {
               txId: responderTxId,
               traceId: responderTraceId,
-            },
-          );
+              peer: resolvedPeerNpub.substring(0, 20) + '...',
+            });
+            await nostrMessaging.sendCoSignReady(
+              resolvedPeerNpub,
+              localFingerprint,
+              'peer-group',
+              {
+                txId: responderTxId,
+                traceId: responderTraceId,
+              },
+            );
+            responderReadySentAtRef.current.set(readyKey, Date.now());
+          } else {
+            dbg('MobileNostrPairing: skipping duplicate PSBT responder COSIGN_READY emit for tx/trace', {
+              txId: responderTxId,
+              traceId: responderTraceId,
+              sinceLastMs: Date.now() - lastReadySentAt,
+            });
+          }
           setStatus('Initiator notified — starting co-sign…');
         } else {
           dbg('MobileNostrPairing: PSBT responder has no initiatorTxId; skipping explicit COSIGN_READY publish');
@@ -4085,6 +4056,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('Sign PSBT error:', error);
       resetCoSignHandshakeUi();
       if (isCoSignDispatchError(error)) {
+        const dispatchErrorFocusTxId =
+          typeof error?.txId === 'string' ? error.txId.trim() : '';
         setStatus('Request delivery failed — retry or resend from chat.');
         Alert.alert(
           'Co-sign Request Not Delivered',
@@ -4094,18 +4067,24 @@ const MobileNostrPairing = ({navigation}: any) => {
             {
               text: 'Open Chat',
               onPress: () => {
-                if (error.txId) {
+                if (dispatchErrorFocusTxId) {
                   DeviceEventEmitter.emit('nostr-cosign:focus', {
                     ts: Date.now(),
-                    txId: error.txId,
+                    txId: dispatchErrorFocusTxId,
                     openRequest: true,
                   });
                 }
-                navigation.dispatch(
-                  CommonActions.navigate('MainTabs', {
+                try {
+                  navigation.navigate('MainTabs', {
                     screen: 'Chat',
-                  }),
-                );
+                  });
+                } catch {
+                  navigation.dispatch(
+                    CommonActions.navigate('MainTabs', {
+                      screen: 'Chat',
+                    }),
+                  );
+                }
               },
             },
             {
