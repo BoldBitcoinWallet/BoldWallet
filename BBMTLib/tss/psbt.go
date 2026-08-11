@@ -936,6 +936,7 @@ func runNostrMpcSignPSBTInternal(
 	relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted,
 	keyshareJSON, psbtBase64, initiatorNpubHint string) (result string, err error) {
 	defer RecoverAsError("runNostrMpcSignPSBTInternal", &err, &result)
+	npubsSorted = normalizeSigningNpubsCSV(npubsSorted)
 
 	Logln("BBMTLog", "invoking NostrMpcSignPSBT...")
 

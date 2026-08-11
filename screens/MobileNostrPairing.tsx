@@ -437,6 +437,40 @@ function nonEmpty(input: unknown): string {
   return typeof input === 'string' ? input.trim() : '';
 }
 
+function parsePositiveInt(input: unknown): number | null {
+  const n = typeof input === 'string' ? Number(input.trim()) : Number(input);
+  if (!Number.isFinite(n)) return null;
+  const out = Math.trunc(n);
+  return out > 0 ? out : null;
+}
+
+function deriveRequiredRemoteSignerCount(
+  meta: Record<string, unknown> | null | undefined,
+  committeeSize: number,
+): number {
+  const candidates = [
+    meta?.threshold,
+    meta?.keygen_threshold,
+    meta?.signing_threshold,
+    meta?.min_signers,
+    meta?.quorum,
+    meta?.required_signers,
+    meta?.n,
+  ];
+  let threshold = 2;
+  for (const candidate of candidates) {
+    const parsed = parsePositiveInt(candidate);
+    if (parsed) {
+      threshold = parsed;
+      break;
+    }
+  }
+  const maxThreshold = Math.max(1, committeeSize);
+  const normalizedThreshold = Math.min(Math.max(threshold, 1), maxThreshold);
+  // local signer is always this device; remote signers are threshold - 1.
+  return Math.max(1, normalizedThreshold - 1);
+}
+
 async function deriveSendTemplateHashes(input: {
   signingNpubsCSV: string;
   network: string;
@@ -645,6 +679,22 @@ function waitForCoSignReady(
   });
 }
 
+function assertReadyForCoSignExecution(txId: string, traceId?: string): void {
+  const state = nostrMpcSession.getSessionState(txId);
+  const hasReady = nostrMpcSession.hasPeerReady(txId, traceId);
+  const stateAllowsExecution =
+    state === 'computing_nonces' ||
+    state === 'signing' ||
+    state === 'broadcasting' ||
+    state === 'completed';
+
+  if (!hasReady && !stateAllowsExecution) {
+    throw new Error(
+      'Co-sign approval not received. Open chat and wait for peer approval before signing.',
+    );
+  }
+}
+
 function fingerprintFromNpub(npub: string): string {
   if (!npub) return 'mobile-wallet';
   return `${npub.slice(0, 4)}${npub.slice(-4)}`;
@@ -794,6 +844,8 @@ const MobileNostrPairing = ({navigation}: any) => {
   }>({});
   // Send mode: device selection (for trio mode)
   const [selectedPeerNpub, setSelectedPeerNpub] = useState<string>('');
+  const [selectedSignerNpubs, setSelectedSignerNpubs] = useState<string[]>([]);
+  const [requiredRemoteSignerCount, setRequiredRemoteSignerCount] = useState<number>(1);
   const [sendModeDevices, setSendModeDevices] = useState<
     Array<{
       keyshareLabel: string;
@@ -857,6 +909,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     txId: string;
     traceId?: string;
     peerNpub: string;
+    targetSignerNpubs?: string[];
     createdAt: number;
   } | null>(null);
   const [pendingInitiatorSendTxId, setPendingInitiatorSendTxId] =
@@ -1320,12 +1373,17 @@ const MobileNostrPairing = ({navigation}: any) => {
         const localParty = prep.local_party_key;
         const localNpubFromKeyshare = prep.nostr_npub || '';
         const numDevices = committee.length;
-        setThreeKeyshareWallet(numDevices === 3);
+        setThreeKeyshareWallet(numDevices >= 3);
+        const meta = (await getKeyshareMetadata()) as Record<string, unknown> | null;
+        const remoteSignerCount = deriveRequiredRemoteSignerCount(meta, numDevices);
+        setRequiredRemoteSignerCount(
+          Math.max(1, Math.min(remoteSignerCount, Math.max(numDevices-1, 1))),
+        );
         dbg(
           'Spend/sign mode - committee size',
           numDevices,
-          numDevices === 3
-            ? '(pick co-signer; 2-party session)'
+          numDevices >= 3
+            ? '(threshold committee wallet; select target signers)'
             : '(duo wallet)',
         );
         // Set local npub if available (from native prep or keyshare_meta)
@@ -1413,6 +1471,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                   }
                   return current;
                 });
+                setSelectedSignerNpubs(current =>
+                  current.map(value =>
+                    value === oldNpub ||
+                    (oldNpub && result.startsWith(oldNpub.substring(0, 20)))
+                      ? result
+                      : value,
+                  ),
+                );
               }
             } catch (error) {
               dbg('Error converting hex to npub:', error);
@@ -1448,37 +1514,32 @@ const MobileNostrPairing = ({navigation}: any) => {
   useEffect(() => {
     if ((isSendBitcoin || isSignPSBT) && sendModeDevices.length > 0) {
       const otherDevices = sendModeDevices.filter(d => !d.isLocal);
-      // Only auto-select if no peer is currently selected
-      if (!selectedPeerNpub) {
-        if (threeKeyshareWallet && otherDevices.length >= 2) {
-          // 2-of-3 wallet: deterministically select the first peer (sorted by npub)
-          // This ensures both devices select the same peer by default
-          // User can still manually change the selection
-          const sortedOtherDevices = [...otherDevices].sort((a, b) => {
-            // Sort by npub (handle both full and shortened npubs)
-            const npubA = a.npub || '';
-            const npubB = b.npub || '';
-            return npubA.localeCompare(npubB);
-          });
-          const firstPeer = sortedOtherDevices[0];
-          if (firstPeer && firstPeer.npub) {
-            setSelectedPeerNpub(firstPeer.npub);
-            dbg(
-              'Auto-selected first peer (2-of-3 wallet, user can change):',
-              firstPeer.npub.substring(0, 20) + '...',
-            );
-          }
-        } else if (!threeKeyshareWallet && otherDevices.length >= 1) {
-          // Duo wallet: auto-select the only other device
-          const otherDevice = otherDevices[0];
-          if (otherDevice && otherDevice.npub) {
-            setSelectedPeerNpub(otherDevice.npub);
-            dbg(
-              'Auto-selected peer in duo mode:',
-              otherDevice.npub.substring(0, 20) + '...',
-            );
-          }
+      const sortedOtherDevices = [...otherDevices].sort((a, b) => {
+        const npubA = a.npub || '';
+        const npubB = b.npub || '';
+        return npubA.localeCompare(npubB);
+      });
+      const availableNpubs = sortedOtherDevices.map(d => d.npub).filter(Boolean);
+      const requiredCount = Math.max(
+        1,
+        Math.min(requiredRemoteSignerCount, availableNpubs.length || 1),
+      );
+
+      const stillValid = selectedSignerNpubs.filter(n => availableNpubs.includes(n));
+      if (stillValid.length !== selectedSignerNpubs.length) {
+        setSelectedSignerNpubs(stillValid);
+      }
+
+      if (stillValid.length < requiredCount) {
+        const needed = requiredCount - stillValid.length;
+        const fill = availableNpubs.filter(n => !stillValid.includes(n)).slice(0, needed);
+        const next = [...stillValid, ...fill];
+        setSelectedSignerNpubs(next);
+        if (next[0]) {
+          setSelectedPeerNpub(next[0]);
         }
+      } else if (!selectedPeerNpub && stillValid[0]) {
+        setSelectedPeerNpub(stillValid[0]);
       }
     }
   }, [
@@ -1486,6 +1547,8 @@ const MobileNostrPairing = ({navigation}: any) => {
     isSignPSBT,
     threeKeyshareWallet,
     sendModeDevices,
+    requiredRemoteSignerCount,
+    selectedSignerNpubs,
     selectedPeerNpub,
   ]);
 
@@ -2413,10 +2476,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           `Failed to get all npubs from keyshare. Got ${allNpubsFromKeyshare.length} npubs.`,
         );
       }
-      // Prepare parties npubs CSV for the actual signing (only participating devices)
-      // IMPORTANT: Use the full npubs from allNpubsFromKeyshare (already converted from hex)
-      // This ensures we use the same npubs that were used for session ID calculation
-      // Find local npub in allNpubsFromKeyshare to ensure consistency
+      // Prepare explicit signer subset (local + selected remote signers).
+      // Native signing call is currently duo-per-round, so we still execute against one
+      // active remote peer while preserving the full selected subset in payload routing.
       const localNpubFromKeyshare =
         allNpubsFromKeyshare.find(n => {
           // Match by checking if localNpub (from state) matches or starts with this npub
@@ -2425,7 +2487,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             (localNpub && n.startsWith(localNpub.substring(0, 20)))
           );
         }) || localNpub; // Fallback to state if not found
-      const allNpubs = [localNpubFromKeyshare];
+      const targetSignerNpubs: string[] = [];
       // Committee auto-resolution for responders: the counterparty for this specific
       // signing round is unambiguous when responding to an incoming COSIGN_REQUEST —
       // it is whoever sent that request. Applies uniformly for duo or trio (every DKLS
@@ -2444,7 +2506,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               n.startsWith(responseSendPeerNpub.substring(0, 20))),
         );
         if (matchedResponsePeer && matchedResponsePeer !== localNpubFromKeyshare) {
-          allNpubs.push(matchedResponsePeer);
+          targetSignerNpubs.push(matchedResponsePeer);
           dbg('[NIP46-TLM][Committee] responder auto-selected sender as co-signing peer (send_btc)', {
             committeeLen: allNpubsFromKeyshare.length,
             peer: matchedResponsePeer.substring(0, 20) + '...',
@@ -2455,114 +2517,40 @@ const MobileNostrPairing = ({navigation}: any) => {
           });
         }
       }
-      if (allNpubs.length < 2 && threeKeyshareWallet) {
-        // 2-of-3 wallet: use selected peer for this duo signing session
-        if (selectedPeerNpub) {
-          // Find the selected device in sendModeDevices to get its keyshareLabel
-          const selectedDevice = sendModeDevices.find(
-            d =>
-              d.npub === selectedPeerNpub ||
-              (selectedPeerNpub.startsWith('npub1') &&
-                d.npub &&
-                d.npub.startsWith(selectedPeerNpub.substring(0, 20))) ||
-              (d.npub && selectedPeerNpub.startsWith(d.npub.substring(0, 20))),
-          );
-          if (selectedDevice) {
-            // Find the corresponding hex key in keyshare by keyshareLabel
-            // Use the same sortedKeys from above (already sorted)
-            const selectedIndex =
-              parseInt(
-                selectedDevice.keyshareLabel.replace('KeyShare', ''),
-                10,
-              ) - 1;
-            if (selectedIndex >= 0 && selectedIndex < sortedKeys.length) {
-              const selectedHexKey = sortedKeys[selectedIndex];
-              // Find the full npub in allNpubsFromKeyshare that corresponds to this hex key
-              // We need to convert the hex key to npub and find it, or match by index
-              // Since allNpubsFromKeyshare is built from sortedKeys in the same order, we can use index
-              if (selectedIndex < allNpubsFromKeyshare.length) {
-                const fullPeerNpub = allNpubsFromKeyshare[selectedIndex];
-                // Verify it's not the local device
-                if (fullPeerNpub !== localNpubFromKeyshare) {
-                  allNpubs.push(fullPeerNpub);
-                  dbg(
-                    'Found full peer npub for trio by index:',
-                    fullPeerNpub.substring(0, 20) + '...',
-                  );
-                } else {
-                  throw new Error('Selected device is the local device');
-                }
-              } else {
-                // Fallback: try to convert hex key to npub
-                try {
-                  const hexPattern = /^[0-9a-fA-F]+$/;
-                  if (hexPattern.test(selectedHexKey)) {
-                    const convertedNpub = await BBMTLibNativeModule.hexToNpub(
-                      selectedHexKey,
-                    );
-                    if (
-                      convertedNpub &&
-                      convertedNpub.startsWith('npub1') &&
-                      convertedNpub !== localNpubFromKeyshare
-                    ) {
-                      allNpubs.push(convertedNpub);
-                      dbg(
-                        'Found full peer npub for trio by conversion:',
-                        convertedNpub.substring(0, 20) + '...',
-                      );
-                    } else {
-                      throw new Error(
-                        'Failed to convert selected hex key to npub',
-                      );
-                    }
-                  } else {
-                    throw new Error('Selected hex key is not valid hex');
-                  }
-                } catch (error) {
-                  throw new Error(
-                    `Failed to find full npub for selected peer: ${error}`,
-                  );
-                }
-              }
-            } else {
-              throw new Error(
-                `Invalid keyshare label: ${selectedDevice.keyshareLabel}`,
-              );
-            }
-          } else {
-            // Fallback: try direct matching in allNpubsFromKeyshare
-            let fullPeerNpub = allNpubsFromKeyshare.find(
+      if (targetSignerNpubs.length === 0) {
+        const selectedCandidates = selectedSignerNpubs
+          .map(candidate =>
+            allNpubsFromKeyshare.find(
               n =>
-                n === selectedPeerNpub ||
-                (selectedPeerNpub.startsWith('npub1') &&
-                  n.startsWith(selectedPeerNpub.substring(0, 20))),
-            );
-            if (fullPeerNpub && fullPeerNpub !== localNpubFromKeyshare) {
-              allNpubs.push(fullPeerNpub);
-              dbg(
-                'Found full peer npub for trio by direct match:',
-                fullPeerNpub.substring(0, 20) + '...',
-              );
-            } else {
-              throw new Error(
-                `Failed to find full npub for selected peer: ${selectedPeerNpub.substring(
-                  0,
-                  30,
-                )}. Please ensure the device is fully loaded.`,
-              );
-            }
+                n === candidate ||
+                (candidate.startsWith('npub1') && n.startsWith(candidate.substring(0, 20))),
+            ),
+          )
+          .filter((v): v is string => !!v)
+          .filter(n => n !== localNpubFromKeyshare);
+        for (const npub of selectedCandidates) {
+          if (!targetSignerNpubs.includes(npub)) {
+            targetSignerNpubs.push(npub);
           }
-        } else {
-          throw new Error('Please select a peer device to co-sign with');
         }
-      } else if (allNpubs.length < 2) {
-        // Duo wallet: the only other keyshare is the co-signer
+      }
+      if (targetSignerNpubs.length === 0 && selectedPeerNpub) {
+        const matched = allNpubsFromKeyshare.find(
+          n =>
+            n === selectedPeerNpub ||
+            (selectedPeerNpub.startsWith('npub1') &&
+              n.startsWith(selectedPeerNpub.substring(0, 20))),
+        );
+        if (matched && matched !== localNpubFromKeyshare) {
+          targetSignerNpubs.push(matched);
+        }
+      }
+      if (targetSignerNpubs.length === 0) {
         const otherNpubs = allNpubsFromKeyshare.filter(
           n => n !== localNpubFromKeyshare,
         );
         if (otherNpubs.length > 0) {
-          // In duo mode, there should be exactly one other npub
-          allNpubs.push(otherNpubs[0]);
+          targetSignerNpubs.push(otherNpubs[0]);
           dbg(
             'Using other npub for duo:',
             otherNpubs[0].substring(0, 20) + '...',
@@ -2571,7 +2559,17 @@ const MobileNostrPairing = ({navigation}: any) => {
           throw new Error('Other device npub not found in keyshare');
         }
       }
-      const peerNpubForSign = allNpubs.find(n => n !== localNpubFromKeyshare);
+      const normalizedTargetSigners = Array.from(new Set(targetSignerNpubs));
+      const requiredRemoteCount = Math.max(
+        1,
+        Math.min(requiredRemoteSignerCount, normalizedTargetSigners.length),
+      );
+      if (normalizedTargetSigners.length < requiredRemoteCount) {
+        throw new Error(
+          `Select at least ${requiredRemoteCount} co-signer(s) before starting this request.`,
+        );
+      }
+      const peerNpubForSign = normalizedTargetSigners[0];
       if (!peerNpubForSign) {
         throw new Error('Co-signing peer npub is missing from this session.');
       }
@@ -2600,6 +2598,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('Nostr send BTC — signing npubs:', {
         partiesNpubsCSV: signingNpubsSorted,
         resolvedPeerNpub: resolvedPeerNpub.substring(0, 20) + '...',
+        targetSigners: normalizedTargetSigners,
         initiatorNpubHint: initiatorNpubHint.substring(0, 20) + '...',
         utxoSetHash: templateHashes.utxoSetHash,
         txTemplateHash: templateHashes.txTemplateHash,
@@ -2728,6 +2727,8 @@ const MobileNostrPairing = ({navigation}: any) => {
               senderDerivationPath: path,
               senderAddressType: addressTypeToUse,
               signingNpubsCSV: signingNpubsSorted,
+              targetSigners: normalizedTargetSigners,
+              requiredSignerCount: requiredRemoteCount + 1,
               txTemplateHash: templateHashes.txTemplateHash,
               utxoSetHash: templateHashes.utxoSetHash,
             };
@@ -2739,16 +2740,23 @@ const MobileNostrPairing = ({navigation}: any) => {
               peer: resolvedPeerNpub.substring(0, 20) + '...',
             });
             await nostrMessaging.sendCoSignRequestToMany(
-              [resolvedPeerNpub],
+              normalizedTargetSigners,
               localFingerprint,
               'peer-group',
               fanOutPayload,
+            );
+            nostrMpcSession.registerSignerSubset(
+              fanOutTxId,
+              normalizedTargetSigners,
+              requiredRemoteCount,
+              committeeLen,
             );
             cosignFanOutTxId = fanOutTxId;
             pendingInitiatorSendRef.current = {
               txId: fanOutTxId,
               traceId: fanOutTraceId,
               peerNpub: resolvedPeerNpub,
+              targetSignerNpubs: normalizedTargetSigners,
               createdAt: Date.now(),
             };
             setPendingInitiatorSendTxId(fanOutTxId);
@@ -2789,23 +2797,58 @@ const MobileNostrPairing = ({navigation}: any) => {
             setStatus('Request sent — continue in chat and wait for peer approval.');
             return;
           } catch (fanOutErr) {
-            dbg(
-              'MobileNostrPairing: native send COSIGN_REQUEST fan-out failed (continuing with live MPC signing)',
-              fanOutErr,
+            dbg('MobileNostrPairing: native send COSIGN_REQUEST fan-out failed', fanOutErr);
+            throw new Error(
+              `Failed to dispatch co-sign request. Signing is blocked until peer request delivery succeeds. ${
+                fanOutErr instanceof Error ? fanOutErr.message : String(fanOutErr)
+              }`,
             );
           }
         } else {
-          if (existingPending.peerNpub !== resolvedPeerNpub) {
+          const resumeTxId =
+            typeof route.params?.initiatorTxId === 'string'
+              ? route.params.initiatorTxId.trim()
+              : '';
+          const resumeTraceId =
+            typeof route.params?.cosignTraceId === 'string'
+              ? route.params.cosignTraceId.trim()
+              : '';
+          if (resumeTxId && resumeTxId !== existingPending.txId) {
+            throw new Error(
+              'Pending co-sign session mismatch detected (txId changed). Re-open the latest request from chat before continuing.',
+            );
+          }
+          if (
+            resumeTraceId &&
+            existingPending.traceId &&
+            resumeTraceId !== existingPending.traceId
+          ) {
+            throw new Error(
+              'Pending co-sign trace mismatch detected. Re-open the latest request from chat before continuing.',
+            );
+          }
+          if (
+            existingPending.targetSignerNpubs?.length &&
+            !existingPending.targetSignerNpubs.includes(resolvedPeerNpub)
+          ) {
             throw new Error(
               'Co-signing peer changed while request was pending. Start a new co-sign request.',
             );
           }
           cosignFanOutTxId = existingPending.txId;
           cosignFanOutTraceId = existingPending.traceId;
+          nostrMpcSession.registerSignerSubset(
+            existingPending.txId,
+            existingPending.targetSignerNpubs || [existingPending.peerNpub],
+            requiredRemoteCount,
+            committeeLen,
+          );
           dbg('MobileNostrPairing: continuing initiator flow after explicit confirm', {
             txId: existingPending.txId,
             traceId: existingPending.traceId,
             peer: existingPending.peerNpub.substring(0, 20) + '...',
+            resumeTxId: resumeTxId || undefined,
+            resumeTraceId: resumeTraceId || undefined,
           });
         }
 
@@ -2850,6 +2893,13 @@ const MobileNostrPairing = ({navigation}: any) => {
           });
           setStatus('Peer ready \u2014 starting co-sign\u2026');
         }
+
+        if (!cosignFanOutTxId) {
+          throw new Error(
+            'Missing co-sign session state. Signing is blocked until the request is sent and approved in chat.',
+          );
+        }
+        assertReadyForCoSignExecution(cosignFanOutTxId, cosignFanOutTraceId);
       }
 
       const changeAddress = preparedChangeAddress;
@@ -3163,8 +3213,8 @@ const MobileNostrPairing = ({navigation}: any) => {
             n === localNpub ||
             (localNpub && n.startsWith(localNpub.substring(0, 20))),
         ) || localNpub;
-      // Build parties CSV
-      const allNpubs = [localNpubFromKeyshare];
+      // Build explicit signer subset for this co-sign request.
+      const targetSignerNpubs: string[] = [];
       // Committee auto-resolution for responders: same rationale as startSendBTC — the
       // counterparty for this specific round is unambiguous (whoever sent the incoming
       // COSIGN_REQUEST), so trio/committee wallets can skip manual peer selection.
@@ -3180,7 +3230,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               n.startsWith(responseSignPeerNpub.substring(0, 20))),
         );
         if (matchedResponsePeer && matchedResponsePeer !== localNpubFromKeyshare) {
-          allNpubs.push(matchedResponsePeer);
+          targetSignerNpubs.push(matchedResponsePeer);
           dbg('[NIP46-TLM][Committee] responder auto-selected sender as co-signing peer (sign_psbt)', {
             committeeLen: allNpubsFromKeyshare.length,
             peer: matchedResponsePeer.substring(0, 20) + '...',
@@ -3191,66 +3241,62 @@ const MobileNostrPairing = ({navigation}: any) => {
           });
         }
       }
-      if (allNpubs.length < 2 && threeKeyshareWallet) {
-        if (selectedPeerNpub) {
-          const selectedDevice = sendModeDevices.find(
-            d =>
-              d.npub === selectedPeerNpub ||
-              (selectedPeerNpub.startsWith('npub1') &&
-                d.npub &&
-                d.npub.startsWith(selectedPeerNpub.substring(0, 20))),
-          );
-          if (selectedDevice) {
-            const selectedIndex =
-              parseInt(
-                selectedDevice.keyshareLabel.replace('KeyShare', ''),
-                10,
-              ) - 1;
-            if (
-              selectedIndex >= 0 &&
-              selectedIndex < allNpubsFromKeyshare.length
-            ) {
-              const fullPeerNpub = allNpubsFromKeyshare[selectedIndex];
-              if (fullPeerNpub !== localNpubFromKeyshare) {
-                allNpubs.push(fullPeerNpub);
-              } else {
-                throw new Error('Selected device is the local device');
-              }
-            }
-          } else {
-            const fullPeerNpub = allNpubsFromKeyshare.find(
+      if (targetSignerNpubs.length === 0) {
+        const selectedCandidates = selectedSignerNpubs
+          .map(candidate =>
+            allNpubsFromKeyshare.find(
               n =>
-                n === selectedPeerNpub ||
-                (selectedPeerNpub.startsWith('npub1') &&
-                  n.startsWith(selectedPeerNpub.substring(0, 20))),
-            );
-            if (fullPeerNpub && fullPeerNpub !== localNpubFromKeyshare) {
-              allNpubs.push(fullPeerNpub);
-            } else {
-              throw new Error('Failed to find full npub for selected peer');
-            }
+                n === candidate ||
+                (candidate.startsWith('npub1') && n.startsWith(candidate.substring(0, 20))),
+            ),
+          )
+          .filter((v): v is string => !!v)
+          .filter(n => n !== localNpubFromKeyshare);
+        for (const npub of selectedCandidates) {
+          if (!targetSignerNpubs.includes(npub)) {
+            targetSignerNpubs.push(npub);
           }
-        } else {
-          throw new Error('Please select a peer device to co-sign with');
         }
-      } else if (allNpubs.length < 2) {
+      }
+      if (targetSignerNpubs.length === 0 && selectedPeerNpub) {
+        const matched = allNpubsFromKeyshare.find(
+          n =>
+            n === selectedPeerNpub ||
+            (selectedPeerNpub.startsWith('npub1') &&
+              n.startsWith(selectedPeerNpub.substring(0, 20))),
+        );
+        if (matched && matched !== localNpubFromKeyshare) {
+          targetSignerNpubs.push(matched);
+        }
+      }
+      if (targetSignerNpubs.length === 0) {
         const otherNpubs = allNpubsFromKeyshare.filter(
           n => n !== localNpubFromKeyshare,
         );
         if (otherNpubs.length > 0) {
-          allNpubs.push(otherNpubs[0]);
+          targetSignerNpubs.push(otherNpubs[0]);
         } else {
           throw new Error('Other device npub not found in keyshare');
         }
       }
-      const peerNpubForSign = allNpubs.find(n => n !== localNpubFromKeyshare);
+      const normalizedTargetSigners = Array.from(new Set(targetSignerNpubs));
+      const requiredRemoteCount = Math.max(
+        1,
+        Math.min(requiredRemoteSignerCount, normalizedTargetSigners.length),
+      );
+      if (normalizedTargetSigners.length < requiredRemoteCount) {
+        throw new Error(
+          `Select at least ${requiredRemoteCount} co-signer(s) before starting this request.`,
+        );
+      }
+      const peerNpubForSign = normalizedTargetSigners[0];
       if (!peerNpubForSign) {
         throw new Error('Co-signing peer npub is missing from this session.');
       }
       console.warn('[NIP46-TLM][Sender] Join Co-Signing resolved signing peers:', {
         traceId: joinTraceId,
         localNpub: localNpubFromKeyshare,
-        peers: allNpubs.filter(n => n !== localNpubFromKeyshare),
+        peers: normalizedTargetSigners,
         selectedPeerNpub: selectedPeerNpub || null,
       });
       const {partiesNpubsCSV, peerNpub: resolvedPeerNpub} =
@@ -3336,6 +3382,8 @@ const MobileNostrPairing = ({navigation}: any) => {
             feeSats: 0,
             recipientAddress: 'N/A',
             network: (route.params?.network as CoSignRequestPayload['network']) || 'mainnet',
+            targetSigners: normalizedTargetSigners,
+            requiredSignerCount: requiredRemoteCount + 1,
           };
           const localFingerprint = fingerprintFromNpub(localNpubFromKeyshare);
           console.warn('[NIP46-TLM][Sender] Notifying peer before native MPC sign', {
@@ -3344,10 +3392,16 @@ const MobileNostrPairing = ({navigation}: any) => {
             peer: resolvedPeerNpub.substring(0, 20) + '...',
           });
           await nostrMessaging.sendCoSignRequestToMany(
-            [resolvedPeerNpub],
+            normalizedTargetSigners,
             localFingerprint,
             'peer-group',
             fanOutPayload,
+          );
+          nostrMpcSession.registerSignerSubset(
+            fanOutTxId,
+            normalizedTargetSigners,
+            requiredRemoteCount,
+            allNpubsFromKeyshare.length,
           );
           cosignFanOutTxId = fanOutTxId;
           DeviceEventEmitter.emit('nostr-cosign:request', {
@@ -3386,9 +3440,11 @@ const MobileNostrPairing = ({navigation}: any) => {
           }, 250);
           setStatus('Request sent — continue in chat');
         } catch (fanOutErr) {
-          dbg(
-            'MobileNostrPairing: pre-sign COSIGN_REQUEST fan-out failed (continuing with native MPC signing)',
-            fanOutErr,
+          dbg('MobileNostrPairing: pre-sign COSIGN_REQUEST fan-out failed', fanOutErr);
+          throw new Error(
+            `Failed to dispatch co-sign request. Signing is blocked until peer request delivery succeeds. ${
+              fanOutErr instanceof Error ? fanOutErr.message : String(fanOutErr)
+            }`,
           );
         }
       }
@@ -3397,8 +3453,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       // initiator) waits for the peer's COSIGN_READY wake-up. A device that arrived here
       // by tapping "Review & Co-Sign" on a chat card already sent its own COSIGN_READY
       // and must proceed straight into the native call.
-      const isWaitingRole =
-        route.params?.isInitiator === true || route.params?.forwardPeerCosign === true;
+      const isWaitingRole = !isPeerResponseSign;
       if (isWaitingRole && cosignFanOutTxId) {
         setStatus('Awaiting peer approval…');
         nostrMpcSession.startSession(cosignFanOutTxId, cosignFanOutTraceId);
@@ -3443,6 +3498,15 @@ const MobileNostrPairing = ({navigation}: any) => {
           source: 'mobile-sign-peer-ready',
         });
         setStatus('Peer ready \u2014 starting co-sign\u2026');
+      }
+
+      if (isWaitingRole) {
+        if (!cosignFanOutTxId) {
+          throw new Error(
+            'Missing co-sign session state. Signing is blocked until the request is sent and approved in chat.',
+          );
+        }
+        assertReadyForCoSignExecution(cosignFanOutTxId, cosignFanOutTraceId);
       }
       // Call native module for PSBT signing
       await TssProvider.nostrMpcSignPSBT(
@@ -5707,7 +5771,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                           marginBottom: 8,
                                         }}>
                                         {threeKeyshareWallet
-                                          ? 'Choose Second Co-signer'
+                                          ? `Choose Co-signers (${requiredRemoteSignerCount} of ${otherDevices.length})`
                                           : 'Second Co-Signer'}
                                       </Text>
                                       {otherDevices.map(dev => {
@@ -5745,8 +5809,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                                   {shortenNpub(dev.npub, 8, 6)}
                                                 </Text>
                                               </View>
-                                              {selectedPeerNpub ===
-                                                dev.npub && (
+                                              {selectedSignerNpubs.includes(dev.npub) && (
                                                 <View
                                                   style={[
                                                     styles.sendModeCheckbox,
@@ -5769,25 +5832,29 @@ const MobileNostrPairing = ({navigation}: any) => {
                                             key={dev.keyshareLabel}
                                             style={[
                                               styles.sendModeDeviceItem,
-                                              selectedPeerNpub === dev.npub &&
+                                              selectedSignerNpubs.includes(dev.npub) &&
                                                 styles.sendModeDeviceItemSelected,
                                             ]}
                                             onPress={() => {
-                                              // In trio, allow user to select any device
-                                              // If clicking the same device, deselect (allow empty selection)
-                                              // If clicking different device, select that one
-                                              setSelectedPeerNpub(
-                                                selectedPeerNpub === dev.npub
-                                                  ? ''
-                                                  : dev.npub,
-                                              );
-                                              dbg(
-                                                'User selected peer in trio mode:',
-                                                dev.npub === selectedPeerNpub
-                                                  ? 'deselected'
-                                                  : dev.npub.substring(0, 20) +
-                                                      '...',
-                                              );
+                                              const isSelected = selectedSignerNpubs.includes(dev.npub);
+                                              if (isSelected) {
+                                                const next = selectedSignerNpubs.filter(n => n !== dev.npub);
+                                                setSelectedSignerNpubs(next);
+                                                setSelectedPeerNpub(next[0] || '');
+                                                return;
+                                              }
+
+                                              if (selectedSignerNpubs.length >= requiredRemoteSignerCount) {
+                                                Alert.alert(
+                                                  'Signer limit reached',
+                                                  `Select up to ${requiredRemoteSignerCount} co-signer(s) for this request.`,
+                                                );
+                                                return;
+                                              }
+
+                                              const next = [...selectedSignerNpubs, dev.npub];
+                                              setSelectedSignerNpubs(next);
+                                              setSelectedPeerNpub(next[0] || dev.npub);
                                             }}
                                             android_ripple={{
                                               color: 'rgba(0,0,0,0.1)',
@@ -5821,11 +5888,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                                             <View
                                               style={[
                                                 styles.sendModeCheckbox,
-                                                selectedPeerNpub === dev.npub &&
+                                                selectedSignerNpubs.includes(dev.npub) &&
                                                   styles.sendModeCheckboxChecked,
                                               ]}>
-                                              {selectedPeerNpub ===
-                                                dev.npub && (
+                                              {selectedSignerNpubs.includes(dev.npub) && (
                                                 <Text
                                                   style={
                                                     styles.sendModeCheckmark
@@ -5837,6 +5903,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                                           </AppPressable>
                                         );
                                       })}
+                                      <Text
+                                        style={{
+                                          marginTop: 6,
+                                          color: theme.colors.textSecondary,
+                                          fontSize: theme.fontSizes?.xs || 11,
+                                        }}>
+                                        Selected {selectedSignerNpubs.length}/{requiredRemoteSignerCount} co-signer(s)
+                                      </Text>
                                     </View>
                                   </>
                                 )}

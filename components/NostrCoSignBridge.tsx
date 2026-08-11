@@ -34,7 +34,59 @@ let recentUnreadChatEvents: Array<Record<string, unknown>> = [];
 let recentCoSignFocusEvents: Array<Record<string, unknown>> = [];
 
 const MAX_PROCESSED_EVENT_IDS = 500;
+const MAX_PROCESSED_READY_PAYLOAD_KEYS = 1200;
+const READY_PAYLOAD_DEDUPE_TTL_MS = 15_000;
 const processedCoSignEventIds = new Set<string>();
+const processedReadyPayloadEventKeys = new Map<string, number>();
+const signerSubsetByTxId = new Map<string, Set<string>>();
+
+function normalizeSignerList(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return Array.from(
+    new Set(
+      values
+        .map(v => (typeof v === 'string' ? v.trim() : ''))
+        .filter(Boolean),
+    ),
+  );
+}
+
+function cacheTargetSignerSubset(
+  txId: string | undefined,
+  values: unknown,
+  signingNpubsCSV?: string,
+): void {
+  const id = String(txId || '').trim();
+  if (!id) return;
+  const signers = normalizeSignerList(values);
+  const committeeSize = inferCommitteeSizeFromSigningCSV(signingNpubsCSV);
+  if (signers.length === 0) {
+    signerSubsetByTxId.delete(id);
+    nostrMpcSession.clearSignerSubset(id);
+    return;
+  }
+  signerSubsetByTxId.set(id, new Set(signers));
+  nostrMpcSession.registerSignerSubset(id, signers, 1, committeeSize);
+}
+
+function inferCommitteeSizeFromSigningCSV(signingCsv?: string): number | undefined {
+  const csv = typeof signingCsv === 'string' ? signingCsv : '';
+  const count = csv
+    .split(',')
+    .map(v => v.trim())
+    .filter(Boolean).length;
+  if (count >= 2) return count;
+  return undefined;
+}
+
+function isAllowedSignerForTx(txId: string, senderNpub: string): boolean {
+  const id = String(txId || '').trim();
+  const sender = String(senderNpub || '').trim();
+  if (!id || !sender) return true;
+  const allowed = signerSubsetByTxId.get(id);
+  if (!allowed || allowed.size === 0) return true;
+  return allowed.has(sender);
+}
 
 function markCoSignEventProcessed(eventId: string | undefined): boolean {
   if (!eventId) return true;
@@ -44,6 +96,44 @@ function markCoSignEventProcessed(eventId: string | undefined): boolean {
     const oldest = processedCoSignEventIds.values().next().value;
     if (oldest !== undefined) processedCoSignEventIds.delete(oldest);
   }
+  return true;
+}
+
+function markReadyOrPayloadProcessed(
+  eventId: string | undefined,
+  type: string,
+  txId: string,
+  traceId: string | undefined,
+  senderNpub: string,
+): boolean {
+  const now = Date.now();
+  const stableKey = [
+    String(eventId || '').trim() || 'no-event-id',
+    String(type || '').trim(),
+    String(txId || '').trim(),
+    String(traceId || '').trim(),
+    String(senderNpub || '').trim(),
+  ].join('::');
+
+  const prev = processedReadyPayloadEventKeys.get(stableKey);
+  if (prev && now - prev <= READY_PAYLOAD_DEDUPE_TTL_MS) {
+    return false;
+  }
+  processedReadyPayloadEventKeys.set(stableKey, now);
+
+  if (processedReadyPayloadEventKeys.size > MAX_PROCESSED_READY_PAYLOAD_KEYS) {
+    const cutoff = now - READY_PAYLOAD_DEDUPE_TTL_MS;
+    for (const [k, ts] of processedReadyPayloadEventKeys.entries()) {
+      if (ts < cutoff) {
+        processedReadyPayloadEventKeys.delete(k);
+      }
+    }
+    if (processedReadyPayloadEventKeys.size > MAX_PROCESSED_READY_PAYLOAD_KEYS) {
+      processedReadyPayloadEventKeys.clear();
+      processedReadyPayloadEventKeys.set(stableKey, now);
+    }
+  }
+
   return true;
 }
 
@@ -130,6 +220,54 @@ function fingerprintFromNpub(npub: string): string {
   }
 }
 
+function compactFingerprintFromNpub(npub: string): string {
+  const value = String(npub || '').trim();
+  if (!value) return '';
+  return `${value.slice(0, 4)}${value.slice(-4)}`;
+}
+
+function matchesSignerFingerprint(npub: string, fingerprint: string): boolean {
+  const candidate = String(fingerprint || '').trim();
+  if (!candidate) return false;
+  const signer = String(npub || '').trim();
+  if (!signer) return false;
+  if (candidate === signer) return true;
+  if (candidate === compactFingerprintFromNpub(signer)) return true;
+  if (candidate === fingerprintFromNpub(signer)) return true;
+  return false;
+}
+
+function resolveReadySenderWithDuoFallback(
+  txId: string,
+  senderNpub: string,
+  senderFingerprint: string,
+): string {
+  const direct = String(senderNpub || '').trim();
+  if (direct) return direct;
+  if (!nostrMpcSession.isStrictDuoSession(txId)) {
+    return '';
+  }
+
+  const guardSigners = nostrMpcSession.getRegisteredSigners(txId);
+  const subsetSigners = Array.from(signerSubsetByTxId.get(txId) || []);
+  const allowed = Array.from(new Set([...guardSigners, ...subsetSigners].map(v => String(v || '').trim()).filter(Boolean)));
+  if (allowed.length !== 1) {
+    return '';
+  }
+
+  const onlySigner = allowed[0];
+  if (!matchesSignerFingerprint(onlySigner, senderFingerprint)) {
+    return '';
+  }
+
+  dbg('[NostrCoSignBridge] duo fallback resolved missing sender npub from fingerprint', {
+    txId,
+    senderFingerprint,
+    resolvedSigner: `${onlySigner.slice(0, 10)}...${onlySigner.slice(-6)}`,
+  });
+  return onlySigner;
+}
+
 const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigationRef }: Props) => {
   latestNavigationRef.current = navigationRef;
 
@@ -208,6 +346,7 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
       }
 
       const payload = msg.envelope.payload as CoSignRequestPayload;
+      cacheTargetSignerSubset(payload.txId, payload.targetSigners, payload.signingNpubsCSV);
       const psbtBase64 = payload.psbtBase64 || (payload.psbtHex ? nostrMessaging.psbtHexToBase64(payload.psbtHex) : '');
 
       const amountSatsNum = Number(payload.amountSats);
@@ -235,11 +374,17 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
         return;
       }
 
+      const requestSenderNpub = resolveReadySenderWithDuoFallback(
+        payload.txId,
+        msg.senderNpub,
+        String(msg.envelope.senderFingerprint || ''),
+      ) || msg.senderNpub;
+
       emitCoSignFeedEvent({
         mode: 'legacy',
         eventId: msg.eventId,
         envelopeId: msg.envelope.id,
-        senderNpub: msg.senderNpub,
+        senderNpub: requestSenderNpub,
         senderFingerprint: msg.envelope.senderFingerprint,
         recipientFingerprint: msg.envelope.recipientFingerprint,
         request: payload,
@@ -252,7 +397,7 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
         envelopeId: msg.envelope.id,
         parsedMessage: {
           eventId: msg.eventId,
-          senderNpub: msg.senderNpub,
+          senderNpub: requestSenderNpub,
           request: payload,
           senderFingerprint: msg.envelope.senderFingerprint,
         },
@@ -273,19 +418,45 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
       const txId = typeof payload.txId === 'string' ? payload.txId : '';
       const traceId = typeof payload.traceId === 'string' ? payload.traceId : undefined;
       if (!txId) return;
+      const resolvedSenderNpub = resolveReadySenderWithDuoFallback(
+        txId,
+        msg.senderNpub,
+        String(msg.envelope.senderFingerprint || ''),
+      ) || msg.senderNpub;
+      if (!markReadyOrPayloadProcessed(msg.eventId, type, txId, traceId, resolvedSenderNpub)) {
+        dbg('[NostrCoSignBridge] ignoring duplicate ready/payload event', {
+          type,
+          txId,
+          traceId,
+          eventId: msg.eventId,
+          senderNpub: resolvedSenderNpub,
+        });
+        return;
+      }
 
       if (type === 'COSIGN_READY') {
+        if (!isAllowedSignerForTx(txId, resolvedSenderNpub)) {
+          dbg('[NostrCoSignBridge] ignoring COSIGN_READY from non-target signer', {
+            txId,
+            senderNpub: resolvedSenderNpub,
+            senderFingerprint: msg.envelope.senderFingerprint,
+            targetSigners: Array.from(signerSubsetByTxId.get(txId) || []),
+            strictDuo: nostrMpcSession.isStrictDuoSession(txId),
+          });
+          return;
+        }
         dbg('[NostrCoSignBridge] received COSIGN_READY, waking waiting signer', {
           txId,
           traceId,
-          senderNpub: msg.senderNpub,
+          senderNpub: resolvedSenderNpub,
+          senderFingerprint: msg.envelope.senderFingerprint,
         });
 
         DeviceEventEmitter.emit('nostr-cosign:ready', {
           ts: Date.now(),
           txId,
           traceId,
-          senderNpub: msg.senderNpub,
+          senderNpub: resolvedSenderNpub,
         });
 
         DeviceEventEmitter.emit('nostr-cosign:status', {
@@ -296,7 +467,7 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
 
         nostrMpcSession.markPeerReady(txId, {
           traceId,
-          senderNpub: msg.senderNpub,
+          senderNpub: resolvedSenderNpub,
         });
         return;
       }
@@ -309,7 +480,7 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
 
       nostrMpcSession.markPayloadReceived(txId, type, {
         traceId,
-        senderNpub: msg.senderNpub,
+        senderNpub: resolvedSenderNpub,
       });
     });
 

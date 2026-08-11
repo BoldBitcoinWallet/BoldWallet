@@ -248,6 +248,38 @@ function invoiceThreadKeyFromPayload(payload: Record<string, unknown>): string {
   return '';
 }
 
+function parseTxTraceFromInvoiceThreadKey(threadKey?: string): {
+  txId?: string;
+  traceId?: string;
+} {
+  const key = typeof threadKey === 'string' ? threadKey.trim() : '';
+  if (!key) return {};
+
+  const txTraceMatch = key.match(/^tx:([^:]+):trace:(.+)$/);
+  if (txTraceMatch) {
+    return {
+      txId: txTraceMatch[1]?.trim() || undefined,
+      traceId: txTraceMatch[2]?.trim() || undefined,
+    };
+  }
+
+  const txHashMatch = key.match(/^tx:([^:]+):h:[^:]+$/);
+  if (txHashMatch) {
+    return {
+      txId: txHashMatch[1]?.trim() || undefined,
+    };
+  }
+
+  const txMatch = key.match(/^tx:(.+)$/);
+  if (txMatch) {
+    return {
+      txId: txMatch[1]?.trim() || undefined,
+    };
+  }
+
+  return {};
+}
+
 function compactAddress(address: string): string {
   const a = typeof address === 'string' ? address.trim() : '';
   if (!a) return '';
@@ -538,10 +570,14 @@ const KeyshareChat: React.FC = () => {
             }
             const type = deriveMessageTypeFromHydration(row, payload);
             const requestId = row.threadId.startsWith('req:') ? row.threadId.slice(4) : '';
-            const txIdFromThread = row.threadId.startsWith('tx:') ? row.threadId.slice(3) : '';
+            const parsedThreadRef = parseTxTraceFromInvoiceThreadKey(row.threadId);
+            const txIdFromThread = parsedThreadRef.txId || '';
             const txIdFromPayload = typeof payload.txId === 'string' ? payload.txId : '';
             const txId = txIdFromThread || txIdFromPayload;
-            const traceId = typeof payload.traceId === 'string' ? payload.traceId.trim() : '';
+            const traceId =
+              (typeof payload.traceId === 'string' ? payload.traceId.trim() : '') ||
+              parsedThreadRef.traceId ||
+              '';
             const invoiceThreadKey = row.threadType === 'cosign' ? row.threadId : undefined;
             const status = deriveMessageStatus(type, row.status);
 
@@ -1271,28 +1307,66 @@ const KeyshareChat: React.FC = () => {
     });
   }, [messages, peerMap, signingThreshold, unreadByThread]);
 
-  const threads = useMemo<ThreadSummary[]>(() => {
-    const all = [...invoiceThreads, ...peerThreads];
-    return all.sort((a, b) => {
-      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
-      return b.timestamp - a.timestamp;
-    });
-  }, [invoiceThreads, peerThreads]);
+  const totalThreads = peerThreads.length + invoiceThreads.length;
 
   const selectedThread = useMemo(
-    () => threads.find(thread => thread.chatId === activeChatId),
-    [activeChatId, threads],
+    () => {
+      if (!activeChatId) return undefined;
+      if (activeChatId.startsWith('peer:')) {
+        return peerThreads.find(thread => thread.chatId === activeChatId);
+      }
+      if (activeChatId.startsWith('invoice:')) {
+        return invoiceThreads.find(thread => thread.chatId === activeChatId);
+      }
+      return undefined;
+    },
+    [activeChatId, invoiceThreads, peerThreads],
   );
 
-  const selectedPeerNpub = useMemo(() => {
-    return selectedThread?.npub || '';
-  }, [selectedThread]);
+  const selectedRecipientNpubs = useMemo(() => {
+    if (!selectedThread) return [] as string[];
+
+    if (selectedThread.kind === 'peer') {
+      return selectedThread.npub ? [selectedThread.npub] : [];
+    }
+
+    const invoiceKey = selectedThread.invoiceKey || '';
+    if (!invoiceKey) return [] as string[];
+
+    const recipients = new Set<string>();
+    messages.forEach(item => {
+      if (!item.senderNpub || item.senderNpub === localNpub) return;
+      const itemThreadKey =
+        item.invoiceThreadKey ||
+        (item.type === 'CHAT_MESSAGE'
+          ? invoiceThreadKeyFromPayload(item.payload)
+          : invoiceThreadKeyForItem(item));
+      if (itemThreadKey === invoiceKey) {
+        recipients.add(item.senderNpub);
+      }
+    });
+
+    if (selectedThread.npub && selectedThread.npub !== localNpub) {
+      recipients.add(selectedThread.npub);
+    }
+
+    if (
+      selectedThread.openItem?.senderNpub &&
+      selectedThread.openItem.senderNpub !== localNpub
+    ) {
+      recipients.add(selectedThread.openItem.senderNpub);
+    }
+
+    return Array.from(recipients);
+  }, [localNpub, messages, selectedThread]);
 
   useEffect(() => {
     if (!activeChatId) return;
-    if (threads.some(thread => thread.chatId === activeChatId)) return;
+    const existsInPeers = peerThreads.some(thread => thread.chatId === activeChatId);
+    const existsInInvoices = invoiceThreads.some(thread => thread.chatId === activeChatId);
+    if (existsInPeers || existsInInvoices) return;
     setActiveChatId('');
-  }, [activeChatId, threads]);
+  }, [activeChatId, invoiceThreads, peerThreads]);
 
   const visibleMessages = useMemo(() => {
     if (!activeChatId) return [];
@@ -1362,11 +1436,11 @@ const KeyshareChat: React.FC = () => {
 
   const sendChat = async () => {
     if (!text.trim()) return;
-    if (!selectedThread || !selectedPeerNpub) {
+    if (!selectedThread) {
       setError('Open a conversation first.');
       return;
     }
-    const activeRecipientNpubs = [selectedPeerNpub];
+    const activeRecipientNpubs = selectedRecipientNpubs;
     if (activeRecipientNpubs.length === 0) {
       setError('No remote keyshares found for this wallet.');
       return;
@@ -1390,15 +1464,20 @@ const KeyshareChat: React.FC = () => {
     const threadId =
       selectedThread.kind === 'invoice'
         ? selectedThread.invoiceKey || `tx:${String(outgoingPayload.txId || now)}`
-        : `peer:${selectedPeerNpub}`;
+        : `peer:${activeRecipientNpubs[0] || selectedThread.npub || 'unknown'}`;
     const threadStatus: ChatThreadStatus =
       selectedThread.kind === 'invoice' ? 'pending' : 'approved';
     const localMessageId = `local-chat:${now}:${Math.random().toString(36).slice(2, 10)}`;
+    const primaryPeerNpub =
+      activeRecipientNpubs[0] ||
+      (selectedThread.npub && selectedThread.npub !== localNpub
+        ? selectedThread.npub
+        : 'unknown');
 
     chatRepository.upsertThreadAndMessage(
       {
         threadId,
-        peerNpub: selectedPeerNpub,
+        peerNpub: primaryPeerNpub,
         threadType: selectedThread.kind === 'invoice' ? 'cosign' : 'direct',
         status: threadStatus,
         createdAt: now,
@@ -1552,19 +1631,88 @@ const KeyshareChat: React.FC = () => {
     const msg = item.sourceMessage;
 
     const payload = item.payload as unknown as CoSignRequestPayload;
-    if (!payload?.txId) {
+    const threadRef = parseTxTraceFromInvoiceThreadKey(item.invoiceThreadKey);
+    const contextFromRepo = chatRepository.findLatestCoSignRequestContext({
+      txId:
+        (typeof payload?.txId === 'string' && payload.txId.trim()) ||
+        (typeof item.txId === 'string' && item.txId.trim()) ||
+        threadRef.txId ||
+        undefined,
+      traceId:
+        (typeof payload?.traceId === 'string' && payload.traceId.trim()) ||
+        threadRef.traceId ||
+        undefined,
+    });
+
+    const resolvedTxId =
+      (typeof payload?.txId === 'string' && payload.txId.trim()) ||
+      (typeof item.txId === 'string' && item.txId.trim()) ||
+      threadRef.txId ||
+      contextFromRepo?.txId ||
+      '';
+    const resolvedTraceId =
+      (typeof payload?.traceId === 'string' && payload.traceId.trim()) ||
+      threadRef.traceId ||
+      contextFromRepo?.traceId ||
+      undefined;
+
+    const mergedPayload: CoSignRequestPayload = {
+      ...payload,
+      txId: resolvedTxId,
+      ...(resolvedTraceId ? { traceId: resolvedTraceId } : {}),
+      ...(typeof payload?.utxosJson === 'string' && payload.utxosJson.trim()
+        ? {}
+        : contextFromRepo?.utxosJson
+        ? { utxosJson: contextFromRepo.utxosJson }
+        : {}),
+      ...(typeof payload?.changeAddress === 'string' && payload.changeAddress.trim()
+        ? {}
+        : contextFromRepo?.changeAddress
+        ? { changeAddress: contextFromRepo.changeAddress }
+        : {}),
+      ...(typeof payload?.senderDerivationPath === 'string' && payload.senderDerivationPath.trim()
+        ? {}
+        : contextFromRepo?.senderDerivationPath
+        ? { senderDerivationPath: contextFromRepo.senderDerivationPath }
+        : {}),
+      ...(typeof payload?.senderAddressType === 'string' && payload.senderAddressType.trim()
+        ? {}
+        : contextFromRepo?.senderAddressType
+        ? { senderAddressType: contextFromRepo.senderAddressType }
+        : {}),
+      ...(typeof payload?.signingNpubsCSV === 'string' && payload.signingNpubsCSV.trim()
+        ? {}
+        : contextFromRepo?.signingNpubsCSV
+        ? { signingNpubsCSV: contextFromRepo.signingNpubsCSV }
+        : {}),
+      ...(typeof payload?.txTemplateHash === 'string' && payload.txTemplateHash.trim()
+        ? {}
+        : contextFromRepo?.txTemplateHash
+        ? { txTemplateHash: contextFromRepo.txTemplateHash }
+        : {}),
+      ...(typeof payload?.utxoSetHash === 'string' && payload.utxoSetHash.trim()
+        ? {}
+        : contextFromRepo?.utxoSetHash
+        ? { utxoSetHash: contextFromRepo.utxoSetHash }
+        : {}),
+    };
+
+    if (!mergedPayload?.txId) {
       console.warn('[NIP46-TLM][UI] openCoSignRequest aborted: missing payload.txId', {
         itemId: item.id,
         payload,
+        itemTxId: item.txId,
+        invoiceThreadKey: item.invoiceThreadKey,
+        contextFromRepo,
       });
       return;
     }
 
     const psbtBase64 =
-      typeof payload.psbtBase64 === 'string' && payload.psbtBase64
-        ? payload.psbtBase64
-        : typeof payload.psbtHex === 'string' && payload.psbtHex
-        ? nostrMessaging.psbtHexToBase64(payload.psbtHex)
+      typeof mergedPayload.psbtBase64 === 'string' && mergedPayload.psbtBase64
+        ? mergedPayload.psbtBase64
+        : typeof mergedPayload.psbtHex === 'string' && mergedPayload.psbtHex
+        ? nostrMessaging.psbtHexToBase64(mergedPayload.psbtHex)
         : '';
 
     // "Regular" co-signing: a native BTC send fan-out (e.g. from MobileNostrPairing's
@@ -1574,26 +1722,26 @@ const KeyshareChat: React.FC = () => {
     // until its 45s timeout. Recognize this shape and route it to the send_btc responder
     // flow instead of silently failing. `requestMode` is an explicit sender-chosen signal
     // (e.g. BoldChrome's DKLS/PSBT toggle) that takes priority over the implicit inference.
-    const amountSatsNum = Number(payload.amountSats);
+    const amountSatsNum = Number(mergedPayload.amountSats);
     const hasRegularSendShape =
-      typeof payload.recipientAddress === 'string' &&
-      payload.recipientAddress.trim() !== '' &&
-      payload.recipientAddress !== 'N/A' &&
+      typeof mergedPayload.recipientAddress === 'string' &&
+      mergedPayload.recipientAddress.trim() !== '' &&
+      mergedPayload.recipientAddress !== 'N/A' &&
       Number.isFinite(amountSatsNum) &&
       amountSatsNum > 0;
     const isRegularSendRequest =
-      payload.requestMode === 'dkls'
+      mergedPayload.requestMode === 'dkls'
         ? hasRegularSendShape
         : !psbtBase64 && hasRegularSendShape;
 
     if (!psbtBase64 && !isRegularSendRequest) {
       console.warn('[NIP46-TLM][UI] openCoSignRequest aborted: no PSBT and not regular send shape', {
         itemId: item.id,
-        txId: payload.txId,
-        requestMode: payload.requestMode,
-        recipientAddress: payload.recipientAddress,
-        amountSats: payload.amountSats,
-        feeSats: payload.feeSats,
+        txId: mergedPayload.txId,
+        requestMode: mergedPayload.requestMode,
+        recipientAddress: mergedPayload.recipientAddress,
+        amountSats: mergedPayload.amountSats,
+        feeSats: mergedPayload.feeSats,
       });
       setError('This co-sign request did not contain a usable PSBT payload.');
       return;
@@ -1631,7 +1779,7 @@ const KeyshareChat: React.FC = () => {
       senderNpub: msg?.senderNpub || item.senderNpub,
       senderFingerprint: msg?.envelope.senderFingerprint || item.senderFingerprint,
       recipientFingerprint: msg?.envelope.recipientFingerprint || 'peer-group',
-      request: payload,
+      request: mergedPayload,
       envelopeId: msg?.envelope.id || item.id,
       receivedAt: Date.now(),
     });
@@ -1644,8 +1792,8 @@ const KeyshareChat: React.FC = () => {
       senderNpub: item.senderNpub,
       isRegularSendRequest,
       psbtPrefix: psbtBase64.slice(0, 16),
-      initiatorTxId: payload.txId,
-      cosignTraceId: payload.traceId,
+      initiatorTxId: mergedPayload.txId,
+      cosignTraceId: mergedPayload.traceId,
     });
 
     if (isRegularSendRequest) {
@@ -1657,31 +1805,31 @@ const KeyshareChat: React.FC = () => {
       });
       navigation.navigate('Nostr Connect', {
         mode: 'send_btc',
-        toAddress: payload.recipientAddress,
+        toAddress: mergedPayload.recipientAddress,
         satoshiAmount: String(Math.trunc(amountSatsNum)),
         satoshiFees: String(
-          Math.max(0, Math.trunc(Number(payload.feeSats) || 0)),
+          Math.max(0, Math.trunc(Number(mergedPayload.feeSats) || 0)),
         ),
-        network: payload.network || 'mainnet',
+        network: mergedPayload.network || 'mainnet',
         // Carry the initiator's txId/traceId so both devices' native signing
         // sessions and chat status updates correlate to the same request.
-        initiatorTxId: payload.txId,
-        cosignTraceId: payload.traceId,
+        initiatorTxId: mergedPayload.txId,
+        cosignTraceId: mergedPayload.traceId,
         // Carry initiator-native transaction construction context so the
         // responder signs identical inputs/outputs for DKLS rounds.
         utxosJson:
-          typeof payload.utxosJson === 'string' ? payload.utxosJson : undefined,
+          typeof mergedPayload.utxosJson === 'string' ? mergedPayload.utxosJson : undefined,
         changeAddress:
-          typeof payload.changeAddress === 'string'
-            ? payload.changeAddress
+          typeof mergedPayload.changeAddress === 'string'
+            ? mergedPayload.changeAddress
             : undefined,
         addressType:
-          typeof payload.senderAddressType === 'string'
-            ? payload.senderAddressType
+          typeof mergedPayload.senderAddressType === 'string'
+            ? mergedPayload.senderAddressType
             : undefined,
         derivationPath:
-          typeof payload.senderDerivationPath === 'string'
-            ? payload.senderDerivationPath
+          typeof mergedPayload.senderDerivationPath === 'string'
+            ? mergedPayload.senderDerivationPath
             : undefined,
         // We are responding to someone else's request, not originating one —
         // MobileNostrPairing must resolve its own addressType/derivationPath
@@ -1701,8 +1849,8 @@ const KeyshareChat: React.FC = () => {
         sharedPsbtBase64: psbtBase64,
         // Carry the initiator's txId/traceId so both devices' native signing
         // sessions and chat status updates correlate to the same request.
-        initiatorTxId: payload.txId,
-        cosignTraceId: payload.traceId,
+        initiatorTxId: mergedPayload.txId,
+        cosignTraceId: mergedPayload.traceId,
         // We are responding to someone else's request, not originating one —
         // PSBTScreen must not treat this device as the waiting initiator.
         isPeerResponse: true,
@@ -1838,78 +1986,135 @@ const KeyshareChat: React.FC = () => {
         <View
           style={[
             styles.chatListWrap,
-            threads.length <= 1 ? styles.chatListWrapCompact : null,
+            totalThreads <= 1 ? styles.chatListWrapCompact : null,
           ]}
         >
-          {threads.length === 0 ? (
+          {totalThreads === 0 ? (
             <AppText style={styles.emptyList}>No conversations yet.</AppText>
           ) : (
-            <FlatList
-              data={threads}
-              keyExtractor={(item: ThreadSummary) => item.id}
+            <ScrollView
               keyboardShouldPersistTaps="always"
-              scrollEnabled={threads.length > 1}
               nestedScrollEnabled
               showsVerticalScrollIndicator={false}
-              renderItem={({ item }: { item: ThreadSummary }) => {
-                const active = activeChatId === item.chatId;
-                return (
-                  <AppPressable
-                    style={[styles.threadRow, active ? styles.threadRowActive : null]}
-                    onPress={() => openThreadRow(item)}
-                    hitSlop={6}
-                    pressRetentionOffset={14}
-                  >
-                    <View style={styles.threadAvatarWrap}>
-                      <View style={styles.threadAvatar}>
-                        <AppText style={styles.threadAvatarText}>{item.title.slice(0, 2).toUpperCase()}</AppText>
-                      </View>
-                      <View style={[styles.threadOnlineDot, item.online ? styles.dotOnline : styles.dotOffline]} />
-                    </View>
-
-                    <View style={styles.threadMain}>
-                      <View style={styles.threadTopLine}>
-                        <AppText style={styles.threadTitle} numberOfLines={1}>
-                          {item.title}
-                        </AppText>
-                        <AppText style={styles.threadTime}>{formatThreadClock(item.timestamp)}</AppText>
-                      </View>
-
-                      <View style={styles.threadBottomLine}>
-                        <AppText style={styles.threadPreview} numberOfLines={1}>
-                          {item.preview}
-                        </AppText>
-                        <View style={styles.threadBadges}>
-                          {item.kind === 'invoice' ? (
-                            <AppText
-                              style={[
-                                styles.progressBadge,
-                                item.thresholdProgressState === 'met'
-                                  ? styles.progressBadgeMet
-                                  : item.thresholdProgressState === 'partial'
-                                  ? styles.progressBadgePartial
-                                  : styles.progressBadgeNone,
-                              ]}
-                            >
-                              {item.thresholdProgress}
-                            </AppText>
-                          ) : null}
-                          <AppText style={styles.slotBadge}>
-                            {peerMap.get(item.npub)?.slotLabel || 'S?'}
-                          </AppText>
-                          {item.pinned ? <AppText style={styles.pinBadge}>PIN</AppText> : null}
-                          {item.unreadCount > 0 ? (
-                            <View style={styles.unreadBadge}>
-                              <AppText style={styles.unreadBadgeText}>{item.unreadCount}</AppText>
-                            </View>
-                          ) : null}
+              contentContainerStyle={styles.threadSectionsWrap}
+            >
+              <View style={styles.threadSection}>
+                <AppText style={styles.threadSectionTitle}>Key Management / Shares</AppText>
+                {peerThreads.length === 0 ? (
+                  <AppText style={styles.threadSectionEmpty}>No keyshare conversations yet.</AppText>
+                ) : (
+                  peerThreads.map(item => {
+                    const active = activeChatId === item.chatId;
+                    return (
+                      <AppPressable
+                        key={item.id}
+                        style={[styles.threadRow, active ? styles.threadRowActive : null]}
+                        onPress={() => openThreadRow(item)}
+                        hitSlop={6}
+                        pressRetentionOffset={14}
+                      >
+                        <View style={styles.threadAvatarWrap}>
+                          <View style={styles.threadAvatar}>
+                            <AppText style={styles.threadAvatarText}>{item.title.slice(0, 2).toUpperCase()}</AppText>
+                          </View>
+                          <View style={[styles.threadOnlineDot, item.online ? styles.dotOnline : styles.dotOffline]} />
                         </View>
-                      </View>
-                    </View>
-                  </AppPressable>
-                );
-              }}
-            />
+
+                        <View style={styles.threadMain}>
+                          <View style={styles.threadTopLine}>
+                            <AppText style={styles.threadTitle} numberOfLines={1}>
+                              {item.title}
+                            </AppText>
+                            <AppText style={styles.threadTime}>{formatThreadClock(item.timestamp)}</AppText>
+                          </View>
+
+                          <View style={styles.threadBottomLine}>
+                            <AppText style={styles.threadPreview} numberOfLines={1}>
+                              {item.preview}
+                            </AppText>
+                            <View style={styles.threadBadges}>
+                              <AppText style={styles.slotBadge}>
+                                {peerMap.get(item.npub)?.slotLabel || 'S?'}
+                              </AppText>
+                              {item.unreadCount > 0 ? (
+                                <View style={styles.unreadBadge}>
+                                  <AppText style={styles.unreadBadgeText}>{item.unreadCount}</AppText>
+                                </View>
+                              ) : null}
+                            </View>
+                          </View>
+                        </View>
+                      </AppPressable>
+                    );
+                  })
+                )}
+              </View>
+
+              <View style={styles.threadSection}>
+                <AppText style={styles.threadSectionTitle}>Co-Sign Requests</AppText>
+                {invoiceThreads.length === 0 ? (
+                  <AppText style={styles.threadSectionEmpty}>No co-sign requests yet.</AppText>
+                ) : (
+                  invoiceThreads.map(item => {
+                    const active = activeChatId === item.chatId;
+                    return (
+                      <AppPressable
+                        key={item.id}
+                        style={[styles.threadRow, active ? styles.threadRowActive : null]}
+                        onPress={() => openThreadRow(item)}
+                        hitSlop={6}
+                        pressRetentionOffset={14}
+                      >
+                        <View style={styles.threadAvatarWrap}>
+                          <View style={styles.threadAvatar}>
+                            <AppText style={styles.threadAvatarText}>{item.title.slice(0, 2).toUpperCase()}</AppText>
+                          </View>
+                          <View style={[styles.threadOnlineDot, item.online ? styles.dotOnline : styles.dotOffline]} />
+                        </View>
+
+                        <View style={styles.threadMain}>
+                          <View style={styles.threadTopLine}>
+                            <AppText style={styles.threadTitle} numberOfLines={1}>
+                              {item.title}
+                            </AppText>
+                            <AppText style={styles.threadTime}>{formatThreadClock(item.timestamp)}</AppText>
+                          </View>
+
+                          <View style={styles.threadBottomLine}>
+                            <AppText style={styles.threadPreview} numberOfLines={1}>
+                              {item.preview}
+                            </AppText>
+                            <View style={styles.threadBadges}>
+                              <AppText
+                                style={[
+                                  styles.progressBadge,
+                                  item.thresholdProgressState === 'met'
+                                    ? styles.progressBadgeMet
+                                    : item.thresholdProgressState === 'partial'
+                                    ? styles.progressBadgePartial
+                                    : styles.progressBadgeNone,
+                                ]}
+                              >
+                                {item.thresholdProgress}
+                              </AppText>
+                              <AppText style={styles.slotBadge}>
+                                {peerMap.get(item.npub)?.slotLabel || 'S?'}
+                              </AppText>
+                              {item.pinned ? <AppText style={styles.pinBadge}>PIN</AppText> : null}
+                              {item.unreadCount > 0 ? (
+                                <View style={styles.unreadBadge}>
+                                  <AppText style={styles.unreadBadgeText}>{item.unreadCount}</AppText>
+                                </View>
+                              ) : null}
+                            </View>
+                          </View>
+                        </View>
+                      </AppPressable>
+                    );
+                  })
+                )}
+              </View>
+            </ScrollView>
           )}
         </View>
       )}
@@ -1971,6 +2176,29 @@ const createStyles = (theme: any) =>
     },
     chatListWrapCompact: {
       maxHeight: 92,
+    },
+    threadSectionsWrap: {
+      paddingHorizontal: 2,
+      paddingBottom: 8,
+      gap: 8,
+    },
+    threadSection: {
+      gap: 4,
+    },
+    threadSectionTitle: {
+      color: '#9fb5d1',
+      fontSize: 11,
+      fontFamily: theme.fontFamilies?.bold,
+      letterSpacing: 0.4,
+      textTransform: 'uppercase',
+      marginLeft: 8,
+      marginTop: 4,
+    },
+    threadSectionEmpty: {
+      color: '#8fa2ba',
+      fontSize: 12,
+      marginLeft: 8,
+      marginVertical: 6,
     },
     emptyList: {
       color: '#97a6bb',

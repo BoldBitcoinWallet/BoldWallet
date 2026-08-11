@@ -41,6 +41,8 @@ export interface CoSignRequestPayload {
   senderDerivationPath?: string;
   senderAddressType?: string;
   signingNpubsCSV?: string;
+  targetSigners?: string[];
+  requiredSignerCount?: number;
   txTemplateHash?: string;
   utxoSetHash?: string;
 }
@@ -103,6 +105,7 @@ export interface Nip46IncomingResponse {
 type NativeServiceEvent = {
   roomHash: string;
   type: string;
+  eventId?: string;
   traceId?: string;
   txId?: string;
   senderNpub?: string;
@@ -110,7 +113,17 @@ type NativeServiceEvent = {
   receivedAt?: number;
 };
 
-const DEFAULT_RELAYS = ['wss://relay.damus.io', 'wss://nos.lol'];
+type SeenInboundEntry = {
+  ts: number;
+};
+
+const DEFAULT_RELAYS = [
+  'wss://bbw-nostr.xyz',
+  'wss://nostr.hifish.org',
+  'wss://nostr.mom',
+  'wss://relay.damus.io',
+  'wss://nos.lol',
+];
 
 function randomId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -192,18 +205,33 @@ function shouldPersistEnvelopeType(type: NostrMessageType): boolean {
   );
 }
 
+function normalizeMaybeString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
 class NostrMessagingService {
   private listeners = new Set<(msg: NostrIncomingMessage) => void>();
   private nip46RequestListeners = new Set<(msg: Nip46IncomingRequest) => void>();
   private nip46ResponseListeners = new Set<(msg: Nip46IncomingResponse) => void>();
   private stateListeners = new Set<(state: NostrConnectionState) => void>();
   private connectionState: NostrConnectionState = 'disconnected';
+  private connectPromise: Promise<void> | null = null;
+  private seenInboundEvents = new Map<string, SeenInboundEntry>();
   private localNpub = '';
   private roomHash = '';
   private peerNpubs: string[] = [];
   private nativeBridgeSubscription?: EmitterSubscription;
   private routedEventSubscription?: EmitterSubscription;
   private relays: string[] = [...DEFAULT_RELAYS];
+
+  private roomPolicy(): NostrServiceRoomPolicy {
+    return {
+      reconnectInitialMs: 500,
+      reconnectMaxMs: 5000,
+      heartbeatEveryMs: 10000,
+      heartbeatTimeoutMs: 45000,
+    };
+  }
 
   getConnectionState(): NostrConnectionState {
     return this.connectionState;
@@ -246,43 +274,49 @@ class NostrMessagingService {
     if (this.connectionState === 'connected') {
       return;
     }
-
-    this.setConnectionState('connecting');
-    await this.ensureIdentity();
-    this.attachNativeListeners();
-
-    let nextRelays = relays;
-    if (!nextRelays || nextRelays.length === 0) {
-      try {
-        nextRelays = await getNostrRelays(false);
-      } catch {
-        nextRelays = DEFAULT_RELAYS;
-      }
+    if (this.connectPromise) {
+      return this.connectPromise;
     }
-    this.relays = Array.from(new Set((nextRelays || DEFAULT_RELAYS).map(r => r.trim()).filter(Boolean)));
 
-    const relaysCSV = this.relays.join(',');
-    const peersCSV = this.peerNpubs.join(',');
+    this.connectPromise = (async () => {
+      this.setConnectionState('connecting');
+      await this.ensureIdentity();
+      this.attachNativeListeners();
 
-    const policy: NostrServiceRoomPolicy = {
-      reconnectInitialMs: 500,
-      reconnectMaxMs: 5000,
-      heartbeatEveryMs: 10000,
-      heartbeatTimeoutMs: 45000,
-    };
+      let nextRelays = relays;
+      if (!nextRelays || nextRelays.length === 0) {
+        try {
+          nextRelays = await getNostrRelays(false);
+        } catch {
+          nextRelays = DEFAULT_RELAYS;
+        }
+      }
+      this.relays = Array.from(new Set((nextRelays || DEFAULT_RELAYS).map(r => r.trim()).filter(Boolean)));
 
-    await TssProvider.nostrServiceStart(
-      relaysCSV,
-      peersCSV,
-      this.roomHash,
-      policy,
-    );
-    await TssProvider.nostrServiceSubscribe(this.roomHash);
-    this.setConnectionState('connected');
+      const relaysCSV = this.relays.join(',');
+      const peersCSV = this.peerNpubs.join(',');
+      const policy = this.roomPolicy();
+
+      await TssProvider.nostrServiceStart(
+        relaysCSV,
+        peersCSV,
+        this.roomHash,
+        policy,
+      );
+      await TssProvider.nostrServiceSubscribe(this.roomHash);
+      this.setConnectionState('connected');
+    })();
+
+    try {
+      await this.connectPromise;
+    } finally {
+      this.connectPromise = null;
+    }
   }
 
   disconnect(): void {
     const activeRoom = this.roomHash;
+    this.connectPromise = null;
     this.detachNativeListeners();
     this.setConnectionState('disconnected');
     if (activeRoom) {
@@ -294,11 +328,113 @@ class NostrMessagingService {
 
   async sendEnvelope<T>(recipientNpubOrNpubs: string | string[], envelope: NostrEnvelope<T>): Promise<void> {
     await this.ensureReadyForPublish(recipientNpubOrNpubs);
+    await this.ensureHealthyTransportBeforePublish();
     this.persistOutgoingMessage(
       Array.isArray(recipientNpubOrNpubs) ? recipientNpubOrNpubs[0] || '' : recipientNpubOrNpubs,
       envelope,
     );
-    await TssProvider.nostrServicePublish(this.roomHash, envelope);
+    try {
+      await TssProvider.nostrServicePublish(this.roomHash, envelope);
+    } catch (err) {
+      if (!this.isRecoverablePublishError(err)) {
+        throw err;
+      }
+
+      dbg('[NIP46-TLM][NostrMessaging] publish failed with recoverable transport error; attempting reconnect and retry', {
+        roomHash: this.roomHash,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+
+      await this.reconnectWithRelayFallback();
+      await TssProvider.nostrServicePublish(this.roomHash, envelope);
+    }
+  }
+
+  private isRecoverablePublishError(err: unknown): boolean {
+    const msg = String(err instanceof Error ? err.message : err || '').toLowerCase();
+    if (!msg) return false;
+    return (
+      msg.includes('heartbeat timeout') ||
+      msg.includes('pool closed') ||
+      msg.includes('failed to connect') ||
+      msg.includes('websocket') ||
+      msg.includes('context cancelled') ||
+      msg.includes('all relays failed')
+    );
+  }
+
+  private async reconnectWithRelayFallback(): Promise<void> {
+    await this.ensureIdentity();
+
+    const relayCandidates: string[][] = [];
+    const currentRelays = Array.from(new Set(this.relays.map(r => r.trim()).filter(Boolean)));
+    if (currentRelays.length > 0) {
+      relayCandidates.push(currentRelays);
+    }
+
+    try {
+      const dynamicRelays = await getNostrRelays(true);
+      const filtered = Array.from(new Set((dynamicRelays || []).map(r => String(r || '').trim()).filter(Boolean)));
+      if (filtered.length > 0) {
+        relayCandidates.push(filtered);
+      }
+    } catch (fetchErr) {
+      dbg('[NIP46-TLM][NostrMessaging] failed to fetch dynamic fallback relays', fetchErr);
+    }
+
+    const defaultRelays = Array.from(new Set(DEFAULT_RELAYS.map(r => r.trim()).filter(Boolean)));
+    if (defaultRelays.length > 0) {
+      relayCandidates.push(defaultRelays);
+    }
+
+    const normalizedSets = relayCandidates
+      .map(set => Array.from(new Set(set.map(r => r.trim()).filter(Boolean))))
+      .filter(set => set.length > 0);
+
+    const uniqueSets: string[][] = [];
+    const seenSetKeys = new Set<string>();
+    for (const set of normalizedSets) {
+      const key = set.join(',');
+      if (seenSetKeys.has(key)) continue;
+      seenSetKeys.add(key);
+      uniqueSets.push(set);
+    }
+
+    if (uniqueSets.length === 0) {
+      throw new Error('No relay sets available for reconnect fallback');
+    }
+
+    this.setConnectionState('connecting');
+    const peersCSV = this.peerNpubs.join(',');
+    const policy = this.roomPolicy();
+    const failures: string[] = [];
+
+    for (const relaySet of uniqueSets) {
+      const relaysCSV = relaySet.join(',');
+      try {
+        await TssProvider.nostrServiceStop(this.roomHash).catch(() => undefined);
+        await TssProvider.nostrServiceStart(relaysCSV, peersCSV, this.roomHash, policy);
+        await TssProvider.nostrServiceSubscribe(this.roomHash);
+        this.relays = relaySet;
+        this.setConnectionState('connected');
+        dbg('[NIP46-TLM][NostrMessaging] reconnect fallback succeeded', {
+          roomHash: this.roomHash,
+          relays: relaySet,
+        });
+        return;
+      } catch (reconnectErr) {
+        const reason = reconnectErr instanceof Error ? reconnectErr.message : String(reconnectErr);
+        failures.push(`${relaysCSV} => ${reason}`);
+        dbg('[NIP46-TLM][NostrMessaging] reconnect fallback attempt failed', {
+          roomHash: this.roomHash,
+          relays: relaySet,
+          reason,
+        });
+      }
+    }
+
+    this.setConnectionState('degraded');
+    throw new Error(`Unable to reconnect Nostr service after publish failure: ${failures.join(' | ')}`);
   }
 
   async sendCoSignRequest(
@@ -481,6 +617,29 @@ class NostrMessagingService {
     }
   }
 
+  private async ensureHealthyTransportBeforePublish(): Promise<void> {
+    if (this.connectionState === 'degraded') {
+      dbg('[NIP46-TLM][NostrMessaging] pre-publish health check detected degraded state; reconnecting');
+      await this.reconnectWithRelayFallback();
+      return;
+    }
+
+    // Lightweight preflight probe: if room subscription validation fails,
+    // recover before attempting to publish payload chunks.
+    try {
+      await TssProvider.nostrServiceSubscribe(this.roomHash);
+    } catch (probeErr) {
+      if (!this.isRecoverablePublishError(probeErr)) {
+        throw probeErr;
+      }
+      dbg('[NIP46-TLM][NostrMessaging] pre-publish subscription probe failed; reconnecting with relay fallback', {
+        roomHash: this.roomHash,
+        reason: probeErr instanceof Error ? probeErr.message : String(probeErr),
+      });
+      await this.reconnectWithRelayFallback();
+    }
+  }
+
   private consumeServiceEvent(event: NativeServiceEvent, source: 'native' | 'routed'): void {
     if (!event || typeof event !== 'object') return;
 
@@ -519,11 +678,16 @@ class NostrMessagingService {
       : {};
 
     const envelope = this.coerceEnvelope(eventType as NostrMessageType, payloadObject, event);
+    const resolvedSenderNpub = this.resolveSenderNpub(event, payloadObject, envelope);
+    const stableEventId = this.buildStableInboundEventId(event, envelope, payloadObject, eventType);
+    if (this.shouldDropInboundEvent(stableEventId)) {
+      return;
+    }
     const msg: NostrIncomingMessage = {
       envelope,
-      senderNpub: event.senderNpub || '',
+      senderNpub: resolvedSenderNpub,
       relayUrl: source,
-      eventId: `${event.roomHash || 'room'}:${String(event.receivedAt || Date.now())}:${eventType}`,
+      eventId: stableEventId,
     };
 
     this.persistIncomingMessage(msg);
@@ -555,6 +719,142 @@ class NostrMessagingService {
     for (const listener of this.listeners) {
       listener(msg);
     }
+  }
+
+  private resolveSenderNpub(
+    event: NativeServiceEvent,
+    payloadObject: Record<string, unknown>,
+    envelope: NostrEnvelope,
+  ): string {
+    const directSender = normalizeMaybeString(event.senderNpub);
+    if (directSender) {
+      return directSender;
+    }
+
+    const envelopeSender = normalizeMaybeString((envelope as any).senderNpub);
+    if (envelopeSender) {
+      return envelopeSender;
+    }
+
+    const payloadSender = normalizeMaybeString(payloadObject.senderNpub);
+    if (payloadSender) {
+      return payloadSender;
+    }
+
+    const nestedPayload =
+      envelope.payload && typeof envelope.payload === 'object'
+        ? (envelope.payload as Record<string, unknown>)
+        : {};
+    const nestedSender = normalizeMaybeString(nestedPayload.senderNpub);
+    if (nestedSender) {
+      return nestedSender;
+    }
+
+    const fingerprintCandidates = [
+      normalizeMaybeString(payloadObject.senderFingerprint),
+      normalizeMaybeString((envelope as any).senderFingerprint),
+      normalizeMaybeString(nestedPayload.senderFingerprint),
+    ].filter(Boolean);
+
+    for (const candidate of fingerprintCandidates) {
+      const resolved = this.resolveKnownNpubFromFingerprint(candidate);
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    return '';
+  }
+
+  private resolveKnownNpubFromFingerprint(fingerprint: string): string {
+    const normalized = normalizeMaybeString(fingerprint);
+    if (!normalized || normalized === 'native') {
+      return '';
+    }
+
+    if (normalized.startsWith('npub1')) {
+      return normalized;
+    }
+
+    const knownNpubs = Array.from(
+      new Set([this.localNpub, ...this.peerNpubs].map(v => String(v || '').trim()).filter(Boolean)),
+    );
+    for (const npub of knownNpubs) {
+      if (npub === normalized) {
+        return npub;
+      }
+      if (
+        normalized.length >= 8 &&
+        npub.startsWith(normalized.slice(0, 4)) &&
+        npub.endsWith(normalized.slice(-4))
+      ) {
+        return npub;
+      }
+    }
+
+    return '';
+  }
+
+  private buildStableInboundEventId(
+    event: NativeServiceEvent,
+    envelope: NostrEnvelope,
+    payloadObject: Record<string, unknown>,
+    eventType: string,
+  ): string {
+    const room = String(event.roomHash || this.roomHash || 'room').trim();
+    const envelopeId = String(envelope.id || '').trim();
+    const txId =
+      typeof payloadObject.txId === 'string'
+        ? payloadObject.txId.trim()
+        : typeof event.txId === 'string'
+        ? event.txId.trim()
+        : '';
+    const traceId =
+      typeof payloadObject.traceId === 'string'
+        ? payloadObject.traceId.trim()
+        : typeof event.traceId === 'string'
+        ? event.traceId.trim()
+        : '';
+    const sender = String(event.senderNpub || '').trim();
+
+    if (event.eventId && String(event.eventId).trim()) {
+      return `${room}:evt:${String(event.eventId).trim()}`;
+    }
+    if (envelopeId) {
+      return `${room}:env:${envelopeId}`;
+    }
+    if (txId) {
+      return `${room}:tx:${txId}:trace:${traceId}:type:${eventType}:sender:${sender}`;
+    }
+
+    return `${room}:fallback:${eventType}:${sender}:${JSON.stringify(payloadObject)}`;
+  }
+
+  private shouldDropInboundEvent(stableEventId: string): boolean {
+    const key = String(stableEventId || '').trim();
+    if (!key) return false;
+    const now = Date.now();
+    const ttlMs = 12_000;
+    const prev = this.seenInboundEvents.get(key);
+    if (prev && now - prev.ts <= ttlMs) {
+      return true;
+    }
+    this.seenInboundEvents.set(key, {ts: now});
+
+    if (this.seenInboundEvents.size > 4000) {
+      const cutoff = now - ttlMs;
+      for (const [id, entry] of this.seenInboundEvents.entries()) {
+        if (entry.ts < cutoff) {
+          this.seenInboundEvents.delete(id);
+        }
+      }
+      if (this.seenInboundEvents.size > 4000) {
+        this.seenInboundEvents.clear();
+        this.seenInboundEvents.set(key, {ts: now});
+      }
+    }
+
+    return false;
   }
 
   private coerceEnvelope(

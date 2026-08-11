@@ -18,6 +18,8 @@ import (
 const (
 	bridgeEventPrefix       = "NOSTR_SERVICE_EVENT:"
 	staleRoomTTL            = 15 * time.Minute
+	roomInboundDedupeTTL    = 8 * time.Second
+	maxRoomInboundDedupeIDs = 4096
 	defaultReconnectInitial = 500 * time.Millisecond
 	defaultReconnectMax     = 5 * time.Second
 	defaultHeartbeatEvery   = 10 * time.Second
@@ -105,6 +107,8 @@ type roomSession struct {
 	staleState  atomic.Int32
 	retryMu     sync.Mutex
 	retryDelay  time.Duration
+	seenMu      sync.Mutex
+	seenInbound map[string]int64
 }
 
 func (r *roomSession) touch() {
@@ -141,6 +145,39 @@ func (r *roomSession) idleFor(now time.Time) time.Duration {
 		return 0
 	}
 	return now.Sub(time.UnixMilli(last))
+}
+
+func (r *roomSession) shouldDropInbound(raw []byte) bool {
+	now := time.Now().UnixMilli()
+	key := inboundDedupeKey(raw)
+	if key == "" {
+		return false
+	}
+
+	r.seenMu.Lock()
+	defer r.seenMu.Unlock()
+
+	if prev, ok := r.seenInbound[key]; ok {
+		if now-prev <= roomInboundDedupeTTL.Milliseconds() {
+			return true
+		}
+	}
+	r.seenInbound[key] = now
+
+	if len(r.seenInbound) > maxRoomInboundDedupeIDs {
+		cutoff := now - roomInboundDedupeTTL.Milliseconds()
+		for k, ts := range r.seenInbound {
+			if ts < cutoff {
+				delete(r.seenInbound, k)
+			}
+		}
+		if len(r.seenInbound) > maxRoomInboundDedupeIDs {
+			r.seenInbound = make(map[string]int64)
+			r.seenInbound[key] = now
+		}
+	}
+
+	return false
 }
 
 // Service is the singleton Nostr transport orchestrator.
@@ -213,6 +250,7 @@ func (s *Service) StartRoom(input RoomConfig) error {
 		messenger:   messenger,
 		pump:        pump,
 		subscribers: make(map[uint64]chan Event),
+		seenInbound: make(map[string]int64),
 		lastTouch:   time.Now(),
 		retryDelay:  policy.ReconnectInitial,
 	}
@@ -331,8 +369,32 @@ func (s *Service) PublishMessage(roomHash string, payload interface{}) error {
 	ctx, cancel := context.WithTimeout(room.ctx, room.cfg.MaxTimeout)
 	defer cancel()
 
+	targetSigners := extractTargetSigners(body)
+	peerTargets := room.cfg.PeersNpub
+	if len(targetSigners) > 0 {
+		allow := make(map[string]struct{}, len(targetSigners))
+		for _, signer := range targetSigners {
+			allow[strings.TrimSpace(signer)] = struct{}{}
+		}
+		filtered := make([]string, 0, len(room.cfg.PeersNpub))
+		for _, peer := range room.cfg.PeersNpub {
+			if _, ok := allow[strings.TrimSpace(peer)]; ok {
+				filtered = append(filtered, peer)
+			}
+		}
+		if len(filtered) > 0 {
+			peerTargets = filtered
+		}
+		tss.Logf("[NIP46-TLM][NostrService] target signer routing room=%s selected=%d peers=%d", roomID, len(filtered), len(room.cfg.PeersNpub))
+	}
+
+	if len(peerTargets) == 0 {
+		return fmt.Errorf("no target peers available for publish")
+	}
+
 	var firstErr error
-	for _, peer := range room.cfg.PeersNpub {
+	successCount := 0
+	for _, peer := range peerTargets {
 		if err := room.messenger.SendMessage(ctx, room.cfg.LocalNpub, peer, string(body)); err != nil {
 			if firstErr == nil {
 				firstErr = err
@@ -340,10 +402,14 @@ func (s *Service) PublishMessage(roomHash string, payload interface{}) error {
 			tss.Logf("[NIP46-TLM][NostrService] publish failed room=%s peer=%s err=%v", roomID, shortRef(peer), err)
 			continue
 		}
+		successCount++
 		tss.Logf("[NIP46-TLM][NostrService] published room=%s peer=%s", roomID, shortRef(peer))
 	}
-	if firstErr != nil {
+	if successCount == 0 && firstErr != nil {
 		return firstErr
+	}
+	if firstErr != nil {
+		tss.Logf("[NIP46-TLM][NostrService] partial publish success room=%s success=%d total=%d", roomID, successCount, len(peerTargets))
 	}
 
 	s.mu.Lock()
@@ -351,6 +417,51 @@ func (s *Service) PublishMessage(roomHash string, payload interface{}) error {
 		current.touch()
 	}
 	s.mu.Unlock()
+	return nil
+}
+
+func extractTargetSigners(payload []byte) []string {
+	trimmed := strings.TrimSpace(string(payload))
+	if trimmed == "" {
+		return nil
+	}
+
+	var root map[string]interface{}
+	if err := json.Unmarshal(payload, &root); err != nil {
+		return nil
+	}
+
+	collect := func(raw interface{}) []string {
+		arr, ok := raw.([]interface{})
+		if !ok {
+			return nil
+		}
+		out := make([]string, 0, len(arr))
+		for _, v := range arr {
+			s, ok := v.(string)
+			if !ok {
+				continue
+			}
+			t := strings.TrimSpace(s)
+			if t == "" {
+				continue
+			}
+			out = append(out, t)
+		}
+		return out
+	}
+
+	if direct := collect(root["targetSigners"]); len(direct) > 0 {
+		return direct
+	}
+
+	payloadObj, ok := root["payload"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	if nested := collect(payloadObj["targetSigners"]); len(nested) > 0 {
+		return nested
+	}
 	return nil
 }
 
@@ -363,6 +474,10 @@ func (s *Service) runRoomLoop(room *roomSession) {
 		}
 
 		err := room.pump.Run(room.ctx, func(raw []byte) error {
+			if room.shouldDropInbound(raw) {
+				tss.Logf("[NIP46-TLM][NostrService] dropped duplicate inbound frame room=%s", room.id)
+				return nil
+			}
 			room.markEventSeen()
 			evt := decodeEventPayload(room.id, raw)
 			s.broadcast(room.id, evt)
@@ -659,4 +774,36 @@ func serviceEvent(roomHash string, eventType string, payload interface{}) Event 
 		Payload:    raw,
 		ReceivedAt: time.Now().UnixMilli(),
 	}
+}
+
+func inboundDedupeKey(raw []byte) string {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" {
+		return ""
+	}
+
+	var root map[string]interface{}
+	if err := json.Unmarshal(raw, &root); err == nil {
+		if id, ok := root["id"].(string); ok && strings.TrimSpace(id) != "" {
+			return "env:" + strings.TrimSpace(id)
+		}
+		if payload, ok := root["payload"].(map[string]interface{}); ok {
+			if id, ok := payload["id"].(string); ok && strings.TrimSpace(id) != "" {
+				return "payload-env:" + strings.TrimSpace(id)
+			}
+			if txID, ok := payload["txId"].(string); ok && strings.TrimSpace(txID) != "" {
+				trace, _ := payload["traceId"].(string)
+				typ, _ := root["type"].(string)
+				return fmt.Sprintf("tx:%s:trace:%s:type:%s", strings.TrimSpace(txID), strings.TrimSpace(trace), strings.TrimSpace(typ))
+			}
+		}
+		if txID, ok := root["txId"].(string); ok && strings.TrimSpace(txID) != "" {
+			trace, _ := root["traceId"].(string)
+			typ, _ := root["type"].(string)
+			return fmt.Sprintf("tx:%s:trace:%s:type:%s", strings.TrimSpace(txID), strings.TrimSpace(trace), strings.TrimSpace(typ))
+		}
+	}
+
+	h := sha256.Sum256([]byte(trimmed))
+	return "raw:" + hex.EncodeToString(h[:])
 }

@@ -129,25 +129,24 @@ func publishNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room, attemptI
 	if err := messenger.SendMessage(ctx, localNpub, peerNpub, attemptID); err != nil {
 		return fmt.Errorf("failed to publish attempt id: %w", err)
 	}
-	// Sliding-window re-announce: if the responder's subscription missed the
-	// first publish (dropped/delayed relay message), keep re-sending every 10s
-	// for the rest of the window instead of a single fire-and-forget burst.
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ticker.C:
-				if err := messenger.SendMessage(ctx, localNpub, peerNpub, attemptID); err != nil {
-					Logf("[NIP46-TLM][PreAgreement] %s publishNostrAttemptID: re-announce failed: %v", time.Now().Format(time.RFC3339), err)
-					continue
-				}
-				Logf("[NIP46-TLM][PreAgreement] %s publishNostrAttemptID: re-announced attempt_id=%s relays=%v", time.Now().Format(time.RFC3339), attemptID, cfg.Relays)
-			case <-ctx.Done():
-				return
-			}
+	// Bounded in-function re-announces: the previous goroutine-based retry loop
+	// was canceled immediately when this function returned (deferred ctx cancel +
+	// deferred client close), so only one publish was effectively sent. Keep the
+	// client/context alive for a short burst to survive subscribe-bind races.
+	reannounceCount := 3
+	reannounceEvery := 1500 * time.Millisecond
+	for i := 0; i < reannounceCount; i++ {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("attempt publish canceled before re-announce: %w", ctx.Err())
+		case <-time.After(reannounceEvery):
 		}
-	}()
+		if err := messenger.SendMessage(ctx, localNpub, peerNpub, attemptID); err != nil {
+			Logf("[NIP46-TLM][PreAgreement] %s publishNostrAttemptID: re-announce %d/%d failed: %v", time.Now().Format(time.RFC3339), i+1, reannounceCount, err)
+			continue
+		}
+		Logf("[NIP46-TLM][PreAgreement] %s publishNostrAttemptID: re-announced %d/%d attempt_id=%s relays=%v", time.Now().Format(time.RFC3339), i+1, reannounceCount, attemptID, cfg.Relays)
+	}
 	Logf("[NIP46-TLM][PreAgreement] %s publishNostrAttemptID: published attempt_id=%s room=%s", time.Now().Format(time.RFC3339), attemptID, room)
 	return nil
 }

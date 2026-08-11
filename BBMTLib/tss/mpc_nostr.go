@@ -698,6 +698,7 @@ func NostrMpcSendBTCWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted
 // It performs pre-agreement internally to establish sessionID and unified fees.
 func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, _, keyshareJSON, derivePath, publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64, changeAddress, initiatorNpubHint string) (result string, err error) {
 	defer RecoverAsError("runNostrMpcSendBTCInternal", &err, &result)
+	npubsSorted = normalizeSigningNpubsCSV(npubsSorted)
 	if changeAddress == "" {
 		changeAddress = senderAddress
 	}
@@ -1190,6 +1191,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 // runNostrMpcSendBTCInternalWithUTXOs implements multi-path Nostr MPC send using pre-fetched UTXOs.
 func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, _, keyshareJSON, receiverAddress string, amountSatoshi, estimatedFee int64, utxosWithPathsJSON, changeAddress, initiatorNpubHint string) (result string, err error) {
 	defer RecoverAsError("runNostrMpcSendBTCInternalWithUTXOs", &err, &result)
+	npubsSorted = normalizeSigningNpubsCSV(npubsSorted)
 
 	if _, err := beginNostrMpcOperation(); err != nil {
 		return "", err
