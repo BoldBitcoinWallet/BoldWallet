@@ -126,7 +126,15 @@ const DEFAULT_RELAYS = [
 ];
 
 const CRITICAL_MPC_DEFER_TTL_MS = 45_000;
-const CRITICAL_MPC_MAX_STALE_IDLE_MS = 15_000;
+const PENDING_COSIGN_DEFER_TTL_MS = 90_000;
+const SUBSCRIPTION_REFRESH_THROTTLE_MS = 4_000;
+const STALE_AUTO_RECOVER_COOLDOWN_MS = 20_000;
+const STALE_AUTO_RECOVER_MIN_IDLE_MS = 18_000;
+const STALE_AUTO_RECOVER_MIN_PUBLISH_GAP_MS = 5_000;
+const STANDARD_HEARTBEAT_TIMEOUT_MS = 30_000;
+const MPC_ACTIVE_HEARTBEAT_TIMEOUT_MS = 60_000;
+const COSIGN_REQUEST_DEDUP_TTL_MS = 10 * 60_000;
+const MAX_COSIGN_REQUEST_DEDUP_KEYS = 4000;
 
 function randomId(): string {
   return `msg-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -226,12 +234,153 @@ class NostrMessagingService {
   private nativeBridgeSubscription?: EmitterSubscription;
   private routedEventSubscription?: EmitterSubscription;
   private mpcStateSubscription?: EmitterSubscription;
+  private coSignStatusSubscription?: EmitterSubscription;
   private relays: string[] = [...DEFAULT_RELAYS];
   private reconnectPromise: Promise<void> | null = null;
   private lastReconnectAtMs = 0;
   private lastStaleHeartbeatLogAtMs = 0;
   private activeCriticalMpcTxDeadlinesMs = new Map<string, number>();
+  private activePendingCoSignTxDeadlinesMs = new Map<string, number>();
   private lastDeferredRoomStaleLogAtMs = 0;
+  private lastSubscriptionRefreshAtMs = new Map<string, number>();
+  private lastStaleAutoRecoverAtMs = 0;
+  private lastPublishAttemptAtMs = 0;
+  private seenCoSignRequestMessageKeys = new Map<string, number>();
+  private seenCoSignRequestIntentKeys = new Map<string, number>();
+  private coSignRequestMessageKeysByTxId = new Map<string, Set<string>>();
+  private coSignRequestIntentKeysByTxId = new Map<string, Set<string>>();
+  private currentHeartbeatTimeoutMs = STANDARD_HEARTBEAT_TIMEOUT_MS;
+
+  private pruneCoSignRequestDedupCache(now = Date.now()): void {
+    const cutoff = now - COSIGN_REQUEST_DEDUP_TTL_MS;
+
+    for (const [key, ts] of this.seenCoSignRequestMessageKeys.entries()) {
+      if (ts < cutoff) {
+        this.seenCoSignRequestMessageKeys.delete(key);
+      }
+    }
+    for (const [key, ts] of this.seenCoSignRequestIntentKeys.entries()) {
+      if (ts < cutoff) {
+        this.seenCoSignRequestIntentKeys.delete(key);
+      }
+    }
+
+    if (this.seenCoSignRequestMessageKeys.size > MAX_COSIGN_REQUEST_DEDUP_KEYS) {
+      const overflow = this.seenCoSignRequestMessageKeys.size - MAX_COSIGN_REQUEST_DEDUP_KEYS;
+      let i = 0;
+      for (const key of this.seenCoSignRequestMessageKeys.keys()) {
+        this.seenCoSignRequestMessageKeys.delete(key);
+        i += 1;
+        if (i >= overflow) break;
+      }
+    }
+    if (this.seenCoSignRequestIntentKeys.size > MAX_COSIGN_REQUEST_DEDUP_KEYS) {
+      const overflow = this.seenCoSignRequestIntentKeys.size - MAX_COSIGN_REQUEST_DEDUP_KEYS;
+      let i = 0;
+      for (const key of this.seenCoSignRequestIntentKeys.keys()) {
+        this.seenCoSignRequestIntentKeys.delete(key);
+        i += 1;
+        if (i >= overflow) break;
+      }
+    }
+  }
+
+  private rememberCoSignRequestDedupKey(
+    txId: string,
+    messageKey: string,
+    intentKey: string,
+    now = Date.now(),
+  ): void {
+    this.seenCoSignRequestMessageKeys.set(messageKey, now);
+    this.seenCoSignRequestIntentKeys.set(intentKey, now);
+
+    const messageSet = this.coSignRequestMessageKeysByTxId.get(txId) || new Set<string>();
+    messageSet.add(messageKey);
+    this.coSignRequestMessageKeysByTxId.set(txId, messageSet);
+
+    const intentSet = this.coSignRequestIntentKeysByTxId.get(txId) || new Set<string>();
+    intentSet.add(intentKey);
+    this.coSignRequestIntentKeysByTxId.set(txId, intentSet);
+  }
+
+  private cleanupCoSignRequestDedupForTx(txId: string): void {
+    const id = String(txId || '').trim();
+    if (!id) return;
+
+    const messageSet = this.coSignRequestMessageKeysByTxId.get(id);
+    if (messageSet) {
+      for (const key of messageSet) {
+        this.seenCoSignRequestMessageKeys.delete(key);
+      }
+      this.coSignRequestMessageKeysByTxId.delete(id);
+    }
+
+    const intentSet = this.coSignRequestIntentKeysByTxId.get(id);
+    if (intentSet) {
+      for (const key of intentSet) {
+        this.seenCoSignRequestIntentKeys.delete(key);
+      }
+      this.coSignRequestIntentKeysByTxId.delete(id);
+    }
+  }
+
+  private shouldDropDuplicateCoSignRequest(
+    envelope: NostrEnvelope,
+    payloadObject: Record<string, unknown>,
+    event: NativeServiceEvent,
+  ): boolean {
+    const envelopePayload = parseEnvelopePayload(envelope.payload);
+    const txId =
+      normalizeMaybeString(envelopePayload.txId) ||
+      normalizeMaybeString(payloadObject.txId) ||
+      normalizeMaybeString(event.txId);
+    if (!txId) {
+      return false;
+    }
+
+    const traceId =
+      normalizeMaybeString(envelopePayload.traceId) ||
+      normalizeMaybeString(payloadObject.traceId) ||
+      normalizeMaybeString(event.traceId);
+    const senderFingerprint =
+      normalizeMaybeString(envelope.senderFingerprint) ||
+      normalizeMaybeString(payloadObject.senderFingerprint) ||
+      normalizeMaybeString(envelopePayload.senderFingerprint) ||
+      'unknown';
+    const messageKey =
+      normalizeMaybeString(event.eventId) ||
+      normalizeMaybeString(envelope.id) ||
+      `${txId}:${traceId}:msg-fallback`;
+    const intentKey = `${txId}:${traceId}:sender:${senderFingerprint}`;
+
+    const now = Date.now();
+    this.pruneCoSignRequestDedupCache(now);
+
+    const seenMessageAt = this.seenCoSignRequestMessageKeys.get(messageKey);
+    if (seenMessageAt && now - seenMessageAt <= COSIGN_REQUEST_DEDUP_TTL_MS) {
+      dbg('[NIP46-TLM][NostrMessaging] dropping duplicate COSIGN_REQUEST by message key', {
+        txId,
+        traceId: traceId || undefined,
+        messageKey,
+        ageMs: now - seenMessageAt,
+      });
+      return true;
+    }
+
+    const seenIntentAt = this.seenCoSignRequestIntentKeys.get(intentKey);
+    if (seenIntentAt && now - seenIntentAt <= COSIGN_REQUEST_DEDUP_TTL_MS) {
+      dbg('[NIP46-TLM][NostrMessaging] dropping duplicate COSIGN_REQUEST by intent key', {
+        txId,
+        traceId: traceId || undefined,
+        intentKey,
+        ageMs: now - seenIntentAt,
+      });
+      return true;
+    }
+
+    this.rememberCoSignRequestDedupKey(txId, messageKey, intentKey, now);
+    return false;
+  }
 
   private isCriticalMpcInFlight(): boolean {
     const now = Date.now();
@@ -243,12 +392,137 @@ class NostrMessagingService {
     return this.activeCriticalMpcTxDeadlinesMs.size > 0;
   }
 
+  private isPendingCoSignInFlight(): boolean {
+    const now = Date.now();
+    for (const [txId, untilMs] of this.activePendingCoSignTxDeadlinesMs.entries()) {
+      if (untilMs <= now) {
+        this.activePendingCoSignTxDeadlinesMs.delete(txId);
+      }
+    }
+    return this.activePendingCoSignTxDeadlinesMs.size > 0;
+  }
+
+  private shouldThrottleSubscriptionRefresh(reason: string): boolean {
+    const normalizedReason = String(reason || '').trim();
+    if (!normalizedReason) return false;
+
+    const isBridgeRefresh =
+      normalizedReason === 'bridge-legacy-event' ||
+      normalizedReason === 'bridge-ready-event';
+    if (!isBridgeRefresh) {
+      return false;
+    }
+
+    if (!this.isPendingCoSignInFlight()) {
+      return false;
+    }
+
+    const now = Date.now();
+    const key = `reason:${normalizedReason}`;
+    const last = this.lastSubscriptionRefreshAtMs.get(key) || 0;
+    if (now - last < SUBSCRIPTION_REFRESH_THROTTLE_MS) {
+      return true;
+    }
+    this.lastSubscriptionRefreshAtMs.set(key, now);
+    return false;
+  }
+
+  private desiredHeartbeatTimeoutMs(): number {
+    if (this.isCriticalMpcInFlight() || this.isPendingCoSignInFlight()) {
+      return MPC_ACTIVE_HEARTBEAT_TIMEOUT_MS;
+    }
+    return STANDARD_HEARTBEAT_TIMEOUT_MS;
+  }
+
+  private refreshDynamicRoomPolicy(reason: string): void {
+    const desired = this.desiredHeartbeatTimeoutMs();
+    if (desired === this.currentHeartbeatTimeoutMs) {
+      return;
+    }
+    this.currentHeartbeatTimeoutMs = desired;
+    dbg('[NIP46-TLM][NostrMessaging] heartbeat timeout policy updated', {
+      reason,
+      heartbeatTimeoutMs: desired,
+      activeCriticalMpcSessions: this.activeCriticalMpcTxDeadlinesMs.size,
+      activePendingCoSignSessions: this.activePendingCoSignTxDeadlinesMs.size,
+    });
+
+    if (this.connectionState !== 'connected') {
+      return;
+    }
+
+    const now = Date.now();
+    const canRefreshNow =
+      !this.isCriticalMpcInFlight() &&
+      now - this.lastPublishAttemptAtMs > 2_000;
+    if (!canRefreshNow) {
+      return;
+    }
+
+    // Nostr room policy is applied on service start; reconnect once to apply the
+    // new heartbeat timeout without forcing an immediate reconnect race.
+    void this.reconnectWithRelayFallback({
+      force: false,
+      reason: `policy-refresh:${reason}`,
+    }).catch(err => {
+      dbg('[NIP46-TLM][NostrMessaging] policy refresh reconnect failed', {
+        reason,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
+  private shouldAutoRecoverStaleRoom(idleMs?: number): boolean {
+    if (this.isCriticalMpcInFlight()) {
+      return false;
+    }
+
+    const now = Date.now();
+    if (now - this.lastPublishAttemptAtMs < STALE_AUTO_RECOVER_MIN_PUBLISH_GAP_MS) {
+      return false;
+    }
+
+    if (now - this.lastStaleAutoRecoverAtMs < STALE_AUTO_RECOVER_COOLDOWN_MS) {
+      return false;
+    }
+
+    if (typeof idleMs === 'number' && idleMs < STALE_AUTO_RECOVER_MIN_IDLE_MS) {
+      return false;
+    }
+
+    return true;
+  }
+
+  private triggerStaleAutoRecover(reason: string, idleMs?: number): void {
+    if (!this.shouldAutoRecoverStaleRoom(idleMs)) {
+      return;
+    }
+    this.lastStaleAutoRecoverAtMs = Date.now();
+    dbg('[NIP46-TLM][NostrMessaging] stale room auto-recover triggered', {
+      roomHash: this.roomHash,
+      reason,
+      idleMs,
+      activeCriticalMpcSessions: this.activeCriticalMpcTxDeadlinesMs.size,
+      activePendingCoSignSessions: this.activePendingCoSignTxDeadlinesMs.size,
+    });
+    void this.reconnectWithRelayFallback({
+      force: false,
+      reason: `stale-auto-recover:${reason}`,
+    }).catch(err => {
+      dbg('[NIP46-TLM][NostrMessaging] stale room auto-recover failed', {
+        reason,
+        idleMs,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }
+
   private roomPolicy(): NostrServiceRoomPolicy {
     return {
       reconnectInitialMs: 200,
       reconnectMaxMs: 1200,
       heartbeatEveryMs: 1000,
-      heartbeatTimeoutMs: 12000,
+      heartbeatTimeoutMs: this.currentHeartbeatTimeoutMs,
     };
   }
 
@@ -334,6 +608,9 @@ class NostrMessagingService {
   }
 
   async ensureActiveSubscription(reason = 'unspecified'): Promise<void> {
+    if (this.shouldThrottleSubscriptionRefresh(reason)) {
+      return;
+    }
     await this.connect();
     try {
       await TssProvider.nostrServiceSubscribe(this.roomHash);
@@ -374,6 +651,7 @@ class NostrMessagingService {
       envelope,
     );
     try {
+      this.lastPublishAttemptAtMs = Date.now();
       await TssProvider.nostrServicePublish(this.roomHash, envelope);
     } catch (err) {
       if (!this.isRecoverablePublishError(err)) {
@@ -385,12 +663,33 @@ class NostrMessagingService {
         reason: err instanceof Error ? err.message : String(err),
       });
 
+      const forceReconnect = this.shouldForceReconnectOnPublishRetry(err);
+
       await this.reconnectWithRelayFallback({
-        force: true,
-        reason: 'publish-retry',
+        force: forceReconnect,
+        reason: forceReconnect ? 'publish-retry:force' : 'publish-retry:soft',
       });
+      this.lastPublishAttemptAtMs = Date.now();
       await TssProvider.nostrServicePublish(this.roomHash, envelope);
     }
+  }
+
+  private shouldForceReconnectOnPublishRetry(err: unknown): boolean {
+    const msg = String(err instanceof Error ? err.message : err || '').toLowerCase();
+    const severeTransportFailure =
+      msg.includes('all relays failed') ||
+      msg.includes('pool closed') ||
+      msg.includes('failed to connect');
+
+    if (this.isCriticalMpcInFlight()) {
+      return false;
+    }
+
+    if (this.isPendingCoSignInFlight() && !severeTransportFailure) {
+      return false;
+    }
+
+    return severeTransportFailure;
   }
 
   private isRecoverablePublishError(err: unknown): boolean {
@@ -654,10 +953,48 @@ class NostrMessagingService {
               txId,
               Date.now() + CRITICAL_MPC_DEFER_TTL_MS,
             );
+            this.refreshDynamicRoomPolicy(`mpc-state:${state}`);
             return;
           }
 
+          if (state === 'completed' || state === 'failed') {
+            this.cleanupCoSignRequestDedupForTx(txId);
+          }
+
           this.activeCriticalMpcTxDeadlinesMs.delete(txId);
+          this.refreshDynamicRoomPolicy(`mpc-state:${state}`);
+        },
+      );
+    }
+
+    if (!this.coSignStatusSubscription) {
+      this.coSignStatusSubscription = DeviceEventEmitter.addListener(
+        'nostr-cosign:status',
+        (event: any) => {
+          const txId =
+            typeof event?.txId === 'string' ? event.txId.trim() : '';
+          const status =
+            typeof event?.status === 'string' ? event.status.trim() : '';
+          if (!txId) return;
+
+          if (status === 'pending' || status === 'signing') {
+            this.activePendingCoSignTxDeadlinesMs.set(
+              txId,
+              Date.now() + PENDING_COSIGN_DEFER_TTL_MS,
+            );
+            this.refreshDynamicRoomPolicy(`cosign-status:${status}`);
+            return;
+          }
+
+          if (
+            status === 'signed' ||
+            status === 'broadcasted' ||
+            status === 'rejected'
+          ) {
+            this.activePendingCoSignTxDeadlinesMs.delete(txId);
+            this.cleanupCoSignRequestDedupForTx(txId);
+            this.refreshDynamicRoomPolicy(`cosign-status:${status}`);
+          }
         },
       );
     }
@@ -667,10 +1004,19 @@ class NostrMessagingService {
     this.nativeBridgeSubscription?.remove();
     this.routedEventSubscription?.remove();
     this.mpcStateSubscription?.remove();
+    this.coSignStatusSubscription?.remove();
     this.nativeBridgeSubscription = undefined;
     this.routedEventSubscription = undefined;
     this.mpcStateSubscription = undefined;
+    this.coSignStatusSubscription = undefined;
     this.activeCriticalMpcTxDeadlinesMs.clear();
+    this.activePendingCoSignTxDeadlinesMs.clear();
+    this.lastSubscriptionRefreshAtMs.clear();
+    this.seenCoSignRequestMessageKeys.clear();
+    this.seenCoSignRequestIntentKeys.clear();
+    this.coSignRequestMessageKeysByTxId.clear();
+    this.coSignRequestIntentKeysByTxId.clear();
+    this.currentHeartbeatTimeoutMs = STANDARD_HEARTBEAT_TIMEOUT_MS;
   }
 
   private async ensureIdentity(): Promise<void> {
@@ -783,13 +1129,15 @@ class NostrMessagingService {
       const stale = payload.stale === true;
       this.setConnectionState(stale ? 'degraded' : 'connected');
       if (stale) {
+        const idleMs =
+          typeof payload.idleMs === 'number' ? payload.idleMs : undefined;
+        this.triggerStaleAutoRecover('heartbeat', idleMs);
         const now = Date.now();
         if (now - this.lastStaleHeartbeatLogAtMs > 10000) {
           this.lastStaleHeartbeatLogAtMs = now;
           dbg('[NIP46-TLM][NostrMessaging] stale heartbeat observed; deferring reconnect until publish/probe failure', {
             roomHash: this.roomHash,
-            idleMs:
-              typeof payload.idleMs === 'number' ? payload.idleMs : undefined,
+            idleMs,
             heartbeatTimeoutMs:
               typeof payload.heartbeatTimeoutMs === 'number'
                 ? payload.heartbeatTimeoutMs
@@ -811,15 +1159,13 @@ class NostrMessagingService {
           : {};
       const idleMs =
         typeof payload.idleMs === 'number' ? payload.idleMs : undefined;
-      const shouldForceReconnectDuringCriticalMpc =
-        typeof idleMs === 'number' && idleMs >= CRITICAL_MPC_MAX_STALE_IDLE_MS;
 
-      if (this.isCriticalMpcInFlight() && !shouldForceReconnectDuringCriticalMpc) {
+      if (this.isCriticalMpcInFlight()) {
         const now = Date.now();
         if (now - this.lastDeferredRoomStaleLogAtMs > 3000) {
           this.lastDeferredRoomStaleLogAtMs = now;
           dbg(
-            '[NIP46-TLM][NostrMessaging] ROOM_STALE observed during active MPC signing; deferring reconnect until publish/probe failure',
+            '[NIP46-TLM][NostrMessaging] ROOM_STALE observed during active MPC; deferring reconnect to avoid transport desync',
             {
               roomHash: this.roomHash,
               idleMs,
@@ -829,22 +1175,18 @@ class NostrMessagingService {
         }
         return;
       }
-      if (this.isCriticalMpcInFlight() && shouldForceReconnectDuringCriticalMpc) {
+      this.triggerStaleAutoRecover('room-stale', idleMs);
+      const now = Date.now();
+      if (now - this.lastDeferredRoomStaleLogAtMs > 3000) {
+        this.lastDeferredRoomStaleLogAtMs = now;
         dbg(
-          '[NIP46-TLM][NostrMessaging] ROOM_STALE idle exceeded threshold during active MPC; forcing reconnect',
+          '[NIP46-TLM][NostrMessaging] ROOM_STALE observed while idle; keeping room degraded and deferring reconnect until publish/probe failure',
           {
             roomHash: this.roomHash,
             idleMs,
-            activeMpcSessions: this.activeCriticalMpcTxDeadlinesMs.size,
-            thresholdMs: CRITICAL_MPC_MAX_STALE_IDLE_MS,
           },
         );
       }
-      void this.reconnectWithRelayFallback({
-        reason: 'room-stale-event',
-      }).catch(err => {
-        dbg('[NIP46-TLM][NostrMessaging] room stale reconnect failed', err);
-      });
       return;
     }
 
@@ -863,6 +1205,11 @@ class NostrMessagingService {
       : {};
 
     const envelope = this.coerceEnvelope(eventType as NostrMessageType, payloadObject, event);
+    if (eventType === 'COSIGN_REQUEST') {
+      if (this.shouldDropDuplicateCoSignRequest(envelope, payloadObject, event)) {
+        return;
+      }
+    }
     const resolvedSenderNpub = this.resolveSenderNpub(event, payloadObject, envelope);
     const stableEventId = this.buildStableInboundEventId(event, envelope, payloadObject, eventType);
     const semanticEventId = this.buildSemanticInboundEventId(
@@ -1080,7 +1427,13 @@ class NostrMessagingService {
     if (keys.length === 0) return false;
 
     const now = Date.now();
-    const ttlMs = 12_000;
+    const hasCoSignSemantic = keys.some(
+      key =>
+        key.includes('semantic:type:COSIGN_REQUEST') ||
+        key.includes('semantic:type:COSIGN_RESPONSE') ||
+        key.includes('semantic:type:COSIGN_READY'),
+    );
+    const ttlMs = hasCoSignSemantic ? 5 * 60_000 : 12_000;
 
     for (const key of keys) {
       const prev = this.seenInboundEvents.get(key);

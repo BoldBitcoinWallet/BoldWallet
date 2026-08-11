@@ -114,6 +114,10 @@ interface CachedTransactionData {
 }
 export const waitMS = (ms = 2000) =>
   new Promise(resolve => setTimeout(resolve, ms));
+const DERIVATION_YIELD_EVERY = 8;
+const yieldToJsEventLoop = async (): Promise<void> => {
+  await new Promise<void>(resolve => setTimeout(resolve, 0));
+};
 // Add validation functions (exported for address-for-network checks, e.g. QR scan)
 export const validateBitcoinAddressEnhanced = (
   address: string,
@@ -877,6 +881,9 @@ export class WalletService {
     );
     const results: HdAddressWithPath[] = [];
     for (let i = 0; i <= externalEnd; i++) {
+      if (i > 0 && i % DERIVATION_YIELD_EVERY === 0) {
+        await yieldToJsEventLoop();
+      }
       const path = getReceivePath(network, addressType, useLegacyPath, i);
       const pub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
@@ -891,6 +898,9 @@ export class WalletService {
       results.push({address, derivationPath: path, chain: 'receive', index: i});
     }
     for (let i = 0; i <= internalEnd; i++) {
+      if (i > 0 && i % DERIVATION_YIELD_EVERY === 0) {
+        await yieldToJsEventLoop();
+      }
       const path = getChangePath(network, addressType, useLegacyPath, i);
       const pub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
@@ -1138,6 +1148,7 @@ export class WalletService {
       index: number,
       gapIndex: number,
     ) => void,
+    shouldPause?: () => boolean,
   ): Promise<void> {
     dbg('WalletService: discoverHdIndexesForNetwork START', {
       network,
@@ -1187,6 +1198,18 @@ export class WalletService {
     try {
       let consecutiveUnused = 0;
       for (let i = 0; consecutiveUnused < getGapLimit(); i++) {
+        if (shouldPause?.()) {
+          discoveryStatus = 'partial';
+          dbg('WalletService: Restore discovery external paused due active co-sign session', {
+            network,
+            addressType,
+            index: i,
+          });
+          break;
+        }
+        if (i > 0 && i % DERIVATION_YIELD_EVERY === 0) {
+          await yieldToJsEventLoop();
+        }
         const cachedUsed = knownExternal.get(i);
         if (cachedUsed === true) {
           discoveredMaxUsedExternal = i;
@@ -1285,6 +1308,18 @@ export class WalletService {
       try {
         let consecutiveUnused = 0;
         for (let i = 0; consecutiveUnused < getGapLimit(); i++) {
+          if (shouldPause?.()) {
+            discoveryStatus = 'partial';
+            dbg('WalletService: Restore discovery internal paused due active co-sign session', {
+              network,
+              addressType,
+              index: i,
+            });
+            break;
+          }
+          if (i > 0 && i % DERIVATION_YIELD_EVERY === 0) {
+            await yieldToJsEventLoop();
+          }
           const cachedUsed = knownChange.get(i);
           if (cachedUsed === true) {
             discoveredMaxUsedChange = i;

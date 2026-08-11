@@ -659,7 +659,7 @@ async function resolveLocalSendDerivation(
 function waitForCoSignReady(
   txId: string,
   traceId?: string,
-  timeoutMs = 45000,
+  timeoutMs = COSIGN_READY_WAIT_TIMEOUT_MS,
   dispatchCycleId?: string,
 ): Promise<boolean> {
   const waitStartedAt = Date.now();
@@ -702,6 +702,7 @@ function waitForCoSignReady(
 }
 
 const COSIGN_DISPATCH_FAILED_CODE = 'COSIGN_DISPATCH_FAILED';
+const COSIGN_READY_WAIT_TIMEOUT_MS = 120_000;
 
 type CoSignDispatchError = Error & {
   code: typeof COSIGN_DISPATCH_FAILED_CODE;
@@ -3180,7 +3181,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           const peerReady = await waitForCoSignReady(
             cosignFanOutTxId,
             cosignFanOutTraceId,
-            45000,
+            COSIGN_READY_WAIT_TIMEOUT_MS,
             dispatchCycleId,
           );
           console.warn('[NIP46-TLM][Await] send flow readiness wait completed', {
@@ -3886,7 +3887,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         const peerReady = await waitForCoSignReady(
           cosignFanOutTxId,
           cosignFanOutTraceId,
-          45000,
+          COSIGN_READY_WAIT_TIMEOUT_MS,
           dispatchCycleId,
         );
         if (nostrAbortRef.current) {

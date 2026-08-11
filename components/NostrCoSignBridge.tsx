@@ -435,6 +435,12 @@ const NostrCoSignBridge = ({ isAuthenticated, isNavigationReady = true, navigati
         },
       });
 
+      DeviceEventEmitter.emit('nostr-cosign:status', {
+        mode: 'legacy',
+        txId: payload.txId,
+        status: 'pending',
+      });
+
       notifyCoSignRequest(payload.txId);
     });
 

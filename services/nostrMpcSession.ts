@@ -451,6 +451,17 @@ class NostrMpcSessionService {
       return Promise.resolve(true);
     }
 
+    const existing = this.sessions.get(txId);
+    if (existing && STATE_RANK[existing.state] >= STATE_RANK.computing_nonces) {
+      dbg('[NIP46-TLM][MpcSession] fast-path peer-ready hit from session state', {
+        txId,
+        expectedTraceId: expected || undefined,
+        sessionState: existing.state,
+        sessionTraceId: existing.traceId,
+      });
+      return Promise.resolve(true);
+    }
+
     return new Promise(resolve => {
       const entry: Waiter = {
         expectedTraceId: expected || undefined,

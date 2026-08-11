@@ -91,22 +91,56 @@ class SyncCoordinator {
     typeof AppState.addEventListener
   > | null = null;
   private _mpcStateSubscription: EmitterSubscription | null = null;
+  private _coSignStatusSubscription: EmitterSubscription | null = null;
   private _activeMpcTxIds = new Set<string>();
+  private _activePendingCoSignTxDeadlinesMs = new Map<string, number>();
   private _lastMpcPauseLogAt = 0;
   private _running = false;
+  private _syncTaskInFlight = false;
+  private _syncDeferredForResume = false;
+
+  private _isCoSignActive(): boolean {
+    return this._isMpcInFlight() || this._isPendingCoSignInFlight();
+  }
+
+  private _requestSyncResume(reason: string): void {
+    if (!this._running) return;
+    if (this._isCoSignActive()) return;
+    dbg('SyncCoordinator: co-sign session cleared, requesting sync resume', {
+      reason,
+    });
+    this._syncDeferredForResume = true;
+    if (this._syncTaskInFlight) {
+      return;
+    }
+    void this._syncAll();
+  }
 
   private _isMpcInFlight(): boolean {
     return this._activeMpcTxIds.size > 0;
   }
 
+  private _isPendingCoSignInFlight(): boolean {
+    const now = Date.now();
+    for (const [txId, untilMs] of this._activePendingCoSignTxDeadlinesMs.entries()) {
+      if (untilMs <= now) {
+        this._activePendingCoSignTxDeadlinesMs.delete(txId);
+      }
+    }
+    return this._activePendingCoSignTxDeadlinesMs.size > 0;
+  }
+
   private _shouldPauseForMpc(syncLabel: string): boolean {
-    if (!this._isMpcInFlight()) return false;
+    const activeMpc = this._isMpcInFlight();
+    const activePending = this._isPendingCoSignInFlight();
+    if (!activeMpc && !activePending) return false;
     const now = Date.now();
     if (now - this._lastMpcPauseLogAt > 10_000) {
       this._lastMpcPauseLogAt = now;
       dbg('SyncCoordinator: pausing sync while co-sign is active', {
         syncLabel,
-        activeCoSignSessions: this._activeMpcTxIds.size,
+        activeMpcSessions: this._activeMpcTxIds.size,
+        activePendingCoSignSessions: this._activePendingCoSignTxDeadlinesMs.size,
       });
     }
     return true;
@@ -139,6 +173,38 @@ class SyncCoordinator {
           return;
         }
         this._activeMpcTxIds.delete(txId);
+        if (
+          state === 'completed' ||
+          state === 'failed' ||
+          state === 'idle'
+        ) {
+          this._requestSyncResume(`mpc-state:${state}`);
+        }
+      },
+    );
+
+    this._coSignStatusSubscription = DeviceEventEmitter.addListener(
+      'nostr-cosign:status',
+      payload => {
+        const txId =
+          typeof payload?.txId === 'string' ? payload.txId.trim() : '';
+        const status =
+          typeof payload?.status === 'string' ? payload.status.trim() : '';
+        if (!txId) return;
+
+        if (status === 'pending' || status === 'signing') {
+          this._activePendingCoSignTxDeadlinesMs.set(txId, Date.now() + 90_000);
+          return;
+        }
+
+        if (
+          status === 'signed' ||
+          status === 'broadcasted' ||
+          status === 'rejected'
+        ) {
+          this._activePendingCoSignTxDeadlinesMs.delete(txId);
+          this._requestSyncResume(`cosign-status:${status}`);
+        }
       },
     );
 
@@ -214,13 +280,24 @@ class SyncCoordinator {
       this._mpcStateSubscription.remove();
       this._mpcStateSubscription = null;
     }
+    if (this._coSignStatusSubscription) {
+      this._coSignStatusSubscription.remove();
+      this._coSignStatusSubscription = null;
+    }
     this._activeMpcTxIds.clear();
+    this._activePendingCoSignTxDeadlinesMs.clear();
     dbg('SyncCoordinator: stopped');
   }
 
   // ── Private helpers ────────────────────────────────────────────────────────
 
   private async _syncAll(forceHdDiscovery = false): Promise<void> {
+    if (this._syncTaskInFlight) {
+      this._syncDeferredForResume = true;
+      return;
+    }
+    this._syncTaskInFlight = true;
+    try {
     if (this._shouldPauseForMpc('all')) return;
 
     // HD discovery first — may expand the address set for subsequent syncs
@@ -235,6 +312,17 @@ class SyncCoordinator {
     await this._syncTxs();
 
     this._config?.onSyncComplete?.();
+    } finally {
+      this._syncTaskInFlight = false;
+      if (
+        this._running &&
+        this._syncDeferredForResume &&
+        !this._isCoSignActive()
+      ) {
+        this._syncDeferredForResume = false;
+        void this._syncAll();
+      }
+    }
   }
 
   private async _syncHdDiscovery(force = false): Promise<void> {
@@ -271,6 +359,7 @@ class SyncCoordinator {
             } addresses…`,
           });
         },
+        () => this._isCoSignActive(),
       );
       this._config.onSyncStatus?.(null);
 
@@ -320,6 +409,7 @@ class SyncCoordinator {
           derivationPath: a.derivationPath,
         })),
       );
+      if (this._isCoSignActive()) return;
       const entries: BalanceEntry[] = sorted.map(a => ({
         address: a.address,
         network: a.network,
@@ -351,6 +441,10 @@ class SyncCoordinator {
         })),
       );
       for (const {address, network: net} of sorted) {
+        if (this._isCoSignActive()) {
+          dbg('SyncCoordinator: stopping tx sync early for active co-sign session');
+          return;
+        }
         await transactionSyncer.syncAddress(
           address,
           net,
@@ -402,6 +496,7 @@ class SyncCoordinator {
         network: a.network,
         derivationPath: a.derivationPath ?? undefined,
       }));
+      if (this._isCoSignActive()) return;
       await utxoSyncer.syncAddresses(entries, this._config.apiBase);
     } catch (err) {
       dbg('SyncCoordinator: utxo sync error', err);
