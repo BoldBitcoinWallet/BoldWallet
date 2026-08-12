@@ -47,6 +47,9 @@ import {
   sortMempoolTransactionsForDisplay as sortTxs,
   getMempoolTransactionAmounts,
 } from '../utils/transactionListUtils';
+
+import { ActiveTxVisualizer } from './TransactionVisualizer';
+
 // Add icon imports
 const inIcon = require('../assets/in-icon.png');
 const outIcon = require('../assets/out-icon.png');
@@ -288,6 +291,7 @@ const TransactionList = React.forwardRef<
     const isMounted = useRef(true);
     const abortController = useRef<AbortController | null>(null);
     const isRefreshingRef = useRef(false);
+    const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
     /** When true, next sync uses full `addresses` (e.g. after long-press rebuild). */
     const useFullSyncOnceRef = useRef(false);
     const ourAddresses = useMemo(
@@ -1347,6 +1351,39 @@ const TransactionList = React.forwardRef<
         marginRight: 4,
         tintColor: appTheme.colors.textSecondary, // Use theme secondary text color for link icon
       },
+        transactionItemExpanded: {
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+        borderBottomWidth: 0,
+        backgroundColor: appTheme.colors.background === '#ffffff'
+          ? appTheme.colors.blackOverlay05
+          : appTheme.colors.whiteOverlay10,
+      },
+      visualizerDropdown: {
+        paddingHorizontal: 10,
+        paddingBottom: 10,
+        backgroundColor: appTheme.colors.background === '#ffffff'
+          ? appTheme.colors.blackOverlay05
+          : appTheme.colors.whiteOverlay10,
+        borderBottomLeftRadius: 10,
+        borderBottomRightRadius: 10,
+        borderWidth: 1,
+        borderTopWidth: 0,
+        borderColor: appTheme.colors.background === '#ffffff'
+            ? appTheme.colors.blackOverlay05
+            : appTheme.colors.border + '40',
+        marginBottom: 3,
+        marginTop: -3, // Pull it up slightly to attach seamlessly to the card above
+      },
+      expandedVisualizerContainer: {
+      marginTop: 12,
+      paddingTop: 12,
+      borderTopWidth: 1,
+      borderColor: appTheme.colors.background === '#ffffff'
+        ? 'rgba(0,0,0,0.05)'
+        : 'rgba(255,255,255,0.08)',
+      width: '100%',
+    },
     });
     // Memoized render item with currency support
     const renderItem = useCallback(
@@ -1464,42 +1501,49 @@ const TransactionList = React.forwardRef<
               ? getFiatAmount(sent)
               : getFiatAmount(received)
             : null;
+        const isExpanded = expandedTxId === item.txid;
         return (
-          <AppPressable
-            style={({pressed}) => [
-              styles.transactionItem,
-              pressed && styles.transactionItemPressed,
-            ]}
-            onPress={() => {
-              setSelectedTransaction(item);
-              setIsDetailsModalVisible(true);
-            }}
-            android_ripple={{
-              color:
-                appTheme.colors.background === '#ffffff'
-                  ? 'rgba(0,0,0,0.15)'
-                  : 'rgba(255,255,255,0.15)',
-              borderless: false,
-            }}>
-            <View style={styles.transactionRow}>
-              <View style={styles.statusContainer}>
-                <AnimatedStatusIcon
-                  source={finalIcon}
-                  style={styles.statusIcon}
-                  animationType={
-                    confirmed
-                      ? 'none'
-                      : isConsolidation
-                      ? 'consolidate'
-                      : isRebalancing
-                      ? 'rebalance'
-                      : status.includes('Sen')
-                      ? 'send'
-                      : 'receive'
-                  }
-                />
-                <Text style={styles.status}>{finalStatus}</Text>
-              </View>
+        <AppPressable
+          style={({pressed}) => [
+            styles.transactionItem,
+            pressed && styles.transactionItemPressed,
+          ]}
+          onPress={() => {
+            // Toggle expand/collapse
+            setExpandedTxId(isExpanded ? null : item.txid);
+          }}
+          onLongPress={() => {
+            setSelectedTransaction(item);
+            setIsDetailsModalVisible(true);
+          }}
+          android_ripple={{
+            color:
+              appTheme.colors.background === '#ffffff'
+                ? 'rgba(0,0,0,0.15)'
+                : 'rgba(255,255,255,0.15)',
+            borderless: false,
+          }}>
+          
+          {/* 1. TOP ROW: Status and Amount */}
+          <View style={styles.transactionRow}>
+            <View style={styles.statusContainer}>
+            <AnimatedStatusIcon
+                source={finalIcon}
+                style={styles.statusIcon}
+                animationType={
+                  confirmed
+                    ? 'none'
+                    : isConsolidation
+                    ? 'consolidate'
+                    : isRebalancing
+                    ? 'rebalance'
+                    : status.includes('Sen')
+                    ? 'send'
+                    : 'receive'
+                }
+              />
+              <Text style={styles.status}>{finalStatus}</Text>
+            </View>
               <Text
                 style={[
                   styles.amount,
@@ -1512,11 +1556,13 @@ const TransactionList = React.forwardRef<
                       } // Dark mode: use bitcoin orange
                     : {color: themes.cryptoVibrant.colors.secondary}, // Original: #00D2B8
                 ]}>
-                {isBlurred ? '***' : info}
-              </Text>
-            </View>
-            {relevantAddress && (
-              <View style={styles.addressRow}>
+              {isBlurred ? '***' : info}
+            </Text>
+          </View>
+
+          {/* 2. MIDDLE ROW: Addresses and Fiat (if present) */}
+          {relevantAddress && (
+            <View style={styles.addressRow}>
                 <View style={styles.addressContainer}>
                   <Text style={styles.address}>
                     {status.includes('Sen') ? 'To: ' : 'Fr: '}
@@ -1549,24 +1595,41 @@ const TransactionList = React.forwardRef<
                     ? `${getCurrencySymbol(selectedCurrency)}${fiatAmount}`
                     : '—'}
                 </Text>
-              </View>
-            )}
-            <View style={styles.transactionRow}>
-              <View style={styles.txIdContainer}>
-                <Text style={styles.txId}>
-                  Tx:
-                  <Text style={styles.txText}> {shortTxId}</Text>
-                </Text>
-              </View>
-              <Text style={styles.timestamp}>{timestamp}</Text>
             </View>
-          </AppPressable>
+          )}
+
+          {/* 3. BOTTOM ROW: TxID and Timestamp */}
+          <View style={styles.transactionRow}>
+            <View style={styles.txIdContainer}>
+              <Text style={styles.txId}>
+                Tx:<Text style={styles.txText}> {shortTxId}</Text>
+              </Text>
+            </View>
+            <Text style={styles.timestamp}>{timestamp}</Text>
+          </View>
+
+          {/* 4. EXPANDED VISUALIZER (Placed INSIDE the card) */}
+          {isExpanded && (
+            <View style={styles.expandedVisualizerContainer}>
+              <ActiveTxVisualizer
+                txid={item.txid}
+                network={network as 'mainnet' | 'testnet'}
+                initialPhase={item.status?.confirmed ? 'confirmed' : 'mempool'}
+                explorerBaseUrl={baseApi}
+                compact={true}
+                onPhaseChange={() => {}}
+              />
+            </View>
+          )}
+
+        </AppPressable>
         );
       },
       [
         getTransactionStatus,
         getTransactionAmounts,
         address,
+        expandedTxId,
         addresses,
         isMultiAddress,
         isOurAddress,
@@ -1621,6 +1684,7 @@ const TransactionList = React.forwardRef<
           style={styles.list}
           contentContainerStyle={styles.listContent}
           data={transactions}
+          extraData={expandedTxId}
           renderItem={renderItem}
           contentInsetAdjustmentBehavior="never"
           keyExtractor={item => {

@@ -336,6 +336,35 @@ export interface Styles {
   walletInfoRow: ViewStyle;
   walletInfoKeyItem: ViewStyle;
   walletInfoHint: TextStyle;
+  containerTransaction: ViewStyle;
+  containerCompact: ViewStyle;
+  trackLabelRow: ViewStyle;
+  trackLabel: TextStyle;
+  walletLabel: TextStyle;
+  validatedLabel: TextStyle;
+  visualTrack: ViewStyle;
+  sigGroup: ViewStyle;
+  sigCircle: ViewStyle;
+  sigText: TextStyle;
+  progressWrapper: ViewStyle;
+  progressFill: ViewStyle;
+  progressLaunched: ViewStyle;
+  progressInCube: ViewStyle;
+  cubeGraphic: ViewStyle;
+  nodeRow: ViewStyle;
+  chainNode: ViewStyle;
+  chainNodeHot: ViewStyle;
+  validatedBlock: ViewStyle;
+  statusPanel: ViewStyle;
+  statusPanelCompact: ViewStyle;
+  centered: ViewStyle;
+  statusText: TextStyle;
+  statusTextConfirmed: TextStyle;
+  errorText: TextStyle;
+  retryBtn: ViewStyle;
+  retryBtnText: TextStyle;
+  txidPill: ViewStyle;
+  txidText: TextStyle;
 }
 export const createStyles = (theme: Theme): Styles => ({
   actionButton: {
@@ -2150,5 +2179,170 @@ export const createStyles = (theme: Theme): Styles => ({
       theme.colors.background === '#ffffff'
         ? theme.colors.accent
         : theme.colors.bitcoinOrange,
+  },
+  containerTransaction: {
+    width: '100%',
+    minHeight: 240,
+    backgroundColor: '#090a0f',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    padding: 20,
+    justifyContent: 'space-between',
+  },
+  containerCompact: {
+    minHeight: 214,
+    padding: 14,
+  },
+  trackLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+  },
+  trackLabel: {
+    fontSize: 10,
+    letterSpacing: 1.2,
+    color: '#7b7b7b',
+    fontWeight: '600',
+  },
+  walletLabel: {
+    color: '#ffd700',
+  },
+  validatedLabel: {
+    color: '#22ff88',
+  },
+  visualTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+  },
+  sigGroup: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  sigCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+    // RN Shadows
+    shadowColor: '#00ffcc',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  sigText: {
+    fontSize: 9,
+    fontWeight: '700',
+  },
+  progressWrapper: {
+    flex: 1,
+    height: 4,
+    backgroundColor: 'rgba(0, 255, 170, 0.15)',
+    borderRadius: 2,
+    marginHorizontal: 12,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#00ffaa', 
+    borderRadius: 2,
+  },
+  progressLaunched: {
+    shadowColor: '#00ffaa',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  progressInCube: {
+    shadowColor: '#00ffcc',
+    shadowOpacity: 0.8,
+  },
+  cubeGraphic: {
+    minWidth: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  nodeRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  chainNode: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#2f3a3a',
+    backgroundColor: '#161616',
+  },
+  chainNodeHot: {
+    borderColor: '#00ffcc',
+    shadowColor: '#00ffcc',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  validatedBlock: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusPanel: {
+    height: 84,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  statusPanelCompact: {
+    height: 70,
+  },
+  centered: {
+    alignItems: 'center',
+  },
+  statusText: {
+    fontSize: 12,
+    color: '#888888',
+  },
+  statusTextConfirmed: {
+    color: '#22ff88',
+    textShadowColor: 'rgba(34, 255, 136, 0.6)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 6,
+  },
+  errorText: {
+    fontSize: 11,
+    color: '#ff4444',
+    marginBottom: 6,
+  },
+  retryBtn: {
+    borderWidth: 1,
+    borderColor: 'rgba(255, 215, 0, 0.35)',
+    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    borderRadius: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  retryBtnText: {
+    color: '#ffd700',
+    fontSize: 10,
+  },
+  txidPill: {
+    borderWidth: 1,
+    borderColor: 'rgba(0, 255, 204, 0.35)',
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  txidText: {
+    fontFamily: 'monospace',
+    fontSize: 10,
+    color: '#00ffcc',
   },
 });
