@@ -47,6 +47,9 @@ import {
   sortMempoolTransactionsForDisplay as sortTxs,
   getMempoolTransactionAmounts,
 } from '../utils/transactionListUtils';
+
+import { ActiveTxVisualizer } from './TransactionVisualizer';
+
 // Add icon imports
 const inIcon = require('../assets/in-icon.png');
 const outIcon = require('../assets/out-icon.png');
@@ -288,6 +291,7 @@ const TransactionList = React.forwardRef<
     const isMounted = useRef(true);
     const abortController = useRef<AbortController | null>(null);
     const isRefreshingRef = useRef(false);
+    const [expandedTxId, setExpandedTxId] = useState<string | null>(null);
     /** When true, next sync uses full `addresses` (e.g. after long-press rebuild). */
     const useFullSyncOnceRef = useRef(false);
     const ourAddresses = useMemo(
@@ -1347,6 +1351,66 @@ const TransactionList = React.forwardRef<
         marginRight: 4,
         tintColor: appTheme.colors.textSecondary, // Use theme secondary text color for link icon
       },
+        transactionItemExpanded: {
+        borderBottomLeftRadius: 0,
+        borderBottomRightRadius: 0,
+        borderBottomWidth: 0,
+        backgroundColor: appTheme.colors.background === '#ffffff'
+          ? appTheme.colors.blackOverlay05
+          : appTheme.colors.whiteOverlay10,
+      },
+      visualizerDropdown: {
+        paddingHorizontal: 10,
+        paddingBottom: 10,
+        backgroundColor: appTheme.colors.background === '#ffffff'
+          ? appTheme.colors.blackOverlay05
+          : appTheme.colors.whiteOverlay10,
+        borderBottomLeftRadius: 10,
+        borderBottomRightRadius: 10,
+        borderWidth: 1,
+        borderTopWidth: 0,
+        borderColor: appTheme.colors.background === '#ffffff'
+            ? appTheme.colors.blackOverlay05
+            : appTheme.colors.border + '40',
+        marginBottom: 3,
+        marginTop: -3, // Pull it up slightly to attach seamlessly to the card above
+      },
+      expandedVisualizerContainer: {
+        marginTop: 12,
+        paddingTop: 12,
+        borderTopWidth: 1,
+        borderColor: appTheme.colors.background === '#ffffff' ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.08)',
+        width: '100%',
+      },
+    merchantIconWrap: {
+        position: 'relative',
+        width: 24,
+        height: 24,
+        marginRight: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      merchantIcon: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+      },
+      merchantCheckBadge: {
+        position: 'absolute',
+        bottom: -2,
+        right: -2,
+        backgroundColor: '#00ffaa',
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      merchantCheckText: {
+        fontSize: 6,
+        fontWeight: '900',
+        color: '#000',
+      },
     });
     // Memoized render item with currency support
     const renderItem = useCallback(
@@ -1364,11 +1428,12 @@ const TransactionList = React.forwardRef<
             : 'Recently confirmed'
           : 'Pending confirmation';
         const shortTxId = `${item.txid.slice(0, 3)}…${item.txid.slice(-3)}`;
+
         // Get the relevant address(es) based on transaction type
         let relevantAddresses: string[] = [];
         let relevantAddress: string | null = null;
-        if (status.includes('Sen')) {
-          // For sent transactions: collect ALL recipient addresses (outputs that aren't ours)
+        if (status.includes('Sen') || status.includes('Paying')) {
+          // For sent/paying transactions: collect ALL recipient addresses (outputs that aren't ours)
           relevantAddresses =
             item?.vout
               ?.filter(
@@ -1385,13 +1450,18 @@ const TransactionList = React.forwardRef<
               (input: any) =>
                 !isOurAddress(input.prevout?.scriptpubkey_address || ''),
             )?.prevout?.scriptpubkey_address || null;
-          // Set empty array for received transactions (not used in display)
           relevantAddresses = [];
         }
+
+      
         // Look up merchant label for the relevant address (Branta verification cache)
         const merchantLabel = relevantAddress
           ? merchantLabelRepository.getByAddress(relevantAddress)
           : null;
+
+        // Extract platform name and logo if a verified Branta merchant matches
+        const merchantName = merchantLabel?.platform;
+        const merchantLogo = merchantLabel?.logoUrl ? { uri: merchantLabel.logoUrl } : null;
         // Follow global BTC/sats toggle (WalletHome)
         // sent === 0: all outputs landed on our own addresses — self-directed tx.
         // Distinguish by number of internal outputs:
@@ -1420,7 +1490,10 @@ const TransactionList = React.forwardRef<
               inSats: showSats,
               formatted: balanceFormattingEnabled,
             })}`;
-        const finalStatus = isConsolidation
+        // --- UPDATED FINAL STATUS FOR BRANTA ---
+        const finalStatus = merchantName
+          ? (confirmed ? `Sent to ${merchantName}` : `Paying ${merchantName}`)
+          : isConsolidation
           ? confirmed
             ? 'Consolidated'
             : 'Consolidating'
@@ -1429,7 +1502,10 @@ const TransactionList = React.forwardRef<
             ? 'Rebalanced'
             : 'Rebalancing'
           : status;
-        const finalIcon = isSelfTransfer
+        // --- UPDATED FINAL ICON FOR BRANTA ---
+        const finalIcon = merchantLogo
+          ? merchantLogo
+          : isSelfTransfer
           ? confirmed
             ? consolidateIcon
             : pendingIcon
@@ -1464,13 +1540,17 @@ const TransactionList = React.forwardRef<
               ? getFiatAmount(sent)
               : getFiatAmount(received)
             : null;
+        const isExpanded = expandedTxId === item.txid;
         return (
-          <AppPressable
+<AppPressable
             style={({pressed}) => [
               styles.transactionItem,
               pressed && styles.transactionItemPressed,
             ]}
             onPress={() => {
+              setExpandedTxId(isExpanded ? null : item.txid);
+            }}
+            onLongPress={() => {
               setSelectedTransaction(item);
               setIsDetailsModalVisible(true);
             }}
@@ -1481,23 +1561,38 @@ const TransactionList = React.forwardRef<
                   : 'rgba(255,255,255,0.15)',
               borderless: false,
             }}>
+
+            {/* 1. TOP ROW: Status and Amount */}
             <View style={styles.transactionRow}>
               <View style={styles.statusContainer}>
-                <AnimatedStatusIcon
-                  source={finalIcon}
-                  style={styles.statusIcon}
-                  animationType={
-                    confirmed
-                      ? 'none'
-                      : isConsolidation
-                      ? 'consolidate'
-                      : isRebalancing
-                      ? 'rebalance'
-                      : status.includes('Sen')
-                      ? 'send'
-                      : 'receive'
-                  }
-                />
+                {merchantName ? (
+                  <View style={styles.merchantIconWrap}>
+                    <Animated.Image
+                      source={merchantLogo || outIcon}
+                      style={styles.merchantIcon}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.merchantCheckBadge}>
+                      <Text style={styles.merchantCheckText}>✓</Text>
+                    </View>
+                  </View>
+                ) : (
+                  <AnimatedStatusIcon
+                    source={finalIcon}
+                    style={styles.statusIcon}
+                    animationType={
+                      confirmed
+                        ? 'none'
+                        : isConsolidation
+                        ? 'consolidate'
+                        : isRebalancing
+                        ? 'rebalance'
+                        : status.includes('Sen')
+                        ? 'send'
+                        : 'receive'
+                    }
+                  />
+                )}
                 <Text style={styles.status}>{finalStatus}</Text>
               </View>
               <Text
@@ -1507,39 +1602,31 @@ const TransactionList = React.forwardRef<
                     ? {
                         color:
                           appTheme.colors.background === '#ffffff'
-                            ? themes.cryptoVibrant.colors.accent // Light mode: use accent
+                            ? themes.cryptoVibrant.colors.accent
                             : appTheme.colors.bitcoinOrange,
-                      } // Dark mode: use bitcoin orange
-                    : {color: themes.cryptoVibrant.colors.secondary}, // Original: #00D2B8
+                      }
+                    : {color: themes.cryptoVibrant.colors.secondary},
                 ]}>
                 {isBlurred ? '***' : info}
               </Text>
             </View>
-            {relevantAddress && (
+
+            {/* 2. MIDDLE ROW: Addresses and Fiat (Hidden if Branta merchant name is shown to avoid text clutter) */}
+            {relevantAddress && !merchantName && (
               <View style={styles.addressRow}>
                 <View style={styles.addressContainer}>
                   <Text style={styles.address}>
                     {status.includes('Sen') ? 'To: ' : 'Fr: '}
-                    {merchantLabel ? (
-                      <Text style={[styles.addressText, {fontWeight: '600'}]}>
-                        {merchantLabel.platform}
-                        {'\n'}
-                        <Text style={styles.addressText}>
-                          {relevantAddress.slice(0, 3)}…{relevantAddress.slice(-3)}
-                        </Text>
-                      </Text>
-                    ) : (
-                      <Text style={styles.addressText}>
-                        {relevantAddress.slice(0, 3)}…{relevantAddress.slice(-3)}
-                        {status.includes('Sen') &&
-                          relevantAddresses.length > 1 && (
-                            <Text style={styles.addressText}>
-                              {' '}
-                              (+{relevantAddresses.length - 1})
-                            </Text>
-                          )}
-                      </Text>
-                    )}
+                    <Text style={styles.addressText}>
+                      {relevantAddress.slice(0, 3)}…{relevantAddress.slice(-3)}
+                      {status.includes('Sen') &&
+                        relevantAddresses.length > 1 && (
+                          <Text style={styles.addressText}>
+                            {' '}
+                            (+{relevantAddresses.length - 1})
+                          </Text>
+                        )}
+                    </Text>
                   </Text>
                 </View>
                 <Text style={styles.fiatAmount}>
@@ -1551,15 +1638,31 @@ const TransactionList = React.forwardRef<
                 </Text>
               </View>
             )}
+
+            {/* 3. BOTTOM ROW: TxID and Timestamp */}
             <View style={styles.transactionRow}>
               <View style={styles.txIdContainer}>
                 <Text style={styles.txId}>
-                  Tx:
-                  <Text style={styles.txText}> {shortTxId}</Text>
+                  Tx:<Text style={styles.txText}> {shortTxId}</Text>
                 </Text>
               </View>
               <Text style={styles.timestamp}>{timestamp}</Text>
             </View>
+
+            {/* 4. EXPANDED VISUALIZER (Placed INSIDE the card) */}
+            {isExpanded && (
+              <View style={styles.expandedVisualizerContainer}>
+                <ActiveTxVisualizer
+                  txid={item.txid}
+                  network={network as 'mainnet' | 'testnet'}
+                  initialPhase={item.status?.confirmed ? 'confirmed' : 'mempool'}
+                  explorerBaseUrl={baseApi}
+                  compact={true}
+                  onPhaseChange={() => {}}
+                />
+              </View>
+            )}
+
           </AppPressable>
         );
       },
@@ -1567,6 +1670,7 @@ const TransactionList = React.forwardRef<
         getTransactionStatus,
         getTransactionAmounts,
         address,
+        expandedTxId,
         addresses,
         isMultiAddress,
         isOurAddress,
@@ -1621,6 +1725,7 @@ const TransactionList = React.forwardRef<
           style={styles.list}
           contentContainerStyle={styles.listContent}
           data={transactions}
+          extraData={expandedTxId}
           renderItem={renderItem}
           contentInsetAdjustmentBehavior="never"
           keyExtractor={item => {
