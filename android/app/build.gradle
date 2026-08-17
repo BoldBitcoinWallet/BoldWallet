@@ -27,8 +27,8 @@ android {
         applicationId "com.boldwallet"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 65
-        versionName "4.0.4"
+        versionCode 66
+        versionName "4.0.5"
         missingDimensionStrategy 'react-native-camera', 'general'
         // Match main: oldarch flavor with newArchEnabled=true in gradle.properties (RN 0.82).
         missingDimensionStrategy 'react-native-arch', 'oldarch'

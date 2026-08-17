@@ -202,6 +202,15 @@ const SCHEMA_STATEMENTS = [
     verify_url         TEXT,
     fetched_at         INTEGER NOT NULL
   )`,
+
+  // ── Branta verified transactions (per-txid, survives confirmation) ───────────
+  `CREATE TABLE IF NOT EXISTS branta_verified_txs (
+    txid       TEXT NOT NULL,
+    network    TEXT NOT NULL,
+    address    TEXT,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (txid, network)
+  )`,
 ];
 
 // ---------------------------------------------------------------------------
@@ -336,6 +345,8 @@ class DatabaseService {
         'tx_outputs',
         'pending_transactions',
         'sync_metadata',
+        'merchant_labels',
+        'branta_verified_txs',
       ]) {
         tx.execute(`DELETE FROM ${table}`);
       }

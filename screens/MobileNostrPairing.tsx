@@ -114,6 +114,7 @@ import appConfigRepository, {
 } from '../services/repositories/AppConfigRepository';
 import database from '../services/Database';
 import transactionRepository from '../services/repositories/TransactionRepository';
+import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
 import {safeUnlink} from '../services/rnfsSafe';
@@ -361,6 +362,7 @@ type RouteParams = {
   network?: string; // Network from QR code (ensures same network)
   utxosJson?: string; // Pre-selected UTXOs from QR (avoids re-fetch on scanner)
   changeAddress?: string; // Pre-computed change address from sender (ensures consistency)
+  brantaInitiated?: boolean;
 };
 const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -556,6 +558,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       scriptpubkey_address: string;
     }>;
     outputs?: Array<{scriptpubkey_address: string; value: number}>;
+    brantaInitiated?: boolean;
   } | null>(null);
   const skipRestoreInFinallyRef = useRef(false);
   const nostrAbortRef = useRef(false);
@@ -2102,6 +2105,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         ...(broadcastInputs && broadcastOutputs
           ? {inputs: broadcastInputs, outputs: broadcastOutputs}
           : {}),
+        brantaInitiated: route.params?.brantaInitiated === true,
       };
       skipRestoreInFinallyRef.current = true;
       if (nostrAbortRef.current) {
@@ -6138,6 +6142,13 @@ const MobileNostrPairing = ({navigation}: any) => {
               apiTxShape,
               p.senderAddress,
             );
+            if (p.brantaInitiated) {
+              merchantLabelRepository.markVerifiedTx(
+                txId,
+                p.net || 'mainnet',
+                p.toAddress,
+              );
+            }
             navigation.dispatch(
               CommonActions.reset(
                 getResetToMainTabsWallet(

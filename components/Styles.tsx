@@ -343,6 +343,13 @@ export interface Styles {
   walletLabel: TextStyle;
   validatedLabel: TextStyle;
   visualTrack: ViewStyle;
+  walletNode: ViewStyle;
+  walletNodeInner: ViewStyle;
+  compactCosignWrap: ViewStyle;
+  visualTrackCompact: ViewStyle;
+  chainAhead: ViewStyle;
+  blockHeightCaption: TextStyle;
+  statusSubtext: TextStyle;
   sigGroup: ViewStyle;
   sigCircle: ViewStyle;
   sigText: TextStyle;
@@ -2183,15 +2190,18 @@ export const createStyles = (theme: Theme): Styles => ({
   containerTransaction: {
     width: '100%',
     minHeight: 240,
-    backgroundColor: '#090a0f',
-    borderRadius: 16,
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: theme.borderRadius?.medium || 10,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.08)',
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay05
+        : theme.colors.border + '40',
     padding: 20,
     justifyContent: 'space-between',
   },
   containerCompact: {
-    minHeight: 214,
+    minHeight: 228,
     padding: 14,
   },
   trackLabelRow: {
@@ -2200,22 +2210,71 @@ export const createStyles = (theme: Theme): Styles => ({
     paddingHorizontal: 10,
   },
   trackLabel: {
-    fontSize: 10,
+    fontSize: theme.fontSizes?.xs || 10,
     letterSpacing: 1.2,
-    color: '#7b7b7b',
-    fontWeight: '600',
+    color: theme.colors.textSecondary,
+    fontFamily: theme.fontFamilies?.medium,
   },
   walletLabel: {
-    color: '#ffd700',
+    color:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent || theme.colors.primary
+        : theme.colors.bitcoinOrange,
   },
   validatedLabel: {
-    color: '#22ff88',
+    color: theme.colors.success,
   },
   visualTrack: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingVertical: 10,
+  },
+  walletNode: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+  walletNodeInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  compactCosignWrap: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+  visualTrackCompact: {
+    alignItems: 'center',
+    paddingTop: 6,
+    paddingBottom: 18,
+    minHeight: 64,
+  },
+  chainAhead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 64,
+  },
+  blockHeightCaption: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 2,
+    fontFamily: theme.fontFamilies?.monospaceMedium || theme.fontFamilies?.monospace,
+    fontSize: theme.fontSizes?.xs || 10,
+    textAlign: 'center',
+  },
+  statusSubtext: {
+    marginTop: 4,
+    textAlign: 'center',
   },
   sigGroup: {
     flexDirection: 'row',
@@ -2228,46 +2287,38 @@ export const createStyles = (theme: Theme): Styles => ({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#000',
-    // RN Shadows
-    shadowColor: '#00ffcc',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.4,
-    shadowRadius: 4,
-    elevation: 4,
+    backgroundColor: theme.colors.background,
   },
   sigText: {
     fontSize: 9,
-    fontWeight: '700',
+    fontFamily: theme.fontFamilies?.bold,
   },
   progressWrapper: {
     flex: 1,
     height: 4,
-    backgroundColor: 'rgba(0, 255, 170, 0.15)',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay05
+        : theme.colors.whiteOverlay10,
     borderRadius: 2,
     marginHorizontal: 12,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#00ffaa', 
+    backgroundColor: theme.colors.success,
     borderRadius: 2,
   },
-  progressLaunched: {
-    shadowColor: '#00ffaa',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.6,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  progressInCube: {
-    shadowColor: '#00ffcc',
-    shadowOpacity: 0.8,
-  },
+  progressLaunched: {},
+  progressInCube: {},
   cubeGraphic: {
-    minWidth: 60,
+    width: 64,
+    height: 64,
     alignItems: 'center',
     justifyContent: 'center',
+    marginLeft: 0,
+    position: 'relative',
+    overflow: 'visible',
   },
   nodeRow: {
     flexDirection: 'row',
@@ -2278,16 +2329,14 @@ export const createStyles = (theme: Theme): Styles => ({
     height: 18,
     borderRadius: 4,
     borderWidth: 1,
-    borderColor: '#2f3a3a',
-    backgroundColor: '#161616',
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.border
+        : theme.colors.whiteOverlay12,
+    backgroundColor: theme.colors.background,
   },
   chainNodeHot: {
-    borderColor: '#00ffcc',
-    shadowColor: '#00ffcc',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 4,
+    borderColor: theme.colors.secondary,
   },
   validatedBlock: {
     alignItems: 'center',
@@ -2300,49 +2349,65 @@ export const createStyles = (theme: Theme): Styles => ({
     gap: 8,
   },
   statusPanelCompact: {
-    height: 70,
+    height: 78,
+    minHeight: 78,
   },
   centered: {
     alignItems: 'center',
   },
   statusText: {
-    fontSize: 12,
-    color: '#888888',
+    fontSize: theme.fontSizes?.sm || 12,
+    color: theme.colors.textSecondary,
+    fontFamily: theme.fontFamilies?.regular,
+    textAlign: 'center',
   },
   statusTextConfirmed: {
-    color: '#22ff88',
-    textShadowColor: 'rgba(34, 255, 136, 0.6)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 6,
+    color: theme.colors.success,
+    fontFamily: theme.fontFamilies?.medium,
   },
   errorText: {
-    fontSize: 11,
-    color: '#ff4444',
+    fontSize: theme.fontSizes?.xs || 11,
+    color: theme.colors.danger,
     marginBottom: 6,
+    fontFamily: theme.fontFamilies?.regular,
+    textAlign: 'center',
   },
   retryBtn: {
     borderWidth: 1,
-    borderColor: 'rgba(255, 215, 0, 0.35)',
-    backgroundColor: 'rgba(255, 215, 0, 0.1)',
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent + '55'
+        : theme.colors.bitcoinOrange + '55',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay05
+        : theme.colors.whiteOverlay08,
     borderRadius: 12,
     paddingVertical: 4,
     paddingHorizontal: 12,
   },
   retryBtnText: {
-    color: '#ffd700',
-    fontSize: 10,
+    color:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent || theme.colors.primary
+        : theme.colors.bitcoinOrange,
+    fontSize: theme.fontSizes?.xs || 10,
+    fontFamily: theme.fontFamilies?.medium,
   },
   txidPill: {
     borderWidth: 1,
-    borderColor: 'rgba(0, 255, 204, 0.35)',
-    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    borderColor: theme.colors.secondary + '55',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay03
+        : theme.colors.whiteOverlay08,
     paddingVertical: 4,
     paddingHorizontal: 12,
     borderRadius: 16,
   },
   txidText: {
-    fontFamily: 'monospace',
-    fontSize: 10,
-    color: '#00ffcc',
+    fontFamily: theme.fontFamilies?.monospace,
+    fontSize: theme.fontSizes?.xs || 10,
+    color: theme.colors.secondary,
   },
 });

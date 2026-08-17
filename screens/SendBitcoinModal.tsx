@@ -64,6 +64,7 @@ interface SendBitcoinModalProps {
     spendingHash: string,
     utxosJson?: string | null,
     changeAddress?: string | null,
+    brantaInitiated?: boolean,
   ) => void;
   btcToFiatRate: Big;
   walletBalance: Big;
@@ -982,6 +983,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         return;
       }
 
+      if (qrData.trim().toLowerCase().startsWith('ur:')) {
+        return;
+      }
+
       // Store raw QR for Branta resolution (if it contains branta_id & branta_secret, it will resolve)
       setBrantaRawQr(qrData.trim());
 
@@ -1089,49 +1094,61 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     Keyboard.dismiss();
   };
   const handleSendClick = () => {
-    // Client-side Bitcoin address validation
-    if (!address || !validateAddressForCurrentNetwork(address)) {
-      setAddressError('Please enter a valid Bitcoin addres');
-      Alert.alert('Error', 'Please enter a valid Bitcoin addres');
-      return;
-    }
-    if (!estimatedFee) {
-      Alert.alert(
-        'Fee Estimation Error',
-        'Unable to estimate transaction fee. Please try again later.',
-        [
-          {
-            text: 'Cancel',
-            style: 'cancel',
-          },
-          {
-            text: 'Retry',
-            onPress: () => {
-              getFee(address, btcAmount.toString());
+    try {
+      // Client-side Bitcoin address validation
+      if (!address || !validateAddressForCurrentNetwork(address)) {
+        setAddressError('Please enter a valid Bitcoin addres');
+        Alert.alert('Error', 'Please enter a valid Bitcoin addres');
+        return;
+      }
+      if (!estimatedFee) {
+        Alert.alert(
+          'Fee Estimation Error',
+          'Unable to estimate transaction fee. Please try again later.',
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
             },
-          },
-        ],
-        {cancelable: true},
+            {
+              text: 'Retry',
+              onPress: () => {
+                getFee(address, btcAmount.toString());
+              },
+            },
+          ],
+          {cancelable: true},
+        );
+        return;
+      }
+      // Work internally in BTC regardless of display mode
+      const feeBTC = estimatedFee.div(E8);
+      const totalAmountBTC = btcAmount.add(feeBTC);
+      if (totalAmountBTC.gt(walletBalance)) {
+        Alert.alert(
+          'Error',
+          'Total amount including fee exceeds wallet balance',
+        );
+        return;
+      }
+      // Normalize to sats for sending
+      const amountSats = btcAmount.times(E8);
+      onSend(
+        address,
+        amountSats,
+        estimatedFee,
+        spendingHash,
+        lastUtxosJsonRef.current,
+        lastChangeAddressRef.current,
+        !!brantaPayment,
       );
-      return;
+    } catch (error) {
+      dbg('SendBitcoinModal: handleSendClick failed', error);
+      Alert.alert(
+        'Send failed',
+        'Could not start this transaction. Please try again.',
+      );
     }
-    // Work internally in BTC regardless of display mode
-    const feeBTC = estimatedFee.div(E8);
-    const totalAmountBTC = btcAmount.add(feeBTC);
-    if (totalAmountBTC.gt(walletBalance)) {
-      Alert.alert('Error', 'Total amount including fee exceeds wallet balance');
-      return;
-    }
-    // Normalize to sats for sending
-    const amountSats = btcAmount.times(E8);
-    onSend(
-      address,
-      amountSats,
-      estimatedFee,
-      spendingHash,
-      lastUtxosJsonRef.current,
-      lastChangeAddressRef.current,
-    );
   };
   // Check if amount exceeds balance
   const amountExceedsBalance = btcAmount.gt(0) && btcAmount.gt(walletBalance);

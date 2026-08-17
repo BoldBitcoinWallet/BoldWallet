@@ -19,9 +19,10 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import QRScanner from '../components/QRScanner';
+import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import {AppState, DeviceEventEmitter} from 'react-native';
+import {AppState, DeviceEventEmitter, type EmitterSubscription} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
@@ -52,6 +53,11 @@ import {
   getKeyshareMetadata,
   hasWalletKeyshareInSecureStorage,
 } from '../utils';
+import {
+  createUrDecoder,
+  receiveUrBytesPart,
+  urTypeFromPart,
+} from '../utils/urBytesQr';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 import {useTheme} from '../theme';
@@ -121,6 +127,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     utxosJson?: string | null;
     utxoCount?: number;
     changeAddress?: string | null;
+    brantaInitiated?: boolean;
   } | null>(null);
   const [currentDerivationPath, setCurrentDerivationPath] =
     useState<string>('');
@@ -208,6 +215,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     time: 0,
   });
   const extensionBindAlertShownRef = useRef(false);
+  const sendUrDecoderRef = useRef<ReturnType<typeof createUrDecoder> | null>(
+    null,
+  );
+  const isSendScanningRef = useRef(false);
+  const sendScanSessionIdRef = useRef(0);
+  const sendContinuousScanSubRef = useRef<EmitterSubscription | null>(null);
+  const [isAndroidSendScanning, setIsAndroidSendScanning] = useState(false);
+  const [sendUrProgress, setSendUrProgress] = useState<{
+    total: number;
+    received: number;
+    percentage: number;
+  } | null>(null);
 
   const proceedWithExtensionBind = useCallback(async (pairingCode: string) => {
     try {
@@ -1406,11 +1425,23 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     spendingHash: string,
     utxosJson?: string | null,
     changeAddress?: string | null,
+    brantaInitiated?: boolean,
   ) => {
-    if (!isSending && amountSats.gt(0) && feeSats.gt(0) && to) {
-      setIsSending(true);
-      // Close send modal immediately
-      setIsSendModalVisible(false);
+    try {
+      if (isSending || !(amountSats.gt(0) && feeSats.gt(0) && to)) {
+        return;
+      }
+    } catch (error) {
+      dbg('WalletHome: handleSend validation failed', error);
+      Alert.alert(
+        'Send failed',
+        'Could not start co-signing. Please try again.',
+      );
+      return;
+    }
+    setIsSending(true);
+    setIsSendModalVisible(false);
+    try {
       const hasNostrSupport = await resolveNostrTransportSupport();
       setIsNostrTransportSupported(hasNostrSupport);
       // CRITICAL: Compute derivation path, from address, and ensure network is in native format
@@ -1484,11 +1515,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         utxosJson: utxosJson ?? null,
         utxoCount: parsedUtxoCount,
         changeAddress: changeAddress ?? null,
+        brantaInitiated: brantaInitiated === true,
       });
       setTimeout(() => {
         setIsTransportModalVisible(true);
         setIsSending(false);
       }, 300);
+    } catch (error) {
+      dbg('WalletHome: handleSend failed', error);
+      setIsSending(false);
+      Alert.alert(
+        'Send failed',
+        'Could not start co-signing. Please try again.',
+      );
     }
   };
   const navigateToPairing = async (transport: 'local' | 'nostr') => {
@@ -1496,9 +1535,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const {to, amountSats, feeSats, spendingHash} = pendingSendParams;
     const toAddress = to;
     const satoshiAmount = amountSats.toString().split('.')[0];
-    const fiatAmount = amountSats.times(btcRate).div(1e8).toFixed(2);
     const satoshiFees = feeSats.toString().split('.')[0];
-    const fiatFees = feeSats.times(btcRate).div(1e8).toFixed(2);
+    const rate = Number.isFinite(btcRate) ? btcRate : 0;
+    const fiatAmount = amountSats.times(rate).div(1e8).toFixed(2);
+    const fiatFees = feeSats.times(rate).div(1e8).toFixed(2);
     // CRITICAL: In send mode, ALL parameters MUST come from route params (no fallbacks)
     // If scanned from QR, use QR values; otherwise use computed values from handleSend
     let addressTypeToUse = '';
@@ -1566,6 +1606,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     ) {
       navigationParams.changeAddress = pendingSendParams.changeAddress;
     }
+    if (pendingSendParams.brantaInitiated) {
+      navigationParams.brantaInitiated = true;
+    }
     dbg('=== WalletHome: Navigating to pairing screen ===', {
       routeName,
       transport,
@@ -1601,21 +1644,63 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     setScannedNetwork(''); // Reset scanned network
     setComputedFromAddress(''); // Reset computed from address
   };
+  const stopSendQrScan = useCallback(() => {
+    setIsQRScannerVisible(false);
+    setIsAndroidSendScanning(false);
+    isSendScanningRef.current = false;
+    sendScanSessionIdRef.current = 0;
+    sendUrDecoderRef.current = null;
+    setSendUrProgress(null);
+    if (Platform.OS === 'android') {
+      try {
+        BarcodeZxingScan.stopContinuousScan();
+        BarcodeZxingScan.updateProgressText('');
+      } catch {
+        // Scanner may already be closed.
+      }
+    }
+  }, []);
+
   // Process scanned QR data: if raw data is a valid address for current network, open SendBitcoinModal; else try decodeSendBitcoinQR
   const processScannedQRData = useCallback(
-    (qrData: string) => {
+    (qrData: string): 'continue' | 'done' => {
       dbg('Scanned QR data:', qrData.substring(0, 100));
       const trimmed = qrData.trim();
+
+      if (trimmed.toLowerCase().startsWith('ur:')) {
+        const urType = urTypeFromPart(trimmed);
+        if (urType !== 'bytes') {
+          dbg('WalletHome: ignoring non-bytes UR type', urType);
+          return 'continue';
+        }
+        if (!sendUrDecoderRef.current) {
+          sendUrDecoderRef.current = createUrDecoder();
+        }
+        const urResult = receiveUrBytesPart(sendUrDecoderRef.current, trimmed);
+        if (urResult.kind === 'progress') {
+          setSendUrProgress(urResult.progress);
+          return 'continue';
+        }
+        if (urResult.kind === 'complete') {
+          sendUrDecoderRef.current = null;
+          setSendUrProgress(null);
+          return processScannedQRData(urResult.payload);
+        }
+        sendUrDecoderRef.current = null;
+        setSendUrProgress(null);
+        return 'continue';
+      }
 
       // Extension pairing: pairing_code=... from Bold extension QR
       const pairingCode = parsePairingCodeFromScannedData(trimmed);
       if (pairingCode) {
-        if (extensionBindAlertShownRef.current) return;
+        if (extensionBindAlertShownRef.current) {
+          return 'done';
+        }
         extensionBindAlertShownRef.current = true;
-        setIsQRScannerVisible(false);
         setPendingExtensionPairingCode(pairingCode);
         setIsExtensionPairingModalVisible(true);
-        return;
+        return 'done';
       }
 
       // Support BIP-21 / universal pay links and plain addresses via shared parser
@@ -1656,7 +1741,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setInitialSendBrantaRawQr(initialBrantaQr);
         }
         setIsSendModalVisible(true);
-        return;
+        return 'done';
       }
       const otherNetwork =
         networkForValidation === 'mainnet' ? 'testnet' : 'mainnet';
@@ -1669,7 +1754,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           lastInvalidQrRef.current.data === qrData &&
           now - lastInvalidQrRef.current.time < 2000
         ) {
-          return;
+          return 'continue';
         }
         lastInvalidQrRef.current = {data: qrData, time: now};
         const currentLabel =
@@ -1679,9 +1764,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           'Wrong network',
           `This address is for ${addressLabel} but you're on ${currentLabel}. Switch network in Settings or scan an address for ${currentLabel}.`,
         );
-        return;
+        return 'done';
       }
-      const decoded = decodeSendBitcoinQR(qrData) as {
+      const decoded = decodeSendBitcoinQR(trimmed) as {
         toAddress: string;
         amountSats: string;
         feeSats: string;
@@ -1703,14 +1788,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           lastInvalidQrRef.current.data === qrData &&
           now - lastInvalidQrRef.current.time < 2000
         ) {
-          return;
+          return 'continue';
         }
         lastInvalidQrRef.current = {data: qrData, time: now};
         Alert.alert(
           'Invalid QR Code',
           'The scanned QR code does not contain valid send bitcoin data. Please scan the QR code from the device that initiated the transaction.',
         );
-        return;
+        return 'done';
       }
       // Validate Bitcoin address
       if (!validateBitcoinAddress(decoded.toAddress)) {
@@ -1718,7 +1803,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           'Invalid Address',
           'The scanned QR code contains an invalid Bitcoin address.',
         );
-        return;
+        return 'done';
       }
       // Convert to Big for consistency
       const amountSats = Big(decoded.amountSats);
@@ -1728,7 +1813,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           'Invalid Amount',
           'The scanned QR code contains invalid amount or fee values.',
         );
-        return;
+        return 'done';
       }
       // Store address type, derivation path, and network from QR code if available
       // These are critical to ensure the second device uses the same source address and network
@@ -1763,9 +1848,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       let utxoCount: number | undefined;
       if (decoded.utxosJson) {
         try {
-          const parsed = JSON.parse(decoded.utxosJson);
-          if (Array.isArray(parsed)) {
-            utxoCount = parsed.length;
+          const parsedUtxos = JSON.parse(decoded.utxosJson);
+          if (Array.isArray(parsedUtxos)) {
+            utxoCount = parsedUtxos.length;
           }
         } catch (e) {
           dbg('WalletHome: Failed to parse utxosJson from QR', e);
@@ -1788,12 +1873,115 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setIsNostrTransportSupported(hasNostrSupport);
         setIsTransportModalVisible(true);
       }, 300);
+      return 'done';
     },
     [network, resolveNostrTransportSupport],
   );
+
+  const setupSendScanListener = useCallback(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+    if (sendContinuousScanSubRef.current) {
+      sendContinuousScanSubRef.current.remove();
+      sendContinuousScanSubRef.current = null;
+    }
+    sendContinuousScanSubRef.current = DeviceEventEmitter.addListener(
+      'BarcodeZxingScanContinuous',
+      (event: {data?: string; error?: string}) => {
+        if (event.error) {
+          dbg('WalletHome: Android send scan error', event.error);
+          stopSendQrScan();
+          return;
+        }
+        if (!event.data) {
+          return;
+        }
+        if (!isSendScanningRef.current && sendScanSessionIdRef.current === 0) {
+          return;
+        }
+        if (!isSendScanningRef.current) {
+          isSendScanningRef.current = true;
+          setIsAndroidSendScanning(true);
+        }
+        const outcome = processScannedQRData(event.data);
+        if (outcome === 'done') {
+          stopSendQrScan();
+        }
+      },
+    );
+  }, [processScannedQRData, stopSendQrScan]);
+
+  const startAndroidSendQrScan = useCallback(() => {
+    if (isSendScanningRef.current) {
+      return;
+    }
+    setupSendScanListener();
+    sendUrDecoderRef.current = null;
+    setSendUrProgress(null);
+    BarcodeZxingScan.updateProgressText('');
+    sendScanSessionIdRef.current = (sendScanSessionIdRef.current || 0) + 1;
+    const currentSessionId = sendScanSessionIdRef.current;
+    isSendScanningRef.current = true;
+    setIsAndroidSendScanning(true);
+    BarcodeZxingScan.showQrReaderContinuous((scanError: unknown, data: unknown) => {
+      if (scanError) {
+        dbg('WalletHome: Failed to start Android send scanner', scanError);
+        stopSendQrScan();
+        return;
+      }
+      if (data === 'SCANNER_STARTED') {
+        if (sendScanSessionIdRef.current !== currentSessionId) {
+          return;
+        }
+        isSendScanningRef.current = true;
+        setIsAndroidSendScanning(true);
+        setTimeout(() => {
+          BarcodeZxingScan.updateProgressText('Scanning send QR…');
+        }, 100);
+      }
+    });
+  }, [setupSendScanListener, stopSendQrScan]);
+
   // Handle QR scan for send bitcoin data
   const handleScanQRForSend = useCallback(() => {
+    sendUrDecoderRef.current = null;
+    setSendUrProgress(null);
+    if (Platform.OS === 'android') {
+      if (isSendScanningRef.current || isAndroidSendScanning) {
+        BarcodeZxingScan.stopContinuousScan();
+        setIsAndroidSendScanning(false);
+        isSendScanningRef.current = false;
+        setTimeout(() => {
+          startAndroidSendQrScan();
+        }, 250);
+      } else {
+        startAndroidSendQrScan();
+      }
+      return;
+    }
+    isSendScanningRef.current = true;
     setIsQRScannerVisible(true);
+  }, [isAndroidSendScanning, startAndroidSendQrScan]);
+
+  useEffect(() => {
+    if (Platform.OS === 'android' && isAndroidSendScanning && sendUrProgress) {
+      const progressPercent = Math.min(100, Math.round(sendUrProgress.received || 0));
+      BarcodeZxingScan.updateProgressText(
+        `Send QR scanning… ${progressPercent}%`,
+      );
+    } else if (Platform.OS === 'android' && isAndroidSendScanning && !sendUrProgress) {
+      BarcodeZxingScan.updateProgressText('Scanning send QR…');
+    }
+  }, [sendUrProgress, isAndroidSendScanning]);
+
+  useEffect(() => {
+    return () => {
+      if (sendContinuousScanSubRef.current) {
+        sendContinuousScanSubRef.current.remove();
+        sendContinuousScanSubRef.current = null;
+      }
+    };
   }, []);
   // Animated style for balance update
   const balanceAnimatedStyle = useAnimatedStyle(() => ({
@@ -1835,6 +2023,87 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
     return balanceFiat;
   }, [balanceBTC, balanceFiat, btcRate]);
+
+  const sendBitcoinData = useMemo(() => {
+    if (!pendingSendParams) {
+      return null;
+    }
+    const rate = Number.isFinite(btcRate) ? btcRate : 0;
+    const fiatFromSats = (sats: Big) => {
+      try {
+        return sats.times(rate).div(1e8).toFixed(2);
+      } catch {
+        return '0.00';
+      }
+    };
+    try {
+      return {
+        toAddress: pendingSendParams.to,
+        amountSats: pendingSendParams.amountSats.toString().split('.')[0],
+        feeSats: pendingSendParams.feeSats.toString().split('.')[0],
+        spendingHash: pendingSendParams.spendingHash,
+        addressType: addressType || '',
+        derivationPath: currentDerivationPath,
+        network: network || 'mainnet',
+        fromAddress: address,
+        fiatAmount: fiatFromSats(pendingSendParams.amountSats),
+        fiatFees: fiatFromSats(pendingSendParams.feeSats),
+        selectedCurrency,
+        utxosJson: pendingSendParams.utxosJson || null,
+        utxoCount: pendingSendParams.utxoCount,
+        changeAddress: pendingSendParams.changeAddress || null,
+      };
+    } catch (error) {
+      dbg('WalletHome: sendBitcoinData build failed', error);
+      return {
+        toAddress: pendingSendParams.to || '',
+        amountSats: '0',
+        feeSats: '0',
+        spendingHash: pendingSendParams.spendingHash || '',
+        addressType: addressType || '',
+        derivationPath: currentDerivationPath,
+        network: network || 'mainnet',
+        fromAddress: address,
+        fiatAmount: '0.00',
+        fiatFees: '0.00',
+        selectedCurrency,
+        utxosJson: null,
+        utxoCount: undefined,
+        changeAddress: pendingSendParams.changeAddress || null,
+      };
+    }
+  }, [
+    pendingSendParams,
+    btcRate,
+    addressType,
+    currentDerivationPath,
+    network,
+    address,
+    selectedCurrency,
+  ]);
+
+  const sendModalBalance = useMemo(() => {
+    const raw =
+      spendableBTC !== '-' && spendableBTC !== balanceBTC
+        ? spendableBTC
+        : balanceBTC;
+    try {
+      if (raw == null || raw === '' || raw === '-' || raw === 'NaN') {
+        return Big(0);
+      }
+      return Big(raw);
+    } catch {
+      return Big(0);
+    }
+  }, [spendableBTC, balanceBTC]);
+
+  const sendModalRate = useMemo(() => {
+    try {
+      return Number.isFinite(btcRate) ? Big(btcRate) : Big(0);
+    } catch {
+      return Big(0);
+    }
+  }, [btcRate]);
 
   if (loading && !isInitialized) {
     return <WalletSkeleton />;
@@ -2280,14 +2549,31 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       {/* QR Scanner Modal */}
       <QRScanner
         visible={isQRScannerVisible}
-        onClose={() => setIsQRScannerVisible(false)}
+        onClose={stopSendQrScan}
         onScan={(data: string) => {
-          setIsQRScannerVisible(false);
-          processScannedQRData(data);
+          const outcome = processScannedQRData(data);
+          if (outcome === 'done') {
+            stopSendQrScan();
+          }
         }}
-        mode="single"
+        mode="continuous"
         title="Scan Send Bitcoin QR"
-        subtitle="Point camera to Sending Device QR"
+        subtitle={
+          sendUrProgress && sendUrProgress.total > 1
+            ? sendUrProgress.received >= sendUrProgress.total
+              ? 'Processing send data…'
+              : `Keep scanning animated QR: ${Math.min(
+                  100,
+                  sendUrProgress.percentage ||
+                    Math.round(
+                      (sendUrProgress.received / sendUrProgress.total) * 100,
+                    ),
+                )}%`
+            : 'Point camera to Sending Device QR'
+        }
+        showProgress={!!sendUrProgress && sendUrProgress.total > 1}
+        progress={sendUrProgress || undefined}
+        closeButtonText="Cancel"
       />
       {/* Extension bind: response QR when scan detected pairing_code */}
       <QRCodeModal
@@ -2337,12 +2623,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       {isSendModalVisible && (
         <SendBitcoinModal
           visible={isSendModalVisible}
-          btcToFiatRate={Big(btcRate)}
-          walletBalance={Big(
-            spendableBTC !== '-' && spendableBTC !== balanceBTC
-              ? spendableBTC
-              : balanceBTC,
-          )}
+          btcToFiatRate={sendModalRate}
+          walletBalance={sendModalBalance}
           walletAddress={address}
           initialAddress={initialSendAddress ?? undefined}
           initialAmountBtc={initialSendAmountBtc ?? undefined}
@@ -2374,35 +2656,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         description=""
         nostrEnabled={isNostrTransportSupported}
         defaultTransport={isNostrTransportSupported ? null : 'local'}
-        sendBitcoinData={
-          pendingSendParams
-            ? {
-                toAddress: pendingSendParams.to,
-                amountSats: pendingSendParams.amountSats
-                  .toString()
-                  .split('.')[0],
-                feeSats: pendingSendParams.feeSats.toString().split('.')[0],
-                spendingHash: pendingSendParams.spendingHash,
-                addressType: addressType || '',
-                derivationPath: currentDerivationPath,
-                // Keep native format for QR code (native module requires 'testnet3' not 'testnet')
-                network: network || 'mainnet',
-                fromAddress: address, // Current wallet address (from address)
-                fiatAmount: pendingSendParams.amountSats
-                  .times(btcRate)
-                  .div(1e8)
-                  .toFixed(2),
-                fiatFees: pendingSendParams.feeSats
-                  .times(btcRate)
-                  .div(1e8)
-                  .toFixed(2),
-                selectedCurrency: selectedCurrency,
-                utxosJson: pendingSendParams.utxosJson || null,
-                utxoCount: pendingSendParams.utxoCount,
-                changeAddress: pendingSendParams.changeAddress || null,
-              }
-            : null
-        }
+        sendBitcoinData={sendBitcoinData}
         showQRCode={!scannedFromQR} // Don't show QR if data came from scan
       />
       <RestoringIndexesModal
