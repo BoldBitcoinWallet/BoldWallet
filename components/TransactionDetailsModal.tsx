@@ -120,6 +120,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
 
   const hasFiat = historicalRate != null && historicalRate > 0;
   const isSent = status.text.includes('Sen') || transaction.sentAt;
+  const isWalletOrigin =
+    isSent ||
+    status.text.includes('Consolidat') ||
+    status.text.includes('Rebalanc');
   const amount = isSent ? amounts.sent : amounts.received;
   const hasValidAmount = typeof amount === 'number' && Number.isFinite(amount);
   const hasValidSent =
@@ -538,6 +542,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   initialPhase={status.confirmed ? 'confirmed' : 'mempool'}
                   explorerBaseUrl={baseApi}
                   compact
+                  origin={isWalletOrigin ? 'wallet' : 'external'}
                   blockHeight={blockHeight}
                   confirmedAtMs={confirmedAtMs}
                 />

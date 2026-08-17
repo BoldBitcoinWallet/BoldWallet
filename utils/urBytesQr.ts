@@ -9,7 +9,9 @@ import {Buffer} from 'buffer';
 // Buffer polyfill is loaded in polyfills.js for React Native.
 import {UR, UREncoder, URDecoder} from '@ngraveio/bc-ur';
 
+/** Fragment size balances QR density vs frame count. Fountain mixes reconstruct without a full sequential pass. */
 export const UR_BYTES_FRAGMENT_SIZE = 200;
+export const UR_FRAME_INTERVAL_MS = 250;
 export const UR_BYTES_TYPE = 'bytes';
 
 export type UrBytesProgress = {
@@ -59,14 +61,28 @@ export function urPartAt(ur: UR, partIndex: number): string | null {
   }
 }
 
+export function createUrEncoder(ur: UR): UREncoder {
+  return new UREncoder(ur, UR_BYTES_FRAGMENT_SIZE);
+}
+
 export function urAllSequentialParts(ur: UR): string[] {
   const n = urFragmentCount(ur);
+  const encoder = createUrEncoder(ur);
   const parts: string[] = [];
   for (let i = 0; i < n; i++) {
-    const part = urPartAt(ur, i);
-    if (part) {
-      parts.push(part);
-    }
+    parts.push(encoder.nextPart());
+  }
+  return parts;
+}
+
+/** Sequential fragments plus extra fountain mixes (what the animated sender emits). */
+export function urFountainParts(ur: UR, extraMixed = 0): string[] {
+  const n = urFragmentCount(ur);
+  const encoder = createUrEncoder(ur);
+  const parts: string[] = [];
+  const total = n + Math.max(0, extraMixed);
+  for (let i = 0; i < total; i++) {
+    parts.push(encoder.nextPart());
   }
   return parts;
 }
@@ -106,6 +122,24 @@ export function urToUtf8(ur: UR): string | null {
   }
 }
 
+/** Unique fragments received vs expected. Never 100% until `decoder.isComplete()`. */
+export function urUniqueFragmentProgress(decoder: URDecoder): UrBytesProgress {
+  const expected = decoder.expectedPartCount();
+  const unique = decoder.receivedPartIndexes().length;
+  if (decoder.isComplete()) {
+    const total = Math.max(expected, unique, 1);
+    return {total, received: total, percentage: 100};
+  }
+  const total = Math.max(expected, 1);
+  const received = Math.min(unique, Math.max(total - 1, 0));
+  const percentage = Math.min(99, Math.round((unique / total) * 100) || 0);
+  return {total, received, percentage};
+}
+
+export function formatUrFragmentProgress(progress: UrBytesProgress): string {
+  return `${progress.received} of ${progress.total}`;
+}
+
 export function receiveUrBytesPart(
   decoder: URDecoder,
   part: string,
@@ -121,12 +155,7 @@ export function receiveUrBytesPart(
   }
   try {
     decoder.receivePart(lower);
-    const percentage = Math.round(decoder.estimatedPercentComplete() * 100);
-    const progress: UrBytesProgress = {
-      total: 100,
-      received: percentage,
-      percentage,
-    };
+    const progress = urUniqueFragmentProgress(decoder);
     if (decoder.isComplete()) {
       if (!decoder.isSuccess()) {
         return {kind: 'error'};

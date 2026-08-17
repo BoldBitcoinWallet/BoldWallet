@@ -8,6 +8,7 @@ import (
 
 func init() {
 	nostrtransport.SetTransportProgressHook(ReportTransportProgress)
+	nostrtransport.SetRelayFidelityHook(ReportRelayFidelity)
 }
 
 // TransportHookMessage is emitted on TssHook for upload/download subprogress UI.
@@ -44,6 +45,45 @@ func ReportTransportProgress(session, transport, direction string, chunk, total 
 		Chunk:     chunk,
 		Total:     total,
 		Active:    active,
+	})
+	if err != nil {
+		return
+	}
+	Hook(string(payload))
+}
+
+// RelayHookMessage is emitted on TssHook for per-relay publish fidelity logs.
+type RelayHookMessage struct {
+	Type      string `json:"type"`
+	Session   string `json:"session"`
+	Transport string `json:"transport"`
+	Op        string `json:"op"`
+	Relay     string `json:"relay,omitempty"`
+	Ok        bool   `json:"ok"`
+	Err       string `json:"err,omitempty"`
+	RttMs     int64  `json:"rtt_ms"`
+	Mode      string `json:"mode,omitempty"`
+}
+
+// ReportRelayFidelity emits a relay hook for logcat (does not move MPC %).
+func ReportRelayFidelity(session, op, relay, mode, errMsg string, ok bool, rttMs int64) {
+	session = trimSession(session)
+	if session == "" {
+		return
+	}
+	if rttMs < 0 {
+		rttMs = 0
+	}
+	payload, err := json.Marshal(RelayHookMessage{
+		Type:      "relay",
+		Session:   session,
+		Transport: "nostr",
+		Op:        op,
+		Relay:     relay,
+		Ok:        ok,
+		Err:       errMsg,
+		RttMs:     rttMs,
+		Mode:      mode,
 	})
 	if err != nil {
 		return

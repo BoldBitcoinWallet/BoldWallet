@@ -31,6 +31,8 @@ interface Props {
   blockHeight?: number | null;
   /** Confirmation or broadcast timestamp in ms. */
   confirmedAtMs?: number | null;
+  /** Wallet-signed/broadcast vs incoming from the network. Compact track only. */
+  origin?: 'wallet' | 'external';
 }
 
 const TRACK_H = 64;
@@ -193,6 +195,113 @@ const CompactCosignTrack: React.FC<{
   );
 };
 
+const ORIGIN_DOT_W = 22;
+const ORIGIN_DOT_R = 7;
+
+/**
+ * Incoming receive: one external origin dot, then a single stem to the block.
+ */
+const CompactExternalTrack: React.FC<{
+  accentColor: string;
+  successColor: string;
+  confirmed: boolean;
+}> = ({accentColor, successColor, confirmed}) => {
+  const [trackWidth, setTrackWidth] = useState(0);
+  const dotAnim = useRef(new Animated.Value(0)).current;
+  const drawAnim = useRef(new Animated.Value(0)).current;
+
+  const color = confirmed ? successColor : accentColor;
+
+  useEffect(() => {
+    if (trackWidth <= 0) {
+      return;
+    }
+    dotAnim.setValue(0);
+    drawAnim.setValue(0);
+    Animated.sequence([
+      Animated.timing(dotAnim, {
+        toValue: 1,
+        duration: 280,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(drawAnim, {
+        toValue: 1,
+        duration: 720,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }, [drawAnim, dotAnim, trackWidth]);
+
+  const onLayout = (e: LayoutChangeEvent) => {
+    setTrackWidth(e.nativeEvent.layout.width);
+  };
+
+  const midY = TRACK_H / 2;
+  const endX = Math.max(trackWidth, 8);
+  const stemD = `M 0 ${midY} L ${endX} ${midY}`;
+
+  const stemDash = drawAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [STEM_PATH_LEN, 0],
+  });
+
+  return (
+    <View
+      style={{
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        height: TRACK_H,
+      }}>
+      <Animated.View
+        style={{
+          width: ORIGIN_DOT_W,
+          height: TRACK_H,
+          justifyContent: 'center',
+          alignItems: 'center',
+          opacity: dotAnim,
+          transform: [
+            {
+              scale: dotAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0.7, 1],
+              }),
+            },
+          ],
+        }}>
+        <Svg
+          width={ORIGIN_DOT_W}
+          height={TRACK_H}
+          viewBox={`0 0 ${ORIGIN_DOT_W} ${TRACK_H}`}>
+          <Circle
+            cx={ORIGIN_DOT_W / 2}
+            cy={midY}
+            r={ORIGIN_DOT_R}
+            fill={color}
+          />
+        </Svg>
+      </Animated.View>
+      <View style={{flex: 1, height: TRACK_H}} onLayout={onLayout}>
+        {trackWidth > 0 && (
+          <Svg width={trackWidth} height={TRACK_H}>
+            <AnimatedPath
+              d={stemD}
+              stroke={color}
+              strokeWidth={2.6}
+              fill="none"
+              strokeLinecap="round"
+              strokeDasharray={`${STEM_PATH_LEN} ${STEM_PATH_LEN}`}
+              strokeDashoffset={stemDash}
+            />
+          </Svg>
+        )}
+      </View>
+    </View>
+  );
+};
+
 type CubeBadge = 'check' | 'question' | 'dot';
 
 /** Isometric block with a padded, bordered badge (tick, ?, or chain-tip dot). */
@@ -306,6 +415,7 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
   compact = false,
   blockHeight: blockHeightProp = null,
   confirmedAtMs = null,
+  origin = 'wallet',
 }) => {
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const [confirmations, setConfirmations] = useState(0);
@@ -692,7 +802,9 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
   return (
     <View style={[styles.containerTransaction, compact && styles.containerCompact]}>
       <View style={styles.trackLabelRow}>
-        <AppText style={[styles.trackLabel, styles.walletLabel]}>WALLET</AppText>
+        <AppText style={[styles.trackLabel, styles.walletLabel]}>
+          {origin === 'external' ? 'NETWORK' : 'WALLET'}
+        </AppText>
         <AppText
           style={[
             styles.trackLabel,
@@ -704,11 +816,19 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
 
       <View style={[styles.visualTrack, compact && styles.visualTrackCompact]}>
         {compact ? (
-          <CompactCosignTrack
-            accentColor={accentColor}
-            successColor={successColor}
-            confirmed={phase === 'confirmed'}
-          />
+          origin === 'external' ? (
+            <CompactExternalTrack
+              accentColor={accentColor}
+              successColor={successColor}
+              confirmed={phase === 'confirmed'}
+            />
+          ) : (
+            <CompactCosignTrack
+              accentColor={accentColor}
+              successColor={successColor}
+              confirmed={phase === 'confirmed'}
+            />
+          )
         ) : (
           <View style={styles.sigGroup}>
             {phase !== 'idle' && (

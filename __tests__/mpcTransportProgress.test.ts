@@ -5,6 +5,8 @@
 import {
   emptyMpcTransportSubprogress,
   mapTransportHookToSubprogress,
+  resetRelayFidelityLogThrottleForTest,
+  shouldLogRelayFidelity,
 } from '../services/mpcTransportProgress';
 import type {MpcHookMessage} from '../services/mpcProgress';
 
@@ -57,5 +59,17 @@ describe('mpcTransportProgress', () => {
   it('returns null for non-transport hooks', () => {
     expect(mapTransportHookToSubprogress({type: 'keygen', step: 1})).toBeNull();
     expect(emptyMpcTransportSubprogress().visible).toBe(false);
+  });
+
+  it('logs relay fidelity failures always and throttles duplicate successes', () => {
+    resetRelayFidelityLogThrottleForTest();
+    const fail = {type: 'relay', ok: false, relay: 'wss://a', mode: 'bulk', op: 'publish'};
+    expect(shouldLogRelayFidelity(fail, 1000)).toBe(true);
+    expect(shouldLogRelayFidelity(fail, 1010)).toBe(true);
+    const ok = {type: 'relay', ok: true, relay: 'wss://a', mode: 'bulk', op: 'publish'};
+    expect(shouldLogRelayFidelity(ok, 2000)).toBe(true);
+    expect(shouldLogRelayFidelity(ok, 2100)).toBe(false);
+    expect(shouldLogRelayFidelity(ok, 2300)).toBe(true);
+    expect(shouldLogRelayFidelity({type: 'transport'}, 2400)).toBe(false);
   });
 });

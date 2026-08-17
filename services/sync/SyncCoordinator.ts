@@ -28,6 +28,7 @@ import utxoSyncer, {type AddressEntry as UtxoEntry} from './UtxoSyncer';
 import priceSyncer from './PriceSyncer';
 import {WalletService} from '../WalletService';
 import walletRepository from '../repositories/WalletRepository';
+import mempoolClient from '../MempoolClient';
 import {dbg} from '../../utils';
 
 const BALANCE_INTERVAL_MS = 120_000;
@@ -86,6 +87,8 @@ class SyncCoordinator {
     typeof AppState.addEventListener
   > | null = null;
   private _running = false;
+  /** Nested pause count — background sync yields while Nostr/LAN MPC uses the network. */
+  private _pauseCount = 0;
 
   /**
    * Start background sync with the given config.
@@ -101,23 +104,43 @@ class SyncCoordinator {
 
     // Schedule periodic syncs
     this._hdDiscoveryTimer = setInterval(
-      () => this._syncHdDiscovery(),
+      () => {
+        if (!this._isPaused()) {
+          this._syncHdDiscovery();
+        }
+      },
       HD_DISCOVERY_INTERVAL_MS,
     );
 
     this._balanceTimer = setInterval(
-      () => this._syncBalances(),
+      () => {
+        if (!this._isPaused()) {
+          this._syncBalances();
+        }
+      },
       BALANCE_INTERVAL_MS,
     );
-    this._priceTimer = setInterval(() => this._syncPrice(), PRICE_INTERVAL_MS);
-    this._utxoTimer = setInterval(() => this._syncUtxos(), UTXO_INTERVAL_MS);
-    this._txTimer = setInterval(() => this._syncTxs(), TX_INTERVAL_MS);
+    this._priceTimer = setInterval(() => {
+      if (!this._isPaused()) {
+        this._syncPrice();
+      }
+    }, PRICE_INTERVAL_MS);
+    this._utxoTimer = setInterval(() => {
+      if (!this._isPaused()) {
+        this._syncUtxos();
+      }
+    }, UTXO_INTERVAL_MS);
+    this._txTimer = setInterval(() => {
+      if (!this._isPaused()) {
+        this._syncTxs();
+      }
+    }, TX_INTERVAL_MS);
 
     // Resume sync when app comes to foreground
     this._appStateSubscription = AppState.addEventListener(
       'change',
       (state: AppStateStatus) => {
-        if (state === 'active' && this._running) {
+        if (state === 'active' && this._running && !this._isPaused()) {
           dbg('SyncCoordinator: app foregrounded — syncing');
           this._syncAll();
         }
@@ -135,6 +158,32 @@ class SyncCoordinator {
   /** Update the config without restarting timers (e.g. addresses changed). */
   updateConfig(config: SyncConfig): void {
     this._config = config;
+  }
+
+  /**
+   * Pause background mempool sync so MPC (especially Nostr relay publish)
+   * is not competing for the device HTTP pool. Nested; match each pause with resume.
+   */
+  pause(): void {
+    this._pauseCount += 1;
+    if (this._pauseCount === 1) {
+      mempoolClient.abortAll();
+      dbg('SyncCoordinator: paused (aborted in-flight mempool requests)');
+    }
+  }
+
+  /** Resume background sync after {@link pause}. Does not kick an immediate cycle. */
+  resume(): void {
+    if (this._pauseCount > 0) {
+      this._pauseCount -= 1;
+    }
+    if (this._pauseCount === 0) {
+      dbg('SyncCoordinator: resumed');
+    }
+  }
+
+  private _isPaused(): boolean {
+    return this._pauseCount > 0;
   }
 
   /** Stop all timers and release listeners. */
@@ -170,22 +219,39 @@ class SyncCoordinator {
   // ── Private helpers ────────────────────────────────────────────────────────
 
   private async _syncAll(forceHdDiscovery = false): Promise<void> {
+    if (this._isPaused()) {
+      return;
+    }
     // HD discovery first — may expand the address set for subsequent syncs
     await this._syncHdDiscovery(forceHdDiscovery);
+    if (this._isPaused()) {
+      return;
+    }
 
     // Serialized API phases (price first — few requests), then per-address syncers
     // one at a time. Avoids pumping balance + txs + UTXOs + price in parallel
     // against the same apiBase, which eases rate limits on public and custom hosts.
     await this._syncPrice();
+    if (this._isPaused()) {
+      return;
+    }
     await this._syncBalances();
+    if (this._isPaused()) {
+      return;
+    }
     await this._syncUtxos();
+    if (this._isPaused()) {
+      return;
+    }
     await this._syncTxs();
 
-    this._config?.onSyncComplete?.();
+    if (!this._isPaused()) {
+      this._config?.onSyncComplete?.();
+    }
   }
 
   private async _syncHdDiscovery(force = false): Promise<void> {
-    if (!this._config) return;
+    if (!this._config || this._isPaused()) return;
     const {network, addressType, apiBase} = this._config;
     try {
       const hdState = walletRepository.getHdState(network, addressType);
@@ -247,7 +313,7 @@ class SyncCoordinator {
   }
 
   private async _syncBalances(): Promise<void> {
-    if (!this._config) return;
+    if (!this._config || this._isPaused()) return;
     try {
       const network = this._config.network;
       const addressType =
@@ -276,7 +342,7 @@ class SyncCoordinator {
   }
 
   private async _syncTxs(): Promise<void> {
-    if (!this._config) return;
+    if (!this._config || this._isPaused()) return;
     try {
       const network = this._config.network;
       const addressType =
@@ -295,6 +361,9 @@ class SyncCoordinator {
         })),
       );
       for (const {address, network: net} of sorted) {
+        if (this._isPaused()) {
+          return;
+        }
         await transactionSyncer.syncAddress(
           address,
           net,
@@ -307,7 +376,7 @@ class SyncCoordinator {
   }
 
   private async _syncUtxos(): Promise<void> {
-    if (!this._config) return;
+    if (!this._config || this._isPaused()) return;
     try {
       const network = this._config.network;
       const addressType =
@@ -352,7 +421,7 @@ class SyncCoordinator {
   }
 
   private async _syncPrice(): Promise<void> {
-    if (!this._config) return;
+    if (!this._config || this._isPaused()) return;
     try {
       await priceSyncer.syncCurrentPrice(this._config.apiBase);
     } catch (err) {

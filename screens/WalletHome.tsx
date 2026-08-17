@@ -55,9 +55,11 @@ import {
 } from '../utils';
 import {
   createUrDecoder,
+  formatUrFragmentProgress,
   receiveUrBytesPart,
   urTypeFromPart,
 } from '../utils/urBytesQr';
+import {shouldIgnoreNonUrDuringSendScan} from '../utils/sendQrScan';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 import {useTheme} from '../theme';
@@ -1667,6 +1669,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       dbg('Scanned QR data:', qrData.substring(0, 100));
       const trimmed = qrData.trim();
 
+      if (
+        shouldIgnoreNonUrDuringSendScan(
+          trimmed,
+          sendUrDecoderRef.current !== null,
+        )
+      ) {
+        return 'continue';
+      }
+
       if (trimmed.toLowerCase().startsWith('ur:')) {
         const urType = urTypeFromPart(trimmed);
         if (urType !== 'bytes') {
@@ -1686,8 +1697,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setSendUrProgress(null);
           return processScannedQRData(urResult.payload);
         }
-        sendUrDecoderRef.current = null;
-        setSendUrProgress(null);
+        // Bad / ignored UR frame: keep the decoder so Android junk does not reset progress.
         return 'continue';
       }
 
@@ -1783,19 +1793,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         !decoded.amountSats ||
         !decoded.feeSats
       ) {
-        const now = Date.now();
-        if (
-          lastInvalidQrRef.current.data === qrData &&
-          now - lastInvalidQrRef.current.time < 2000
-        ) {
-          return 'continue';
-        }
-        lastInvalidQrRef.current = {data: qrData, time: now};
-        Alert.alert(
-          'Invalid QR Code',
-          'The scanned QR code does not contain valid send bitcoin data. Please scan the QR code from the device that initiated the transaction.',
-        );
-        return 'done';
+        // ZXing often emits garbage while the camera is still locking onto an
+        // animated UR. Keep scanning instead of alerting and closing.
+        return 'continue';
       }
       // Validate Bitcoin address
       if (!validateBitcoinAddress(decoded.toAddress)) {
@@ -1966,9 +1966,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   useEffect(() => {
     if (Platform.OS === 'android' && isAndroidSendScanning && sendUrProgress) {
-      const progressPercent = Math.min(100, Math.round(sendUrProgress.received || 0));
       BarcodeZxingScan.updateProgressText(
-        `Send QR scanning… ${progressPercent}%`,
+        `Send QR scanning… ${formatUrFragmentProgress(sendUrProgress)}`,
       );
     } else if (Platform.OS === 'android' && isAndroidSendScanning && !sendUrProgress) {
       BarcodeZxingScan.updateProgressText('Scanning send QR…');
@@ -2562,13 +2561,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           sendUrProgress && sendUrProgress.total > 1
             ? sendUrProgress.received >= sendUrProgress.total
               ? 'Processing send data…'
-              : `Keep scanning animated QR: ${Math.min(
-                  100,
-                  sendUrProgress.percentage ||
-                    Math.round(
-                      (sendUrProgress.received / sendUrProgress.total) * 100,
-                    ),
-                )}%`
+              : `Keep scanning animated QR: ${formatUrFragmentProgress(
+                  sendUrProgress,
+                )}`
             : 'Point camera to Sending Device QR'
         }
         showProgress={!!sendUrProgress && sendUrProgress.total > 1}

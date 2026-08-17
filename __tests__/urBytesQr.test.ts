@@ -28,6 +28,7 @@ import {
   createUrDecoder,
   receiveUrBytesPart,
   urAllSequentialParts,
+  urFountainParts,
   urFragmentCount,
   urPartAt,
   urTypeFromPart,
@@ -139,5 +140,98 @@ describe('urBytesQr send-bitcoin round-trip', () => {
     if (result.kind === 'ignored') {
       expect(result.type).toBe('crypto-psbt');
     }
+  });
+
+  it('reports unique fragment counts instead of fountain 99% estimates', () => {
+    const ur = utf8ToUr(largePayload);
+    expect(ur).not.toBeNull();
+    const parts = urAllSequentialParts(ur!);
+    expect(parts.length).toBeGreaterThanOrEqual(10);
+
+    const decoder = createUrDecoder();
+    const first = receiveUrBytesPart(decoder, parts[0]!);
+    expect(first.kind).toBe('progress');
+    if (first.kind !== 'progress') {
+      return;
+    }
+    expect(first.progress.total).toBe(parts.length);
+    expect(first.progress.received).toBe(1);
+    expect(first.progress.percentage).toBeLessThan(50);
+
+    const afterDupes = receiveUrBytesPart(decoder, parts[0]!);
+    expect(afterDupes.kind).toBe('progress');
+    if (afterDupes.kind === 'progress') {
+      expect(afterDupes.progress.received).toBe(1);
+      expect(afterDupes.progress.percentage).toBeLessThan(50);
+    }
+    for (let i = 0; i < 8; i++) {
+      receiveUrBytesPart(decoder, parts[0]!);
+    }
+    const stillFirst = receiveUrBytesPart(decoder, parts[0]!);
+    expect(stillFirst.kind).toBe('progress');
+    if (stillFirst.kind === 'progress') {
+      expect(stillFirst.progress.received).toBe(1);
+      expect(stillFirst.progress.total).toBe(parts.length);
+      expect(stillFirst.progress.percentage).toBeLessThan(50);
+    }
+
+    const third = receiveUrBytesPart(decoder, parts[2]!);
+    const second = receiveUrBytesPart(decoder, parts[1]!);
+    expect(second.kind).toBe('progress');
+    expect(third.kind).toBe('progress');
+    if (second.kind === 'progress') {
+      expect(second.progress.received).toBe(3);
+      expect(second.progress.total).toBe(parts.length);
+      expect(second.progress.percentage).toBeLessThan(50);
+      expect(second.progress.received).toBeLessThan(second.progress.total);
+    }
+  });
+
+  it('does not treat incomplete UR as done until all fragments arrive', () => {
+    const ur = utf8ToUr(largePayload);
+    const parts = urAllSequentialParts(ur!);
+    const decoder = createUrDecoder();
+    for (let i = 0; i < parts.length - 1; i++) {
+      const result = receiveUrBytesPart(decoder, parts[i]!);
+      expect(result.kind).toBe('progress');
+      if (result.kind === 'progress') {
+        expect(result.progress.received).toBeLessThan(result.progress.total);
+        expect(result.progress.percentage).toBeLessThan(100);
+      }
+    }
+    const done = receiveUrBytesPart(decoder, parts[parts.length - 1]!);
+    expect(done.kind).toBe('complete');
+  });
+
+  it('round-trips through extra fountain mixed parts, not only sequential frames', () => {
+    const ur = utf8ToUr(largePayload);
+    expect(ur).not.toBeNull();
+    const sequential = urAllSequentialParts(ur!);
+    const mixed = urFountainParts(ur!, 8);
+    expect(mixed.length).toBe(sequential.length + 8);
+
+    const decoder = createUrDecoder();
+    let payload: string | null = null;
+    // Skip some sequential frames; mixed parts should still reconstruct.
+    const subset = [...mixed.slice(2, 6), ...mixed.slice(sequential.length)];
+    for (const part of subset) {
+      const result = receiveUrBytesPart(decoder, part);
+      if (result.kind === 'complete') {
+        payload = result.payload;
+        break;
+      }
+    }
+    if (!payload) {
+      for (const part of mixed) {
+        const result = receiveUrBytesPart(decoder, part);
+        if (result.kind === 'complete') {
+          payload = result.payload;
+          break;
+        }
+      }
+    }
+    expect(payload).toBe(largePayload);
+    const decoded = decodeSendBitcoinQR(payload!) as {utxosJson?: string};
+    expect(JSON.parse(decoded.utxosJson || '[]')).toHaveLength(40);
   });
 });

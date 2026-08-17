@@ -13,6 +13,30 @@ export type SendTxPreviewRouteParams = {
   changeAddress?: string;
 };
 
+/** Path for a QR/route change address, not this device's next unused change index. */
+export async function resolveChangeAddressDisplayPath(
+  network: string,
+  addressType: string,
+  changeAddress: string,
+): Promise<string> {
+  const trimmed = changeAddress.trim();
+  if (!trimmed) {
+    return '';
+  }
+  try {
+    const addrs = await WalletService.getInstance().getHdAddressesWithPaths(
+      network,
+      addressType,
+    );
+    const match = addrs.find(
+      a => a.chain === 'change' && a.address === trimmed,
+    );
+    return match?.derivationPath ?? '';
+  } catch {
+    return '';
+  }
+}
+
 export function useSendTxPreview(
   enabled: boolean,
   routeParams: SendTxPreviewRouteParams | undefined,
@@ -64,17 +88,12 @@ export function useSendTxPreview(
             let chgAddress = '';
             let chgPath = '';
             if (chgFromParams && chgFromParams.trim() !== '') {
-              chgAddress = chgFromParams;
-              try {
-                const r =
-                  await WalletService.getInstance().getNextChangeAddressWithPath(
-                    net,
-                    addrType,
-                  );
-                chgPath = r.path;
-              } catch {
-                /* path display optional */
-              }
+              chgAddress = chgFromParams.trim();
+              chgPath = await resolveChangeAddressDisplayPath(
+                net,
+                addrType,
+                chgAddress,
+              );
             } else {
               const r =
                 await WalletService.getInstance().getNextChangeAddressWithPath(

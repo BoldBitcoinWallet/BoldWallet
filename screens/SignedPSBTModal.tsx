@@ -17,7 +17,7 @@ import {safeUnlink} from '../services/rnfsSafe';
 // @ts-ignore - bc-ur-registry types
 import {CryptoPSBT} from '@keystonehq/bc-ur-registry-btc';
 import type {UR} from '@ngraveio/bc-ur';
-import {urFragmentCount, urPartAt} from '../utils/urBytesQr';
+import {UR_FRAME_INTERVAL_MS, urFragmentCount, urPartAt} from '../utils/urBytesQr';
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import Toast from 'react-native-toast-message';
@@ -212,7 +212,7 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
           }
           return next;
         });
-      }, 500);
+      }, UR_FRAME_INTERVAL_MS);
       return () => clearInterval(interval);
     } else if (urObject) {
       setQrFrameIndex(0);

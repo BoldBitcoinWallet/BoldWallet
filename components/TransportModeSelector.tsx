@@ -6,7 +6,12 @@ import QRCode from 'react-native-qrcode-svg';
 import {useTheme} from '../theme';
 import {encodeSendBitcoinQR} from '../utils';
 import {dbg} from '../utils';
-import {urFragmentCount, urPartAt, utf8ToUr} from '../utils/urBytesQr';
+import {
+  UR_FRAME_INTERVAL_MS,
+  createUrEncoder,
+  urFragmentCount,
+  utf8ToUr,
+} from '../utils/urBytesQr';
 
 /** Static QR stays under this; larger send payloads use animated UR frames. */
 const MAX_STATIC_QR_CHARS = 1800;
@@ -79,21 +84,25 @@ function AnimatedSendQr({
 }) {
   const ur = useMemo(() => utf8ToUr(pipePayload), [pipePayload]);
   const totalParts = useMemo(() => (ur ? urFragmentCount(ur) : 1), [ur]);
+  const encoder = useMemo(() => (ur ? createUrEncoder(ur) : null), [ur]);
+  const [qrData, setQrData] = useState<string | null>(null);
   const [frameIndex, setFrameIndex] = useState(0);
 
   useEffect(() => {
-    if (!ur || totalParts <= 1) {
+    if (!encoder) {
+      setQrData(null);
       setFrameIndex(0);
       return;
     }
+    setQrData(encoder.nextPart());
     setFrameIndex(0);
     const interval = setInterval(() => {
-      setFrameIndex(prev => (prev + 1) % totalParts);
-    }, 500);
+      setQrData(encoder.nextPart());
+      setFrameIndex(prev => prev + 1);
+    }, UR_FRAME_INTERVAL_MS);
     return () => clearInterval(interval);
-  }, [ur, totalParts]);
+  }, [encoder]);
 
-  const qrData = ur ? urPartAt(ur, frameIndex) : null;
   if (!qrData) {
     return (
       <Text style={hintStyle}>
@@ -101,6 +110,7 @@ function AnimatedSendQr({
       </Text>
     );
   }
+  const displayFrame = totalParts > 0 ? (frameIndex % totalParts) + 1 : 1;
   return (
     <>
       <View style={containerStyle}>
@@ -116,7 +126,7 @@ function AnimatedSendQr({
         />
       </View>
       <Text style={frameLabelStyle}>
-        Frame {frameIndex + 1} of {totalParts}
+        Frame {displayFrame} of {totalParts}
       </Text>
       <Text style={hintStyle}>
         Large UTXO set — keep scanning until the other device finishes.
