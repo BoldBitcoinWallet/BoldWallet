@@ -104,10 +104,14 @@ jobs:
             fi
           done
 
-      - name: Install jq (for JSON validation)
+      - name: Verify jq (for JSON validation)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y jq
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "jq missing on runner; installing without apt-get update"
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends jq
+          fi
+          jq --version
+          echo "✓ jq is available"
 
       - name: Verify Docker is available
         run: |
