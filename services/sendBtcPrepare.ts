@@ -1,5 +1,7 @@
 import {normalizeNetworkKey, resolveStoredMempoolApiBase} from './mempoolApiBase';
 import {WalletService, type UtxoWithPath} from './WalletService';
+import utxoRepository from './repositories/UtxoRepository';
+import {scriptPubKeyFromAddress} from '../utils/scriptPubKeyFromAddress';
 
 export type SendBtcPrepareParams = {
   network: string;
@@ -57,6 +59,62 @@ function parseRouteUtxosJson(raw: string): UtxoWithPath[] | null {
   }
 }
 
+function utxoOutpointKey(txid: string, vout: number): string {
+  return `${txid}:${vout}`;
+}
+
+function scriptpubkeyOf(
+  u: {scriptpubkey?: string; scriptPubkey?: string | null},
+): string {
+  return (u.scriptpubkey || u.scriptPubkey || '').trim();
+}
+
+function withScriptpubkey(
+  u: UtxoWithPath,
+  scriptpubkey: string,
+): UtxoWithPath & {scriptpubkey: string} {
+  return {...u, scriptpubkey};
+}
+
+function applyAddressDerivedScriptpubkeys(utxos: UtxoWithPath[]): UtxoWithPath[] {
+  return utxos.map(u => {
+    if (scriptpubkeyOf(u)) {
+      return u;
+    }
+    const derived = scriptPubKeyFromAddress(u.address);
+    return derived ? withScriptpubkey(u, derived) : u;
+  });
+}
+
+/** Copy scriptpubkey onto QR-selected coins by txid+vout without changing selection order. */
+function hydrateScriptpubkeysFrom(
+  selected: UtxoWithPath[],
+  source: Array<{
+    txid: string;
+    vout: number;
+    scriptpubkey?: string;
+    scriptPubkey?: string | null;
+  }>,
+): UtxoWithPath[] {
+  const byOutpoint = new Map<string, string>();
+  for (const u of source) {
+    const spk = scriptpubkeyOf(u);
+    if (spk) {
+      byOutpoint.set(utxoOutpointKey(u.txid, u.vout), spk);
+    }
+  }
+  if (byOutpoint.size === 0) {
+    return selected;
+  }
+  return selected.map(u => {
+    if (scriptpubkeyOf(u)) {
+      return u;
+    }
+    const spk = byOutpoint.get(utxoOutpointKey(u.txid, u.vout));
+    return spk ? withScriptpubkey(u, spk) : u;
+  });
+}
+
 function utxosToNativeJson(
   utxos: Array<UtxoWithPath & {scriptpubkey?: string}>,
 ): string {
@@ -108,6 +166,17 @@ export async function prepareSendBtcMultiPathInputs(
     utxos = parseRouteUtxosJson(fromRoute);
   }
 
+  if (utxos?.length && utxos.some(u => !scriptpubkeyOf(u))) {
+    utxos = hydrateScriptpubkeysFrom(
+      utxos,
+      utxoRepository.getUtxosForNetwork(network, addressType),
+    );
+  }
+
+  if (utxos?.length && utxos.some(u => !scriptpubkeyOf(u))) {
+    utxos = applyAddressDerivedScriptpubkeys(utxos);
+  }
+
   if (!utxos?.length) {
     utxos = await ws.fetchUtxosWithPaths(
       network,
@@ -137,10 +206,29 @@ export async function prepareSendBtcMultiPathInputs(
     );
   }
 
-  const needsEnrichment = utxos.some(u => !(u as {scriptpubkey?: string}).scriptpubkey);
-  const enriched = needsEnrichment
-    ? await ws.enrichUtxosWithScriptpubkey(utxos, apiUrl)
-    : utxos;
+  if (utxos.some(u => !scriptpubkeyOf(u))) {
+    utxos = applyAddressDerivedScriptpubkeys(utxos);
+  }
+
+  const missing = utxos.filter(
+    u => !scriptpubkeyOf(u) && !(u.address || '').trim(),
+  );
+  let enriched: Array<UtxoWithPath & {scriptpubkey?: string}> = utxos;
+  if (missing.length > 0) {
+    const fetched = await ws.enrichUtxosWithScriptpubkey(missing, apiUrl);
+    const byOutpoint = new Map(
+      fetched.map(u => [utxoOutpointKey(u.txid, u.vout), u.scriptpubkey || '']),
+    );
+    enriched = utxos.map(u => {
+      if (scriptpubkeyOf(u)) {
+        return u;
+      }
+      return withScriptpubkey(
+        u,
+        byOutpoint.get(utxoOutpointKey(u.txid, u.vout)) || '',
+      );
+    });
+  }
 
   return {
     utxosWithPathsJSON: utxosToNativeJson(enriched),

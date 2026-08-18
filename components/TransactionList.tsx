@@ -8,7 +8,6 @@ import React, {
 } from 'react';
 import {
   FlatList,
-  Text,
   StyleSheet,
   View,
   ActivityIndicator,
@@ -47,6 +46,7 @@ import {
   sortMempoolTransactionsForDisplay as sortTxs,
   getMempoolTransactionAmounts,
 } from '../utils/transactionListUtils';
+
 // Add icon imports
 const inIcon = require('../assets/in-icon.png');
 const outIcon = require('../assets/out-icon.png');
@@ -1297,6 +1297,10 @@ const TransactionList = React.forwardRef<
         color: appTheme.colors.text,
         opacity: 0.5,
       },
+      timestampRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+      },
       txText: {
         fontSize: appTheme.fontSizes?.base || 13,
         fontFamily: appTheme.fontFamilies?.monospace,
@@ -1337,15 +1341,47 @@ const TransactionList = React.forwardRef<
         marginRight: 8,
         tintColor: appTheme.colors.text, // Use theme text color for icons in dark mode
       },
-      txIdContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-      },
       linkIcon: {
         width: 16,
         height: 16,
         marginRight: 4,
         tintColor: appTheme.colors.textSecondary, // Use theme secondary text color for link icon
+      },
+      merchantIconWrap: {
+        position: 'relative',
+        width: 24,
+        height: 24,
+        marginRight: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      merchantIcon: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+      },
+      merchantCheckBadge: {
+        position: 'absolute',
+        bottom: -2,
+        right: -2,
+        backgroundColor: appTheme.colors.success,
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        alignItems: 'center',
+        justifyContent: 'center',
+      },
+      merchantCheckText: {
+        fontSize: 6,
+        fontFamily: appTheme.fontFamilies?.bold,
+        color: appTheme.colors.textOnPrimary,
+      },
+      rowChevron: {
+        fontSize: appTheme.fontSizes?.lg || 16,
+        fontFamily: appTheme.fontFamilies?.regular,
+        color: appTheme.colors.textSecondary,
+        marginLeft: 4,
+        lineHeight: appTheme.fontSizes?.lg || 16,
       },
     });
     // Memoized render item with currency support
@@ -1364,10 +1400,12 @@ const TransactionList = React.forwardRef<
             : 'Recently confirmed'
           : 'Pending confirmation';
         const shortTxId = `${item.txid.slice(0, 3)}…${item.txid.slice(-3)}`;
+
+        const isSending = status.includes('Sen');
         // Get the relevant address(es) based on transaction type
         let relevantAddresses: string[] = [];
         let relevantAddress: string | null = null;
-        if (status.includes('Sen')) {
+        if (isSending) {
           // For sent transactions: collect ALL recipient addresses (outputs that aren't ours)
           relevantAddresses =
             item?.vout
@@ -1385,19 +1423,30 @@ const TransactionList = React.forwardRef<
               (input: any) =>
                 !isOurAddress(input.prevout?.scriptpubkey_address || ''),
             )?.prevout?.scriptpubkey_address || null;
-          // Set empty array for received transactions (not used in display)
           relevantAddresses = [];
         }
-        // Look up merchant label for the relevant address (Branta verification cache)
+
         const merchantLabel = relevantAddress
           ? merchantLabelRepository.getByAddress(relevantAddress)
           : null;
+        const merchantName = merchantLabel?.platform;
+        const isLightMode = appTheme.colors.background === '#ffffff';
+        const merchantLogoUrl = merchantLabel
+          ? isLightMode && merchantLabel.logoLightUrl
+            ? merchantLabel.logoLightUrl
+            : merchantLabel.logoUrl
+          : undefined;
+        const merchantLogo = merchantLogoUrl ? {uri: merchantLogoUrl} : null;
+        const brantaVerified =
+          isSending &&
+          !!network &&
+          merchantLabelRepository.isVerifiedTx(item.txid, network);
         // Follow global BTC/sats toggle (WalletHome)
         // sent === 0: all outputs landed on our own addresses — self-directed tx.
         // Distinguish by number of internal outputs:
         //   1 internal output  → classic UTXO merge      → Consolidation
         //   2+ internal outputs → spreading across paths  → Rebalancing
-        const isSelfTransfer = status.includes('Sen') && sent === 0;
+        const isSelfTransfer = isSending && sent === 0;
         const confirmed = item.sentAt ? false : item.status?.confirmed;
         const internalOutputCount = isSelfTransfer
           ? (item.vout ?? []).filter((o: any) =>
@@ -1411,7 +1460,7 @@ const TransactionList = React.forwardRef<
               inSats: showSats,
               formatted: balanceFormattingEnabled,
             })}`
-          : status.includes('Sen')
+          : isSending
           ? `-${formatBitcoinDisplay(sent, {
               inSats: showSats,
               formatted: balanceFormattingEnabled,
@@ -1420,7 +1469,11 @@ const TransactionList = React.forwardRef<
               inSats: showSats,
               formatted: balanceFormattingEnabled,
             })}`;
-        const finalStatus = isConsolidation
+        const finalStatus = brantaVerified
+          ? confirmed
+            ? `Sent to ${merchantName}`
+            : `Paying ${merchantName}`
+          : isConsolidation
           ? confirmed
             ? 'Consolidated'
             : 'Consolidating'
@@ -1460,20 +1513,21 @@ const TransactionList = React.forwardRef<
           effectiveRate != null && effectiveRate > 0
             ? isConsolidation
               ? getFiatAmount(received)
-              : status.includes('Sen')
+              : isSending
               ? getFiatAmount(sent)
               : getFiatAmount(received)
             : null;
+        const openDetails = () => {
+          setSelectedTransaction(item);
+          setIsDetailsModalVisible(true);
+        };
         return (
           <AppPressable
             style={({pressed}) => [
               styles.transactionItem,
               pressed && styles.transactionItemPressed,
             ]}
-            onPress={() => {
-              setSelectedTransaction(item);
-              setIsDetailsModalVisible(true);
-            }}
+            onPress={openDetails}
             android_ripple={{
               color:
                 appTheme.colors.background === '#ffffff'
@@ -1481,85 +1535,122 @@ const TransactionList = React.forwardRef<
                   : 'rgba(255,255,255,0.15)',
               borderless: false,
             }}>
+            {/* 1. TOP ROW: Status and Amount */}
             <View style={styles.transactionRow}>
               <View style={styles.statusContainer}>
-                <AnimatedStatusIcon
-                  source={finalIcon}
-                  style={styles.statusIcon}
-                  animationType={
-                    confirmed
-                      ? 'none'
-                      : isConsolidation
-                      ? 'consolidate'
-                      : isRebalancing
-                      ? 'rebalance'
-                      : status.includes('Sen')
-                      ? 'send'
-                      : 'receive'
-                  }
-                />
-                <Text style={styles.status}>{finalStatus}</Text>
+                {brantaVerified ? (
+                  <View style={styles.merchantIconWrap}>
+                    <Animated.Image
+                      source={merchantLogo || outIcon}
+                      style={styles.merchantIcon}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.merchantCheckBadge}>
+                      <AppText
+                        variant="caption"
+                        tone="onPrimary"
+                        style={styles.merchantCheckText}>
+                        ✓
+                      </AppText>
+                    </View>
+                  </View>
+                ) : (
+                  <AnimatedStatusIcon
+                    source={finalIcon}
+                    style={styles.statusIcon}
+                    animationType={
+                      confirmed
+                        ? 'none'
+                        : isConsolidation
+                        ? 'consolidate'
+                        : isRebalancing
+                        ? 'rebalance'
+                        : isSending
+                        ? 'send'
+                        : 'receive'
+                    }
+                  />
+                )}
+                <AppText style={styles.status}>{finalStatus}</AppText>
               </View>
-              <Text
+              <AppText
                 style={[
                   styles.amount,
-                  status.includes('Sen')
+                  isSending
                     ? {
                         color:
                           appTheme.colors.background === '#ffffff'
-                            ? themes.cryptoVibrant.colors.accent // Light mode: use accent
+                            ? themes.cryptoVibrant.colors.accent
                             : appTheme.colors.bitcoinOrange,
-                      } // Dark mode: use bitcoin orange
-                    : {color: themes.cryptoVibrant.colors.secondary}, // Original: #00D2B8
+                      }
+                    : {color: themes.cryptoVibrant.colors.secondary},
                 ]}>
                 {isBlurred ? '***' : info}
-              </Text>
+              </AppText>
             </View>
+
+            {/* 2. MIDDLE ROW: Addresses and Fiat */}
             {relevantAddress && (
               <View style={styles.addressRow}>
                 <View style={styles.addressContainer}>
-                  <Text style={styles.address}>
-                    {status.includes('Sen') ? 'To: ' : 'Fr: '}
+                  <AppText style={styles.address}>
+                    {isSending ? 'To: ' : 'Fr: '}
                     {merchantLabel ? (
-                      <Text style={[styles.addressText, {fontWeight: '600'}]}>
+                      <AppText
+                        style={[
+                          styles.addressText,
+                          {fontFamily: appTheme.fontFamilies?.medium},
+                        ]}>
                         {merchantLabel.platform}
                         {'\n'}
-                        <Text style={styles.addressText}>
-                          {relevantAddress.slice(0, 3)}…{relevantAddress.slice(-3)}
-                        </Text>
-                      </Text>
-                    ) : (
-                      <Text style={styles.addressText}>
-                        {relevantAddress.slice(0, 3)}…{relevantAddress.slice(-3)}
-                        {status.includes('Sen') &&
-                          relevantAddresses.length > 1 && (
-                            <Text style={styles.addressText}>
+                        <AppText style={styles.addressText}>
+                          {relevantAddress.slice(0, 3)}…
+                          {relevantAddress.slice(-3)}
+                          {isSending && relevantAddresses.length > 1 && (
+                            <AppText style={styles.addressText}>
                               {' '}
                               (+{relevantAddresses.length - 1})
-                            </Text>
+                            </AppText>
                           )}
-                      </Text>
+                        </AppText>
+                      </AppText>
+                    ) : (
+                      <AppText style={styles.addressText}>
+                        {relevantAddress.slice(0, 3)}…
+                        {relevantAddress.slice(-3)}
+                        {isSending && relevantAddresses.length > 1 && (
+                          <AppText style={styles.addressText}>
+                            {' '}
+                            (+{relevantAddresses.length - 1})
+                          </AppText>
+                        )}
+                      </AppText>
                     )}
-                  </Text>
+                  </AppText>
                 </View>
-                <Text style={styles.fiatAmount}>
+                <AppText variant="caption" tone="muted" style={styles.fiatAmount}>
                   {isBlurred
                     ? '***'
                     : fiatAmount != null
                     ? `${getCurrencySymbol(selectedCurrency)}${fiatAmount}`
                     : '—'}
-                </Text>
+                </AppText>
               </View>
             )}
+
+            {/* 3. BOTTOM ROW: TxID and Timestamp */}
             <View style={styles.transactionRow}>
-              <View style={styles.txIdContainer}>
-                <Text style={styles.txId}>
-                  Tx:
-                  <Text style={styles.txText}> {shortTxId}</Text>
-                </Text>
+              <AppText variant="caption" tone="muted" style={styles.txId}>
+                Tx:<AppText style={styles.txText}> {shortTxId}</AppText>
+              </AppText>
+              <View style={styles.timestampRow}>
+                <AppText variant="caption" tone="muted" style={styles.timestamp}>
+                  {timestamp}
+                </AppText>
+                <AppText style={styles.rowChevron}>›</AppText>
               </View>
-              <Text style={styles.timestamp}>{timestamp}</Text>
             </View>
+
           </AppPressable>
         );
       },
@@ -1571,6 +1662,7 @@ const TransactionList = React.forwardRef<
         isMultiAddress,
         isOurAddress,
         _btcRate,
+        network,
         appTheme.colors.background,
         appTheme.colors.bitcoinOrange,
         styles.transactionRow,
@@ -1583,10 +1675,15 @@ const TransactionList = React.forwardRef<
         styles.address,
         styles.addressText,
         styles.fiatAmount,
-        styles.txIdContainer,
         styles.txId,
         styles.txText,
         styles.timestamp,
+        styles.timestampRow,
+        styles.rowChevron,
+        styles.merchantIconWrap,
+        styles.merchantIcon,
+        styles.merchantCheckBadge,
+        styles.merchantCheckText,
         styles.transactionItem,
         styles.transactionItemPressed,
         isBlurred,
@@ -1741,6 +1838,7 @@ const TransactionList = React.forwardRef<
             }
             addressPathMap={addressPathMap}
             isBlurred={isBlurred}
+            network={network}
           />
         )}
       </View>

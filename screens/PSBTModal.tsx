@@ -20,6 +20,10 @@ import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 // @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
 import {URDecoder} from '@ngraveio/bc-ur';
 import {dbg, formatBitcoinDisplay} from '../utils';
+import {
+  formatUrFragmentProgress,
+  urUniqueFragmentProgress,
+} from '../utils/urBytesQr';
 import TransactionFlowDiagram from '../components/TransactionFlowDiagram';
 import {Buffer} from 'buffer';
 import {mapParsedPsbtDetails} from '../components/transactionFlowUtils';
@@ -98,12 +102,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   // This updates the native scanner's progress overlay (not a modal)
   useEffect(() => {
     if (Platform.OS === 'android' && isAndroidScanning && urProgress) {
-      const progressPercent = Math.min(
-        100,
-        Math.round(urProgress.received || 0),
+      BarcodeZxingScan.updateProgressText(
+        `PSBT scanning… ${formatUrFragmentProgress(urProgress)}`,
       );
-      const progressText = `PSBT scanning progress... ${progressPercent}%`;
-      BarcodeZxingScan.updateProgressText(progressText);
     } else if (Platform.OS === 'android' && isAndroidScanning && !urProgress) {
       // Show initial message when scanning starts but no progress yet
       BarcodeZxingScan.updateProgressText('Scanning PSBT QR Code...');
@@ -253,20 +254,11 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         // UR decoder uses fountain codes - it can reconstruct from any subset of frames
         // Duplicate frames are automatically handled by the decoder
         urDecoderRef.current.receivePart(data.toLowerCase());
-        // Get progress
-        const progress = urDecoderRef.current.getProgress();
-        const estimatedPercentComplete = Math.round(
-          urDecoderRef.current.estimatedPercentComplete() * 100,
+        const fragmentProgress = urUniqueFragmentProgress(urDecoderRef.current);
+        dbg(
+          `UR progress: ${formatUrFragmentProgress(fragmentProgress)} (${fragmentProgress.percentage}%)`,
         );
-        dbg(`UR progress: ${estimatedPercentComplete}%, received: ${progress}`);
-        // Update progress - use percentage directly for more accurate display
-        // On iOS, ensure we always update even if the value seems the same
-        // to trigger re-renders for progress bar
-        setUrProgress({
-          total: 100,
-          received: estimatedPercentComplete,
-          percentage: estimatedPercentComplete,
-        });
+        setUrProgress(fragmentProgress);
         // Check if complete
         if (urDecoderRef.current.isComplete()) {
           dbg('UR decoder reports complete');
@@ -862,13 +854,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
             urProgress && urProgress.total > 1
               ? urProgress.received >= urProgress.total
                 ? 'Processing PSBT...'
-                : `Keep scanning animated QR: ${Math.min(
-                    100,
-                    urProgress.percentage ||
-                      Math.round(
-                        (urProgress.received / urProgress.total) * 100,
-                      ),
-                  )}%`
+                : `Keep scanning animated QR: ${formatUrFragmentProgress(
+                    urProgress,
+                  )}`
               : 'Point camera at the PSBT QR code to scan'
           }
           showProgress={!!urProgress && urProgress.total > 1}

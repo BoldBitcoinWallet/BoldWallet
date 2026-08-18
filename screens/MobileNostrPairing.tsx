@@ -58,6 +58,7 @@ import {
 } from '../utils';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
+import syncCoordinator from '../services/sync/SyncCoordinator';
 import {resolveDklsNostrSigningParties} from '../services/lanMpcSetup';
 import {
   resolveTssBackend,
@@ -78,7 +79,7 @@ import {
 } from '../services/mpcFlowAlerts';
 import {
   emptyMpcTransportSubprogress,
-  type MpcTransportSubprogressState,
+  shouldLogRelayFidelity,
 } from '../services/mpcTransportProgress';
 import {getPrepareModalCopy} from '../services/tssKeygenPrepare';
 import {LAN_KEYGEN_STATUS} from '../services/walletSetupUi';
@@ -114,6 +115,7 @@ import appConfigRepository, {
 } from '../services/repositories/AppConfigRepository';
 import database from '../services/Database';
 import transactionRepository from '../services/repositories/TransactionRepository';
+import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
 import {safeUnlink} from '../services/rnfsSafe';
@@ -361,6 +363,7 @@ type RouteParams = {
   network?: string; // Network from QR code (ensures same network)
   utxosJson?: string; // Pre-selected UTXOs from QR (avoids re-fetch on scanner)
   changeAddress?: string; // Pre-computed change address from sender (ensures consistency)
+  brantaInitiated?: boolean;
 };
 const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -556,6 +559,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       scriptpubkey_address: string;
     }>;
     outputs?: Array<{scriptpubkey_address: string; value: number}>;
+    brantaInitiated?: boolean;
   } | null>(null);
   const skipRestoreInFinallyRef = useRef(false);
   const nostrAbortRef = useRef(false);
@@ -820,6 +824,24 @@ const MobileNostrPairing = ({navigation}: any) => {
   useEffect(() => {
     const eventEmitter = new NativeEventEmitter(BBMTLibNativeModule);
     const processHook = (message: string) => {
+      try {
+        const parsed = JSON.parse(message);
+        if (shouldLogRelayFidelity(parsed)) {
+          dbg('Nostr relay', {
+            op: parsed.op,
+            relay: parsed.relay,
+            ok: parsed.ok,
+            rtt_ms: parsed.rtt_ms,
+            mode: parsed.mode,
+            err: parsed.err,
+          });
+        }
+        if (parsed?.type === 'relay') {
+          return;
+        }
+      } catch {
+        // fall through to MPC hook handling
+      }
       const backend = resolveMpcHookBackend({
         isSpendFlow: isSendBitcoin || isSignPSBT,
         spendBackend,
@@ -1746,6 +1768,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     let originalWalletServiceNetwork = '';
     let originalWalletServiceApiUrl = '';
     try {
+      syncCoordinator.pause();
       // Read ALL parameters from route params ONLY (no fallbacks)
       if (!route.params?.network || route.params.network.trim() === '') {
         throw new Error('Network is required in route params');
@@ -2102,6 +2125,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         ...(broadcastInputs && broadcastOutputs
           ? {inputs: broadcastInputs, outputs: broadcastOutputs}
           : {}),
+        brantaInitiated: route.params?.brantaInitiated === true,
       };
       skipRestoreInFinallyRef.current = true;
       if (nostrAbortRef.current) {
@@ -2125,6 +2149,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
       setStatus('Transaction signing failed');
     } finally {
+      syncCoordinator.resume();
       if (skipRestoreInFinallyRef.current) {
         skipRestoreInFinallyRef.current = false;
         setPairingActive(false);
@@ -2193,6 +2218,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     setStatus('Starting PSBT signing…');
     let keyshare: any;
     try {
+      syncCoordinator.pause();
       keyshare = await loadNostrKeysharePrepForSession();
       // Get all npubs from keyshare for session ID
       const allNpubsFromKeyshare: string[] = [];
@@ -2388,6 +2414,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       }
       setStatus('PSBT signing failed');
     } finally {
+      syncCoordinator.resume();
       setPairingActive(false);
     }
   };
@@ -6138,6 +6165,13 @@ const MobileNostrPairing = ({navigation}: any) => {
               apiTxShape,
               p.senderAddress,
             );
+            if (p.brantaInitiated) {
+              merchantLabelRepository.markVerifiedTx(
+                txId,
+                p.net || 'mainnet',
+                p.toAddress,
+              );
+            }
             navigation.dispatch(
               CommonActions.reset(
                 getResetToMainTabsWallet(

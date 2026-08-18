@@ -41,6 +41,19 @@ func TestNostrSendBtcSessionFlagScopedByAttemptID(t *testing.T) {
 	}
 }
 
+func TestNostrAttemptHandshakeTimeouts(t *testing.T) {
+	if nostrAttemptPublishTimeout <= nostrAttemptSubscribeDelay {
+		t.Fatal("publish timeout must be longer than the subscribe delay")
+	}
+	if nostrAttemptWaitTimeout <= nostrAttemptPublishTimeout {
+		t.Fatalf(
+			"peer wait (%s) must exceed initiator publish timeout (%s)",
+			nostrAttemptWaitTimeout,
+			nostrAttemptPublishTimeout,
+		)
+	}
+}
+
 func TestNostrAttemptHandshakeRoomStable(t *testing.T) {
 	key := "npub1aaa,npub1bbb,50000,tb1qrecv"
 	a, err := nostrAttemptHandshakeRoom(key)

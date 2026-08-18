@@ -127,6 +127,7 @@ import appConfigRepository, {
 } from '../services/repositories/AppConfigRepository';
 import database from '../services/Database';
 import transactionRepository from '../services/repositories/TransactionRepository';
+import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import SignedTxBroadcastModal from '../components/SignedTxBroadcastModal';
 import TransactionFlowDiagram from '../components/TransactionFlowDiagram';
@@ -279,6 +280,7 @@ const MobilesPairing = ({navigation}: any) => {
     network?: string; // Network from QR code (ensures same network)
     utxosJson?: string; // Pre-selected UTXOs from QR (avoids re-fetch on scanner)
     changeAddress?: string; // Pre-computed change address from sender (ensures consistency)
+    brantaInitiated?: boolean;
   };
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const isFocused = useIsFocused();
@@ -379,6 +381,7 @@ const MobilesPairing = ({navigation}: any) => {
       scriptpubkey_address: string;
     }>;
     outputs?: Array<{scriptpubkey_address: string; value: number}>;
+    brantaInitiated?: boolean;
   } | null>(null);
 
   const mpcFlowAlertGate = () => ({
@@ -1401,6 +1404,7 @@ const MobilesPairing = ({navigation}: any) => {
             isMaster,
             inputs,
             outputs,
+            brantaInitiated: route.params?.brantaInitiated === true,
           };
           if (mpcAbortRef.current) {
             setMpcModalActive(false);
@@ -4739,6 +4743,13 @@ const MobilesPairing = ({navigation}: any) => {
               apiTxShape,
               p.senderAddress,
             );
+            if (p.brantaInitiated) {
+              merchantLabelRepository.markVerifiedTx(
+                txId,
+                p.net || 'mainnet',
+                p.toAddress,
+              );
+            }
             navigation.dispatch(
               CommonActions.reset(
                 getResetToMainTabsWallet(

@@ -12,6 +12,15 @@ import (
 
 const nostrAttemptHandshakePrefix = "bbw-attempt-v1:"
 
+// Handshake timing: initiator sleeps so the peer can subscribe, then publishes.
+// The sleep must not sit inside the publish deadline — that previously left
+// only ~18s of a 20s context for relay retries (Android: "context deadline exceeded").
+const (
+	nostrAttemptSubscribeDelay = 2 * time.Second
+	nostrAttemptPublishTimeout = 45 * time.Second
+	nostrAttemptWaitTimeout    = 55 * time.Second
+)
+
 func normalizeSigningNpubsCSV(partiesNpubsCSV string) string {
 	parts := strings.Split(partiesNpubsCSV, ",")
 	out := make([]string, 0, len(parts))
@@ -96,10 +105,10 @@ func publishNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room, attemptI
 	}
 	defer client.Close("attempt publish complete")
 	messenger := nostrtransport.NewMessenger(cfg, client)
-	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 20*time.Second)
-	defer cancel()
 	// Give responder time to subscribe (subscription-only, no history query).
-	time.Sleep(2 * time.Second)
+	time.Sleep(nostrAttemptSubscribeDelay)
+	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), nostrAttemptPublishTimeout)
+	defer cancel()
 	for i := 0; i < 3; i++ {
 		if err := messenger.SendMessage(ctx, localNpub, peerNpub, attemptID); err != nil {
 			return fmt.Errorf("failed to publish attempt id: %w", err)
@@ -129,7 +138,7 @@ func waitForNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room string) (
 
 	attemptCh := make(chan string, 1)
 	errCh := make(chan error, 1)
-	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), 25*time.Second)
+	ctx, cancel := context.WithTimeout(getActiveNostrCtx(), nostrAttemptWaitTimeout)
 	defer cancel()
 
 	go func() {

@@ -1,9 +1,139 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useState, Component, type ErrorInfo, type ReactNode} from 'react';
 import {View, Text, StyleSheet, Modal, Image, ScrollView} from 'react-native';
 import AppPressable from './AppPressable';
 import StaticQRCode from './StaticQRCode';
+import QRCode from 'react-native-qrcode-svg';
 import {useTheme} from '../theme';
 import {encodeSendBitcoinQR} from '../utils';
+import {dbg} from '../utils';
+import {
+  UR_FRAME_INTERVAL_MS,
+  createUrEncoder,
+  urFragmentCount,
+  utf8ToUr,
+} from '../utils/urBytesQr';
+
+/** Static QR stays under this; larger send payloads use animated UR frames. */
+const MAX_STATIC_QR_CHARS = 1800;
+
+class QrRenderBoundary extends Component<
+  {children: ReactNode; fallback: ReactNode},
+  {hasError: boolean}
+> {
+  state = {hasError: false};
+  static getDerivedStateFromError() {
+    return {hasError: true};
+  }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    dbg('TransportModeSelector: QR render failed', error.message, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback;
+    }
+    return this.props.children;
+  }
+}
+
+type SendQrDisplay =
+  | {mode: 'static'; qrData: string}
+  | {mode: 'animated'; pipePayload: string}
+  | null;
+
+function buildSendQrPayload(
+  data: NonNullable<TransportModeSelectorProps['sendBitcoinData']>,
+): SendQrDisplay {
+  try {
+    const full = encodeSendBitcoinQR(
+      data.toAddress,
+      data.amountSats,
+      data.feeSats,
+      data.spendingHash || '',
+      data.addressType || '',
+      data.derivationPath || '',
+      data.network || '',
+      data.utxosJson || '',
+      data.changeAddress || '',
+    );
+    if (full.length <= MAX_STATIC_QR_CHARS) {
+      return {mode: 'static', qrData: full};
+    }
+    if (utf8ToUr(full)) {
+      return {mode: 'animated', pipePayload: full};
+    }
+    dbg('TransportModeSelector: UR encode failed for large send QR');
+    return null;
+  } catch (err) {
+    dbg('TransportModeSelector: encodeSendBitcoinQR failed', err);
+    return null;
+  }
+}
+
+function AnimatedSendQr({
+  pipePayload,
+  size,
+  frameLabelStyle,
+  hintStyle,
+  containerStyle,
+}: {
+  pipePayload: string;
+  size: number;
+  frameLabelStyle: object;
+  hintStyle: object;
+  containerStyle: object | object[];
+}) {
+  const ur = useMemo(() => utf8ToUr(pipePayload), [pipePayload]);
+  const totalParts = useMemo(() => (ur ? urFragmentCount(ur) : 1), [ur]);
+  const encoder = useMemo(() => (ur ? createUrEncoder(ur) : null), [ur]);
+  const [qrData, setQrData] = useState<string | null>(null);
+  const [frameIndex, setFrameIndex] = useState(0);
+
+  useEffect(() => {
+    if (!encoder) {
+      setQrData(null);
+      setFrameIndex(0);
+      return;
+    }
+    setQrData(encoder.nextPart());
+    setFrameIndex(0);
+    const interval = setInterval(() => {
+      setQrData(encoder.nextPart());
+      setFrameIndex(prev => prev + 1);
+    }, UR_FRAME_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [encoder]);
+
+  if (!qrData) {
+    return (
+      <Text style={hintStyle}>
+        Could not render animated QR. Continue with Local or Nostr.
+      </Text>
+    );
+  }
+  const displayFrame = totalParts > 0 ? (frameIndex % totalParts) + 1 : 1;
+  return (
+    <>
+      <View style={containerStyle}>
+        <QRCode
+          value={qrData}
+          size={size}
+          color="black"
+          backgroundColor="white"
+          ecl="L"
+          onError={error => {
+            dbg('TransportModeSelector: animated QR encode failed', error);
+          }}
+        />
+      </View>
+      <Text style={frameLabelStyle}>
+        Frame {displayFrame} of {totalParts}
+      </Text>
+      <Text style={hintStyle}>
+        Large UTXO set — keep scanning until the other device finishes.
+      </Text>
+    </>
+  );
+}
 interface TransportModeSelectorProps {
   visible: boolean;
   onClose: () => void;
@@ -72,6 +202,12 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       setSelectedTransport(initialTransport);
     }
   };
+  const qrPayload = useMemo(() => {
+    if (!visible || !sendBitcoinData || !showQRCode) {
+      return null;
+    }
+    return buildSendQrPayload(sendBitcoinData);
+  }, [visible, sendBitcoinData, showQRCode]);
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
@@ -358,6 +494,21 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     noPadding: {
       padding: 0,
     },
+    qrFrameLabel: {
+      marginTop: 8,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.text,
+      textAlign: 'center',
+    },
+    qrAnimatedHint: {
+      marginTop: 4,
+      marginBottom: 8,
+      paddingHorizontal: 12,
+      fontSize: theme.fontSizes?.sm || 12,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+    },
   });
   return (
     <Modal
@@ -399,37 +550,55 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                 Nostr is not available for this wallet keyshare.
               </Text>
             )}
-            {/* QR Code Section - Only show if sendBitcoinData exists and showQRCode is true */}
-            {sendBitcoinData &&
-              showQRCode &&
-              (() => {
-                const qrData = encodeSendBitcoinQR(
-                  sendBitcoinData.toAddress,
-                  sendBitcoinData.amountSats,
-                  sendBitcoinData.feeSats,
-                  sendBitcoinData.spendingHash || '',
-                  sendBitcoinData.addressType || '',
-                  sendBitcoinData.derivationPath || '',
-                  sendBitcoinData.network || '',
-                  sendBitcoinData.utxosJson || '',
-                  sendBitcoinData.changeAddress || '',
-                );
-                return (
-                  <View style={styles.qrCodeSection}>
-                    <Text style={styles.qrCodeLabel}>
-                      Scan on another device to auto fill
-                    </Text>
-                    <StaticQRCode
-                      value={qrData}
-                      size={260}
-                      copyContent={qrData}
-                      toastMessage="Send data copied to clipboard"
-                      copyDisabled={true}
-                      style={[styles.qrCodeContainer, styles.noPadding]}
-                    />
-                  </View>
-                );
-              })()}
+            {/* QR Code Section - Only encode while the modal is visible. */}
+            {visible && sendBitcoinData && showQRCode ? (
+              !qrPayload ? (
+                <Text style={styles.transportDisabledText}>
+                  QR is too large to display. Continue with Local or Nostr
+                  on this device.
+                </Text>
+              ) : (
+                <View style={styles.qrCodeSection}>
+                  <Text style={styles.qrCodeLabel}>
+                    Scan on another device to auto fill
+                  </Text>
+                  <QrRenderBoundary
+                    key={
+                      qrPayload.mode === 'static'
+                        ? qrPayload.qrData
+                        : `animated:${qrPayload.pipePayload.length}`
+                    }
+                    fallback={
+                      <Text style={styles.transportDisabledText}>
+                        Could not render QR. Continue with Local or Nostr.
+                      </Text>
+                    }>
+                    {qrPayload.mode === 'animated' ? (
+                      <AnimatedSendQr
+                        pipePayload={qrPayload.pipePayload}
+                        size={260}
+                        frameLabelStyle={styles.qrFrameLabel}
+                        hintStyle={styles.qrAnimatedHint}
+                        containerStyle={[
+                          styles.qrCodeContainer,
+                          styles.noPadding,
+                        ]}
+                      />
+                    ) : (
+                      <StaticQRCode
+                        value={qrPayload.qrData}
+                        size={260}
+                        copyContent={qrPayload.qrData}
+                        toastMessage="Send data copied to clipboard"
+                        copyDisabled={true}
+                        showLogo={qrPayload.qrData.length < 1200}
+                        style={[styles.qrCodeContainer, styles.noPadding]}
+                      />
+                    )}
+                  </QrRenderBoundary>
+                </View>
+              )
+            ) : null}
             <View style={styles.transportOptionsContainer}>
               {/* Local WiFi/Hotspot Option */}
               <AppPressable

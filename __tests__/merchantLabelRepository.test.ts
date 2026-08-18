@@ -3,19 +3,144 @@
  */
 
 // Mock the database module
+const mockStore = {
+  merchantLabels: new Map<string, Record<string, unknown>>(),
+  verifiedTxs: new Map<string, {network: string; address?: string; created_at: number}>(),
+  transactionBackfillRows: [] as Array<Record<string, unknown>>,
+};
+
 jest.mock('../services/Database', () => ({
-  database: {
-    execute: jest.fn(),
+  __esModule: true,
+  default: {
+    execute: jest.fn((sql: string, params: unknown[] = []) => {
+      const query = sql.replace(/\s+/g, ' ').trim().toLowerCase();
+
+      if (query.startsWith('delete from merchant_labels')) {
+        mockStore.merchantLabels.clear();
+        return {rows: [], rowsAffected: 1};
+      }
+      if (query.startsWith('delete from branta_verified_txs')) {
+        mockStore.verifiedTxs.clear();
+        return {rows: [], rowsAffected: 1};
+      }
+      if (query.startsWith('delete from merchant_labels where')) {
+        mockStore.merchantLabels.delete(params[0] as string);
+        return {rows: [], rowsAffected: 1};
+      }
+
+      if (query.includes('insert into merchant_labels')) {
+        const [
+          address,
+          platform,
+          description,
+          logo_url,
+          logo_light_url,
+          verify_url,
+          fetched_at,
+        ] = params as [
+          string,
+          string,
+          string | null,
+          string | null,
+          string | null,
+          string | null,
+          number,
+        ];
+        mockStore.merchantLabels.set(address, {
+          address,
+          platform,
+          description,
+          logo_url,
+          logo_light_url,
+          verify_url,
+          fetched_at,
+        });
+        return {rows: [], rowsAffected: 1};
+      }
+
+      if (
+        query.includes('from merchant_labels') &&
+        query.includes('where address = ?') &&
+        !query.includes(' in (')
+      ) {
+        const row = mockStore.merchantLabels.get(params[0] as string);
+        return {rows: row ? [row] : [], rowsAffected: 0};
+      }
+
+      if (query.includes('from merchant_labels') && query.includes(' in (')) {
+        const addresses = params as string[];
+        const rows = addresses
+          .map(addr => mockStore.merchantLabels.get(addr))
+          .filter(Boolean) as Record<string, unknown>[];
+        return {rows, rowsAffected: 0};
+      }
+
+      if (query.includes('insert or replace into branta_verified_txs')) {
+        const [txid, network, address, created_at] = params as [
+          string,
+          string,
+          string | null,
+          number,
+        ];
+        mockStore.verifiedTxs.set(`${txid}:${network}`, {
+          network,
+          address: address || undefined,
+          created_at,
+        });
+        return {rows: [], rowsAffected: 1};
+      }
+
+      if (
+        query.includes('from branta_verified_txs') &&
+        query.includes('where txid = ? and network = ?')
+      ) {
+        const [txid, network] = params as [string, string];
+        const row = mockStore.verifiedTxs.get(`${txid}:${network}`);
+        return {rows: row ? [{txid}] : [], rowsAffected: 0};
+      }
+
+      if (
+        query.includes('from branta_verified_txs') &&
+        query.includes('where network = ?') &&
+        query.includes(' in (')
+      ) {
+        const [network, ...txids] = params as [string, ...string[]];
+        const rows = txids
+          .filter(txid => mockStore.verifiedTxs.has(`${txid}:${network}`))
+          .map(txid => ({txid}));
+        return {rows, rowsAffected: 0};
+      }
+
+      if (
+        query.includes('from merchant_labels ml') &&
+        query.includes('join transaction_addresses')
+      ) {
+        return {rows: mockStore.transactionBackfillRows, rowsAffected: 0};
+      }
+
+      return {rows: [], rowsAffected: 0};
+    }),
   },
 }));
 
+jest.mock('../utils', () => ({
+  dbg: jest.fn(),
+}));
+
 // Import after mocks are set up
-import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
+import merchantLabelRepository, {
+  shouldBackfillBrantaTx,
+  BRANTA_BACKFILL_PRE_MS,
+  BRANTA_BACKFILL_POST_MS,
+  type BrantaBackfillCandidate,
+} from '../services/repositories/MerchantLabelRepository';
 
 describe('MerchantLabelRepository', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Clear all labels before each test
+    mockStore.merchantLabels.clear();
+    mockStore.verifiedTxs.clear();
+    mockStore.transactionBackfillRows = [];
     merchantLabelRepository.clearAll();
   });
 
@@ -185,5 +310,133 @@ describe('MerchantLabelRepository', () => {
     expect(retrieved?.platform).toBe('Exchange');
     expect(retrieved?.description).toBeUndefined();
     expect(retrieved?.logoUrl).toBeUndefined();
+  });
+
+  test('markVerifiedTx calls insert with txid and network', () => {
+    const txid = 'a'.repeat(64);
+    merchantLabelRepository.markVerifiedTx(txid, 'mainnet', 'bc1qtest');
+    expect(merchantLabelRepository.isVerifiedTx(txid, 'mainnet')).toBe(true);
+  });
+
+  test('markVerifiedTx ignores invalid txid', () => {
+    const sizeBefore = mockStore.verifiedTxs.size;
+    merchantLabelRepository.markVerifiedTx('not-a-txid', 'mainnet', 'bc1qtest');
+    expect(mockStore.verifiedTxs.size).toBe(sizeBefore);
+  });
+
+  test('isVerifiedTx returns true when row exists', () => {
+    const txid = 'b'.repeat(64);
+    merchantLabelRepository.markVerifiedTx(txid, 'mainnet', 'bc1qtest');
+    expect(merchantLabelRepository.isVerifiedTx(txid, 'mainnet')).toBe(true);
+  });
+
+  test('isVerifiedTx returns false when row missing', () => {
+    expect(
+      merchantLabelRepository.isVerifiedTx('c'.repeat(64), 'mainnet'),
+    ).toBe(false);
+  });
+
+  test('getVerifiedTxids returns matching txids', () => {
+    const txid1 = 'd'.repeat(64);
+    const txid2 = 'e'.repeat(64);
+    merchantLabelRepository.markVerifiedTx(txid1, 'mainnet', 'bc1q1');
+    merchantLabelRepository.markVerifiedTx(txid2, 'mainnet', 'bc1q2');
+    const result = merchantLabelRepository.getVerifiedTxids(
+      [txid1, txid2, 'f'.repeat(64)],
+      'mainnet',
+    );
+    expect(result.has(txid1)).toBe(true);
+    expect(result.has(txid2)).toBe(true);
+    expect(result.size).toBe(2);
+  });
+
+  test('clearAll deletes merchant labels and verified txs', () => {
+    merchantLabelRepository.upsert({
+      address: 'bc1qclear',
+      platform: 'Test',
+      fetchedAt: Date.now(),
+    });
+    merchantLabelRepository.markVerifiedTx('1'.repeat(64), 'mainnet', 'bc1qclear');
+    merchantLabelRepository.clearAll();
+    expect(merchantLabelRepository.getByAddress('bc1qclear')).toBeNull();
+    expect(
+      merchantLabelRepository.isVerifiedTx('1'.repeat(64), 'mainnet'),
+    ).toBe(false);
+  });
+
+  test('backfillVerifiedTxsFromMerchantHistory marks tx in scan window', () => {
+    const fetchedAt = 1_700_000_000_000;
+    const txidLocal = 'd'.repeat(64);
+    mockStore.merchantLabels.set('bc1qbackfill', {
+      address: 'bc1qbackfill',
+      platform: 'Shop',
+      verify_url: 'https://branta.pro/verify',
+      fetched_at: fetchedAt,
+    });
+    mockStore.transactionBackfillRows = [
+      {
+        txid: txidLocal,
+        network: 'mainnet',
+        address: 'bc1qbackfill',
+        fetched_at: fetchedAt,
+        tx_time_ms: fetchedAt + 120_000,
+      },
+    ];
+
+    const inserted =
+      merchantLabelRepository.backfillVerifiedTxsFromMerchantHistory();
+    expect(inserted).toBe(1);
+    expect(merchantLabelRepository.isVerifiedTx(txidLocal, 'mainnet')).toBe(
+      true,
+    );
+  });
+});
+
+describe('shouldBackfillBrantaTx', () => {
+  const txid = 'a'.repeat(64);
+
+  function candidate(
+    overrides: Partial<BrantaBackfillCandidate> = {},
+  ): BrantaBackfillCandidate {
+    return {
+      txid,
+      network: 'mainnet',
+      address: 'bc1qmerchant',
+      fetchedAt: 1_000_000,
+      txTimeMs: 1_000_000,
+      ...overrides,
+    };
+  }
+
+  test('returns true when tx is within Branta scan window', () => {
+    const c = candidate({txTimeMs: 1_000_000 + 60_000});
+    expect(shouldBackfillBrantaTx(c, [c])).toBe(true);
+  });
+
+  test('returns true slightly before fetchedAt (clock skew)', () => {
+    const c = candidate({
+      txTimeMs: 1_000_000 - BRANTA_BACKFILL_PRE_MS + 1_000,
+    });
+    expect(shouldBackfillBrantaTx(c, [c])).toBe(true);
+  });
+
+  test('returns false when tx is outside window and multiple candidates exist', () => {
+    const c1 = candidate({txid: 'b'.repeat(64), txTimeMs: 1_000_000});
+    const c2 = candidate({
+      txid: 'c'.repeat(64),
+      txTimeMs: 1_000_000 + BRANTA_BACKFILL_POST_MS + 1,
+    });
+    expect(shouldBackfillBrantaTx(c2, [c1, c2])).toBe(false);
+  });
+
+  test('returns true for sole outbound tx even without timestamp', () => {
+    const c = candidate({txTimeMs: null});
+    expect(shouldBackfillBrantaTx(c, [c])).toBe(true);
+  });
+
+  test('returns false without timestamp when multiple candidates exist', () => {
+    const c1 = candidate({txid: 'b'.repeat(64), txTimeMs: null});
+    const c2 = candidate({txid: 'c'.repeat(64), txTimeMs: 2_000_000});
+    expect(shouldBackfillBrantaTx(c1, [c1, c2])).toBe(false);
   });
 });

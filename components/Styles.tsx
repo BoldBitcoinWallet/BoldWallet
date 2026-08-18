@@ -336,6 +336,42 @@ export interface Styles {
   walletInfoRow: ViewStyle;
   walletInfoKeyItem: ViewStyle;
   walletInfoHint: TextStyle;
+  containerTransaction: ViewStyle;
+  containerCompact: ViewStyle;
+  trackLabelRow: ViewStyle;
+  trackLabel: TextStyle;
+  walletLabel: TextStyle;
+  validatedLabel: TextStyle;
+  visualTrack: ViewStyle;
+  walletNode: ViewStyle;
+  walletNodeInner: ViewStyle;
+  compactCosignWrap: ViewStyle;
+  visualTrackCompact: ViewStyle;
+  chainAhead: ViewStyle;
+  blockHeightCaption: TextStyle;
+  statusSubtext: TextStyle;
+  sigGroup: ViewStyle;
+  sigCircle: ViewStyle;
+  sigText: TextStyle;
+  progressWrapper: ViewStyle;
+  progressFill: ViewStyle;
+  progressLaunched: ViewStyle;
+  progressInCube: ViewStyle;
+  cubeGraphic: ViewStyle;
+  nodeRow: ViewStyle;
+  chainNode: ViewStyle;
+  chainNodeHot: ViewStyle;
+  validatedBlock: ViewStyle;
+  statusPanel: ViewStyle;
+  statusPanelCompact: ViewStyle;
+  centered: ViewStyle;
+  statusText: TextStyle;
+  statusTextConfirmed: TextStyle;
+  errorText: TextStyle;
+  retryBtn: ViewStyle;
+  retryBtnText: TextStyle;
+  txidPill: ViewStyle;
+  txidText: TextStyle;
 }
 export const createStyles = (theme: Theme): Styles => ({
   actionButton: {
@@ -2150,5 +2186,228 @@ export const createStyles = (theme: Theme): Styles => ({
       theme.colors.background === '#ffffff'
         ? theme.colors.accent
         : theme.colors.bitcoinOrange,
+  },
+  containerTransaction: {
+    width: '100%',
+    minHeight: 240,
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: theme.borderRadius?.medium || 10,
+    borderWidth: 1,
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay05
+        : theme.colors.border + '40',
+    padding: 20,
+    justifyContent: 'space-between',
+  },
+  containerCompact: {
+    minHeight: 228,
+    padding: 14,
+  },
+  trackLabelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+  },
+  trackLabel: {
+    fontSize: theme.fontSizes?.xs || 10,
+    letterSpacing: 1.2,
+    color: theme.colors.textSecondary,
+    fontFamily: theme.fontFamilies?.medium,
+  },
+  walletLabel: {
+    color:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent || theme.colors.primary
+        : theme.colors.bitcoinOrange,
+  },
+  validatedLabel: {
+    color: theme.colors.success,
+  },
+  visualTrack: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 10,
+  },
+  walletNode: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+  walletNodeInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  compactCosignWrap: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+  visualTrackCompact: {
+    alignItems: 'center',
+    paddingTop: 6,
+    paddingBottom: 18,
+    minHeight: 64,
+  },
+  chainAhead: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 64,
+  },
+  blockHeightCaption: {
+    position: 'absolute',
+    top: '100%',
+    left: 0,
+    right: 0,
+    marginTop: 2,
+    fontFamily: theme.fontFamilies?.monospaceMedium || theme.fontFamilies?.monospace,
+    fontSize: theme.fontSizes?.xs || 10,
+    textAlign: 'center',
+  },
+  statusSubtext: {
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  sigGroup: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  sigCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.background,
+  },
+  sigText: {
+    fontSize: 9,
+    fontFamily: theme.fontFamilies?.bold,
+  },
+  progressWrapper: {
+    flex: 1,
+    height: 4,
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay05
+        : theme.colors.whiteOverlay10,
+    borderRadius: 2,
+    marginHorizontal: 12,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: theme.colors.success,
+    borderRadius: 2,
+  },
+  progressLaunched: {},
+  progressInCube: {},
+  cubeGraphic: {
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 0,
+    position: 'relative',
+    overflow: 'visible',
+  },
+  nodeRow: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  chainNode: {
+    width: 18,
+    height: 18,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.border
+        : theme.colors.whiteOverlay12,
+    backgroundColor: theme.colors.background,
+  },
+  chainNodeHot: {
+    borderColor: theme.colors.secondary,
+  },
+  validatedBlock: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statusPanel: {
+    height: 84,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  statusPanelCompact: {
+    height: 78,
+    minHeight: 78,
+  },
+  centered: {
+    alignItems: 'center',
+  },
+  statusText: {
+    fontSize: theme.fontSizes?.sm || 12,
+    color: theme.colors.textSecondary,
+    fontFamily: theme.fontFamilies?.regular,
+    textAlign: 'center',
+  },
+  statusTextConfirmed: {
+    color: theme.colors.success,
+    fontFamily: theme.fontFamilies?.medium,
+  },
+  errorText: {
+    fontSize: theme.fontSizes?.xs || 11,
+    color: theme.colors.danger,
+    marginBottom: 6,
+    fontFamily: theme.fontFamilies?.regular,
+    textAlign: 'center',
+  },
+  retryBtn: {
+    borderWidth: 1,
+    borderColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent + '55'
+        : theme.colors.bitcoinOrange + '55',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay05
+        : theme.colors.whiteOverlay08,
+    borderRadius: 12,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+  },
+  retryBtnText: {
+    color:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.accent || theme.colors.primary
+        : theme.colors.bitcoinOrange,
+    fontSize: theme.fontSizes?.xs || 10,
+    fontFamily: theme.fontFamilies?.medium,
+  },
+  txidPill: {
+    borderWidth: 1,
+    borderColor: theme.colors.secondary + '55',
+    backgroundColor:
+      theme.colors.background === '#ffffff'
+        ? theme.colors.blackOverlay03
+        : theme.colors.whiteOverlay08,
+    paddingVertical: 4,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  txidText: {
+    fontFamily: theme.fontFamilies?.monospace,
+    fontSize: theme.fontSizes?.xs || 10,
+    color: theme.colors.secondary,
   },
 });

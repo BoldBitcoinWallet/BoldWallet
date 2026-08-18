@@ -2,23 +2,27 @@ import React from 'react';
 import {
   Modal,
   View,
-  Text,
   Image,
   StyleSheet,
   ScrollView,
   Linking,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
 import AppPressable from './AppPressable';
+import AppText from './AppText';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
-import moment from 'moment';
 import {dbg, explorerWebBaseFromApiUrl, formatBitcoinDisplay} from '../utils';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
+import {ActiveTxVisualizer} from './TransactionVisualizer';
+import ErrorBoundary from './ErrorBoundary';
+
 interface TransactionDetailsModalProps {
   visible: boolean;
   onClose: () => void;
   transaction: any;
   baseApi: string;
+  network?: string;
   selectedCurrency: string;
   /** Historical BTC rate at tx time; fiat shown only when set. */
   historicalRate: number | null;
@@ -39,11 +43,13 @@ interface TransactionDetailsModalProps {
   } | null;
   isBlurred?: boolean;
 }
+
 const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   visible,
   onClose,
   transaction,
   baseApi,
+  network = 'mainnet',
   selectedCurrency,
   historicalRate,
   getCurrencySymbol,
@@ -57,17 +63,18 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   const [currentBlockHeight, setCurrentBlockHeight] = React.useState<
     number | null
   >(null);
+  const [txidCopied, setTxidCopied] = React.useState(false);
+
   const baseUrl =
     explorerWebBaseFromApiUrl(baseApi) ||
     baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
   const explorerLink = transaction ? `${baseUrl}/tx/${transaction.txid}` : '';
-  // Fetch current block height to calculate confirmations
+
   React.useEffect(() => {
     if (visible && transaction?.status?.block_height) {
       const fetchCurrentBlockHeight = async () => {
         try {
-          // Use /api/blocks/tip/height endpoint (e.g., https://mempool.space/api/blocks/tip/height)
-          const apiUrl = baseApi.replace(/\/+$/, ''); // Remove trailing slashes
+          const apiUrl = baseApi.replace(/\/+$/, '');
           const response = await fetch(`${apiUrl}/blocks/tip/height`);
           if (response.ok) {
             const height = await response.text();
@@ -77,14 +84,19 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             }
           }
         } catch (error) {
-          // Silently fail - confirmations will just not be shown
           dbg('Failed to fetch current block height:', error);
         }
       };
       fetchCurrentBlockHeight();
     }
   }, [visible, transaction?.status?.block_height, baseApi]);
-  // Calculate confirmations if we have both block heights
+
+  React.useEffect(() => {
+    if (!visible) {
+      setTxidCopied(false);
+    }
+  }, [visible]);
+
   const confirmations = React.useMemo(() => {
     if (
       transaction?.status?.block_height &&
@@ -95,28 +107,58 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     }
     return null;
   }, [transaction?.status?.block_height, currentBlockHeight]);
+
   if (!transaction || !status || !amounts) {
     return null;
   }
+
   const getFiatAmount = (btcAmount: number): string | null => {
     if (historicalRate == null || historicalRate <= 0) return null;
     const amount = btcAmount * historicalRate;
     return amount.toFixed(2);
   };
+
   const hasFiat = historicalRate != null && historicalRate > 0;
   const isSent = status.text.includes('Sen') || transaction.sentAt;
+  const isWalletOrigin =
+    isSent ||
+    status.text.includes('Consolidat') ||
+    status.text.includes('Rebalanc');
   const amount = isSent ? amounts.sent : amounts.received;
   const hasValidAmount = typeof amount === 'number' && Number.isFinite(amount);
   const hasValidSent =
     typeof amounts.sent === 'number' && Number.isFinite(amounts.sent);
   const hasValidReceived =
     typeof amounts.received === 'number' && Number.isFinite(amounts.received);
+
+  const confirmedAtMs = transaction.sentAt
+    ? transaction.sentAt
+    : transaction.status?.block_time
+    ? transaction.status.block_time * 1000
+    : null;
+
+  const blockHeight = transaction.status?.block_height ?? null;
+  const blockExplorerLink =
+    blockHeight != null ? `${baseUrl}/block/${blockHeight}` : null;
+
+  const copyTxid = () => {
+    if (!transaction.txid) {
+      return;
+    }
+    Clipboard.setString(transaction.txid);
+    setTxidCopied(true);
+    setTimeout(() => setTxidCopied(false), 2000);
+  };
+
   const renderDetailRow = (label: string, value: string | React.ReactNode) => (
     <View style={styles.detailRow}>
-      <Text style={styles.detailLabel}>{label}</Text>
-      <Text style={styles.detailValue}>{value}</Text>
+      <AppText variant="caption" tone="muted" style={styles.detailLabel}>
+        {label}
+      </AppText>
+      <View style={styles.detailValueWrap}>{value}</View>
     </View>
   );
+
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
@@ -137,8 +179,8 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       borderWidth: 1,
       borderColor:
         theme.colors.background === '#ffffff'
-          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
-          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
     modalHeader: {
       flexDirection: 'row',
@@ -148,8 +190,8 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       borderBottomWidth: 1,
       borderBottomColor:
         theme.colors.background === '#ffffff'
-          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
-          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
     modalTitle: {
       fontSize: theme.fontSizes?.['2xl'] || 20,
@@ -178,6 +220,69 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       marginBottom: 12,
       letterSpacing: 0.2,
     },
+    heroSection: {
+      alignItems: 'center',
+      paddingTop: 16,
+      paddingBottom: 12,
+      paddingHorizontal: 8,
+      marginBottom: 16,
+    },
+    heroAmount: {
+      fontSize: 28,
+      lineHeight: 36,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+      textAlign: 'center',
+      includeFontPadding: false,
+      paddingTop: 4,
+    },
+    heroFiat: {
+      fontSize: theme.fontSizes?.md || 15,
+      lineHeight: 22,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
+      marginTop: 6,
+      textAlign: 'center',
+      includeFontPadding: false,
+    },
+    heroChips: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'center',
+      gap: 8,
+      marginTop: 12,
+    },
+    chip: {
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 999,
+      borderWidth: 1,
+    },
+    chipConfirmed: {
+      backgroundColor:
+        theme.colors.background !== '#ffffff'
+          ? theme.colors.received + '26'
+          : theme.colors.receivedOverlay15,
+      borderColor:
+        theme.colors.background !== '#ffffff'
+          ? theme.colors.received + '80'
+          : theme.colors.receivedOverlay40,
+    },
+    chipPending: {
+      backgroundColor:
+        theme.colors.background !== '#ffffff'
+          ? theme.colors.bitcoinOrange + '26'
+          : theme.colors.dangerOverlay15,
+      borderColor:
+        theme.colors.background !== '#ffffff'
+          ? theme.colors.bitcoinOrange + '80'
+          : theme.colors.dangerOverlay40,
+    },
+    chipText: {
+      fontSize: theme.fontSizes?.xs || 11,
+      fontFamily: theme.fontFamilies?.bold,
+      letterSpacing: 0.4,
+    },
     detailRow: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -186,21 +291,22 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       borderBottomWidth: 1,
       borderBottomColor:
         theme.colors.background === '#ffffff'
-          ? theme.colors.blackOverlay10 // Light mode: subtle dark border
-          : theme.colors.whiteOverlay20, // Dark mode: subtle light border
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
       gap: 12,
     },
     detailLabel: {
-      fontSize: theme.fontSizes?.base || 13,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary, // Use textSecondary for better readability
       minWidth: 108,
+    },
+    detailValueWrap: {
+      flex: 1,
+      alignItems: 'flex-end',
     },
     detailValue: {
       fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.text,
-      flexShrink: 1,
+      textAlign: 'right',
     },
     transactionFlow: {
       paddingVertical: 4,
@@ -228,19 +334,19 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
-      overflow: 'hidden', // clips the accent bar to rounded corners
+      overflow: 'hidden',
     },
     flowItemContentOurs: {
       backgroundColor:
         theme.colors.background === '#ffffff'
-          ? theme.colors.primary + '10'       // light: very subtle primary wash
-          : theme.colors.bitcoinOrange + '1A', // dark: warm amber tint
+          ? theme.colors.primary + '10'
+          : theme.colors.bitcoinOrange + '1A',
       borderColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
           : theme.colors.bitcoinOrange,
       borderWidth: 2,
-      paddingLeft: 10, // make room for the left accent bar
+      paddingLeft: 10,
     },
     flowItemAccentBar: {
       position: 'absolute',
@@ -288,7 +394,8 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     },
     flowItemPath: {
       fontSize: theme.fontSizes?.xs || 9,
-      fontFamily: theme.fontFamilies?.monospaceMedium || theme.fontFamilies?.monospace,
+      fontFamily:
+        theme.fontFamilies?.monospaceMedium || theme.fontFamilies?.monospace,
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.primary
@@ -322,39 +429,17 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     },
     flowConnectorVertical: {
       width: 1,
-      height: 6,
+      height: 4,
       backgroundColor: theme.colors.border,
       marginLeft: 13,
-      marginVertical: 2,
+      marginVertical: 1,
     },
-    transactionHubVertical: {
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: 10,
-    },
-    hubArrow: {
-      width: 34,
-      height: 34,
-      borderRadius: 17,
-      backgroundColor: theme.colors.primary + '20',
-      alignItems: 'center',
-      justifyContent: 'center',
-      marginBottom: 4,
-    },
-    hubArrowText: {
-      fontSize: theme.fontSizes?.xl || 18,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.primary,
-    },
-    hubLabel: {
-      marginTop: 2,
-    },
-    hubLabelText: {
-      fontSize: theme.fontSizes?.xs || 10,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.textSecondary,
-      textTransform: 'uppercase',
-      letterSpacing: 0.5,
+    flowConnectorHub: {
+      width: 1,
+      height: 8,
+      backgroundColor: theme.colors.border,
+      alignSelf: 'center',
+      marginVertical: 4,
     },
     summaryBar: {
       flexDirection: 'row',
@@ -371,68 +456,57 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       flex: 1,
+      textAlign: 'center',
     },
-    txIdContainer: {
-      backgroundColor:
-        theme.colors.background !== '#ffffff'
-          ? theme.colors.cardBackground // Use cardBackground in dark mode
-          : theme.colors.blackOverlay03, // Light mode background
-      padding: 12,
-      borderRadius: 8,
+    txIdBlock: {
       flex: 1,
-      borderWidth: 1,
-      borderColor:
-        theme.colors.background !== '#ffffff'
-          ? theme.colors.border + '40' // More visible border in dark mode
-          : theme.colors.blackOverlay06, // Light mode border
-      marginRight: 12,
+      alignItems: 'flex-end',
     },
-    txId: {
-      fontSize: theme.fontSizes?.base || 14,
+    txIdText: {
+      fontSize: theme.fontSizes?.sm || 12,
       fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.text,
-      marginBottom: 8,
-      flexWrap: 'wrap',
+      textAlign: 'right',
+    },
+    txIdActions: {
+      flexDirection: 'row',
+      gap: 6,
+      marginTop: 8,
+      justifyContent: 'flex-end',
+    },
+    actionBtn: {
+      paddingHorizontal: 8,
+      paddingVertical: 4,
+      borderRadius: 6,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay03
+          : theme.colors.whiteOverlay08,
+    },
+    actionBtnText: {
+      fontSize: theme.fontSizes?.xs || 10,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
     },
     clickableText: {
-      color: theme.colors.text, // Use text color for better readability in dark mode
+      color: theme.colors.text,
       textDecorationLine: 'underline',
-      textDecorationColor: theme.colors.text, // Match underline color
+      textDecorationColor: theme.colors.text,
     },
-    statusText: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.bold,
-      textTransform: 'uppercase',
-      letterSpacing: 0.6,
-    },
-    statusBadge: {
-      paddingHorizontal: 10,
-      paddingVertical: 6,
-      borderRadius: 999,
-      borderWidth: 1,
-      alignSelf: 'flex-start',
-    },
-    statusBadgeConfirmed: {
-      backgroundColor:
-        theme.colors.background !== '#ffffff'
-          ? (theme.colors.received || '#66BB6A') + '26' // Dark mode with opacity
-          : theme.colors.receivedOverlay15, // Light mode
-      borderColor:
-        theme.colors.background !== '#ffffff'
-          ? (theme.colors.received || '#66BB6A') + '80' // More visible border in dark mode
-          : theme.colors.receivedOverlay40, // Light mode
-    },
-    statusBadgePending: {
-      backgroundColor:
-        theme.colors.background !== '#ffffff'
-          ? theme.colors.bitcoinOrange + '26' // Dark mode with opacity - use bitcoin orange
-          : theme.colors.dangerOverlay15, // Light mode
-      borderColor:
-        theme.colors.background !== '#ffffff'
-          ? theme.colors.bitcoinOrange + '80' // More visible border in dark mode - use bitcoin orange
-          : theme.colors.dangerOverlay40, // Light mode
+    visualizerSection: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 8,
+      borderBottomWidth: 1,
+      borderBottomColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay10
+          : theme.colors.whiteOverlay20,
     },
   });
+
   return (
     <Modal
       visible={visible}
@@ -442,97 +516,132 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Transaction Details</Text>
+            <AppText variant="h2" style={styles.modalTitle}>
+              {status.text}
+            </AppText>
             <AppPressable
-              onPress={() => {
-                onClose();
-              }}
+              onPress={onClose}
               style={styles.closeButton}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <Text style={styles.closeButtonText}>✕</Text>
+              <AppText style={styles.closeButtonText}>✕</AppText>
             </AppPressable>
           </View>
+
+          {transaction.txid && (
+            <View style={styles.visualizerSection}>
+              <ErrorBoundary
+                key={transaction.txid}
+                fallback={
+                  <AppText variant="caption" tone="muted">
+                    Transaction preview unavailable
+                  </AppText>
+                }>
+                <ActiveTxVisualizer
+                  txid={transaction.txid}
+                  network={network as 'mainnet' | 'testnet'}
+                  initialPhase={status.confirmed ? 'confirmed' : 'mempool'}
+                  explorerBaseUrl={baseApi}
+                  compact
+                  origin={isWalletOrigin ? 'wallet' : 'external'}
+                  blockHeight={blockHeight}
+                  confirmedAtMs={confirmedAtMs}
+                />
+              </ErrorBoundary>
+            </View>
+          )}
+
           <ScrollView
             style={styles.scrollContent}
             removeClippedSubviews
             keyboardShouldPersistTaps="handled"
             overScrollMode="never"
             showsVerticalScrollIndicator={false}>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Overview</Text>
-              {renderDetailRow(
-                'Status',
-                <View
-                  style={[
-                    styles.statusBadge,
-                    status.confirmed
-                      ? styles.statusBadgeConfirmed
-                      : styles.statusBadgePending,
-                  ]}>
-                  <Text
-                    style={[
-                      styles.statusText,
-                      {
-                        color: status.confirmed
-                          ? theme.colors.received
-                          : theme.colors.background === '#ffffff'
-                          ? theme.colors.accent // Use accent in light mode
-                          : theme.colors.bitcoinOrange, // Use bitcoin orange in dark mode
-                      },
-                    ]}>
-                    {status.text}
-                  </Text>
-                </View>,
+            {/* Hero amount */}
+            <View style={styles.heroSection}>
+              {isSent && hasValidSent && (
+                <AppText style={styles.heroAmount}>
+                  {isBlurred
+                    ? '***'
+                    : formatBitcoinDisplay(amounts.sent, {
+                        inSats: showSats,
+                        formatted: balanceFormattingEnabled,
+                      })}
+                </AppText>
               )}
-              {renderDetailRow(
-                'Date',
-                transaction.sentAt
-                  ? moment(transaction.sentAt).format('MMM D, YYYY h:mm A')
-                  : transaction.status?.block_time
-                  ? moment(transaction.status.block_time * 1000).format(
-                      'MMM D, YYYY h:mm A',
-                    )
-                  : 'Pending',
+              {!isSent && hasValidReceived && (
+                <AppText style={styles.heroAmount}>
+                  {isBlurred
+                    ? '***'
+                    : formatBitcoinDisplay(amounts.received, {
+                        inSats: showSats,
+                        formatted: balanceFormattingEnabled,
+                      })}
+                </AppText>
               )}
-              {isSent &&
-                hasValidSent &&
-                renderDetailRow(
-                  'Sent',
-                  formatBitcoinDisplay(amounts.sent, {inSats: showSats, formatted: balanceFormattingEnabled}),
-                )}
-              {!isSent &&
-                hasValidReceived &&
-                renderDetailRow(
-                  'Received',
-                  formatBitcoinDisplay(amounts.received, {inSats: showSats, formatted: balanceFormattingEnabled}),
-                )}
-              {hasValidAmount &&
-                renderDetailRow(
-                  'Value',
-                  isBlurred
+              {hasValidAmount && (
+                <AppText style={styles.heroFiat}>
+                  {isBlurred
                     ? '***'
                     : hasFiat && getFiatAmount(amount) != null
                     ? `${getCurrencySymbol(selectedCurrency)}${getFiatAmount(amount)}`
-                    : '—',
+                    : '—'}
+                </AppText>
+              )}
+              <View style={styles.heroChips}>
+                {status.confirmed && confirmations != null && (
+                  <View style={[styles.chip, styles.chipConfirmed]}>
+                    <AppText
+                      style={[
+                        styles.chipText,
+                        {color: theme.colors.received},
+                      ]}>
+                      {confirmations} confirmation
+                      {confirmations !== 1 ? 's' : ''}
+                    </AppText>
+                  </View>
                 )}
+                {!status.confirmed && (
+                  <View style={[styles.chip, styles.chipPending]}>
+                    <AppText
+                      style={[
+                        styles.chipText,
+                        {
+                          color:
+                            theme.colors.background === '#ffffff'
+                              ? theme.colors.accent
+                              : theme.colors.bitcoinOrange,
+                        },
+                      ]}>
+                      Pending
+                    </AppText>
+                  </View>
+                )}
+              </View>
             </View>
-            {/* Transaction Flow Diagram */}
+
+            {/* Inputs / Outputs flow */}
             {(transaction.vin?.length > 0 || transaction.vout?.length > 0) && (
               <View style={styles.section}>
                 <View style={styles.transactionFlow}>
-                  {/* Inputs */}
                   {transaction.vin?.length > 0 && (
                     <View style={styles.flowSection}>
-                      <Text style={styles.flowSectionTitle}>Inputs</Text>
+                      <AppText style={styles.flowSectionTitle}>Inputs</AppText>
                       {transaction.vin.map((input: any, idx: number) => {
-                        const addr: string = input.prevout?.scriptpubkey_address || '';
+                        const addr: string =
+                          input.prevout?.scriptpubkey_address || '';
                         const sats: number = input.prevout?.value || 0;
-                        const pathInfo = addr ? addressPathMap?.[addr] : undefined;
-                        const merchantLabel = addr ? merchantLabelRepository.getByAddress(addr) : null;
+                        const pathInfo = addr
+                          ? addressPathMap?.[addr]
+                          : undefined;
+                        const merchantLabel = addr
+                          ? merchantLabelRepository.getByAddress(addr)
+                          : null;
                         const short = addr
                           ? `${addr.slice(0, 9)}…${addr.slice(-6)}`
                           : 'coinbase';
-                        const addrLink = addr ? `${baseUrl}/address/${addr}` : null;
+                        const addrLink = addr
+                          ? `${baseUrl}/address/${addr}`
+                          : null;
                         return (
                           <View key={idx} style={styles.flowItem}>
                             <View
@@ -540,7 +649,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                 styles.flowItemContent,
                                 pathInfo && styles.flowItemContentOurs,
                               ]}>
-                              {pathInfo && <View style={styles.flowItemAccentBar} />}
+                              {pathInfo && (
+                                <View style={styles.flowItemAccentBar} />
+                              )}
                               <View style={styles.flowItemHeader}>
                                 <Image
                                   source={require('../assets/in-icon.png')}
@@ -554,8 +665,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                   {addrLink ? (
                                     <AppPressable
                                       onPress={() => Linking.openURL(addrLink)}
-                                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                                      <Text
+                                      android_ripple={{
+                                        color: 'rgba(0,0,0,0.1)',
+                                      }}>
+                                      <AppText
                                         style={[
                                           styles.flowItemLabel,
                                           pathInfo && styles.flowItemLabelOurs,
@@ -564,33 +677,40 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                         numberOfLines={1}
                                         ellipsizeMode="middle">
                                         {short}
-                                      </Text>
+                                      </AppText>
                                     </AppPressable>
                                   ) : (
-                                    <Text
+                                    <AppText
                                       style={[
                                         styles.flowItemLabel,
                                         pathInfo && styles.flowItemLabelOurs,
                                       ]}
                                       numberOfLines={1}>
                                       {short}
-                                    </Text>
+                                    </AppText>
                                   )}
                                   {pathInfo ? (
-                                    <Text style={styles.flowItemPath} numberOfLines={1}>
-                                      {pathInfo.derivationPath} · {pathInfo.chain} #{pathInfo.index}
-                                    </Text>
+                                    <AppText
+                                      style={styles.flowItemPath}
+                                      numberOfLines={1}>
+                                      {pathInfo.derivationPath} ·{' '}
+                                      {pathInfo.chain} #{pathInfo.index}
+                                    </AppText>
                                   ) : merchantLabel ? (
-                                    <Text style={styles.flowItemType} numberOfLines={1}>
+                                    <AppText
+                                      style={styles.flowItemType}
+                                      numberOfLines={1}>
                                       {merchantLabel.platform}
-                                    </Text>
+                                    </AppText>
                                   ) : (
-                                    <Text style={styles.flowItemType}>external</Text>
+                                    <AppText style={styles.flowItemType}>
+                                      external
+                                    </AppText>
                                   )}
                                 </View>
                               </View>
                               <View style={styles.flowAmount}>
-                                <Text
+                                <AppText
                                   style={[
                                     styles.flowAmountBTC,
                                     pathInfo && styles.flowAmountBTCOurs,
@@ -601,12 +721,12 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                         inSats: showSats,
                                         formatted: balanceFormattingEnabled,
                                       })}
-                                </Text>
+                                </AppText>
                                 {!isBlurred && hasFiat && (
-                                  <Text style={styles.flowAmountFiat}>
+                                  <AppText style={styles.flowAmountFiat}>
                                     {getCurrencySymbol(selectedCurrency)}
                                     {getFiatAmount(sats / 1e8) ?? '—'}
-                                  </Text>
+                                  </AppText>
                                 )}
                               </View>
                             </View>
@@ -618,29 +738,31 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                       })}
                     </View>
                   )}
-                  {/* Hub Arrow */}
-                  <View style={styles.transactionHubVertical}>
-                    <View style={styles.hubArrow}>
-                      <Text style={styles.hubArrowText}>↓</Text>
-                    </View>
-                    <View style={styles.hubLabel}>
-                      <Text style={styles.hubLabelText}>Transaction</Text>
-                    </View>
-                  </View>
-                  {/* Outputs */}
+
+                  {transaction.vin?.length > 0 &&
+                    transaction.vout?.length > 0 && (
+                      <View style={styles.flowConnectorHub} />
+                    )}
+
                   {transaction.vout?.length > 0 && (
                     <View style={styles.flowSection}>
-                      <Text style={styles.flowSectionTitle}>Outputs</Text>
+                      <AppText style={styles.flowSectionTitle}>Outputs</AppText>
                       {transaction.vout.map((output: any, idx: number) => {
                         const addr: string = output.scriptpubkey_address || '';
                         const sats: number = output.value || 0;
-                        const pathInfo = addr ? addressPathMap?.[addr] : undefined;
-                        const merchantLabel = addr ? merchantLabelRepository.getByAddress(addr) : null;
+                        const pathInfo = addr
+                          ? addressPathMap?.[addr]
+                          : undefined;
+                        const merchantLabel = addr
+                          ? merchantLabelRepository.getByAddress(addr)
+                          : null;
                         const isChange = pathInfo?.chain === 'change';
                         const short = addr
                           ? `${addr.slice(0, 9)}…${addr.slice(-6)}`
                           : 'OP_RETURN';
-                        const addrLink = addr ? `${baseUrl}/address/${addr}` : null;
+                        const addrLink = addr
+                          ? `${baseUrl}/address/${addr}`
+                          : null;
                         const outputIcon = pathInfo
                           ? isChange
                             ? require('../assets/consolidate-icon.png')
@@ -653,7 +775,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                 styles.flowItemContent,
                                 pathInfo && styles.flowItemContentOurs,
                               ]}>
-                              {pathInfo && <View style={styles.flowItemAccentBar} />}
+                              {pathInfo && (
+                                <View style={styles.flowItemAccentBar} />
+                              )}
                               <View style={styles.flowItemHeader}>
                                 <Image
                                   source={outputIcon}
@@ -667,8 +791,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                   {addrLink ? (
                                     <AppPressable
                                       onPress={() => Linking.openURL(addrLink)}
-                                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                                      <Text
+                                      android_ripple={{
+                                        color: 'rgba(0,0,0,0.1)',
+                                      }}>
+                                      <AppText
                                         style={[
                                           styles.flowItemLabel,
                                           pathInfo && styles.flowItemLabelOurs,
@@ -677,33 +803,40 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                         numberOfLines={1}
                                         ellipsizeMode="middle">
                                         {short}
-                                      </Text>
+                                      </AppText>
                                     </AppPressable>
                                   ) : (
-                                    <Text
+                                    <AppText
                                       style={[
                                         styles.flowItemLabel,
                                         pathInfo && styles.flowItemLabelOurs,
                                       ]}
                                       numberOfLines={1}>
                                       {short}
-                                    </Text>
+                                    </AppText>
                                   )}
                                   {pathInfo ? (
-                                    <Text style={styles.flowItemPath} numberOfLines={1}>
-                                      {pathInfo.derivationPath} · {pathInfo.chain} #{pathInfo.index}
-                                    </Text>
+                                    <AppText
+                                      style={styles.flowItemPath}
+                                      numberOfLines={1}>
+                                      {pathInfo.derivationPath} ·{' '}
+                                      {pathInfo.chain} #{pathInfo.index}
+                                    </AppText>
                                   ) : merchantLabel ? (
-                                    <Text style={styles.flowItemType} numberOfLines={1}>
+                                    <AppText
+                                      style={styles.flowItemType}
+                                      numberOfLines={1}>
                                       {merchantLabel.platform}
-                                    </Text>
+                                    </AppText>
                                   ) : (
-                                    <Text style={styles.flowItemType}>external</Text>
+                                    <AppText style={styles.flowItemType}>
+                                      external
+                                    </AppText>
                                   )}
                                 </View>
                               </View>
                               <View style={styles.flowAmount}>
-                                <Text
+                                <AppText
                                   style={[
                                     styles.flowAmountBTC,
                                     pathInfo && styles.flowAmountBTCOurs,
@@ -714,12 +847,12 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                         inSats: showSats,
                                         formatted: balanceFormattingEnabled,
                                       })}
-                                </Text>
+                                </AppText>
                                 {!isBlurred && hasFiat && (
-                                  <Text style={styles.flowAmountFiat}>
+                                  <AppText style={styles.flowAmountFiat}>
                                     {getCurrencySymbol(selectedCurrency)}
                                     {getFiatAmount(sats / 1e8) ?? '—'}
-                                  </Text>
+                                  </AppText>
                                 )}
                               </View>
                             </View>
@@ -729,92 +862,103 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                           </View>
                         );
                       })}
-                      {/* Fee as final item */}
-                      {typeof transaction.fee === 'number' &&
-                        Number.isFinite(transaction.fee) &&
-                        transaction.fee > 0 && (
-                          <View style={styles.flowItem}>
-                            <View style={styles.flowConnectorVertical} />
-                            <View style={styles.flowItemContent}>
-                              <View style={styles.flowItemHeader}>
-                                <Image
-                                  source={require('../assets/send-icon.png')}
-                                  style={styles.flowIcon}
-                                  resizeMode="contain"
-                                />
-                                <View style={styles.flowItemInfo}>
-                                  <Text style={styles.flowItemLabel}>Fee</Text>
-                                </View>
-                              </View>
-                              <View style={styles.flowAmount}>
-                                <Text style={styles.flowAmountBTC}>
-                                  {isBlurred
-                                    ? '***'
-                                    : formatBitcoinDisplay(transaction.fee / 1e8, {
-                                        inSats: showSats,
-                                        formatted: balanceFormattingEnabled,
-                                      })}
-                                </Text>
-                                {!isBlurred && hasFiat && (
-                                  <Text style={styles.flowAmountFiat}>
-                                    {getCurrencySymbol(selectedCurrency)}
-                                    {getFiatAmount(transaction.fee / 1e8) ?? '—'}
-                                  </Text>
-                                )}
-                              </View>
-                            </View>
-                          </View>
-                        )}
                     </View>
                   )}
                 </View>
-                {/* Summary bar */}
+
                 <View style={styles.summaryBar}>
-                  <Text style={styles.summaryBarText}>
+                  <AppText style={styles.summaryBarText}>
                     {`${transaction.vin?.length || 0} input${transaction.vin?.length !== 1 ? 's' : ''} → ${transaction.vout?.length || 0} output${transaction.vout?.length !== 1 ? 's' : ''}`}
-                    {typeof transaction.fee === 'number' &&
-                      Number.isFinite(transaction.fee) &&
-                      transaction.fee > 0 &&
-                      !isBlurred &&
-                      `  ·  fee ${formatBitcoinDisplay(transaction.fee / 1e8, {inSats: showSats, formatted: balanceFormattingEnabled})}`}
-                  </Text>
+                  </AppText>
                 </View>
               </View>
             )}
+
+            {/* On-chain metadata */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Transaction ID</Text>
-              <View style={styles.txIdContainer}>
-                <AppPressable
-                  onPress={() => {
-                    Linking.openURL(explorerLink);
-                  }}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <Text style={[styles.txId, styles.clickableText]}>
-                    {transaction.txid}
-                  </Text>
-                </AppPressable>
-              </View>
-            </View>
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Details</Text>
+              <AppText variant="h2" style={styles.sectionTitle}>
+                On-chain
+              </AppText>
+
               {renderDetailRow(
-                'Block Height',
-                transaction.status?.block_height || 'Pending',
+                'Transaction ID',
+                <View style={styles.txIdBlock}>
+                  <AppPressable
+                    onPress={() => Linking.openURL(explorerLink)}
+                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                    <AppText
+                      style={[styles.txIdText, styles.clickableText]}
+                      selectable>
+                      {transaction.txid}
+                    </AppText>
+                  </AppPressable>
+                  <View style={styles.txIdActions}>
+                    <AppPressable
+                      onPress={copyTxid}
+                      style={styles.actionBtn}
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                      <AppText style={styles.actionBtnText}>
+                        {txidCopied ? 'Copied' : 'Copy'}
+                      </AppText>
+                    </AppPressable>
+                    <AppPressable
+                      onPress={() => Linking.openURL(explorerLink)}
+                      style={styles.actionBtn}
+                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                      <AppText style={styles.actionBtnText}>Explorer</AppText>
+                    </AppPressable>
+                  </View>
+                </View>,
               )}
+
+              {renderDetailRow(
+                'Block height',
+                blockHeight != null && blockExplorerLink ? (
+                  <AppPressable
+                    onPress={() => Linking.openURL(blockExplorerLink)}
+                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                    <AppText style={[styles.detailValue, styles.clickableText]}>
+                      #{blockHeight}
+                    </AppText>
+                  </AppPressable>
+                ) : (
+                  <AppText style={styles.detailValue}>Pending</AppText>
+                ),
+              )}
+
               {confirmations !== null &&
-                renderDetailRow('Confirmations', confirmations.toString())}
+                renderDetailRow(
+                  'Confirmations',
+                  <AppText style={styles.detailValue}>
+                    {confirmations.toString()}
+                  </AppText>,
+                )}
+
               {typeof transaction.fee === 'number' &&
                 Number.isFinite(transaction.fee) &&
                 renderDetailRow(
                   'Fee',
-                  `${formatBitcoinDisplay(transaction.fee / 1e8, {
-                    inSats: showSats,
-                    formatted: balanceFormattingEnabled,
-                  })} (${hasFiat && getFiatAmount(transaction.fee / 1e8) != null ? getCurrencySymbol(selectedCurrency) + getFiatAmount(transaction.fee / 1e8) : '—'})`,
+                  <AppText style={styles.detailValue}>
+                    {`${formatBitcoinDisplay(transaction.fee / 1e8, {
+                      inSats: showSats,
+                      formatted: balanceFormattingEnabled,
+                    })} (${
+                      hasFiat && getFiatAmount(transaction.fee / 1e8) != null
+                        ? getCurrencySymbol(selectedCurrency) +
+                          getFiatAmount(transaction.fee / 1e8)
+                        : '—'
+                    })`}
+                  </AppText>,
                 )}
+
               {typeof transaction.size === 'number' &&
                 Number.isFinite(transaction.size) &&
-                renderDetailRow('Size', `${transaction.size} bytes`)}
+                renderDetailRow(
+                  'Size',
+                  <AppText style={styles.detailValue}>
+                    {`${transaction.size} bytes`}
+                  </AppText>,
+                )}
             </View>
           </ScrollView>
         </View>
@@ -822,4 +966,5 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     </Modal>
   );
 };
+
 export default TransactionDetailsModal;

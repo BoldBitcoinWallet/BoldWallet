@@ -50,6 +50,8 @@ export const CONFIG_KEYS = {
   DKLS23_OPTED_OUT: 'dkls23_opted_out',
   /** @deprecated Use DKLS23_OPTED_OUT (inverted). Kept for migration from enable_dkls23. */
   ENABLE_DKLS23: 'enable_dkls23',
+  /** One-time backfill of branta_verified_txs from merchant_labels + tx history. */
+  BRANTA_VERIFIED_BACKFILL_V1: 'branta_verified_backfill_v1',
   /** LAN MPC: this device's KeyShare role after pairing (KeyShare1|2|3). */
   LAN_LOCAL_PARTY: 'lan_local_party',
   LAN_PEER_PARTY: 'lan_peer_party',

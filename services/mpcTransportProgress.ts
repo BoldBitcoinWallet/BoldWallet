@@ -23,6 +23,49 @@ export function emptyMpcTransportSubprogress(): MpcTransportSubprogressState {
   };
 }
 
+const RELAY_SUCCESS_LOG_MIN_MS = 200;
+let lastRelaySuccessKey = '';
+let lastRelaySuccessLogAt = 0;
+
+export function resetRelayFidelityLogThrottleForTest(): void {
+  lastRelaySuccessKey = '';
+  lastRelaySuccessLogAt = 0;
+}
+
+export function isRelayFidelityHookMessage(
+  msg: {type?: string} | null | undefined,
+): boolean {
+  return msg?.type === 'relay';
+}
+
+/** Log every failure; throttle duplicate success lines faster than 200ms. */
+export function shouldLogRelayFidelity(
+  msg: {
+    type?: string;
+    ok?: boolean;
+    op?: string;
+    relay?: string;
+    mode?: string;
+  } | null,
+  nowMs = Date.now(),
+): boolean {
+  if (!isRelayFidelityHookMessage(msg)) {
+    return false;
+  }
+  if (msg?.ok) {
+    const key = `${msg.op ?? ''}|${msg.relay ?? ''}|${msg.mode ?? ''}`;
+    if (
+      key === lastRelaySuccessKey &&
+      nowMs - lastRelaySuccessLogAt < RELAY_SUCCESS_LOG_MIN_MS
+    ) {
+      return false;
+    }
+    lastRelaySuccessKey = key;
+    lastRelaySuccessLogAt = nowMs;
+  }
+  return true;
+}
+
 export function isTransportHookMessage(
   msg: MpcHookMessage,
 ): msg is MpcHookMessage & {

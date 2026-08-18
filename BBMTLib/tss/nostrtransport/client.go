@@ -71,6 +71,7 @@ func NewClient(cfg Config) (result *Client, err error) {
 	connectedURLs := make([]string, 0)
 	connectedSet := make(map[string]bool)
 	connectedCh := make(chan string, len(validRelays))
+	health := newRelayHealth()
 
 	// Function to try connecting to a single relay
 	tryConnect := func(relayURL string) {
@@ -106,6 +107,7 @@ func NewClient(cfg Config) (result *Client, err error) {
 					relay, err := pool.EnsureRelay(relayURL)
 					if err == nil {
 						fmt.Fprintf(os.Stderr, "BBMTLog: Background connection to relay %s succeeded\n", relayURL)
+						health.markConnected(relayURL)
 						_ = relay
 						return
 					}
@@ -124,12 +126,15 @@ func NewClient(cfg Config) (result *Client, err error) {
 
 	// Helper function to return client with connected relays
 	returnClient := func() (*Client, error) {
+		for _, u := range connectedURLs {
+			health.markConnected(u)
+		}
 		return &Client{
 			cfg:         cfg,
 			pool:        pool,
 			urls:        connectedURLs,
 			validRelays: validRelays, // Store all valid relays for reference
-			relayHealth: newRelayHealth(),
+			relayHealth: health,
 			ctx:         ctx,
 			cancel:      cancel,
 		}, nil
@@ -626,19 +631,28 @@ func (c *Client) PublishWrapMode(ctx context.Context, wrap *Event, mode PublishM
 	if len(relaysToUse) == 0 {
 		return errors.New("no relays configured for publishing")
 	}
-	err = c.publishWrapToRelays(ctx, wrap, relaysToUse, mode)
+	pubCtx := ctx
+	if mode == PublishModeBulk {
+		var cancel context.CancelFunc
+		pubCtx, cancel = context.WithTimeout(ctx, bulkPublishTimeout)
+		defer cancel()
+	}
+	err = c.publishWrapToRelays(pubCtx, wrap, relaysToUse, mode)
 	if err == nil || mode != PublishModeBulk {
 		return err
 	}
-	// Bulk fast path failed — one critical fan-out retry across all non-blocked relays.
+	// Bulk fast path failed or timed out — one critical fan-out retry across all non-blocked relays.
+	reportRelayFidelity(c.cfg.SessionID, "fallback", "", "critical", truncateErr(err), false, 0)
 	fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap bulk fast set failed, retrying critical fan-out\n")
 	return c.publishWrapToRelays(ctx, wrap, c.relaysForPublish(PublishModeCritical), PublishModeCritical)
 }
 
 func (c *Client) publishWrapToRelays(ctx context.Context, wrap *Event, relaysToUse []string, mode PublishMode) (err error) {
+	started := time.Now()
 	results := c.pool.PublishMany(ctx, relaysToUse, *wrap)
 	totalRelays := len(relaysToUse)
 	bulkMode := mode == PublishModeBulk
+	modeName := publishModeName(mode)
 
 	// Resiliency: Track results in background goroutine - return immediately on first success
 	// This allows co-signing to proceed quickly while other relays continue publishing in background
@@ -729,12 +743,23 @@ func (c *Client) publishWrapToRelays(ctx context.Context, wrap *Event, relaysToU
 				if res.Error != nil {
 					failureCount++
 					allErrors = append(allErrors, res.Error)
-					if c.relayHealth != nil && shouldBlockRelay(res.Error) {
-						c.relayHealth.blockRelay(relayURL)
+					rtt := time.Since(started)
+					if c.relayHealth != nil {
+						c.relayHealth.recordPublish(relayURL, false, rtt)
+						if shouldBlockRelay(res.Error) {
+							c.relayHealth.blockRelay(relayURL)
+							reportRelayFidelity(c.cfg.SessionID, "block", relayURL, modeName, truncateErr(res.Error), false, rtt.Milliseconds())
+						}
 					}
+					reportRelayFidelity(c.cfg.SessionID, "publish", relayURL, modeName, truncateErr(res.Error), false, rtt.Milliseconds())
 					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s error: %v (%d/%d failed)\n", relayURL, res.Error, failureCount, totalRelays)
 				} else {
 					successCount++
+					rtt := time.Since(started)
+					if c.relayHealth != nil {
+						c.relayHealth.recordPublish(relayURL, true, rtt)
+					}
+					reportRelayFidelity(c.cfg.SessionID, "publish", relayURL, modeName, "", true, rtt.Milliseconds())
 					fmt.Fprintf(os.Stderr, "BBMTLog: Client.PublishWrap - relay %s success (%d/%d succeeded)\n", relayURL, successCount, totalRelays)
 					if successCount == 1 {
 						select {

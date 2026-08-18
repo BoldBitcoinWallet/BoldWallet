@@ -67,3 +67,26 @@ func TestReportTransportProgress_NostrChunks(t *testing.T) {
 		t.Fatalf("unexpected: %+v", m)
 	}
 }
+
+func TestReportRelayFidelity(t *testing.T) {
+	cap := &hookCapture{}
+	SetHookListener(cap)
+	defer SetHookListener(nil)
+
+	ReportRelayFidelity("sess", "publish", "wss://bbw-nostr.xyz", "bulk", "", true, 42)
+	time.Sleep(50 * time.Millisecond)
+	cap.mu.Lock()
+	if len(cap.msgs) < 1 {
+		cap.mu.Unlock()
+		t.Fatal("expected relay hook")
+	}
+	raw := cap.msgs[len(cap.msgs)-1]
+	cap.mu.Unlock()
+	var m RelayHookMessage
+	if err := json.Unmarshal([]byte(raw), &m); err != nil {
+		t.Fatal(err)
+	}
+	if m.Type != "relay" || m.Op != "publish" || m.Relay != "wss://bbw-nostr.xyz" || !m.Ok || m.RttMs != 42 || m.Mode != "bulk" {
+		t.Fatalf("unexpected relay hook: %+v", m)
+	}
+}

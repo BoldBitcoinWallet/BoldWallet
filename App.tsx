@@ -28,6 +28,7 @@ import {
 import {initializeHaptics} from './utils';
 import database from './services/Database';
 import {runMigrationIfNeeded} from './services/LocalCacheMigration';
+import {runBrantaVerifiedBackfillIfNeeded} from './services/BrantaVerifiedBackfill';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
   Alert,
@@ -593,6 +594,7 @@ const App = () => {
         await database.open();
         dbg('App: SQLite database ready');
         await runMigrationIfNeeded();
+        await runBrantaVerifiedBackfillIfNeeded();
       } catch (dbErr) {
         dbg('App: Database init error (non-fatal):', dbErr);
       }

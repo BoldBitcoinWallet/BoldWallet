@@ -14,11 +14,10 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import {safeUnlink} from '../services/rnfsSafe';
-// @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
-import {UREncoder} from '@ngraveio/bc-ur';
 // @ts-ignore - bc-ur-registry types
 import {CryptoPSBT} from '@keystonehq/bc-ur-registry-btc';
-// Buffer is available globally via polyfills.js
+import type {UR} from '@ngraveio/bc-ur';
+import {UR_FRAME_INTERVAL_MS, urFragmentCount, urPartAt} from '../utils/urBytesQr';
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import Toast from 'react-native-toast-message';
@@ -62,44 +61,16 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       const psbtBuffer = (global as any).Buffer.from(psbtBytes);
       const cryptoPSBT = new CryptoPSBT(psbtBuffer);
       // Convert to UR format
-      return cryptoPSBT.toUR();
+      return cryptoPSBT.toUR() as UR;
     } catch (error) {
       dbg('Error creating UR object:', error);
       return null;
     }
   }, [psbtBytes]);
-  // Helper function to create a new encoder and get a specific part
-  const getURPart = useCallback(
-    (partIndex: number = 0): string | null => {
-      if (!urObject) return null;
-      try {
-        // Create a new encoder each time (since there's no reset method)
-        const encoder = new UREncoder(urObject, 200);
-        // Advance to the desired part
-        for (let i = 0; i < partIndex; i++) {
-          encoder.nextPart();
-        }
-        return encoder.nextPart();
-      } catch (error) {
-        dbg('Error getting UR part:', error);
-        return null;
-      }
-    },
+  const totalParts = useMemo(
+    () => (urObject ? urFragmentCount(urObject) : 1),
     [urObject],
   );
-  // Get encoder info (fragmentsLength) - create a temporary encoder to get this
-  const encoderInfo = useMemo(() => {
-    if (!urObject) return null;
-    try {
-      const encoder = new UREncoder(urObject, 200) as any;
-      return {
-        fragmentsLength: encoder.fragmentsLength || 1,
-      };
-    } catch (error) {
-      dbg('Error getting encoder info:', error);
-      return null;
-    }
-  }, [urObject]);
   // Copy base64 to clipboard
   const handleCopy = useCallback(() => {
     Clipboard.setString(signedPsbtBase64);
@@ -189,29 +160,21 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
   // Get current QR data (single or animated)
   const getQRData = useCallback(() => {
     if (qrMode === 'animated' && urObject) {
-      // For animated QR, get the specific frame
-      const part = getURPart(qrFrameIndex);
+      const part = urPartAt(urObject, qrFrameIndex);
       return part || signedPsbtBase64;
     } else {
-      // Single QR mode
-      // For large PSBTs, always use UR format (first part)
-      // For small PSBTs, use base64 directly
       if (urObject) {
-        // Use UR format - get first part
-        const part = getURPart(0);
+        const part = urPartAt(urObject, 0);
         return part || signedPsbtBase64;
       } else if (signedPsbtBase64.length <= 1000) {
-        // Small PSBT - use base64 directly
         return signedPsbtBase64;
       } else {
-        // Large PSBT but no UR - this shouldn't happen, but fallback to base64
         dbg('Warning: Large PSBT but no UR object available');
         return signedPsbtBase64;
       }
     }
-  }, [qrMode, urObject, signedPsbtBase64, qrFrameIndex, getURPart]);
+  }, [qrMode, urObject, signedPsbtBase64, qrFrameIndex]);
   const qrData = getQRData();
-  const totalParts = encoderInfo ? encoderInfo.fragmentsLength : 1;
   // Check if PSBT fits in a single QR code
   // QR codes can handle up to ~2953 bytes (Level H), but we'll be conservative
   // Also check if it's only 1 fragment (meaning it fits in one UR part)
@@ -222,15 +185,8 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     }
     // If it's only 1 fragment, it fits in a single QR
     if (totalParts === 1) {
-      // Double-check the actual QR data length by creating encoder and getting first part
-      try {
-        const encoder = new UREncoder(urObject, 200);
-        const firstPart = encoder.nextPart();
-        return firstPart ? firstPart.length <= 2500 : false; // Conservative limit
-      } catch (error) {
-        dbg('Error checking if PSBT fits in single QR:', error);
-        return false;
-      }
+      const firstPart = urPartAt(urObject, 0);
+      return firstPart ? firstPart.length <= 2500 : false;
     }
     return false;
   }, [urObject, totalParts, signedPsbtBase64.length]);
@@ -243,28 +199,25 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitsInSingleQR]);
   const isAnimated = qrMode === 'animated' && urObject;
-  const currentPart = encoderInfo ? qrFrameIndex + 1 : 1;
+  const currentPart = qrFrameIndex + 1;
   // Auto-advance animated QR frames
   useEffect(() => {
-    if (isAnimated && urObject && encoderInfo) {
-      // Reset frame index when switching to animated mode
+    if (isAnimated && urObject && totalParts > 0) {
       setQrFrameIndex(0);
       const interval = setInterval(() => {
         setQrFrameIndex(prev => {
           const next = prev + 1;
-          if (next >= encoderInfo.fragmentsLength) {
-            // Loop back to start
+          if (next >= totalParts) {
             return 0;
           }
           return next;
         });
-      }, 500); // Change frame every 500ms
+      }, UR_FRAME_INTERVAL_MS);
       return () => clearInterval(interval);
     } else if (urObject) {
-      // Reset frame index when switching away from animated mode
       setQrFrameIndex(0);
     }
-  }, [isAnimated, urObject, encoderInfo]);
+  }, [isAnimated, urObject, totalParts]);
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
