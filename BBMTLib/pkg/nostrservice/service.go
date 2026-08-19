@@ -159,11 +159,13 @@ func (r *roomSession) shouldDropInbound(raw []byte) bool {
 
 	if prev, ok := r.seenInbound[key]; ok {
 		if now-prev <= roomInboundDedupeTTL.Milliseconds() {
-			return true
+			return true // It's a duplicate
 		}
 	}
+	// 2. Add the new key
 	r.seenInbound[key] = now
 
+	// 3. Evict old entries if the map gets too large
 	if len(r.seenInbound) > maxRoomInboundDedupeIDs {
 		cutoff := now - roomInboundDedupeTTL.Milliseconds()
 		for k, ts := range r.seenInbound {
@@ -172,6 +174,14 @@ func (r *roomSession) shouldDropInbound(raw []byte) bool {
 			}
 		}
 		if len(r.seenInbound) > maxRoomInboundDedupeIDs {
+			r.seenInbound = make(map[string]int64)
+			r.seenInbound[key] = now
+		}
+		// If it's STILL too big (meaning a massive burst of unique events in < 8s),
+		// we must aggressively prune. Deleting the oldest is safer than a full wipe.
+		if len(r.seenInbound) > maxRoomInboundDedupeIDs {
+			// In extreme cases, just reset to prevent memory exhaustion,
+			// though this slightly compromises dedupe for very recent items.
 			r.seenInbound = make(map[string]int64)
 			r.seenInbound[key] = now
 		}
@@ -392,24 +402,35 @@ func (s *Service) PublishMessage(roomHash string, payload interface{}) error {
 		return fmt.Errorf("no target peers available for publish")
 	}
 
+	// EXECUTE IN PARALLEL
+	var wg sync.WaitGroup
+	var mu sync.Mutex
 	var firstErr error
 	successCount := 0
 	for _, peer := range peerTargets {
-		if err := room.messenger.SendMessage(ctx, room.cfg.LocalNpub, peer, string(body)); err != nil {
-			if firstErr == nil {
-				firstErr = err
+		wg.Add(1)
+		go func(targetPeer string) {
+			defer wg.Done()
+			err := room.messenger.SendMessage(ctx, room.cfg.LocalNpub, targetPeer, string(body))
+
+			mu.Lock()
+			defer mu.Unlock()
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				tss.Logf("[NIP46-TLM][NostrService] publish failed room=%s peer=%s err=%v", roomID, shortRef(targetPeer), err)
+			} else {
+				successCount++
+				tss.Logf("[NIP46-TLM][NostrService] published room=%s peer=%s", roomID, shortRef(targetPeer))
 			}
-			tss.Logf("[NIP46-TLM][NostrService] publish failed room=%s peer=%s err=%v", roomID, shortRef(peer), err)
-			continue
-		}
-		successCount++
-		tss.Logf("[NIP46-TLM][NostrService] published room=%s peer=%s", roomID, shortRef(peer))
+		}(peer)
 	}
+
+	wg.Wait() // Wait for all parallel sends to complete
+
 	if successCount == 0 && firstErr != nil {
 		return firstErr
-	}
-	if firstErr != nil {
-		tss.Logf("[NIP46-TLM][NostrService] partial publish success room=%s success=%d total=%d", roomID, successCount, len(peerTargets))
 	}
 
 	s.mu.Lock()
@@ -420,49 +441,93 @@ func (s *Service) PublishMessage(roomHash string, payload interface{}) error {
 	return nil
 }
 
+type extractProbe struct {
+	TargetSigners []string `json:"targetSigners"`
+	Payload       struct {
+		TargetSigners []string `json:"targetSigners"`
+	} `json:"payload"`
+}
+
 func extractTargetSigners(payload []byte) []string {
-	trimmed := strings.TrimSpace(string(payload))
-	if trimmed == "" {
+	var probe extractProbe
+	if err := json.Unmarshal(payload, &probe); err != nil {
 		return nil
 	}
 
-	var root map[string]interface{}
-	if err := json.Unmarshal(payload, &root); err != nil {
-		return nil
+	if len(probe.TargetSigners) > 0 {
+		return cleanSignerList(probe.TargetSigners)
 	}
-
-	collect := func(raw interface{}) []string {
-		arr, ok := raw.([]interface{})
-		if !ok {
-			return nil
-		}
-		out := make([]string, 0, len(arr))
-		for _, v := range arr {
-			s, ok := v.(string)
-			if !ok {
-				continue
-			}
-			t := strings.TrimSpace(s)
-			if t == "" {
-				continue
-			}
-			out = append(out, t)
-		}
-		return out
-	}
-
-	if direct := collect(root["targetSigners"]); len(direct) > 0 {
-		return direct
-	}
-
-	payloadObj, ok := root["payload"].(map[string]interface{})
-	if !ok {
-		return nil
-	}
-	if nested := collect(payloadObj["targetSigners"]); len(nested) > 0 {
-		return nested
+	if len(probe.Payload.TargetSigners) > 0 {
+		return cleanSignerList(probe.Payload.TargetSigners)
 	}
 	return nil
+}
+
+func cleanSignerList(in []string) []string {
+	var out []string
+	for _, s := range in {
+		if t := strings.TrimSpace(s); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// dedupeProbe defines only the specific fields we need for deduplication.
+// This allows Go's json unmarshaler to skip allocating maps and interfaces.
+type eventProbe struct {
+	ID            string `json:"id"`
+	TxID          string `json:"txId"`
+	Type          string `json:"type"`
+	TraceID       string `json:"traceId"`
+	PsbtHex       string `json:"psbtHex"`       // Added for type inference
+	PsbtBase64    string `json:"psbtBase64"`    // Added for type inference
+	AmountSats    *int64 `json:"amountSats"`    // Pointer to distinguish 0 from missing
+	Approved      *bool  `json:"approved"`      // Pointer to distinguish false from missing
+	SignedPsbtHex string `json:"signedPsbtHex"` // Added for type inference
+	Phase         string `json:"phase"`         // Added for type inference
+	Payload       struct {
+		ID      string `json:"id"`
+		TxID    string `json:"txId"`
+		TraceID string `json:"traceId"`
+	} `json:"payload"`
+}
+
+func inboundDedupeKey(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+
+	var probe eventProbe
+	if err := json.Unmarshal(raw, &probe); err == nil {
+		// 1. Check top-level ID
+		if id := strings.TrimSpace(probe.ID); id != "" {
+			return "env:" + id
+		}
+
+		// 2. Check nested payload ID
+		if id := strings.TrimSpace(probe.Payload.ID); id != "" {
+			return "payload-env:" + id
+		}
+
+		// 3. Fallback to TxID / TraceID / Type correlation
+		txID := strings.TrimSpace(probe.Payload.TxID)
+		trace := strings.TrimSpace(probe.Payload.TraceID)
+
+		if txID == "" {
+			txID = strings.TrimSpace(probe.TxID)
+			trace = strings.TrimSpace(probe.TraceID)
+		}
+
+		if txID != "" {
+			return fmt.Sprintf("tx:%s:trace:%s:type:%s", txID, trace, strings.TrimSpace(probe.Type))
+		}
+	}
+
+	// Fallback: If no identifiers are found or JSON is invalid, hash the raw bytes.
+	// Note: We hash 'raw' directly to avoid allocating a string just to trim it.
+	h := sha256.Sum256(raw)
+	return "raw:" + hex.EncodeToString(h[:])
 }
 
 func (s *Service) runRoomLoop(room *roomSession) {
@@ -700,59 +765,34 @@ func deriveSessionKeyHex(roomHash string) string {
 }
 
 func decodeEventPayload(roomHash string, raw []byte) Event {
-	now := time.Now().UnixMilli()
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" {
-		trimmed = "{}"
-	}
+	var probe eventProbe // Reuse the struct from dedupe for basic fields
+	json.Unmarshal(raw, &probe)
 
-	rawPayload := json.RawMessage(trimmed)
 	out := Event{
 		RoomHash:   roomHash,
 		Type:       "message",
-		Payload:    rawPayload,
-		ReceivedAt: now,
+		Payload:    json.RawMessage(raw), // No need to check for empty/trim, raw is fine
+		ReceivedAt: time.Now().UnixMilli(),
+		TxID:       strings.TrimSpace(probe.TxID),
+		TraceID:    strings.TrimSpace(probe.TraceID),
 	}
 
-	var obj map[string]interface{}
-	if err := json.Unmarshal(raw, &obj); err != nil {
+	// 1. Explicit Type Field
+	if t := strings.TrimSpace(probe.Type); t != "" {
+		out.Type = t
 		return out
 	}
 
-	if v, ok := obj["type"].(string); ok && strings.TrimSpace(v) != "" {
-		out.Type = strings.TrimSpace(v)
-	} else {
-		switch {
-		case hasAnyKey(obj, "psbtHex", "psbtBase64", "amountSats"):
-			out.Type = "COSIGN_REQUEST"
-		case hasAnyKey(obj, "approved", "signedPsbtHex", "signedPsbtBase64", "broadcastTxId"):
-			out.Type = "COSIGN_RESPONSE"
-		case hasAnyKey(obj, "phase"):
-			if phase, ok := obj["phase"].(string); ok {
-				out.Type = phase
-			}
-		}
+	// 2. Safe Fallback Inference based on struct fields
+	if probe.PsbtHex != "" || probe.PsbtBase64 != "" || probe.AmountSats != nil {
+		out.Type = "COSIGN_REQUEST"
+	} else if probe.Approved != nil || probe.SignedPsbtHex != "" {
+		out.Type = "COSIGN_RESPONSE"
+	} else if probe.Phase != "" {
+		out.Type = probe.Phase
 	}
 
-	if txID, ok := obj["txId"].(string); ok {
-		out.TxID = strings.TrimSpace(txID)
-	}
-	if traceID, ok := obj["traceId"].(string); ok {
-		out.TraceID = strings.TrimSpace(traceID)
-	}
-	if senderNpub, ok := obj["senderNpub"].(string); ok {
-		out.SenderNpub = strings.TrimSpace(senderNpub)
-	}
 	return out
-}
-
-func hasAnyKey(obj map[string]interface{}, keys ...string) bool {
-	for _, key := range keys {
-		if _, ok := obj[key]; ok {
-			return true
-		}
-	}
-	return false
 }
 
 func shortRef(v string) string {
@@ -774,36 +814,4 @@ func serviceEvent(roomHash string, eventType string, payload interface{}) Event 
 		Payload:    raw,
 		ReceivedAt: time.Now().UnixMilli(),
 	}
-}
-
-func inboundDedupeKey(raw []byte) string {
-	trimmed := strings.TrimSpace(string(raw))
-	if trimmed == "" {
-		return ""
-	}
-
-	var root map[string]interface{}
-	if err := json.Unmarshal(raw, &root); err == nil {
-		if id, ok := root["id"].(string); ok && strings.TrimSpace(id) != "" {
-			return "env:" + strings.TrimSpace(id)
-		}
-		if payload, ok := root["payload"].(map[string]interface{}); ok {
-			if id, ok := payload["id"].(string); ok && strings.TrimSpace(id) != "" {
-				return "payload-env:" + strings.TrimSpace(id)
-			}
-			if txID, ok := payload["txId"].(string); ok && strings.TrimSpace(txID) != "" {
-				trace, _ := payload["traceId"].(string)
-				typ, _ := root["type"].(string)
-				return fmt.Sprintf("tx:%s:trace:%s:type:%s", strings.TrimSpace(txID), strings.TrimSpace(trace), strings.TrimSpace(typ))
-			}
-		}
-		if txID, ok := root["txId"].(string); ok && strings.TrimSpace(txID) != "" {
-			trace, _ := root["traceId"].(string)
-			typ, _ := root["type"].(string)
-			return fmt.Sprintf("tx:%s:trace:%s:type:%s", strings.TrimSpace(txID), strings.TrimSpace(trace), strings.TrimSpace(typ))
-		}
-	}
-
-	h := sha256.Sum256([]byte(trimmed))
-	return "raw:" + hex.EncodeToString(h[:])
 }
