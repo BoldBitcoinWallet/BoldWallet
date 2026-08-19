@@ -1,5 +1,41 @@
 # Changelog
 
+## [4.0.5] - 2026-08-19
+
+> **Patch release:** Transaction history now shows Branta merchant identity and an animated tx visualizer (wallet-signed vs network-received). Animated UR QR send/PSBT scanning is reliable at large UTXO counts. Nostr co-sign ranks relays by live fidelity, and sharing a `.share` / `.psbt` file from Files, WhatsApp, Signal, Telegram, or any other app lands on the existing Bold task instead of a duplicate Recents card or bouncing back to the sender.
+
+### Added
+- **Transaction visualizer in history details** — compact animated track in `TransactionDetailsModal`: wallet-signed flows show two keys merging (`CompactCosignTrack`); externally received txs show a single network origin (`CompactExternalTrack`); sent, consolidation, and rebalancing all use wallet origin.
+- **Branta merchant identity on transaction history** — list rows resolve stored merchant labels (theme-aware logos, verified check) for Branta-enhanced payments; `branta_verified_txs` backfill migrates older payments that predate per-txid tracking.
+- **Nostr relay fidelity telemetry** — native `TssHook` `type: "relay"` events (publish OK/fail, RTT, bulk vs critical, block/fallback) surface in JS logs with failure-always / success-throttled logging; does not move MPC %.
+- **Local scriptPubKey derivation** — `scriptPubKeyFromAddress` plus send-prepare hydration from the local UTXO DB so compact QR coins do not need a mempool round-trip for `scriptpubkey`.
+- **Incoming share URI resolver (Android)** — `IncomingShareResolver` copies `content://` shares (any provider) into cache using `DISPLAY_NAME` when the path has no `.share` / `.psbt` extension.
+
+### Changed
+- **Animated UR send QR** — shared `UREncoder` fountain stream (not sequential-only frames), 250ms frame interval, unique-fragment progress (`N of M`) instead of fountain 99% estimates; Android send scan ignores non-UR junk while assembling and no longer alerts/closes on garbage frames.
+- **PSBT UR scan progress** — same unique-fragment progress on iOS overlay and Android ZXing text; decoder is not reset by ignored frames.
+- **Send preview change path** — `resolveChangeAddressDisplayPath` looks up the QR/route change address in HD paths instead of showing this device’s next unused change index.
+- **Nostr bulk publish** — bulk set is ranked by connected + EWMA RTT + consecutive failures (not CSV order); 4s per-bulk deadline then one critical fan-out retry across non-blocked relays.
+- **Nostr attempt handshake** — subscribe delay runs *before* the publish deadline (45s publish / 55s wait) so the old 2s sleep no longer ate the 20s context.
+- **Mempool sync yields during Nostr MPC** — `SyncCoordinator.pause()` / `resume()` abort in-flight HTTP so background sync does not contend with relay publish.
+- **Share extension (iOS)** — activation matches generic file UTIs (`public.file-url`, `public.data`, `public.item`) from any share sheet; Swift still allowlists `.share` / `.psbt` only.
+
+### Fixed
+- **Android Recents: two Bold tasks after Share/Open with** — `documentLaunchMode="never"`, file VIEW filters are no longer `BROWSABLE`, and a non-root share activity forwards the intent to the existing `singleTask` instance then finishes.
+- **iOS share bounce-back to the sending app** — share extension opens `boldwallet://import-keyshare` via the responder chain and delays `completeRequest` so Files/WhatsApp/Signal/Telegram (or any share sheet) actually foreground Bold with the import password modal.
+- **Nostr co-sign `context deadline exceeded` on attempt handshake** — timeout no longer included the peer subscribe sleep; background mempool traffic paused for the session.
+- **BBMTLib CI hang on “Install jq”** — skip `apt-get update`; `jq` is already on `ubuntu-latest`, install only as fallback.
+- **Compact QR UTXOs missing scriptpubkey** — derive from address or local DB before any explorer enrich.
+
+### Technical Details
+- **Version**: `package.json` **4.0.5**; Android **`versionCode` 66** / **`versionName` 4.0.5**; iOS build **66** / **`MARKETING_VERSION` 4.0.5**.
+- **New files**: `components/TransactionVisualizer.tsx` (expanded compact tracks), `services/BrantaVerifiedBackfill.ts`, `utils/scriptPubKeyFromAddress.ts`, `utils/sendQrScan.ts`, `android/.../IncomingShareResolver.kt`.
+- **Native Nostr**: `BBMTLib/tss/nostr_attempt.go`, `nostrtransport/relay_publish.go`, `client.go`, `progress_hook.go`, `transport_progress.go`.
+- **Share handoff**: `android/.../MainActivity.kt`, `AndroidManifest.xml`, `ios/BoldWalletShareExtension/ShareViewController.swift`, `Info.plist`, `KeyshareShareStorage.swift`.
+- **CI**: `.github/workflows/bbmtlib-test.yml` jq step.
+
+---
+
 ## [4.0.4] - 2026-08-06
 
 > **Patch release:** Device RNG awareness — the wallet now surfaces a real-time assessment of each device's random number generator quality, grounded in actual hardware detection rather than assumed defaults.

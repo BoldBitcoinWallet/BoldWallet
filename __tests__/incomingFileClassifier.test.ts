@@ -20,6 +20,24 @@ describe('incomingFileClassifier', () => {
     expect(inferFileKindFromUri('file:///tmp/a6trK1.share')).toBe('keyshare');
   });
 
+  it('infers keyshare from provider content URI displayName', () => {
+    expect(
+      inferFileKindFromUri(
+        'content://org.telegram.messenger.provider/media/42?displayName=wallet.share',
+      ),
+    ).toBe('keyshare');
+    expect(
+      inferFileKindFromUri(
+        'content://com.whatsapp.provider.media/item/7?displayName=backup.share',
+      ),
+    ).toBe('keyshare');
+    expect(
+      inferFileKindFromUri(
+        'content://com.android.externalstorage.documents/document/primary%3ADownload%2Fkey.share',
+      ),
+    ).toBe('keyshare');
+  });
+
   it('detects PSBT magic bytes', () => {
     const psbtBytes = Buffer.from([0x70, 0x73, 0x62, 0x74, 0x00]);
     expect(isPsbtBytes(psbtBytes)).toBe(true);

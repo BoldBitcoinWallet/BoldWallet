@@ -19,6 +19,7 @@
             android:name=".MainActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
             android:launchMode="singleTask"
+            android:documentLaunchMode="never"
             android:windowSoftInputMode="adjustResize"
             android:screenOrientation="portrait"
             android:exported="true">
@@ -34,14 +35,12 @@
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" android:pathPattern=".*\\.share" />
                 <data android:scheme="file" android:pathPattern=".*\\.share" />
             </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" android:pathPattern=".*\\.psbt" />
                 <data android:scheme="file" android:pathPattern=".*\\.psbt" />
             </intent-filter>

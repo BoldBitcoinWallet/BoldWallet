@@ -11,8 +11,6 @@ import com.facebook.react.defaults.DefaultReactActivityDelegate
 
 class MainActivity : ReactActivity() {
 
-    private val sharedFileUriRegex = Regex(".*\\.(share|psbt)(?:[?#].*)?$")
-
     override fun getMainComponentName(): String = "BoldWallet"
 
     override fun createReactActivityDelegate(): ReactActivityDelegate =
@@ -20,6 +18,11 @@ class MainActivity : ReactActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(null)
+        if (!isTaskRoot) {
+            forwardIntentToExistingTask(intent)
+            finish()
+            return
+        }
         handleIncomingIntent(intent)
     }
 
@@ -27,6 +30,20 @@ class MainActivity : ReactActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleIncomingIntent(intent)
+    }
+
+    private fun forwardIntentToExistingTask(source: Intent?) {
+        if (source == null) {
+            return
+        }
+        val forwarded = Intent(source)
+        forwarded.setClass(this, MainActivity::class.java)
+        forwarded.addFlags(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP,
+        )
+        startActivity(forwarded)
     }
 
     private fun handleIncomingIntent(intent: Intent?) {
@@ -71,31 +88,31 @@ class MainActivity : ReactActivity() {
     }
 
     private fun extractShareFileUri(intent: Intent): String? {
+        val uri = shareUriFromIntent(intent) ?: return null
+        return IncomingShareResolver.resolveToLocalUri(this, uri)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun shareUriFromIntent(intent: Intent): Uri? {
         when (intent.action) {
             Intent.ACTION_SEND -> {
-                val streamUri = intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)
-                if (streamUri != null) {
-                    val uri = streamUri.toString()
-                    return if (isSupportedSharedFileUri(uri)) uri else null
-                }
-                val text = intent.getStringExtra(Intent.EXTRA_TEXT)
-                if (!text.isNullOrBlank() && (text.startsWith("content://") || text.startsWith("file://"))) {
-                    val uri = text.trim()
-                    return if (isSupportedSharedFileUri(uri)) uri else null
+                intent.getParcelableExtra<Uri>(Intent.EXTRA_STREAM)?.let { return it }
+                intent.clipData?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.uri?.let { return it }
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT)?.trim()
+                if (!text.isNullOrBlank() &&
+                    (text.startsWith("content://") || text.startsWith("file://"))
+                ) {
+                    return Uri.parse(text)
                 }
             }
             Intent.ACTION_VIEW -> {
                 val data = intent.data ?: return null
                 val scheme = data.scheme?.lowercase() ?: return null
                 if (scheme == "content" || scheme == "file") {
-                    val uri = data.toString()
-                    return if (isSupportedSharedFileUri(uri)) uri else null
+                    return data
                 }
             }
         }
         return null
     }
-
-    private fun isSupportedSharedFileUri(uri: String): Boolean =
-        sharedFileUriRegex.matches(uri.lowercase())
 }
