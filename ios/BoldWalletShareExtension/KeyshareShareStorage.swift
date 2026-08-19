@@ -23,8 +23,13 @@ enum KeyshareShareStorage {
     guard let containerURL = groupContainerURL() else {
       return nil
     }
-    let destinationURL = containerURL.appendingPathComponent(pendingFileName)
+    let ext = sourceURL.pathExtension.lowercased()
+    let fileName = (ext == "psbt" || ext == "share") ? "pending_shared.\(ext)" : pendingFileName
+    let destinationURL = containerURL.appendingPathComponent(fileName)
     let fileManager = FileManager.default
+    try? fileManager.removeItem(at: containerURL.appendingPathComponent(pendingFileName))
+    try? fileManager.removeItem(at: containerURL.appendingPathComponent("pending_shared.share"))
+    try? fileManager.removeItem(at: containerURL.appendingPathComponent("pending_shared.psbt"))
     try? fileManager.removeItem(at: destinationURL)
     do {
       if sourceURL.startAccessingSecurityScopedResource() {
