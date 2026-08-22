@@ -13,6 +13,7 @@ import AppText from './AppText';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {dbg, explorerWebBaseFromApiUrl, formatBitcoinDisplay} from '../utils';
+import mempoolClient from '../services/MempoolClient';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import {ActiveTxVisualizer} from './TransactionVisualizer';
 import ErrorBoundary from './ErrorBoundary';
@@ -71,24 +72,34 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   const explorerLink = transaction ? `${baseUrl}/tx/${transaction.txid}` : '';
 
   React.useEffect(() => {
-    if (visible && transaction?.status?.block_height) {
-      const fetchCurrentBlockHeight = async () => {
-        try {
-          const apiUrl = baseApi.replace(/\/+$/, '');
-          const response = await fetch(`${apiUrl}/blocks/tip/height`);
-          if (response.ok) {
-            const height = await response.text();
-            const blockHeight = parseInt(height.trim(), 10);
-            if (!isNaN(blockHeight) && blockHeight > 0) {
-              setCurrentBlockHeight(blockHeight);
-            }
-          }
-        } catch (error) {
-          dbg('Failed to fetch current block height:', error);
-        }
-      };
-      fetchCurrentBlockHeight();
+    if (!visible || !transaction?.status?.block_height) {
+      return;
     }
+    let cancelled = false;
+    const fetchCurrentBlockHeight = async () => {
+      try {
+        const apiUrl = baseApi.replace(/\/+$/, '');
+        const response = await mempoolClient.get<number>(
+          `${apiUrl}/blocks/tip/height`,
+          {ttl: 5000, timeoutMs: 8000},
+        );
+        const blockHeight = Number(response.data);
+        if (
+          !cancelled &&
+          response.ok &&
+          Number.isFinite(blockHeight) &&
+          blockHeight > 0
+        ) {
+          setCurrentBlockHeight(blockHeight);
+        }
+      } catch (error) {
+        dbg('Failed to fetch current block height:', error);
+      }
+    };
+    fetchCurrentBlockHeight();
+    return () => {
+      cancelled = true;
+    };
   }, [visible, transaction?.status?.block_height, baseApi]);
 
   React.useEffect(() => {

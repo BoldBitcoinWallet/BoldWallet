@@ -15,6 +15,7 @@ import {BBMTLibNativeModule} from '../native_modules';
 import {useTheme} from '../theme';
 import {safeUnlink} from '../services/rnfsSafe';
 import {dbg} from '../utils';
+import {formatBroadcastError} from '../services/broadcastErrorMessages';
 
 type BroadcastPhase = 'idle' | 'broadcasting' | 'success';
 
@@ -107,10 +108,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
     } catch (e: any) {
       dbg('SignedTxBroadcastModal broadcast error', e);
       setPhase('idle');
-      Alert.alert(
-        'Broadcast failed',
-        e?.message || 'Failed to broadcast transaction',
-      );
+      Alert.alert('Broadcast failed', formatBroadcastError(e));
     }
   };
 
