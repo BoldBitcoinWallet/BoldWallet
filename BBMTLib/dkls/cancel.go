@@ -36,3 +36,10 @@ func CancelMpcSession(sessionID string) {
 		fn()
 	}
 }
+
+// UnregisterCancel drops a session cancel func without invoking it.
+func UnregisterCancel(sessionID string) {
+	cancelMu.Lock()
+	defer cancelMu.Unlock()
+	delete(cancelFuncs, sessionID)
+}

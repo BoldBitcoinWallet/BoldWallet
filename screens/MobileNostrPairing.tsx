@@ -50,7 +50,6 @@ import {
   dbg,
   getKeyshareMetadata,
   HapticFeedback,
-  getNostrRelays,
   getResetToMainTabsWallet,
   resolveUseLegacyDerivationPaths,
   detectKeyshareTssBackend,
@@ -74,13 +73,29 @@ import {
 } from '../services/mpcCancel';
 import {
   isMpcAbortedOrCanceledError,
+  isPeerAbortedSessionError,
+  peerAbortUserMessage,
   shouldShowMpcFlowAlert,
   showMpcFlowAlert,
 } from '../services/mpcFlowAlerts';
 import {
   emptyMpcTransportSubprogress,
   shouldLogRelayFidelity,
+  type MpcTransportSubprogressState,
 } from '../services/mpcTransportProgress';
+import {
+  activeRelaysCSV,
+  loadNostrRelayEntries,
+  relayListSummary,
+  saveNostrRelayEntries,
+  type NostrRelayEntry,
+} from '../services/nostrRelaysStore';
+import {
+  applyRelayFidelitySample,
+  emptyConnectionQuality,
+  shouldPublishQualityUpdate,
+  type ConnectionQualityState,
+} from '../services/mpcConnectionQuality';
 import {getPrepareModalCopy} from '../services/tssKeygenPrepare';
 import {LAN_KEYGEN_STATUS} from '../services/walletSetupUi';
 import {
@@ -93,6 +108,7 @@ import {
 } from '../services/walletSetupOrchestrator';
 import {
   resetMpcHookSession,
+  progressStateAfterAbort,
   type MpcProgressUtxoState,
 } from '../services/mpcProgress';
 import {
@@ -105,6 +121,8 @@ import {
 import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
 import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
+import {MpcConnectionQuality} from '../components/MpcConnectionQuality';
+import NostrRelaysEditor from '../components/NostrRelaysEditor';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
 import EntropyInfoCard from '../components/EntropyInfoCard';
@@ -419,8 +437,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [localNpub, setLocalNpub] = useState<string>('');
   const [deviceName, setDeviceName] = useState<string>('');
   // Relays - Load from cache or use defaults
-  const [relaysInput, setRelaysInput] = useState<string>('');
-  const [relays, setRelays] = useState<string[]>([]);
+  const [relayEntries, setRelayEntries] = useState<NostrRelayEntry[]>([]);
   // Partial nonce (random UUID/number generated on each device)
   const [partialNonce, setPartialNonce] = useState<string>('');
   // Peer Connections (for duo: 1 peer, for trio: 2 peers)
@@ -463,6 +480,11 @@ const MobileNostrPairing = ({navigation}: any) => {
   );
   const [mpcTransportSubprogress, setMpcTransportSubprogress] =
     useState<MpcTransportSubprogressState>(emptyMpcTransportSubprogress());
+  const [connectionQuality, setConnectionQuality] =
+    useState<ConnectionQualityState>(emptyConnectionQuality('nostr'));
+  const connectionQualityRef = useRef(connectionQuality);
+  connectionQualityRef.current = connectionQuality;
+  const lastQualityPublishAtRef = useRef(0);
   const [status, setStatus] = useState('');
   const [mpcSessionShort, setMpcSessionShort] = useState<string | null>(null);
   const [isPairing, setIsPairing] = useState(false);
@@ -569,21 +591,27 @@ const MobileNostrPairing = ({navigation}: any) => {
     flowActive: isPairingRef.current,
   });
 
-  const abortActiveNostrMpc = React.useCallback(() => {
+  const abortActiveNostrMpc = React.useCallback((opts?: {keygen?: boolean}) => {
+    const isKeygen = !!opts?.keygen;
     Alert.alert(
-      'Abort signing?',
-      'This will stop the current Nostr MPC signing flow. Wait 15 seconds before starting again.',
+      isKeygen ? 'Abort wallet setup?' : 'Abort signing?',
+      isKeygen
+        ? 'This will stop key generation on this device. Other devices will stop shortly. Wait 15 seconds before retrying.'
+        : 'This will stop the current Nostr MPC signing flow. Wait 15 seconds before starting again.',
       [
-        {text: 'Keep signing', style: 'cancel'},
+        {text: isKeygen ? 'Keep going' : 'Keep signing', style: 'cancel'},
         {
           text: 'Abort',
           style: 'destructive',
           onPress: async () => {
             nostrAbortRef.current = true;
+            const aborted = progressStateAfterAbort(mpcHookProgressRef.current);
+            setCircleTarget(aborted.percent);
             setPairingActive(false);
             setMpcTransportSubprogress(emptyMpcTransportSubprogress());
-            setStatus('Aborted');
-            if (isSignPSBT) {
+            setConnectionQuality(emptyConnectionQuality('nostr'));
+            setStatus(aborted.statusLabel);
+            if (isSignPSBT && !isKeygen) {
               setSpendSignOutcome('aborted');
             }
             try {
@@ -596,7 +624,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         },
       ],
     );
-  }, [setPairingActive, isSignPSBT]);
+  }, [setPairingActive, isSignPSBT, setCircleTarget]);
 
   const connectionQrRef = useRef<any>(null);
   // Connection details for sharing (hex encoded)
@@ -617,38 +645,13 @@ const MobileNostrPairing = ({navigation}: any) => {
   useEffect(() => {
     const loadRelays = async () => {
       try {
-        // Use getNostrRelays which handles cache and fetching
-        const fetchedRelays = await getNostrRelays(false);
-        const relaysCSV = fetchedRelays.join(',');
-        // Convert CSV to newline-separated for multiline display
-        const relaysForDisplay = relaysCSV.split(',').join('\n');
-        setRelaysInput(relaysForDisplay);
-        setRelays(fetchedRelays);
+        setRelayEntries(await loadNostrRelayEntries());
       } catch (error) {
         dbg('Error loading relays:', error);
-        // Fallback to defaults on error
-        const defaults = [
-          'wss://bbw-nostr.xyz',
-          'wss://nostr.hifish.org',
-          'wss://nostr.xxi.quest',
-        ];
-        const defaultsCSV = defaults.join(',');
-        const defaultsForDisplay = defaultsCSV.split(',').join('\n');
-        setRelaysInput(defaultsForDisplay);
-        setRelays(defaults);
       }
     };
     loadRelays();
   }, []);
-
-  // Update relays when input changes (support both comma and newline separation)
-  useEffect(() => {
-    const parsed = relaysInput
-      .split(/[,\n]/)
-      .map(r => r.trim())
-      .filter(Boolean);
-    setRelays(parsed);
-  }, [relaysInput]);
   // Clear all cache when entering wallet setup mode (not signing mode)
   useEffect(() => {
     const clearCacheForSetup = async () => {
@@ -788,7 +791,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     const ready =
       localNpub &&
       deviceName &&
-      relays.length > 0 &&
+      activeRelaysCSV(relayEntries).length > 0 &&
       sessionID &&
       sessionKey &&
       chaincode &&
@@ -804,7 +807,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   }, [
     localNpub,
     deviceName,
-    relays,
+    relayEntries,
     sessionID,
     sessionKey,
     chaincode,
@@ -837,6 +840,21 @@ const MobileNostrPairing = ({navigation}: any) => {
           });
         }
         if (parsed?.type === 'relay') {
+          const next = applyRelayFidelitySample(
+            connectionQualityRef.current,
+            parsed,
+          );
+          if (
+            shouldPublishQualityUpdate(
+              connectionQualityRef.current,
+              next,
+              lastQualityPublishAtRef.current,
+            )
+          ) {
+            lastQualityPublishAtRef.current = Date.now();
+            connectionQualityRef.current = next;
+            setConnectionQuality(next);
+          }
           return;
         }
       } catch {
@@ -1502,6 +1520,15 @@ const MobileNostrPairing = ({navigation}: any) => {
   };
   const startKeygen = async () => {
     if (!canStartKeygen) return;
+    try {
+      assertCanStartNostrMpc();
+    } catch (e) {
+      Alert.alert(
+        'Please wait',
+        nostrMpcCooldownMessageFromError(e) || String(e),
+      );
+      return;
+    }
     let backend = keygenBackend ?? routeKeygenBackend;
     if (!backend && keygenSetupMode) {
       backend = await resolveWalletSetupBackend(
@@ -1518,7 +1545,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
     setProgress(0);
+    setConnectionQuality(emptyConnectionQuality('nostr'));
+    lastQualityPublishAtRef.current = 0;
     setStatus(LAN_KEYGEN_STATUS.runningKeygen);
+    nostrAbortRef.current = false;
+    TssProvider.resetMpcCancelState('nostr');
+    TssProvider.markMpcInProgress('nostr');
     try {
       // Prepare parties npubs CSV (sorted)
       // IMPORTANT: Must use the same npubs and same sorting as session ID generation
@@ -1582,9 +1614,11 @@ const MobileNostrPairing = ({navigation}: any) => {
         );
       }
       // Prepare relays CSV
-      const relaysCSV = relays.join(',');
-      // Save relays to cache
-      appConfigRepository.set('nostr_relays', relaysCSV);
+      const relaysCSV = activeRelaysCSV(relayEntries);
+      if (!relaysCSV) {
+        throw new Error('Please keep at least one relay enabled');
+      }
+      await saveNostrRelayEntries(relayEntries);
       // Log detailed info for debugging trio mode
       dbg('Starting Nostr keygen with:', {
         relays: relaysCSV,
@@ -1711,7 +1745,16 @@ const MobileNostrPairing = ({navigation}: any) => {
       // Don't navigate away, let the backup UI handle it
     } catch (error: any) {
       dbg('Keygen error:', error);
-      if (
+      if (nostrAbortRef.current) {
+        setStatus('Key generation aborted');
+      } else if (isPeerAbortedSessionError(error)) {
+        setStatus('Key generation stopped');
+        showMpcFlowAlert(
+          'Key generation stopped',
+          peerAbortUserMessage(error, 'keygen'),
+          nostrFlowAlertGate(),
+        );
+      } else if (
         !isMpcAbortedOrCanceledError(error) &&
         shouldShowMpcFlowAlert(nostrFlowAlertGate())
       ) {
@@ -1720,15 +1763,15 @@ const MobileNostrPairing = ({navigation}: any) => {
           error?.message || 'Key generation failed',
           nostrFlowAlertGate(),
         );
-      }
-      setStatus('Key generation failed');
-      if (shouldShowMpcFlowAlert(nostrFlowAlertGate())) {
+        setStatus('Key generation failed');
         navigation.dispatch(
           CommonActions.reset({
             index: 0,
             routes: [{name: 'Nostr Connect', params: route.params}],
           }),
         );
+      } else {
+        setStatus('Key generation failed');
       }
     } finally {
       setPairingActive(false);
@@ -1743,6 +1786,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       assertCanStartNostrMpc();
     } catch (e) {
       Alert.alert('Please wait', alertMessageForNostrSendError(e));
+      return;
+    }
+    if (!activeRelaysCSV(relayEntries)) {
+      Alert.alert('Error', 'Please keep at least one relay enabled');
       return;
     }
     let backend = spendBackend;
@@ -1760,6 +1807,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
     setProgress(0);
+    setConnectionQuality(emptyConnectionQuality('nostr'));
     setStatus('Starting transaction signing…');
     // Store original network/API to restore after transaction
     let originalNetwork = '';
@@ -2041,7 +2089,11 @@ const MobileNostrPairing = ({navigation}: any) => {
           keyshare,
         );
       const signingNpubsSorted = partiesNpubsCSV;
-      const relaysCSV = relays.join(',');
+      const relaysCSV = activeRelaysCSV(relayEntries);
+      if (!relaysCSV) {
+        throw new Error('Please keep at least one relay enabled');
+      }
+      await saveNostrRelayEntries(relayEntries);
       dbg('Nostr send BTC — signing npubs:', {
         partiesNpubsCSV: signingNpubsSorted,
         resolvedPeerNpub: resolvedPeerNpub.substring(0, 20) + '...',
@@ -2198,6 +2250,10 @@ const MobileNostrPairing = ({navigation}: any) => {
       Alert.alert('Please wait', alertMessageForNostrSendError(e));
       return;
     }
+    if (!activeRelaysCSV(relayEntries)) {
+      Alert.alert('Error', 'Please keep at least one relay enabled');
+      return;
+    }
     let backend = spendBackend;
     if (!backend) {
       backend = await resolveTssBackend();
@@ -2215,6 +2271,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
     setProgress(0);
+    setConnectionQuality(emptyConnectionQuality('nostr'));
     setStatus('Starting PSBT signing…');
     let keyshare: any;
     try {
@@ -2316,7 +2373,11 @@ const MobileNostrPairing = ({navigation}: any) => {
           keyshare,
         );
       const signingNpubsSorted = partiesNpubsCSV;
-      const relaysCSV = relays.join(',');
+      const relaysCSV = activeRelaysCSV(relayEntries);
+      if (!relaysCSV) {
+        throw new Error('Please keep at least one relay enabled');
+      }
+      await saveNostrRelayEntries(relayEntries);
       dbg('Starting Nostr PSBT signing with:', {
         relays: relaysCSV,
         parties: partiesNpubsCSV.substring(0, 50) + '...',
@@ -4379,7 +4440,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                         android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                         <Text style={styles.collapsibleHeaderText}>
                           {showRelayConfig ? '▼' : '▶'} Advanced: Nostr Relays
-                          Settings
+                          {' · '}
+                          {relayListSummary(relayEntries)}
                         </Text>
                       </AppPressable>
                       {showRelayConfig && (
@@ -4391,31 +4453,27 @@ const MobileNostrPairing = ({navigation}: any) => {
                               color: theme.colors.textSecondary,
                               marginBottom: 8,
                             }}>
-                            Configure Nostr relays (defaults work for most
-                            users). Enter relay URLs, one per line or
-                            comma-separated (wss://...).
+                            Defaults work for most users. Toggle a relay off to
+                            skip it for this session. At least one must stay on.
                           </Text>
-                          <TextInput
-                            style={[
-                              styles.input,
-                              {
-                                minHeight: 120,
-                                textAlignVertical: 'top',
-                                paddingTop: 12,
-                              },
-                            ]}
-                            value={relaysInput}
-                            onChangeText={setRelaysInput}
-                            placeholder={
-                              'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
-                            }
-                            placeholderTextColor={
-                              theme.colors.textSecondary + '80'
-                            }
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            multiline
-                            numberOfLines={6}
+                          <NostrRelaysEditor
+                            entries={relayEntries}
+                            onChange={setRelayEntries}
+                            showSave
+                            onSave={async () => {
+                              if (!activeRelaysCSV(relayEntries)) {
+                                Alert.alert(
+                                  'Error',
+                                  'Please keep at least one relay enabled',
+                                );
+                                return;
+                              }
+                              await saveNostrRelayEntries(relayEntries);
+                              Alert.alert(
+                                'Saved',
+                                'Nostr relays saved for this device.',
+                              );
+                            }}
                           />
                         </View>
                       )}
@@ -5698,6 +5756,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         mpcTransportPulse || !!staleTransportHint
                       }
                     />
+                    <MpcConnectionQuality quality={connectionQuality} />
                     <MpcTransportSubprogress
                       subprogress={mpcTransportSubprogress}
                     />
@@ -5714,18 +5773,16 @@ const MobileNostrPairing = ({navigation}: any) => {
                       Time elapsed: {prepCounter} seconds
                     </Text>
                   </View>
-                  {isSendBitcoin && (
-                    <View style={styles.modalActions}>
-                      <AppPressable
-                        style={[
-                          styles.modalButton,
-                          {backgroundColor: theme.colors.secondary},
-                        ]}
-                        onPress={abortActiveNostrMpc}>
-                        <Text style={styles.buttonText}>Abort</Text>
-                      </AppPressable>
-                    </View>
-                  )}
+                  <View style={styles.modalActions}>
+                    <AppPressable
+                      style={[
+                        styles.modalButton,
+                        {backgroundColor: theme.colors.secondary},
+                      ]}
+                      onPress={() => abortActiveNostrMpc({keygen: true})}>
+                      <Text style={styles.buttonText}>Abort</Text>
+                    </AppPressable>
+                  </View>
                 </View>
               </View>
             </Modal>
@@ -5777,6 +5834,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         mpcTransportPulse || !!staleTransportHint
                       }
                     />
+                    <MpcConnectionQuality quality={connectionQuality} />
                     <MpcTransportSubprogress
                       subprogress={mpcTransportSubprogress}
                     />
@@ -5800,7 +5858,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           styles.modalButton,
                           {backgroundColor: theme.colors.secondary},
                         ]}
-                        onPress={abortActiveNostrMpc}>
+                        onPress={() => abortActiveNostrMpc()}>
                         <Text style={styles.buttonText}>Abort</Text>
                       </AppPressable>
                     </View>

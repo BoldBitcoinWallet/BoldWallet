@@ -42,6 +42,7 @@ import {
   getMempoolDefaultTtlMs,
   getTransactionDbTtlMs,
 } from './HdOptionsConfig';
+import {recordMempoolAttempt} from './mempoolHealth';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -106,6 +107,29 @@ function stripHost(url: string): string {
 function extractHost(url: string): string {
   const m = url.match(/^(https?:\/\/[^/]+)/);
   return m ? m[1] : '';
+}
+
+function isAbortOrTimeout(err: unknown): boolean {
+  if (!err || typeof err !== 'object') {
+    return false;
+  }
+  const name = (err as {name?: string}).name ?? '';
+  const message = (err as {message?: string}).message ?? '';
+  return name === 'AbortError' || /timeout|aborted/i.test(message);
+}
+
+/** Observe-only: never changes cache, failover, or the value returned to callers. */
+function observeAttempt(
+  startedAt: number,
+  outcome: {ok: boolean; timeout?: boolean; status: number},
+): void {
+  recordMempoolAttempt({
+    ok: outcome.ok,
+    timeout: outcome.timeout ?? false,
+    status: outcome.status,
+    durationMs: Date.now() - startedAt,
+    at: Date.now(),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -353,6 +377,7 @@ class MempoolClient {
             this._sessionController.signal,
           );
 
+          const startedAt = Date.now();
           try {
             const res = await fetch(tryUrl, {...restInit, signal});
             clearTimeout(timeoutId);
@@ -360,6 +385,7 @@ class MempoolClient {
             if (res.ok) {
               const data = (await res.json()) as unknown;
               this._cache.set(key, {data, expiresAt: Date.now() + ttl});
+              observeAttempt(startedAt, {ok: true, status: res.status});
               dbg(
                 'MempoolClient: fetched and cached',
                 tryUrl.slice(-80),
@@ -370,6 +396,7 @@ class MempoolClient {
 
             // Non-2xx: do NOT cache — transient errors must not persist.
             dbg('MempoolClient: non-ok response', res.status, tryUrl.slice(-80));
+            observeAttempt(startedAt, {ok: false, status: res.status});
             await res.text().catch(() => {}); // consume body before possible failover
             const out: MempoolResponse<unknown> = {
               ok: false,
@@ -401,6 +428,11 @@ class MempoolClient {
           } catch (err) {
             clearTimeout(timeoutId);
             lastError = err;
+            observeAttempt(startedAt, {
+              ok: false,
+              timeout: isAbortOrTimeout(err),
+              status: 0,
+            });
             dbg('MempoolClient: fetch error', tryUrl.slice(-80), err);
 
             // Explicit caller or session (abortAll) abort — stop immediately.

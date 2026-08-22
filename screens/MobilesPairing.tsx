@@ -103,6 +103,7 @@ import {
 } from '../services/tssKeygenPrepare';
 import {
   resetMpcHookSession,
+  progressStateAfterAbort,
   type MpcProgressUtxoState,
 } from '../services/mpcProgress';
 import {
@@ -115,10 +116,17 @@ import {
 import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
 import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
 import EntropyInfoCard from '../components/EntropyInfoCard';
+import {MpcConnectionQuality} from '../components/MpcConnectionQuality';
 import {
   emptyMpcTransportSubprogress,
   type MpcTransportSubprogressState,
 } from '../services/mpcTransportProgress';
+import {
+  applyLanQualitySignals,
+  emptyConnectionQuality,
+  shouldPublishQualityUpdate,
+  type ConnectionQualityState,
+} from '../services/mpcConnectionQuality';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
@@ -220,6 +228,11 @@ const MobilesPairing = ({navigation}: any) => {
   );
   const [mpcTransportSubprogress, setMpcTransportSubprogress] =
     useState<MpcTransportSubprogressState>(emptyMpcTransportSubprogress());
+  const [connectionQuality, setConnectionQuality] =
+    useState<ConnectionQualityState>(emptyConnectionQuality('lan'));
+  const connectionQualityRef = useRef(connectionQuality);
+  connectionQualityRef.current = connectionQuality;
+  const lastQualityPublishAtRef = useRef(0);
   const mpcUtxoRef = useRef<MpcProgressUtxoState>({
     utxoIndex: 0,
     utxoCount: 0,
@@ -392,21 +405,29 @@ const MobilesPairing = ({navigation}: any) => {
 
   const allChecked = Object.values(checks).every(Boolean);
 
-  const abortActiveMpc = () => {
+  const abortActiveMpc = (opts?: {keygen?: boolean}) => {
+    const isKeygen = !!opts?.keygen;
     Alert.alert(
-      'Abort signing?',
-      'This will stop the current MPC signing flow. You can retry anytime.',
+      isKeygen ? 'Abort wallet setup?' : 'Abort signing?',
+      isKeygen
+        ? 'This will stop key generation on this device. Other devices will stop shortly. You can retry setup.'
+        : 'This will stop the current MPC signing flow. You can retry anytime.',
       [
-        {text: 'Keep signing', style: 'cancel'},
+        {text: isKeygen ? 'Keep going' : 'Keep signing', style: 'cancel'},
         {
           text: 'Abort',
           style: 'destructive',
           onPress: async () => {
             mpcAbortRef.current = true;
+            const aborted = progressStateAfterAbort(
+              mpcHookProgressRef.current,
+            );
+            setCircleTarget(aborted.percent);
             setMpcModalActive(false);
             setMpcTransportSubprogress(emptyMpcTransportSubprogress());
+            setConnectionQuality(emptyConnectionQuality('lan'));
             setIsPairing(false);
-            setStatus('Aborted');
+            setStatus(aborted.statusLabel);
             const sid = activeMpcSessionIdRef.current;
             if (sid) {
               try {
@@ -855,6 +876,11 @@ const MobilesPairing = ({navigation}: any) => {
       setCircleTarget(0);
       setMpcModalActive(true);
       setStatus(LAN_KEYGEN_STATUS.starting);
+      setConnectionQuality(emptyConnectionQuality('lan'));
+      lastQualityPublishAtRef.current = 0;
+      mpcAbortRef.current = false;
+      TssProvider.resetMpcCancelState('session');
+      TssProvider.markMpcInProgress('session');
       dbg('mpcTssSetup: begin', {
         isMaster,
         masterHost,
@@ -1024,6 +1050,8 @@ const MobilesPairing = ({navigation}: any) => {
     setCircleTarget(0);
     setStatus('Starting co-signing…');
     setMpcModalActive(true);
+    setConnectionQuality(emptyConnectionQuality('lan'));
+    lastQualityPublishAtRef.current = 0;
     setCircleTarget(0);
     // CRITICAL: Store original network/API before transaction (declared outside try for finally block)
     // We'll use QR code network temporarily for signing, but restore original after
@@ -1524,6 +1552,25 @@ const MobilesPairing = ({navigation}: any) => {
         setStaleTransportHint(null);
       }
       setMpcTransportPulse(transportTrack.pulse);
+      if (result.transportSubprogress) {
+        setMpcTransportSubprogress(result.transportSubprogress);
+      }
+      const nextQuality = applyLanQualitySignals(connectionQualityRef.current, {
+        transportActive: result.transportSubprogress?.active === true,
+        pulse: transportTrack.pulse,
+        stale: false,
+      });
+      if (
+        shouldPublishQualityUpdate(
+          connectionQualityRef.current,
+          nextQuality,
+          lastQualityPublishAtRef.current,
+        )
+      ) {
+        lastQualityPublishAtRef.current = Date.now();
+        connectionQualityRef.current = nextQuality;
+        setConnectionQuality(nextQuality);
+      }
       if (result.utxoState) {
         dbg('progress send_btc', result.utxoState);
       }
@@ -1536,9 +1583,6 @@ const MobilesPairing = ({navigation}: any) => {
       }
       if (result.sessionShort) {
         setMpcSessionShort(result.sessionShort);
-      }
-      if (result.transportSubprogress) {
-        setMpcTransportSubprogress(result.transportSubprogress);
       }
       if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
         if (keysharePersistedRef.current) {
@@ -1622,6 +1666,12 @@ const MobilesPairing = ({navigation}: any) => {
         setStaleTransportHint(hint);
         if (hint) {
           setMpcTransportPulse(true);
+          const nextQuality = applyLanQualitySignals(
+            connectionQualityRef.current,
+            {stale: true, pulse: true},
+          );
+          connectionQualityRef.current = nextQuality;
+          setConnectionQuality(nextQuality);
         }
       }, 1000);
       return () => clearInterval(interval);
@@ -1662,6 +1712,7 @@ const MobilesPairing = ({navigation}: any) => {
     if (!allChecked) {
       return;
     }
+    mpcAbortRef.current = false;
     setIsPairing(true);
     pairingDeadlineRef.current = Date.now() + timeout * 1000;
     setCountdown(timeout);
@@ -1727,6 +1778,9 @@ const MobilesPairing = ({navigation}: any) => {
       let result: string | null =
         (await raceLanPeerDiscovery(promises)) ?? null;
       while (!isLanPeerDiscoveryPayload(result) && Date.now() < until) {
+        if (mpcAbortRef.current) {
+          break;
+        }
         dbg('checking peer...');
         const cached = appConfigRepository.get('peerFound');
         if (cached) {
@@ -1739,13 +1793,18 @@ const MobilesPairing = ({navigation}: any) => {
         await waitMS(1000);
       }
       dbg('promise race result:', result);
-      if (isLanPeerDiscoveryPayload(result)) {
+      if (mpcAbortRef.current) {
+        dbg('initiatePairing aborted; skipping discovery result');
+      } else if (isLanPeerDiscoveryPayload(result)) {
         dbg('Got Result', result);
         let raws = (result || '').split('|').filter(Boolean);
         // In trio, ensure both peers are present; sometimes one arrives first on iOS
         if (isTrio && raws.length < 2) {
           const extraWaitUntil = Date.now() + 3000; // wait up to 3s more
           while (Date.now() < extraWaitUntil && raws.length < 2) {
+            if (mpcAbortRef.current) {
+              break;
+            }
             await waitMS(300);
             const updated = appConfigRepository.get('peerFound');
             raws = (updated || result || '').split('|').filter(Boolean);
@@ -1975,7 +2034,7 @@ const MobilesPairing = ({navigation}: any) => {
         setPeerParty(null);
         setPeerParty2(null);
         setStatus('Pairing timed out. Please try again.');
-        if (isFocusedRef.current) {
+        if (!mpcAbortRef.current && isFocusedRef.current) {
           Alert.alert('Pairing Timeout', 'No peer device was detected.');
           navigation.dispatch(
             StackActions.replace('Devices Pairing', route.params),
@@ -1988,7 +2047,7 @@ const MobilesPairing = ({navigation}: any) => {
       setPeerIP(null);
       setPeerIP2(null);
       setLocalIP(null);
-      if (isFocusedRef.current) {
+      if (!mpcAbortRef.current && isFocusedRef.current) {
         Alert.alert('Error', error?.toString() || 'Unknown error occurred');
       }
     } finally {
@@ -3645,6 +3704,8 @@ const MobilesPairing = ({navigation}: any) => {
                 <AppPressable
                   onPress={() => {
                     mpcAbortRef.current = true;
+                    isFocusedRef.current = false;
+                    setIsPairing(false);
                     setMpcModalActive(false);
                     navigation.dispatch(
                       CommonActions.reset({
@@ -4053,6 +4114,9 @@ const MobilesPairing = ({navigation}: any) => {
                       <AppPressable
                         style={[styles.cancelSetupButton, styles.buttonFlex]}
                         onPress={() => {
+                          mpcAbortRef.current = true;
+                          isFocusedRef.current = false;
+                          setIsPairing(false);
                           navigation.dispatch(
                             CommonActions.reset({
                               index: 0,
@@ -4340,6 +4404,7 @@ const MobilesPairing = ({navigation}: any) => {
                                     mpcTransportPulse || !!staleTransportHint
                                   }
                                 />
+                                <MpcConnectionQuality quality={connectionQuality} />
                                 <MpcTransportSubprogress
                                   subprogress={mpcTransportSubprogress}
                                 />
@@ -4355,6 +4420,16 @@ const MobilesPairing = ({navigation}: any) => {
                                 <Text style={styles.finalizingCountdownText}>
                                   Time elapsed: {prepCounter} seconds
                                 </Text>
+                              </View>
+                              <View style={styles.modalActions}>
+                                <AppPressable
+                                  style={[
+                                    styles.modalButton,
+                                    {backgroundColor: theme.colors.secondary},
+                                  ]}
+                                  onPress={() => abortActiveMpc({keygen: true})}>
+                                  <Text style={styles.buttonText}>Abort</Text>
+                                </AppPressable>
                               </View>
                             </View>
                           </View>
@@ -4671,6 +4746,7 @@ const MobilesPairing = ({navigation}: any) => {
                   sessionShort={mpcSessionShort}
                   pulseIndicator={mpcTransportPulse || !!staleTransportHint}
                 />
+                <MpcConnectionQuality quality={connectionQuality} />
                 <MpcTransportSubprogress
                   subprogress={mpcTransportSubprogress}
                 />
@@ -4691,7 +4767,7 @@ const MobilesPairing = ({navigation}: any) => {
                       styles.modalButton,
                       {backgroundColor: theme.colors.secondary},
                     ]}
-                    onPress={abortActiveMpc}>
+                    onPress={() => abortActiveMpc()}>
                     <Text style={styles.buttonText}>Abort</Text>
                   </AppPressable>
                 </View>

@@ -33,6 +33,8 @@ interface CacheIndicatorProps {
   syncErrorMessage?: string | null;
   /** When true and not refreshing, show "Tap to retry" instead of "Tap to refresh". */
   lastSyncFailed?: boolean;
+  /** Optional extra line (e.g. "Network is slow"); ignored while syncErrorMessage is set. */
+  healthHint?: string | null;
 }
 export interface CacheIndicatorHandle {
   press: () => void;
@@ -54,6 +56,7 @@ export const CacheIndicator = forwardRef<
       progress,
       syncErrorMessage,
       lastSyncFailed = false,
+      healthHint,
     },
     ref,
   ) => {
@@ -203,6 +206,8 @@ export const CacheIndicator = forwardRef<
       return `${diffInYears} ${diffInYears === 1 ? 'year' : 'years'} ago`;
     };
     const timeAgo = getTimeAgo(latestTimestamp);
+    const shownHealthHint =
+      healthHint && !syncErrorMessage ? healthHint : null;
     return (
       <AppPressable
         id="cacheRefresher"
@@ -239,86 +244,115 @@ export const CacheIndicator = forwardRef<
             />
           </View>
         )}
-        <View
-          style={[
-            createStyles(theme).refreshText,
-            isRefreshing && styles.flexFill,
-          ]}>
-          <Image
-            source={require('../assets/refresh-icon.png')}
-            style={[
-              createStyles(theme).refreshIcon,
-              isRefreshing && {transform: [{rotate: '45deg'}]},
-            ]}
-            resizeMode="contain"
-          />
-          <Text
-            numberOfLines={1}
-            adjustsFontSizeToFit
-            minimumFontScale={0.5}
-            style={{
-              color: isRefreshing
-                ? theme.colors.textSecondary
-                : syncErrorMessage
-                ? (theme.colors.warning ?? theme.colors.bitcoinOrange)
-                : theme.colors.background === '#ffffff'
-                ? theme.colors.accent
-                : theme.colors.bitcoinOrange,
-            }}>
-            {isRefreshing
-              ? statusMessage ?? 'Refreshing...'
-              : syncErrorMessage
-              ? syncErrorMessage
-              : lastSyncFailed
-              ? 'Tap to retry'
-              : 'Tap to refresh'}
-          </Text>
-          {isRefreshing && progress ? (
-            <Text
+        <View style={styles.indicatorBody}>
+          <View style={styles.indicatorRow}>
+            <View
               style={[
-                styles.progressText,
-                {
-                  color: theme.colors.textSecondary,
-                  fontSize: theme.fontSizes?.xs || 11,
-                  fontFamily: theme.fontFamilies?.medium,
-                },
+                createStyles(theme).refreshText,
+                isRefreshing && styles.flexFill,
               ]}>
-              {progress.current}/{progress.total}
-            </Text>
-          ) : null}
-        </View>
-        {!isRefreshing && (
-          <View style={styles.timeContainer}>
-            <View style={styles.timeTextWrap}>
+              <Image
+                source={require('../assets/refresh-icon.png')}
+                style={[
+                  createStyles(theme).refreshIcon,
+                  isRefreshing && {transform: [{rotate: '45deg'}]},
+                ]}
+                resizeMode="contain"
+              />
               <Text
                 numberOfLines={1}
                 adjustsFontSizeToFit
                 minimumFontScale={0.5}
-                style={[
-                  createStyles(theme).cacheText,
-                  {color: theme.colors.textSecondary},
-                ]}>
-                {latestTimestamp === 0
-                  ? 'No data available'
-                  : isUsingCache
-                  ? `Cached • ${timeAgo}`
-                  : timeAgo}
+                style={{
+                  color: isRefreshing
+                    ? theme.colors.textSecondary
+                    : syncErrorMessage
+                    ? (theme.colors.warning ?? theme.colors.bitcoinOrange)
+                    : theme.colors.background === '#ffffff'
+                    ? theme.colors.accent
+                    : theme.colors.bitcoinOrange,
+                }}>
+                {isRefreshing
+                  ? statusMessage ?? 'Refreshing...'
+                  : syncErrorMessage
+                  ? syncErrorMessage
+                  : lastSyncFailed
+                  ? 'Tap to retry'
+                  : 'Tap to refresh'}
               </Text>
+              {isRefreshing && progress ? (
+                <Text
+                  style={[
+                    styles.progressText,
+                    {
+                      color: theme.colors.textSecondary,
+                      fontSize: theme.fontSizes?.xs || 11,
+                      fontFamily: theme.fontFamilies?.medium,
+                    },
+                  ]}>
+                  {progress.current}/{progress.total}
+                </Text>
+              ) : null}
             </View>
-            <Image
-              source={clockIcon}
-              style={[
-                styles.clockIcon,
-                {tintColor: theme.colors.textSecondary},
-              ]}
-            />
+            {!isRefreshing && (
+              <View style={styles.timeContainer}>
+                <View style={styles.timeTextWrap}>
+                  <Text
+                    numberOfLines={1}
+                    adjustsFontSizeToFit
+                    minimumFontScale={0.5}
+                    style={[
+                      createStyles(theme).cacheText,
+                      {color: theme.colors.textSecondary},
+                    ]}>
+                    {latestTimestamp === 0
+                      ? 'No data available'
+                      : isUsingCache
+                      ? `Cached • ${timeAgo}`
+                      : timeAgo}
+                  </Text>
+                </View>
+                <Image
+                  source={clockIcon}
+                  style={[
+                    styles.clockIcon,
+                    {tintColor: theme.colors.textSecondary},
+                  ]}
+                />
+              </View>
+            )}
           </View>
-        )}
+          {shownHealthHint ? (
+            <Text
+              numberOfLines={1}
+              style={[
+                createStyles(theme).cacheText,
+                styles.healthHint,
+                {color: theme.colors.textSecondary},
+              ]}>
+              {shownHealthHint}
+            </Text>
+          ) : null}
+        </View>
       </AppPressable>
     );
   },
 );
 const styles = StyleSheet.create({
+  indicatorBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  indicatorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minWidth: 0,
+  },
+  healthHint: {
+    textAlign: 'left',
+    marginTop: 2,
+  },
   timeContainer: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -16,6 +16,7 @@ import {
   ScrollView,
   Linking,
 } from 'react-native';
+import Toast from 'react-native-toast-message';
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
 import QRScanner from '../components/QRScanner';
@@ -104,6 +105,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [inUsdAmount, setInUsdAmount] = useState('');
   const [isScannerVisible, setIsScannerVisible] = useState<boolean>(false);
   const [estimatedFee, setEstimatedFee] = useState<Big | null>(null);
+  const [usingStaleFees, setUsingStaleFees] = useState(false);
   const [isCalculatingFee, setIsCalculatingFee] = useState(false);
   const [spendingHash, setSpendingHash] = useState<string>('');
   const [_activeInput, setActiveInput] = useState<'btc' | 'usd' | null>(null);
@@ -405,6 +407,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
     },
+    staleFeeHint: {
+      marginTop: 8,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      opacity: 0.85,
+    },
     sendCancelButtons: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -464,6 +473,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       if (!isMountedRef.current || !visibleRef.current) return;
       if (!addr || !amt || btcAmount.eq(0)) {
         setEstimatedFee(null);
+        setUsingStaleFees(false);
         lastFeeInputsRef.current = '';
         return;
       }
@@ -474,12 +484,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           currentNetworkForValidation,
         );
         setEstimatedFee(null);
+        setUsingStaleFees(false);
         lastFeeInputsRef.current = '';
         return;
       }
       const amount = Big(amt);
       if (amount.gt(walletBalance) || !walletBalance) {
         setEstimatedFee(null);
+        setUsingStaleFees(false);
         lastFeeInputsRef.current = '';
         return;
       }
@@ -605,6 +617,41 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
             }
           } catch (e) {
             dbg('SendBitcoinModal: live UTXO fetch failed', e);
+            Toast.show({
+              type: 'info',
+              text1: 'Could not refresh UTXOs',
+              text2: 'Using last known coins.',
+              position: 'top',
+            });
+            if (!dbUtxos.length && lastUtxosJsonRef.current) {
+              try {
+                const prev = JSON.parse(lastUtxosJsonRef.current) as Array<{
+                  txid: string;
+                  vout: number;
+                  value: number;
+                  address?: string;
+                  derivation_path?: string;
+                }>;
+                if (Array.isArray(prev) && prev.length) {
+                  dbUtxos = prev.map(u => ({
+                    txid: u.txid,
+                    vout: u.vout,
+                    address: u.address || '',
+                    network: activeNetwork,
+                    valueSats: u.value,
+                    scriptPubkey: null,
+                    derivationPath: u.derivation_path ?? null,
+                    isConfirmed: true,
+                    blockHeight: null,
+                    blockTime: null,
+                    fetchedAt: Date.now(),
+                  }));
+                  utxosJson = lastUtxosJsonRef.current;
+                }
+              } catch {
+                // keep empty; blocking alert below if still no inputs
+              }
+            }
           }
         }
 
@@ -648,6 +695,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         dbg('got fees (TS):', result.feeSats, 'sats', result.feeRate, 'sat/vB');
         const feeAmt = Big(result.feeSats);
         setEstimatedFee(feeAmt);
+        setUsingStaleFees(!!result.fromStaleFees);
         lastFeeInputsRef.current = inputKey;
         Keyboard.dismiss();
 
@@ -665,6 +713,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         if (!isMountedRef.current || !visibleRef.current) return;
         dbg('Fee estimation failed:', e);
         setEstimatedFee(null);
+        setUsingStaleFees(false);
         if (e.message && !e.message.includes('Invalid number')) {
           Alert.alert(
             'Cannot estimate fee',
@@ -758,6 +807,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     } else {
       debouncedGetFee.cancel();
       setEstimatedFee(null);
+      setUsingStaleFees(false);
     }
     return () => debouncedGetFee.cancel();
     // debouncedGetFee is memoized once; do not list it or getFee — would cancel/reset the debouncer on unrelated identity changes.
@@ -1209,6 +1259,11 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 )
               </Text>
             </View>
+            {usingStaleFees ? (
+              <Text style={styles.staleFeeHint}>
+                Using last known fees — network issue
+              </Text>
+            ) : null}
           </View>
         ) : null}
       </View>

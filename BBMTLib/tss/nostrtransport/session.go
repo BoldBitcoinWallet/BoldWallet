@@ -8,6 +8,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	nostr "github.com/nbd-wtf/go-nostr"
@@ -113,6 +114,7 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
 	}
 
 	seen := sync.Map{}
+	var peerAborted atomic.Bool
 
 	// Convert local npub to hex for the "p" tag filter (gift wraps are addressed to us)
 	localNpubHex, err := npubToHex(s.cfg.LocalNpub)
@@ -219,7 +221,10 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
 					if err := json.Unmarshal([]byte(rumor.Content), &readyMsg); err != nil {
 						continue
 					}
-					if phase, ok := readyMsg["phase"].(string); ok && phase == "ready" {
+					if phase, ok := readyMsg["phase"].(string); ok && strings.EqualFold(phase, "abort") {
+						fmt.Fprintf(os.Stderr, "BBMTLog: Found existing abort wrap from %s\n", sealSenderNpub)
+						peerAborted.Store(true)
+					} else if phase, ok := readyMsg["phase"].(string); ok && phase == "ready" {
 						fmt.Fprintf(os.Stderr, "BBMTLog: Found existing ready wrap from %s (hex: %s)\n", sealSenderNpub, sealSenderHex)
 						seen.Store(sealSenderNpub, true)
 					}
@@ -236,6 +241,9 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
 		fmt.Fprintf(os.Stderr, "BBMTLog: Initial query completed, found %d peers\n", s.countSeen(&seen))
 	case <-time.After(8 * time.Second):
 		fmt.Fprintf(os.Stderr, "BBMTLog: Initial query timeout, proceeding with subscription (found %d peers so far)\n", s.countSeen(&seen))
+	}
+	if peerAborted.Load() {
+		return fmt.Errorf("peer aborted the session")
 	}
 
 	// Now start subscription to catch new events.
@@ -371,6 +379,10 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
 				fmt.Fprintf(os.Stderr, "BBMTLog: Failed to parse ready message: %v\n", err)
 				continue
 			}
+			if phase, ok := readyMsg["phase"].(string); ok && strings.EqualFold(phase, "abort") {
+				fmt.Fprintf(os.Stderr, "BBMTLog: Received abort wrap from %s (hex: %s)\n", sealSenderNpub, sealSenderHex)
+				return fmt.Errorf("peer aborted the session")
+			}
 			if phase, ok := readyMsg["phase"].(string); ok && phase == "ready" {
 				fmt.Fprintf(os.Stderr, "BBMTLog: Received ready wrap from %s (hex: %s)\n", sealSenderNpub, sealSenderHex)
 				seen.Store(sealSenderNpub, true)
@@ -380,6 +392,9 @@ func (s *SessionCoordinator) AwaitPeers(ctx context.Context) (err error) {
 				}
 			}
 		case <-ticker.C:
+			if peerAborted.Load() {
+				return fmt.Errorf("peer aborted the session")
+			}
 			if s.allPeersSeen(&seen, expected) {
 				fmt.Fprintf(os.Stderr, "BBMTLog: All peers ready (ticker check)!\n")
 				return nil
@@ -477,63 +492,77 @@ func (s *SessionCoordinator) PublishReady(ctx context.Context) (err error) {
 
 func (s *SessionCoordinator) PublishComplete(ctx context.Context, phase string) (err error) {
 	defer recoverAsError("SessionCoordinator.PublishComplete", &err, nil)
+	return s.publishPhase(ctx, phase, "complete")
+}
 
-	// Convert sender npub to hex for rumor
+// PublishAbort notifies peers that this party aborted (keygen/keysign failure or user cancel).
+// Uses a short fresh context when ctx is already cancelled so the event can still go out.
+func (s *SessionCoordinator) PublishAbort(ctx context.Context, reason string) (err error) {
+	defer recoverAsError("SessionCoordinator.PublishAbort", &err, nil)
+	if reason == "" {
+		reason = "aborted"
+	}
+	if ctx == nil || ctx.Err() != nil {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(context.Background(), 8*time.Second)
+		defer cancel()
+	}
+	return s.publishPhase(ctx, "abort", reason)
+}
+
+func (s *SessionCoordinator) publishPhase(ctx context.Context, phase, content string) error {
 	senderNpubHex, err := npubToHex(s.cfg.LocalNpub)
 	if err != nil {
 		return fmt.Errorf("convert sender npub: %w", err)
 	}
 
-	// Create complete message content
-	completeMessage := map[string]interface{}{
+	message := map[string]interface{}{
 		"session_id": s.cfg.SessionID,
 		"phase":      phase,
-		"content":    "complete",
+		"content":    content,
 	}
-	completeJSON, err := json.Marshal(completeMessage)
+	payload, err := json.Marshal(message)
 	if err != nil {
-		return fmt.Errorf("marshal complete message: %w", err)
+		return fmt.Errorf("marshal phase message: %w", err)
 	}
 
-	fmt.Fprintf(os.Stderr, "BBMTLog: Publishing complete event for session %s, phase %s, npub %s, expecting peers: %v\n", s.cfg.SessionID, phase, s.cfg.LocalNpub, s.cfg.PeersNpub)
+	fmt.Fprintf(os.Stderr, "BBMTLog: Publishing %s event for session %s, npub %s, expecting peers: %v\n", phase, s.cfg.SessionID, s.cfg.LocalNpub, s.cfg.PeersNpub)
 
-	// Publish to every peer; continue past individual failures (same policy as PublishReady).
-	var firstCompleteErr error
+	var firstErr error
 	for _, peerNpub := range s.cfg.PeersNpub {
-		rumor := createRumor(string(completeJSON), senderNpubHex)
+		rumor := createRumor(string(payload), senderNpubHex)
 
 		seal, err := createSeal(rumor, s.cfg.LocalNsec, peerNpub)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to create complete seal for peer %s: %v (continuing)\n", peerNpub, err)
-			if firstCompleteErr == nil {
-				firstCompleteErr = fmt.Errorf("create complete seal for peer %s: %w", peerNpub, err)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to create %s seal for peer %s: %v (continuing)\n", phase, peerNpub, err)
+			if firstErr == nil {
+				firstErr = fmt.Errorf("create seal for peer %s: %w", peerNpub, err)
 			}
 			continue
 		}
 
 		wrap, err := createWrap(seal, peerNpub, s.cfg.SessionID, "")
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to create complete wrap for peer %s: %v (continuing)\n", peerNpub, err)
-			if firstCompleteErr == nil {
-				firstCompleteErr = fmt.Errorf("create complete wrap for peer %s: %w", peerNpub, err)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to create %s wrap for peer %s: %v (continuing)\n", phase, peerNpub, err)
+			if firstErr == nil {
+				firstErr = fmt.Errorf("create wrap for peer %s: %w", peerNpub, err)
 			}
 			continue
 		}
 
-		fmt.Fprintf(os.Stderr, "BBMTLog: Publishing complete wrap (phase=%s) to peer %s\n", phase, peerNpub)
+		fmt.Fprintf(os.Stderr, "BBMTLog: Publishing %s wrap to peer %s\n", phase, peerNpub)
 
 		if err := s.client.PublishWrap(ctx, wrap); err != nil {
-			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to publish complete wrap to peer %s: %v (continuing)\n", peerNpub, err)
-			if firstCompleteErr == nil {
-				firstCompleteErr = fmt.Errorf("publish complete wrap to peer %s: %w", peerNpub, err)
+			fmt.Fprintf(os.Stderr, "BBMTLog: Failed to publish %s wrap to peer %s: %v (continuing)\n", phase, peerNpub, err)
+			if firstErr == nil {
+				firstErr = fmt.Errorf("publish wrap to peer %s: %w", peerNpub, err)
 			}
 		}
 	}
-	if firstCompleteErr != nil {
-		return firstCompleteErr
+	if firstErr != nil {
+		return firstErr
 	}
 
-	fmt.Fprintf(os.Stderr, "BBMTLog: Complete event (phase=%s) published successfully to all peers with tag t=%s\n", phase, s.cfg.SessionID)
-
+	fmt.Fprintf(os.Stderr, "BBMTLog: %s event published successfully to all peers with tag t=%s\n", phase, s.cfg.SessionID)
 	return nil
 }

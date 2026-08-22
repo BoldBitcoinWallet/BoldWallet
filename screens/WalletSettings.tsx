@@ -82,10 +82,17 @@ import transactionSyncer, {
 import utxoSyncer, {UtxoSyncError} from '../services/sync/UtxoSyncer';
 import syncCoordinator from '../services/sync/SyncCoordinator';
 import apiQueue from '../services/ApiQueue';
+import {
+  activeRelaysCSV,
+  loadNostrRelayEntries,
+  saveNostrRelayEntries,
+  type NostrRelayEntry,
+} from '../services/nostrRelaysStore';
 import LegalModal from '../components/LegalModal';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import RestoringIndexesModal from '../components/RestoringIndexesModal';
-import {fetchDynamicAPIEndpoints, getNostrRelays} from '../utils';
+import NostrRelaysEditor from '../components/NostrRelaysEditor';
+import {fetchDynamicAPIEndpoints} from '../utils';
 import FontComparisonScreen from '../components/FontComparisonScreen';
 import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
 import Toast from 'react-native-toast-message';
@@ -788,8 +795,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [baseAPI, setBaseAPI] = useState('');
   const [pendingAPI, setPendingAPI] = useState('');
   const [isAPISaving, setIsAPISaving] = useState(false);
-  const [nostrRelays, setNostrRelays] = useState<string>('');
-  const [pendingNostrRelays, setPendingNostrRelays] = useState<string>('');
+  const [relayEntries, setRelayEntries] = useState<NostrRelayEntry[]>([]);
+  const [savedRelaySnapshot, setSavedRelaySnapshot] = useState('');
   const [hasNostr, setHasNostr] = useState(false);
   const [hdGapLimit, setHdGapLimit] = useState(() => String(getGapLimit()));
   const [hdMinScanIndex, setHdMinScanIndex] = useState(() =>
@@ -1395,12 +1402,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       if (net) BBMTLibNativeModule.setAPI(net, resolvedApi);
     })();
     // Load Nostr relays (from cache if available, otherwise fetch dynamically)
-    getNostrRelays(false).then(relays => {
-      const relaysCSV = relays.join(',');
-      setNostrRelays(relaysCSV);
-      // Convert CSV to newline-separated for multiline display
-      const relaysForDisplay = relaysCSV.split(',').join('\n');
-      setPendingNostrRelays(relaysForDisplay);
+    loadNostrRelayEntries().then(entries => {
+      setRelayEntries(entries);
+      setSavedRelaySnapshot(JSON.stringify(entries));
     });
   }, []);
   const toggleNetwork = async (
@@ -2683,13 +2687,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           fontFamily: theme.fontFamilies?.medium,
           color: theme.colors.warningAccent,
         },
-        nostrRelaysInput: {
-          minHeight: 120,
-          textAlignVertical: 'top',
-          textAlign: 'left', // Align text entries to the left
-          paddingTop: 12,
-          backgroundColor: theme.colors.cardBackground,
-        },
         errorInput: {
           borderColor: theme.colors.danger,
         },
@@ -3819,113 +3816,39 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <View style={styles.apiItem}>
                 <Text style={styles.apiName}>Nostr Relay Configuration</Text>
                 <Text style={styles.apiDescription}>
-                  Configure Nostr relays for device pairing and transaction
-                  signing. Enter relay URLs, one per line or comma-separated
-                  (wss://...).
+                  Relays used for device pairing and transaction signing. Toggle
+                  a relay off to skip it without deleting. At least one must
+                  stay on.
                 </Text>
               </View>
-              <TextInput
-                style={[styles.input, styles.nostrRelaysInput]}
-                value={pendingNostrRelays}
-                onChangeText={setPendingNostrRelays}
-                placeholder={
-                  'wss://relay1.com\nwss://relay2.com\nwss://relay3.com'
+              <NostrRelaysEditor
+                entries={relayEntries}
+                onChange={setRelayEntries}
+                showSave
+                saveDisabled={
+                  JSON.stringify(relayEntries) === savedRelaySnapshot
                 }
-                placeholderTextColor={theme.colors.textSecondary + '80'}
-                autoCapitalize="none"
-                autoCorrect={false}
-                multiline
-                numberOfLines={6}
-              />
-              <View style={styles.apiActionButtonsRow}>
-                <AppPressable
-                  style={[
-                    styles.button,
-                    styles.backupButton,
-                    styles.apiActionButton,
-                    (!pendingNostrRelays ||
-                      pendingNostrRelays === nostrRelays) &&
-                      styles.disabledButton,
-                  ]}
-                  onPress={async () => {
-                    try {
-                      const relays = pendingNostrRelays
-                        .split(/[,\n]/)
-                        .map(r => r.trim())
-                        .filter(Boolean);
-                      if (relays.length === 0) {
-                        Alert.alert(
-                          'Error',
-                          'Please enter at least one relay URL',
-                        );
-                        return;
-                      }
-                      const invalid = relays.find(
-                        r => !r.startsWith('wss://') && !r.startsWith('ws://'),
-                      );
-                      if (invalid) {
-                        Alert.alert(
-                          'Error',
-                          `Invalid relay URL: ${invalid}\nRelay URLs must start with wss:// or ws://`,
-                        );
-                        return;
-                      }
-                      const relaysCSV = relays.join(',');
-                      appConfigRepository.set('nostr_relays', relaysCSV);
-                      setNostrRelays(relaysCSV);
+                onSave={async () => {
+                  try {
+                    if (activeRelaysCSV(relayEntries).length === 0) {
                       Alert.alert(
-                        'Success',
-                        'Nostr relays saved successfully!',
+                        'Error',
+                        'Please keep at least one relay enabled',
                       );
-                    } catch (error) {
-                      dbg('Error saving Nostr relays:', error);
-                      Alert.alert('Error', 'Failed to save Nostr relays');
+                      return;
                     }
-                  }}
-                  disabled={
-                    !pendingNostrRelays || pendingNostrRelays === nostrRelays
+                    await saveNostrRelayEntries(relayEntries);
+                    setSavedRelaySnapshot(JSON.stringify(relayEntries));
+                    Alert.alert(
+                      'Success',
+                      'Nostr relays saved successfully!',
+                    );
+                  } catch (error) {
+                    dbg('Error saving Nostr relays:', error);
+                    Alert.alert('Error', 'Failed to save Nostr relays');
                   }
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <View style={styles.buttonContent}>
-                    <Image
-                      source={require('../assets/check-icon.png')}
-                      style={[styles.buttonIcon, styles.whiteTint]}
-                      resizeMode="contain"
-                    />
-                    <Text
-                      style={[
-                        styles.buttonText,
-                        (!pendingNostrRelays ||
-                          pendingNostrRelays === nostrRelays) &&
-                          styles.disabledButtonText,
-                      ]}>
-                      Save Relays
-                    </Text>
-                  </View>
-                </AppPressable>
-                <AppPressable
-                  style={[
-                    styles.button,
-                    styles.resetButton,
-                    styles.apiActionButton,
-                  ]}
-                  onPress={async () => {
-                    const fetchedRelays = await getNostrRelays(true);
-                    const relaysCSV = fetchedRelays.join(',');
-                    const relaysForDisplay = relaysCSV.split(',').join('\n');
-                    setPendingNostrRelays(relaysForDisplay);
-                  }}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <View style={styles.buttonContent}>
-                    <Image
-                      source={require('../assets/refresh-icon.png')}
-                      style={[styles.buttonIcon, styles.whiteTint]}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.buttonText}>Defaults</Text>
-                  </View>
-                </AppPressable>
-              </View>
+                }}
+              />
             </CollapsibleSection>
           )}
         </SettingsSectionGroup>

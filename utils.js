@@ -887,7 +887,7 @@ const DEFAULT_NOSTR_RELAYS = [
 ];
 
 /** Relays that often reject large gift-wrap MPC events (profiling: msg: blocked). */
-const NOSTR_RELAY_DENYLIST = ['wss://nostr.oxtr.dev'];
+export const NOSTR_RELAY_DENYLIST = ['wss://nostr.oxtr.dev'];
 
 const filterUnreliableNostrRelays = relays =>
   relays.filter(url => !NOSTR_RELAY_DENYLIST.includes(url.trim()));

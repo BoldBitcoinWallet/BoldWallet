@@ -4,6 +4,8 @@
 
 import {
   isMpcAbortedOrCanceledError,
+  isPeerAbortedSessionError,
+  peerAbortUserMessage,
   shouldShowMpcFlowAlert,
 } from '../services/mpcFlowAlerts';
 
@@ -49,5 +51,21 @@ describe('mpcFlowAlerts', () => {
         ),
       ),
     ).toBe(false);
+  });
+
+  it('detects peer-abort separately from local user abort', () => {
+    const err = new Error(
+      'peer aborted the session: deserialize failed: invalid scalar fragment length',
+    );
+    expect(isPeerAbortedSessionError(err)).toBe(true);
+    expect(isPeerAbortedSessionError(new Error('context canceled'))).toBe(
+      false,
+    );
+    expect(peerAbortUserMessage(err, 'keygen')).toContain(
+      'Another device stopped key generation',
+    );
+    expect(peerAbortUserMessage(err, 'keygen')).toContain(
+      'invalid scalar fragment length',
+    );
   });
 });

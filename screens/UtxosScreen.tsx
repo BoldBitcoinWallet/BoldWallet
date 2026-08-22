@@ -38,6 +38,11 @@ import {
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import AppPressable from '../components/AppPressable';
 import {CacheIndicator} from '../components/CacheIndicator';
+import {
+  cacheIndicatorHealthHint,
+  getMempoolHealth,
+  subscribeMempoolHealth,
+} from '../services/mempoolHealth';
 import CurrencySelector from '../components/CurrencySelector';
 
 /** Mempool.space UTXO item: txid, vout, value (sats), status { confirmed, block_height?, block_hash?, block_time? }. */
@@ -147,6 +152,15 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
   const [lastSyncFailed, setLastSyncFailed] = useState(false);
   const [abortRequested, setAbortRequested] = useState(false);
+  const [healthHint, setHealthHint] = useState<string | null>(() =>
+    cacheIndicatorHealthHint(getMempoolHealth()?.quality),
+  );
+
+  useEffect(() => {
+    return subscribeMempoolHealth(state => {
+      setHealthHint(cacheIndicatorHealthHint(state.quality));
+    });
+  }, []);
 
   useEffect(() => {
     const loadCurrency = async () => {
@@ -1019,6 +1033,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           onRefresh={onRefresh}
           syncErrorMessage={syncErrorMessage}
           lastSyncFailed={lastSyncFailed}
+          healthHint={syncErrorMessage ? null : healthHint}
           onAbortRequested={() => {
             Alert.alert(
               'Cancel sync?',

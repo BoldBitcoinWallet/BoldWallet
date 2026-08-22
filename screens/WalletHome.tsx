@@ -99,6 +99,11 @@ import syncCoordinator, {
 import apiQueue from '../services/ApiQueue';
 import mempoolClient from '../services/MempoolClient';
 import {
+  cacheIndicatorHealthHint,
+  getMempoolHealth,
+  subscribeMempoolHealth,
+} from '../services/mempoolHealth';
+import {
   parsePairingCodeFromScannedData,
   computeExtensionBindResponseQr,
 } from '../utils/extensionBind';
@@ -188,6 +193,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
   /** When true, CacheIndicator shows "Tap to retry" until next successful sync. */
   const [lastSyncFailed, setLastSyncFailed] = useState(false);
+  const [healthHint, setHealthHint] = useState<string | null>(() =>
+    cacheIndicatorHealthHint(getMempoolHealth()?.quality),
+  );
   /** Set when user confirms abort — hide refreshing state immediately until sync actually stops. */
   const [abortRequested, setAbortRequested] = useState(false);
   const [isCheckingBalanceForSend, setIsCheckingBalanceForSend] =
@@ -410,6 +418,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       );
     });
     return unsub;
+  }, []);
+  useEffect(() => {
+    return subscribeMempoolHealth(state => {
+      setHealthHint(cacheIndicatorHealthHint(state.quality));
+    });
   }, []);
   // DB → UI: read balance and price from SQLite and update React state.
   // This is the single source of truth for what the UI displays.
@@ -2439,6 +2452,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         progress={syncStatus?.progress ?? apiQueueState?.progress}
         syncErrorMessage={syncErrorMessage}
         lastSyncFailed={lastSyncFailed}
+        healthHint={syncErrorMessage ? null : healthHint}
         onRefresh={() => {
           fetchData();
         }}
