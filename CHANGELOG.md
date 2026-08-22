@@ -1,5 +1,41 @@
 # Changelog
 
+## [4.0.6] - 2026-08-23
+
+> **Patch release:** Explorer traffic is now observable as a slow/fail hint instead of silent hangs; Send no longer treats a timeout as a zero balance. Android Play packaging is camera/GPS-optional, LAN pairing uses Nearby Wi-Fi on Android 13+, and sharing a keyshare from WhatsApp/Telegram actually opens Bold. Branta history shows the merchant name (not “Paying undefined”). MPC on LAN/Nostr queues round payloads so a fast peer cannot poison the current round, and pairing shows a live connection-quality chip.
+
+### Added
+- **Mempool health hint** — `MempoolClient` records each live HTTP attempt (cache hits ignored). Wallet Home, UTXOs, and Addresses show **Network is slow** on the cache bar when a request takes ≥3s; timeout/fail still use existing error copy. UI updates are throttled (~500ms).
+- **Send balance recheck** — if the displayed balance looks empty, a live recheck that times out or fails toasts and does **not** map to 0 BTC / false “Insufficient Balance”; send still opens when coins were already on screen.
+- **MPC connection quality chip** — LAN and Nostr pairing progress show Best / Medium / Low / Connecting from EWMA RTT and consecutive publish failures (pairing screens only).
+- **Nostr relays editor** — settings list with per-relay enable/disable instead of a raw CSV box; at least one relay must stay on.
+- **Play Console packaging** — optional camera/location/Wi-Fi `uses-feature`; English-only `resConfigs`; Play AAB can be arm64-only (`-PplayAbi`); native `SYMBOL_TABLE` debug symbols; `check:play-manifest` + copy-artifact scripts.
+- **Android 13+ LAN discovery** — `NEARBY_WIFI_DEVICES` with `neverForLocation`; location perms capped at API 32; runtime prompt before NSD publish/scan (denial still best-effort).
+
+### Changed
+- **Background sync failures** — Home sets a header error and “tap refresh”; no toast spam on each failed cycle.
+- **Stale fee rates** — if the fee API fails, Send can keep DB-cached rates and show a one-liner instead of blocking.
+- **Broadcast Alert copy** — native `PostTx` `failed after N attempts: …` maps to short reasons (already spent, fee too low, API unreachable); HTTP still native, not MempoolClient.
+- **Tx details confirmations** — tip height goes through `MempoolClient`; failure still only hides the count.
+- **Pending vs confirmed visualizer** — compact track follows the parent details chip (`status.confirmed === true`); a tip-height poll no longer paints “Confirmed in block #…”.
+- **Branta merchant on the tx list** — resolve label from the verified-payment address and any output (case-insensitive); persist label on both BIP-21 and Branta destinations; “Paying {name}” never interpolates `undefined`; logos follow light/dark without tinting the send icon.
+- **Android share from chat** — broader SEND/VIEW MIME filters; copy the stream before forwarding a non-root activity; classifier peeks PSBT then media, then treats opaque chat binaries as keyshare (photos/PDFs are not).
+- **Lock-screen version pill** — width hugs `vX.Y.Z • build` instead of a fixed 100pt.
+
+### Fixed
+- **DKLs DKG/sign round mix-up** — per-sender payload FIFO so a faster peer’s next round is not fed into the current `session.Next` (LAN and Nostr).
+- **False empty wallet on Send** — explorer timeout is not treated as a confirmed 0 balance.
+- **Branta list title** — merchant platform from send-time Branta card now matches the history row.
+
+### Technical Details
+- **Version**: `package.json` **4.0.6**; Android **`versionCode` 68** / **`versionName` 4.0.6**; iOS build **68** / **`MARKETING_VERSION` 4.0.6**.
+- **Health / send**: `services/mempoolHealth.ts`, `MempoolClient.ts`, `sendBalanceRecheck.ts`, `broadcastErrorMessages.ts`, `feeUtils.ts`, `CacheIndicator.tsx`, `SyncCoordinator.ts`.
+- **MPC**: `BBMTLib/dkls/payload_inbox.go`, `lan.go`, `nostr.go`; `services/mpcConnectionQuality.ts`, `components/MpcConnectionQuality.tsx`, `NostrRelaysEditor.tsx`, `nostrRelaysStore.ts`.
+- **Android Play / LAN / share**: `AndroidManifest.xml`, `lanDiscoveryPermissions.ts`, `IncomingShareResolver.kt`, `MainActivity.kt`, `incomingFileClassifier.ts`, `android/scripts/build-play-aab.sh`, `check-play-manifest.sh`, `copy-play-artifacts.sh`.
+- **History**: `MerchantLabelRepository.ts`, `TransactionList.tsx`, `txVisualizerPhase.ts`, `TransactionVisualizer.tsx`, `TransactionDetailsModal.tsx`.
+
+---
+
 ## [4.0.5] - 2026-08-19
 
 > **Patch release:** Transaction history now shows Branta merchant identity and an animated tx visualizer (wallet-signed vs network-received). Animated UR QR send/PSBT scanning is reliable at large UTXO counts. Nostr co-sign ranks relays by live fidelity, and sharing a `.share` / `.psbt` file from Files, WhatsApp, Signal, Telegram, or any other app lands on the existing Bold task instead of a duplicate Recents card or bouncing back to the sender.

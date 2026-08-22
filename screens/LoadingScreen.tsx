@@ -731,7 +731,6 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
           : theme.colors.border,
       backgroundColor: theme.colors.cardBackground,
       alignSelf: 'center',
-      width: 100,
       height: 32,
       justifyContent: 'center',
       opacity: lockScreenUpdateCheckerEnabled ? 1 : 0.72,
@@ -741,7 +740,6 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
       alignItems: 'center',
       gap: 8,
       justifyContent: 'center',
-      width: '100%',
     },
     versionChipLabel: {
       fontSize: theme.fontSizes?.sm || 12,

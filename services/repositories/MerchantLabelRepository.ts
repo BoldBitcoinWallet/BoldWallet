@@ -50,6 +50,10 @@ export interface MerchantLabel {
   fetchedAt: number;
 }
 
+export function normalizeMerchantAddress(address: string): string {
+  return address.trim().toLowerCase();
+}
+
 class MerchantLabelRepository {
   /**
    * Fetch a single merchant label by address.
@@ -57,11 +61,15 @@ class MerchantLabelRepository {
    */
   getByAddress(address: string): MerchantLabel | null {
     try {
+      const key = normalizeMerchantAddress(address);
+      if (!key) {
+        return null;
+      }
       const {rows} = database.execute(
         `SELECT address, platform, description, logo_url, logo_light_url, verify_url, fetched_at
          FROM merchant_labels
-         WHERE address = ?`,
-        [address],
+         WHERE lower(address) = ?`,
+        [key],
       );
       if (rows.length === 0) return null;
 
@@ -90,13 +98,20 @@ class MerchantLabelRepository {
     if (addresses.length === 0) return result;
 
     try {
-      // Build placeholders for IN clause
-      const placeholders = addresses.map(() => '?').join(',');
+      const keys = [
+        ...new Set(
+          addresses.map(normalizeMerchantAddress).filter(addr => addr.length > 0),
+        ),
+      ];
+      if (keys.length === 0) {
+        return result;
+      }
+      const placeholders = keys.map(() => '?').join(',');
       const {rows} = database.execute(
         `SELECT address, platform, description, logo_url, logo_light_url, verify_url, fetched_at
          FROM merchant_labels
-         WHERE address IN (${placeholders})`,
-        addresses,
+         WHERE lower(address) IN (${placeholders})`,
+        keys,
       );
 
       for (const row of rows) {
@@ -134,7 +149,7 @@ class MerchantLabelRepository {
            verify_url     = excluded.verify_url,
            fetched_at     = excluded.fetched_at`,
         [
-          label.address,
+          normalizeMerchantAddress(label.address) || label.address,
           label.platform,
           label.description || null,
           label.logoUrl || null,
@@ -172,11 +187,64 @@ class MerchantLabelRepository {
       database.execute(
         `INSERT OR REPLACE INTO branta_verified_txs (txid, network, address, created_at)
          VALUES (?, ?, ?, ?)`,
-        [txid, network, address || null, Date.now()],
+        [
+          txid,
+          network,
+          address ? normalizeMerchantAddress(address) : null,
+          Date.now(),
+        ],
       );
     } catch (err) {
       dbg('MerchantLabelRepository.markVerifiedTx error', txid, err);
     }
+  }
+
+  getVerifiedTxAddress(txid: string, network: string): string | null {
+    if (!txid || !network) {
+      return null;
+    }
+    try {
+      const {rows} = database.execute(
+        `SELECT address FROM branta_verified_txs WHERE txid = ? AND network = ? LIMIT 1`,
+        [txid, network],
+      );
+      const addr = rows[0]?.address as string | undefined;
+      return addr ? normalizeMerchantAddress(addr) : null;
+    } catch (err) {
+      dbg('MerchantLabelRepository.getVerifiedTxAddress error', txid, err);
+      return null;
+    }
+  }
+
+  /**
+   * Merchant label for an outbound tx: verified-payment address first, then any output.
+   */
+  resolveForOutboundTx(
+    txid: string,
+    network: string | null | undefined,
+    outputAddresses: string[],
+  ): MerchantLabel | null {
+    const candidates: string[] = [];
+    if (network) {
+      const verifiedAddr = this.getVerifiedTxAddress(txid, network);
+      if (verifiedAddr) {
+        candidates.push(verifiedAddr);
+      }
+    }
+    candidates.push(...outputAddresses);
+    const seen = new Set<string>();
+    for (const addr of candidates) {
+      const key = normalizeMerchantAddress(addr || '');
+      if (!key || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      const label = this.getByAddress(key);
+      if (label) {
+        return label;
+      }
+    }
+    return null;
   }
 
   /**

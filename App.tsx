@@ -50,6 +50,7 @@ import {
   getPinnedRemoteIPs,
   resolveInitialWalletRoute,
 } from './utils';
+import {ensureLanDiscoveryPermission} from './services/lanDiscoveryPermissions';
 import MobilesPairing from './screens/MobilesPairing';
 import MobileNostrPairing from './screens/MobileNostrPairing';
 import UserPreferenceScreen from './screens/UserPreferenceScreen';
@@ -610,82 +611,98 @@ const App = () => {
     checkWallet();
   }, []);
   useEffect(() => {
-    try {
-      dbg('publishing service...');
-      const deviceID = DeviceInfo.getUniqueIdSync();
-      if (!deviceID || deviceID.trim() === '') {
-        dbg('Warning: deviceID is empty, skipping service publication');
-        return;
-      }
-      dbg('deviceID:', deviceID);
-      zeroOut.publishService(
-        'http', // Fixed with underscore
-        'tcp',
-        'local.',
-        'bbw_scan',
-        55056,
-        {txt: 'bbw_scan', id: deviceID},
-        ImplType.NSD,
-      );
-      dbg('service bbw_scan published');
-      return () => {
-        try {
-          zeroOut.unpublishService('bbw_scan', ImplType.NSD);
-          zeroOut.stop();
-          dbg('service publish stopped');
-        } catch (e: any) {
-          dbg('error stopping service', e);
+    let cancelled = false;
+    (async () => {
+      try {
+        dbg('publishing service...');
+        const deviceID = DeviceInfo.getUniqueIdSync();
+        if (!deviceID || deviceID.trim() === '') {
+          dbg('Warning: deviceID is empty, skipping service publication');
+          return;
         }
-      };
-    } catch (e: any) {
-      dbg('error publishing service', e);
-    }
+        await ensureLanDiscoveryPermission();
+        if (cancelled) {
+          return;
+        }
+        dbg('deviceID:', deviceID);
+        zeroOut.publishService(
+          'http', // Fixed with underscore
+          'tcp',
+          'local.',
+          'bbw_scan',
+          55056,
+          {txt: 'bbw_scan', id: deviceID},
+          ImplType.NSD,
+        );
+        dbg('service bbw_scan published');
+      } catch (e: any) {
+        dbg('error publishing service', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try {
+        zeroOut.unpublishService('bbw_scan', ImplType.NSD);
+        zeroOut.stop();
+        dbg('service publish stopped');
+      } catch (e: any) {
+        dbg('error stopping service', e);
+      }
+    };
   }, []);
   useEffect(() => {
-    try {
-      dbg('scanning for mDNS Services');
-      const deviceID = DeviceInfo.getUniqueIdSync();
-      // Validate deviceID before scanning
-      if (!deviceID || deviceID.trim() === '') {
-        dbg('Warning: deviceID is empty, skipping mDNS scan');
-        return;
-      }
-      zeroconf.scan('http', 'tcp', 'local.');
-      zeroconf.on('resolved', service => {
-        dbg('Service Found:', service.fullName);
-        if (
-          service.txt &&
-          service.txt.txt === 'bbw_scan' &&
-          service.txt.id &&
-          service.txt.id !== deviceID
-        ) {
-          let addresses = service.addresses || [];
-          for (const address of addresses) {
-            if (address && address.split('.').length === 4) {
-              pinRemoteIP(address);
+    let cancelled = false;
+    (async () => {
+      try {
+        dbg('scanning for mDNS Services');
+        const deviceID = DeviceInfo.getUniqueIdSync();
+        // Validate deviceID before scanning
+        if (!deviceID || deviceID.trim() === '') {
+          dbg('Warning: deviceID is empty, skipping mDNS scan');
+          return;
+        }
+        await ensureLanDiscoveryPermission();
+        if (cancelled) {
+          return;
+        }
+        zeroconf.scan('http', 'tcp', 'local.');
+        zeroconf.on('resolved', service => {
+          dbg('Service Found:', service.fullName);
+          if (
+            service.txt &&
+            service.txt.txt === 'bbw_scan' &&
+            service.txt.id &&
+            service.txt.id !== deviceID
+          ) {
+            let addresses = service.addresses || [];
+            for (const address of addresses) {
+              if (address && address.split('.').length === 4) {
+                pinRemoteIP(address);
+              }
+            }
+            const pinned = getPinnedRemoteIPs();
+            if (pinned.length) {
+              dbg('Pinned remote IPv4 addresses:', pinned.join(', '));
             }
           }
-          const pinned = getPinnedRemoteIPs();
-          if (pinned.length) {
-            dbg('Pinned remote IPv4 addresses:', pinned.join(', '));
-          }
-        }
-      });
-      zeroconf.on('error', err => {
-        dbg('Zeroconf error:', String(err));
-      });
-      return () => {
-        try {
-          dbg('service scanning stopped');
-          zeroconf.removeAllListeners();
-          zeroconf.stop();
-        } catch (e: any) {
-          dbg('error stopping mDNS scan', e);
-        }
-      };
-    } catch (e: any) {
-      dbg('error scanning mDNS', e);
-    }
+        });
+        zeroconf.on('error', err => {
+          dbg('Zeroconf error:', String(err));
+        });
+      } catch (e: any) {
+        dbg('error scanning mDNS', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try {
+        dbg('service scanning stopped');
+        zeroconf.removeAllListeners();
+        zeroconf.stop();
+      } catch (e: any) {
+        dbg('error stopping mDNS scan', e);
+      }
+    };
   }, []);
   useEffect(() => {
     let subscription: EmitterSubscription | undefined;

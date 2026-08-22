@@ -15,6 +15,7 @@ import {
   Platform,
   Animated,
   Easing,
+  Image,
 } from 'react-native';
 import AppPressable from './AppPressable';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -29,7 +30,7 @@ import {
   formatBitcoinDisplay,
 } from '../utils';
 import {useUser} from '../context/UserContext';
-import {themes, useTheme as useAppTheme} from '../theme';
+import {themes, useTheme as useAppTheme, lightTheme} from '../theme';
 import AppText from './AppText';
 import {COMMON_FONT_CONFIGS} from '../theme/fonts';
 import TransactionListSkeleton from './TransactionListSkeleton';
@@ -1349,8 +1350,8 @@ const TransactionList = React.forwardRef<
       },
       merchantIconWrap: {
         position: 'relative',
-        width: 24,
-        height: 24,
+        width: 20,
+        height: 20,
         marginRight: 8,
         alignItems: 'center',
         justifyContent: 'center',
@@ -1358,23 +1359,32 @@ const TransactionList = React.forwardRef<
       merchantIcon: {
         width: 20,
         height: 20,
-        borderRadius: 10,
+        borderRadius: 4,
+      },
+      merchantFallbackIcon: {
+        width: 20,
+        height: 20,
+        tintColor: appTheme.colors.text,
       },
       merchantCheckBadge: {
         position: 'absolute',
-        bottom: -2,
-        right: -2,
-        backgroundColor: appTheme.colors.success,
-        width: 10,
-        height: 10,
-        borderRadius: 5,
+        bottom: -3,
+        right: -3,
+        backgroundColor: appTheme.colors.bitcoinOrange,
+        width: 12,
+        height: 12,
+        borderRadius: 6,
         alignItems: 'center',
         justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: appTheme.colors.cardBackground,
       },
       merchantCheckText: {
-        fontSize: 6,
+        fontSize: appTheme.fontSizes?.xs || 10,
         fontFamily: appTheme.fontFamilies?.bold,
         color: appTheme.colors.textOnPrimary,
+        lineHeight: appTheme.fontSizes?.xs || 10,
+        includeFontPadding: false,
       },
       rowChevron: {
         fontSize: appTheme.fontSizes?.lg || 16,
@@ -1426,11 +1436,22 @@ const TransactionList = React.forwardRef<
           relevantAddresses = [];
         }
 
-        const merchantLabel = relevantAddress
-          ? merchantLabelRepository.getByAddress(relevantAddress)
-          : null;
-        const merchantName = merchantLabel?.platform;
-        const isLightMode = appTheme.colors.background === '#ffffff';
+        const merchantLabel = merchantLabelRepository.resolveForOutboundTx(
+          item.txid,
+          network,
+          isSending
+            ? relevantAddresses.length > 0
+              ? relevantAddresses
+              : relevantAddress
+              ? [relevantAddress]
+              : []
+            : relevantAddress
+            ? [relevantAddress]
+            : [],
+        );
+        const merchantName = merchantLabel?.platform?.trim() || '';
+        const isLightMode =
+          appTheme.colors.background === lightTheme.colors.background;
         const merchantLogoUrl = merchantLabel
           ? isLightMode && merchantLabel.logoLightUrl
             ? merchantLabel.logoLightUrl
@@ -1469,10 +1490,11 @@ const TransactionList = React.forwardRef<
               inSats: showSats,
               formatted: balanceFormattingEnabled,
             })}`;
+        const brantaTitle = merchantName || 'merchant';
         const finalStatus = brantaVerified
           ? confirmed
-            ? `Sent to ${merchantName}`
-            : `Paying ${merchantName}`
+            ? `Sent to ${brantaTitle}`
+            : `Paying ${brantaTitle}`
           : isConsolidation
           ? confirmed
             ? 'Consolidated'
@@ -1540,18 +1562,21 @@ const TransactionList = React.forwardRef<
               <View style={styles.statusContainer}>
                 {brantaVerified ? (
                   <View style={styles.merchantIconWrap}>
-                    <Animated.Image
-                      source={merchantLogo || outIcon}
-                      style={styles.merchantIcon}
-                      resizeMode="cover"
-                    />
+                    {merchantLogo ? (
+                      <Image
+                        source={merchantLogo}
+                        style={styles.merchantIcon}
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <AnimatedStatusIcon
+                        source={outIcon}
+                        style={styles.merchantFallbackIcon}
+                        animationType={confirmed ? 'none' : 'send'}
+                      />
+                    )}
                     <View style={styles.merchantCheckBadge}>
-                      <AppText
-                        variant="caption"
-                        tone="onPrimary"
-                        style={styles.merchantCheckText}>
-                        ✓
-                      </AppText>
+                      <AppText style={styles.merchantCheckText}>✓</AppText>
                     </View>
                   </View>
                 ) : (
@@ -1665,6 +1690,7 @@ const TransactionList = React.forwardRef<
         network,
         appTheme.colors.background,
         appTheme.colors.bitcoinOrange,
+        appTheme.fontFamilies?.medium,
         styles.transactionRow,
         styles.statusContainer,
         styles.statusIcon,
@@ -1682,6 +1708,7 @@ const TransactionList = React.forwardRef<
         styles.rowChevron,
         styles.merchantIconWrap,
         styles.merchantIcon,
+        styles.merchantFallbackIcon,
         styles.merchantCheckBadge,
         styles.merchantCheckText,
         styles.transactionItem,

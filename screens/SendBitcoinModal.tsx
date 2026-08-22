@@ -100,6 +100,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   /** Fee estimation cache — skip redundant runs when inputs haven't changed. */
   const lastFeeInputsRef = useRef<string>('');
   const [address, setAddress] = useState<string>('');
+  const addressRef = useRef(address);
+  addressRef.current = address;
   const [btcAmount, setBtcAmount] = useState<Big>(Big(0));
   const [inBtcAmount, setInBtcAmount] = useState('');
   const [inUsdAmount, setInUsdAmount] = useState('');
@@ -891,21 +893,33 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 
         try {
           // Validate address
+          const persistAddresses = new Set<string>();
           if (validateAddressForCurrentNetwork(result.address)) {
             setAddress(result.address);
+            persistAddresses.add(result.address);
+          }
+          const formAddress = addressRef.current;
+          if (
+            formAddress &&
+            validateAddressForCurrentNetwork(formAddress)
+          ) {
+            persistAddresses.add(formAddress);
           }
 
-          // Persist to merchant_labels repository with error handling
+          // Persist to merchant_labels for every on-chain dest we might send to
+          // (Branta destination can differ from the BIP-21 URI address).
           try {
-            merchantLabelRepository.upsert({
-              address: result.address,
-              platform: result.platform,
-              description: result.description,
-              logoUrl: result.logoUrl,
-              logoLightUrl: result.logoLightUrl,
-              verifyUrl: result.verifyUrl,
-              fetchedAt: Date.now(),
-            });
+            for (const persistAddress of persistAddresses) {
+              merchantLabelRepository.upsert({
+                address: persistAddress,
+                platform: result.platform,
+                description: result.description,
+                logoUrl: result.logoUrl,
+                logoLightUrl: result.logoLightUrl,
+                verifyUrl: result.verifyUrl,
+                fetchedAt: Date.now(),
+              });
+            }
           } catch (dbErr) {
             // Silent DB error - doesn't block UI
             dbg('Warning: Failed to persist merchant label', dbErr);

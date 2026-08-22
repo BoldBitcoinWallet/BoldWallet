@@ -11,6 +11,7 @@
     "test:hardening": "jest __tests__/mpcCancel.test.ts __tests__/hardening.test.ts __tests__/mpcProgressAbort.test.ts",
     "verify:native": "bash BBMTLib/scripts/verify-native-artifacts.sh",
     "check:jni": "bash android/scripts/check-jni-exports.sh",
+    "check:play-manifest": "bash android/scripts/check-play-manifest.sh",
     "test:extensionBind": "jest __tests__/extensionBind.test.ts",
     "postinstall": "patch-package"
   },

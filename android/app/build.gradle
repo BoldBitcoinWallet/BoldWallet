@@ -11,6 +11,12 @@ react {
 // Note: Disabling this will prevent generating mapping.txt for Play Console
 def enableProguardInReleaseBuilds = true
 
+// Play AAB is arm64-only (-PplayAbi=arm64-v8a). Sideload/F-Droid APK keeps device + emulator ABIs.
+def playPackagedAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64']
+if (project.hasProperty('playAbi')) {
+    playPackagedAbis = project.property('playAbi').toString().split(',').collect { it.trim() }
+}
+
 def jscFlavor = 'io.github.react-native-community:jsc-android:2026004.+'
 
 def releaseProperties = new Properties()
@@ -29,6 +35,8 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 68
         versionName "4.0.6"
+        // App UI is English-only; drop merged AndroidX locale packs from the Play listing.
+        resConfigs "en"
         missingDimensionStrategy 'react-native-camera', 'general'
         // Match main: oldarch flavor with newArchEnabled=true in gradle.properties (RN 0.82).
         missingDimensionStrategy 'react-native-arch', 'oldarch'
@@ -36,8 +44,10 @@ android {
         // 16KB page size support
         // Include x86_64 so stock Google emulators (x86_64 images) can load libreactnative.so.
         // ARM-only APKs crash on launch with SoLoader: couldn't find libreactnative.so on those AVDs.
+        // Play AAB: ./gradlew bundleRelease -PplayAbi=arm64-v8a -PreactNativeArchitectures=arm64-v8a
         ndk {
-            abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
+            abiFilters.clear()
+            abiFilters.addAll(playPackagedAbis)
         }
 
         externalNativeBuild {
@@ -94,7 +104,10 @@ android {
             shrinkResources enableProguardInReleaseBuilds
             signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
-            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+            proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
+            ndk {
+                debugSymbolLevel 'SYMBOL_TABLE'
+            }
         }
     }
 }
