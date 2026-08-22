@@ -12,13 +12,14 @@ import {
   CANONICAL_TESTNET_MEMPOOL_API_BASE,
   isTestnetNetworkKey,
 } from '../services/mempoolApiBase';
+import {
+  isApiTxConfirmed,
+  phaseFromParentConfirmed,
+  type VisualizerPhase,
+} from '../services/txVisualizerPhase';
 
-export type Phase =
-  | 'idle'
-  | 'signing'
-  | 'broadcasting'
-  | 'mempool'
-  | 'confirmed';
+export type Phase = VisualizerPhase;
+export {isApiTxConfirmed, phaseFromParentConfirmed};
 
 interface Props {
   txid?: string | null;
@@ -591,7 +592,7 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
         const data = response.data ?? {};
         setErrorMessage(null);
 
-        const isConfirmed = !!data.confirmed;
+        const isConfirmed = isApiTxConfirmed(data);
         const blockHeight = isConfirmed ? Number(data.block_height) : null;
 
         setConfirmedBlockHeight(
@@ -599,7 +600,9 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
         );
         setConfirmations(isConfirmed ? 1 : 0);
 
-        if (isConfirmed) {
+        // Stay pending while the details sheet says pending — poll must not
+        // paint "Confirmed in block …" against a Pending chip.
+        if (isConfirmed && initialPhase === 'confirmed') {
           setPhase('confirmed');
         }
       } catch (e) {
@@ -615,7 +618,7 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
         }
       }
     },
-    [compact, mempoolApiBase, stopPolling],
+    [compact, initialPhase, mempoolApiBase, stopPolling],
   );
 
   const startPolling = useCallback(
@@ -719,8 +722,16 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
   ]);
 
   useEffect(() => {
+    setPhase(phaseFromParentConfirmed(initialPhase === 'confirmed', !!txid));
+    if (initialPhase !== 'confirmed') {
+      setConfirmedBlockHeight(null);
+      setConfirmations(0);
+    }
+  }, [txid, initialPhase]);
+
+  useEffect(() => {
     if (txid && phase === 'idle' && initialPhase !== 'confirmed') {
-      setPhase(compact ? 'mempool' : 'mempool');
+      setPhase('mempool');
     }
     return () => {
       stopPolling();
@@ -742,9 +753,13 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
   });
 
   const effectiveBlockHeight =
-    blockHeightProp != null && Number.isFinite(blockHeightProp)
+    initialPhase === 'confirmed' &&
+    blockHeightProp != null &&
+    Number.isFinite(blockHeightProp)
       ? blockHeightProp
-      : confirmedBlockHeight;
+      : initialPhase === 'confirmed'
+      ? confirmedBlockHeight
+      : null;
 
   const formatTimestamp = (ms: number | null | undefined) => {
     if (ms == null || !Number.isFinite(ms)) {

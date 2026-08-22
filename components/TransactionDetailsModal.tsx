@@ -543,8 +543,8 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   explorerBaseUrl={baseApi}
                   compact
                   origin={isWalletOrigin ? 'wallet' : 'external'}
-                  blockHeight={blockHeight}
-                  confirmedAtMs={confirmedAtMs}
+                  blockHeight={status.confirmed ? blockHeight : null}
+                  confirmedAtMs={status.confirmed ? confirmedAtMs : null}
                 />
               </ErrorBoundary>
             </View>

@@ -529,7 +529,7 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
           text1: isTimeout
             ? 'Request timed out — cached data'
             : 'Sync failed — showing cached data',
-          text2: 'Tap the bar to retry.',
+          text2: 'Tap refresh to retry.',
           position: 'top',
         });
       }

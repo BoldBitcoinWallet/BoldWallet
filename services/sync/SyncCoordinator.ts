@@ -7,8 +7,9 @@
  *    fetches (refresh, pagination) and merges with cache/DB — see `services/sync/README.md`.
  *  - SyncCoordinator runs on app foreground and on a timer, fetching from the Mempool API
  *    base and writing deltas to SQLite.
- *  - Sync failures are silent (sync_metadata.sync_status = 'failed') and retried
- *    on the next foreground event.
+ *  - Sync failures are silent unless the UI supplies `onSyncFailed` (e.g. Home
+ *    CacheIndicator while focused). Otherwise they are retried on the next
+ *    timer or foreground event.
  *
  * Usage:
  *   import syncCoordinator from './services/sync/SyncCoordinator';
@@ -74,6 +75,11 @@ export interface SyncConfig {
   onAddressesChanged?: (addresses: string[]) => void;
   /** Called with current sync operation status for CacheIndicator UI. null = idle. */
   onSyncStatus?: (status: SyncStatus | null) => void;
+  /**
+   * Called when a background sync phase fails. Home may set CacheIndicator
+   * error copy while focused — no toast per cycle.
+   */
+  onSyncFailed?: (err: unknown) => void;
 }
 
 class SyncCoordinator {
@@ -89,6 +95,15 @@ class SyncCoordinator {
   private _running = false;
   /** Nested pause count — background sync yields while Nostr/LAN MPC uses the network. */
   private _pauseCount = 0;
+  /** True when any phase in the current `_syncAll` cycle failed. */
+  private _cycleFailed = false;
+
+  private _notifySyncFailed(context: string, err: unknown): void {
+    dbg(`SyncCoordinator: ${context}`, err);
+    this._cycleFailed = true;
+    this._config?.onSyncStatus?.(null);
+    this._config?.onSyncFailed?.(err);
+  }
 
   /**
    * Start background sync with the given config.
@@ -222,6 +237,7 @@ class SyncCoordinator {
     if (this._isPaused()) {
       return;
     }
+    this._cycleFailed = false;
     // HD discovery first — may expand the address set for subsequent syncs
     await this._syncHdDiscovery(forceHdDiscovery);
     if (this._isPaused()) {
@@ -246,6 +262,9 @@ class SyncCoordinator {
     await this._syncTxs();
 
     if (!this._isPaused()) {
+      if (this._cycleFailed) {
+        return;
+      }
       this._config?.onSyncComplete?.();
     }
   }
@@ -307,8 +326,7 @@ class SyncCoordinator {
         this._config.onAddressesChanged?.(newAddrs);
       }
     } catch (err) {
-      dbg('SyncCoordinator: HD discovery error', err);
-      this._config?.onSyncStatus?.(null);
+      this._notifySyncFailed('HD discovery error', err);
     }
   }
 
@@ -337,7 +355,7 @@ class SyncCoordinator {
       }));
       await balanceSyncer.syncAddresses(entries, this._config.apiBase);
     } catch (err) {
-      dbg('SyncCoordinator: balance sync error', err);
+      this._notifySyncFailed('balance sync error', err);
     }
   }
 
@@ -371,7 +389,7 @@ class SyncCoordinator {
         );
       }
     } catch (err) {
-      dbg('SyncCoordinator: tx sync error', err);
+      this._notifySyncFailed('tx sync error', err);
     }
   }
 
@@ -416,7 +434,7 @@ class SyncCoordinator {
       }));
       await utxoSyncer.syncAddresses(entries, this._config.apiBase);
     } catch (err) {
-      dbg('SyncCoordinator: utxo sync error', err);
+      this._notifySyncFailed('utxo sync error', err);
     }
   }
 
@@ -425,7 +443,7 @@ class SyncCoordinator {
     try {
       await priceSyncer.syncCurrentPrice(this._config.apiBase);
     } catch (err) {
-      dbg('SyncCoordinator: price sync error', err);
+      this._notifySyncFailed('price sync error', err);
     }
   }
 }
