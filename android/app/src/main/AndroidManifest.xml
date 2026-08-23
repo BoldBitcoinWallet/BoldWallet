@@ -48,10 +48,6 @@
             android:screenOrientation="portrait"
             android:exported="true">
             <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="application/octet-stream" />
@@ -135,31 +131,71 @@
             </intent-filter>
         </activity>
 
-        <!-- Default BoldWallet Icon Activity Alias -->
+        <!-- Launcher aliases: only one should be enabled. MainActivity has no LAUNCHER filter. -->
         <activity-alias
             android:name=".DefaultIconActivity"
-            android:targetActivity=".MainActivity"
-            android:label="@string/app_name"
+            android:enabled="true"
+            android:exported="true"
             android:icon="@mipmap/ic_launcher"
+            android:label="@string/app_name"
             android:roundIcon="@mipmap/ic_launcher_round"
-            android:enabled="false"
-            android:exported="true">
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity-alias>
 
-
-        <!-- Calculator Icon Activity Alias -->
         <activity-alias
             android:name=".AlternativeIconActivity"
-            android:targetActivity=".MainActivity"
-            android:label="QuickCalc"
-            android:icon="@mipmap/ic_launcher_calc"
-            android:roundIcon="@mipmap/ic_launcher_calc_round"
             android:enabled="false"
-            android:exported="true">
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_calc"
+            android:label="@string/camouflage_quickcalc"
+            android:roundIcon="@mipmap/ic_launcher_calc_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".NotesIconActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_notes"
+            android:label="@string/camouflage_notes"
+            android:roundIcon="@mipmap/ic_launcher_notes_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".WeatherIconActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_weather"
+            android:label="@string/camouflage_weather"
+            android:roundIcon="@mipmap/ic_launcher_weather_round"
+            android:targetActivity=".MainActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".FilesIconActivity"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/ic_launcher_files"
+            android:label="@string/camouflage_files"
+            android:roundIcon="@mipmap/ic_launcher_files_round"
+            android:targetActivity=".MainActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

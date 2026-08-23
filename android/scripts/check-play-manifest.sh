@@ -55,6 +55,17 @@ grep -q 'playAbi=arm64-v8a' "$PLAY_AAB_SH" || fail "Play AAB must be arm64-v8a"
 grep -q 'native-debug-symbols.zip' "$PLAY_COPY_SH" \
   || fail "copy-play-artifacts.sh must copy native symbols"
 
+grep -q 'android.intent.category.LAUNCHER' "$MANIFEST" \
+  || fail "LAUNCHER category missing"
+MAIN_BLOCK="$(awk '/android:name=".MainActivity"/,/<\/activity>/' "$MANIFEST")"
+echo "$MAIN_BLOCK" | grep -q 'android.intent.category.LAUNCHER' \
+  && fail "MainActivity must not declare LAUNCHER (use activity-alias)"
+grep -q 'android:name=".DefaultIconActivity"' "$MANIFEST" \
+  || fail "DefaultIconActivity alias missing"
+grep -q 'android:name=".DefaultIconActivity"' "$MANIFEST" \
+  && grep -A8 'android:name=".DefaultIconActivity"' "$MANIFEST" | grep -q 'android:enabled="true"' \
+  || fail "DefaultIconActivity must be enabled by default"
+
 echo "Play Console packaging check OK"
 echo ""
 echo "Device QA before Play promote:"

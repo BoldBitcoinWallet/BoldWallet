@@ -2,4 +2,7 @@
 <resources>
     <color name="ic_launcher_background">#FFFFFF</color>
     <color name="ic_launcher_calc_background">#FFFFFF</color>
+    <color name="ic_launcher_notes_background">#F4EFE4</color>
+    <color name="ic_launcher_weather_background">#4BA3C7</color>
+    <color name="ic_launcher_files_background">#F5C542</color>
 </resources>

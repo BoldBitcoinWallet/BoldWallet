@@ -35,6 +35,7 @@ class MainApplication : Application(), ReactApplication {
 
     override fun onCreate() {
         super.onCreate()
+        IconChangerModule.ensureDefaultLauncher(this)
         loadReactNative(this)
     }
 }
