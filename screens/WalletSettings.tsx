@@ -88,6 +88,11 @@ import {
   saveNostrRelayEntries,
   type NostrRelayEntry,
 } from '../services/nostrRelaysStore';
+import {
+  CAMOUFLAGE_PRESETS,
+  normalizeCamouflagePresetId,
+  type CamouflagePresetId,
+} from '../services/camouflagePresets';
 import LegalModal from '../components/LegalModal';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
 import RestoringIndexesModal from '../components/RestoringIndexesModal';
@@ -784,7 +789,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     activeApiProvider,
   } = useUser();
   const [selectedIcon, setSelectedIcon] = useState<
-    'default' | 'alternative' | 'loading'
+    CamouflagePresetId | 'loading'
   >('loading');
   const [deleteInput, setDeleteInput] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
@@ -1360,14 +1365,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const loadIconPreference = async () => {
       try {
         const savedIcon = await EncryptedStorage.getItem('app_icon_preference');
-        if (
-          savedIcon &&
-          (savedIcon === 'default' || savedIcon === 'alternative')
-        ) {
-          setSelectedIcon(savedIcon);
-        } else {
-          setSelectedIcon('default');
-        }
+        setSelectedIcon(normalizeCamouflagePresetId(savedIcon));
       } catch (error) {
         dbg('Error loading icon preference:', error);
         setSelectedIcon('default');
@@ -1830,6 +1828,46 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           fontSize: theme.fontSizes?.sm || 12,
           color: theme.colors.textSecondary,
           lineHeight: 16,
+        },
+        iconPresetGrid: {
+          flexDirection: 'row' as const,
+          flexWrap: 'wrap' as const,
+          justifyContent: 'space-between',
+          marginTop: 4,
+        },
+        iconPresetCell: {
+          width: '48%' as unknown as number,
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 10,
+          paddingVertical: 12,
+          paddingHorizontal: 8,
+          marginBottom: 10,
+          alignItems: 'center' as const,
+          backgroundColor: theme.colors.cardBackground,
+        },
+        iconPresetCellSelected: {
+          borderColor: theme.colors.bitcoinOrange,
+          borderWidth: 2,
+        },
+        iconPresetSwatch: {
+          width: 48,
+          height: 48,
+          borderRadius: 12,
+          alignItems: 'center' as const,
+          justifyContent: 'center' as const,
+          marginBottom: 8,
+        },
+        iconPresetGlyph: {
+          color: '#FFFFFF',
+          fontSize: theme.fontSizes?.lg || 18,
+          fontFamily: theme.fontFamilies?.bold,
+        },
+        iconPresetLabel: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.text,
+          textAlign: 'center' as const,
         },
         inputAPI: {
           borderWidth: 1,
@@ -3138,56 +3176,78 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     Blend in when you need to.
                   </Text>
                   <Text style={styles.appIconHintSubtitle}>
-                    Switch to the calculator icon when you want your wallet to
-                    look like just another app on your home screen.
+                    Switch the home-screen icon and name to a bundled
+                    camouflage. A photo from your gallery cannot become the
+                    real launcher icon.
                   </Text>
                 </View>
               </View>
               <Text style={styles.toggleDescription}>
-                Change the app's launcher icon on your device.
+                Choose a launcher tile. The previous Bold icon may linger until
+                your home screen refreshes.
               </Text>
-              <View style={styles.toggleContainer}>
-                <Text style={styles.toggleLabel}>Bold Wallet</Text>
-                <AppSwitch
-                  value={selectedIcon === 'alternative'}
-                  onValueChange={async value => {
-                    try {
-                      const newIcon = value ? 'alternative' : 'default';
-                      if (!IconChanger || !IconChanger.changeIcon) {
-                        Alert.alert(
-                          'Error',
-                          'Icon switching is not available on this device.',
-                          [{text: 'OK'}],
-                        );
-                        return;
-                      }
-                      setSelectedIcon(newIcon);
-                      await EncryptedStorage.setItem(
-                        'app_icon_preference',
-                        newIcon,
-                      );
-                      await IconChanger.changeIcon(newIcon);
-                      const iconName =
-                        newIcon === 'alternative' ? 'QuickCalc' : 'Bold Wallet';
-                      Alert.alert(
-                        'Icon Changed',
-                        `App icon switched to ${iconName}.\n\nYou may need to refresh your launcher to see the change.`,
-                        [{text: 'OK'}],
-                      );
-                    } catch (error: any) {
-                      dbg('Error changing icon:', error);
-                      setSelectedIcon(value ? 'default' : 'alternative');
-                      Alert.alert(
-                        'Error',
-                        error?.message ||
-                          'Failed to change app icon. Please try again.',
-                        [{text: 'OK'}],
-                      );
-                    }
-                  }}
-                  disabled={selectedIcon === 'loading'}
-                />
-                <Text style={styles.toggleLabel}>QuickCalc</Text>
+              <View style={styles.iconPresetGrid}>
+                {CAMOUFLAGE_PRESETS.map(preset => {
+                  const selected = selectedIcon === preset.id;
+                  return (
+                    <AppPressable
+                      key={preset.id}
+                      style={[
+                        styles.iconPresetCell,
+                        selected && styles.iconPresetCellSelected,
+                      ]}
+                      onPress={async () => {
+                        if (selectedIcon === 'loading' || selected) {
+                          return;
+                        }
+                        const previous = selectedIcon;
+                        try {
+                          const change = IconChanger?.changeIcon;
+                          if (!IconChanger || !change) {
+                            Alert.alert(
+                              'Error',
+                              'Icon switching is not available on this device.',
+                              [{text: 'OK'}],
+                            );
+                            return;
+                          }
+                          setSelectedIcon(preset.id);
+                          await EncryptedStorage.setItem(
+                            'app_icon_preference',
+                            preset.id,
+                          );
+                          await change(preset.id);
+                          Alert.alert(
+                            'Icon Changed',
+                            `App icon switched to ${preset.label}.\n\nIf you still see Bold Wallet, pull down the app drawer or reboot the launcher.`,
+                            [{text: 'OK'}],
+                          );
+                        } catch (error: any) {
+                          dbg('Error changing icon:', error);
+                          setSelectedIcon(previous);
+                          Alert.alert(
+                            'Error',
+                            error?.message ||
+                              'Failed to change app icon. Please try again.',
+                            [{text: 'OK'}],
+                          );
+                        }
+                      }}
+                      disabled={selectedIcon === 'loading'}
+                      accessibilityRole="button"
+                      accessibilityState={{selected}}
+                      accessibilityLabel={`${preset.label} launcher icon`}>
+                      <View
+                        style={[
+                          styles.iconPresetSwatch,
+                          {backgroundColor: preset.swatch},
+                        ]}>
+                        <Text style={styles.iconPresetGlyph}>{preset.glyph}</Text>
+                      </View>
+                      <Text style={styles.iconPresetLabel}>{preset.label}</Text>
+                    </AppPressable>
+                  );
+                })}
               </View>
             </CollapsibleSection>
           )}

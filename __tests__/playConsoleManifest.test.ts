@@ -79,6 +79,24 @@ describe('Play Console packaging', () => {
     expect(playAabSh).toContain('playAbi=arm64-v8a');
     expect(playCopySh).toContain('native-debug-symbols.zip');
   });
+
+  it('uses a single enabled launcher alias (not MainActivity LAUNCHER)', () => {
+    const mainBlock = manifest.slice(
+      manifest.indexOf('android:name=".MainActivity"'),
+      manifest.indexOf('</activity>'),
+    );
+    expect(mainBlock).not.toContain('android.intent.category.LAUNCHER');
+    expect(manifest).toMatch(
+      /android:name="\.DefaultIconActivity"[\s\S]*?android:enabled="true"/,
+    );
+    expect(manifest).toMatch(
+      /android:name="\.AlternativeIconActivity"[\s\S]*?android:enabled="false"/,
+    );
+    const launcherCount = (
+      manifest.match(/android\.intent\.category\.LAUNCHER/g) || []
+    ).length;
+    expect(launcherCount).toBe(5);
+  });
 });
 
 describe('androidApiLevel', () => {
