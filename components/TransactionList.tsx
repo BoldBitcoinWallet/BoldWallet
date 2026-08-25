@@ -38,6 +38,7 @@ import {WalletService} from '../services/WalletService';
 import TransactionDetailsModal from './TransactionDetailsModal';
 import transactionRepository from '../services/repositories/TransactionRepository';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
+import {isBrantaEnabled} from '../services/BrantaService';
 import apiQueue from '../services/ApiQueue';
 import transactionSyncer from '../services/sync/TransactionSyncer';
 import HistoricalPriceService, {
@@ -239,11 +240,14 @@ interface TransactionListProps {
   selectedCurrency?: string;
   btcRate?: number;
   getCurrencySymbol?: (currency: string) => string;
-  onPullRefresh?: () => void;
+  onPullRefresh?: () => void | Promise<void>;
   isBlurred?: boolean;
+  /** Home owns the initial network tx sync; list still paints from SQLite. */
+  deferInitialFetch?: boolean;
 }
 export interface TransactionListHandle {
   refresh: (useFullList?: boolean) => Promise<void> | void;
+  reloadFromCache: () => Promise<void>;
 }
 const TransactionList = React.forwardRef<
   TransactionListHandle,
@@ -263,6 +267,7 @@ const TransactionList = React.forwardRef<
       getCurrencySymbol = currency => currency,
       onPullRefresh,
       isBlurred = false,
+      deferInitialFetch = false,
     },
     ref,
   ) => {
@@ -300,6 +305,31 @@ const TransactionList = React.forwardRef<
         ourAddresses ? ourAddresses.has(addr) : addr === effectiveAddress,
       [ourAddresses, effectiveAddress],
     );
+    const reloadFromCache = useCallback(async () => {
+      try {
+        const cachedTransactions =
+          isMultiAddress && network && addressType
+            ? await WalletService.getInstance().transactionsFromCacheForWallet(
+                network,
+                addressType,
+              )
+            : await WalletService.getInstance().transactionsFromCache(
+                address || '',
+              );
+        if (isMounted.current) {
+          setTransactions(cachedTransactions);
+          setHasMoreTransactions(cachedTransactions.length > 0);
+          if (cachedTransactions.length > 0) {
+            setLastSeenTxId(
+              cachedTransactions[cachedTransactions.length - 1].txid,
+            );
+          }
+          setIsRefreshing(false);
+        }
+      } catch (e) {
+        dbg('TransactionList: reloadFromCache error', e);
+      }
+    }, [isMultiAddress, network, addressType, address]);
     const [addressPathMap, setAddressPathMap] = useState<Record<
       string,
       {derivationPath: string; chain: 'receive' | 'change'; index: number}
@@ -792,22 +822,17 @@ const TransactionList = React.forwardRef<
       }
       HapticFeedback.medium();
       setIsRefreshing(true);
-      // Invalidate before parent balance sync so mempool address stats are fresh.
-      if (baseApi) {
-        const cleanBase = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-        mempoolClient.invalidate(`${cleanBase}/api/address/`);
-      }
-      onPullRefresh?.();
       try {
-        await memoizedFetchTransactions(baseApi);
+        await onPullRefresh?.();
+        await reloadFromCache();
       } catch {
-        // Error is already handled in memoizedFetchTransactions
+        // Parent/session already mapped errors to cached UI.
       } finally {
         if (isMounted.current) {
           setIsRefreshing(false);
         }
       }
-    }, [baseApi, memoizedFetchTransactions, onPullRefresh]);
+    }, [onPullRefresh, reloadFromCache]);
     // Expose imperative refresh method so parents (e.g., WalletHome) can trigger
     // the same behavior as a user pull-to-refresh gesture.
     useImperativeHandle(
@@ -819,8 +844,9 @@ const TransactionList = React.forwardRef<
           }
           handlePullRefresh();
         },
+        reloadFromCache,
       }),
-      [handlePullRefresh],
+      [handlePullRefresh, reloadFromCache],
     );
     // Cleanup on unmount
     useEffect(() => {
@@ -895,8 +921,8 @@ const TransactionList = React.forwardRef<
           }
         }
       };
-      // Initial fetch
-      if (!isFetching.current && !isRefreshingRef.current) {
+      // Initial fetch — Home defers this to runWalletRefreshSession.
+      if (!deferInitialFetch && !isFetching.current && !isRefreshingRef.current) {
         fetchData(true);
       }
       return () => {
@@ -918,6 +944,7 @@ const TransactionList = React.forwardRef<
       addressType,
       baseApi,
       memoizedFetchTransactions,
+      deferInitialFetch,
     ]);
     // Memoized transaction status checker
     const getTransactionStatus = useCallback(
@@ -1394,6 +1421,7 @@ const TransactionList = React.forwardRef<
         lineHeight: appTheme.fontSizes?.lg || 16,
       },
     });
+    const brantaOn = isBrantaEnabled();
     // Memoized render item with currency support
     const renderItem = useCallback(
       ({item}: any) => {
@@ -1436,19 +1464,21 @@ const TransactionList = React.forwardRef<
           relevantAddresses = [];
         }
 
-        const merchantLabel = merchantLabelRepository.resolveForOutboundTx(
-          item.txid,
-          network,
-          isSending
-            ? relevantAddresses.length > 0
-              ? relevantAddresses
-              : relevantAddress
-              ? [relevantAddress]
-              : []
-            : relevantAddress
-            ? [relevantAddress]
-            : [],
-        );
+        const merchantLabel = brantaOn
+          ? merchantLabelRepository.resolveForOutboundTx(
+              item.txid,
+              network,
+              isSending
+                ? relevantAddresses.length > 0
+                  ? relevantAddresses
+                  : relevantAddress
+                  ? [relevantAddress]
+                  : []
+                : relevantAddress
+                ? [relevantAddress]
+                : [],
+            )
+          : null;
         const merchantName = merchantLabel?.platform?.trim() || '';
         const isLightMode =
           appTheme.colors.background === lightTheme.colors.background;
@@ -1459,6 +1489,7 @@ const TransactionList = React.forwardRef<
           : undefined;
         const merchantLogo = merchantLogoUrl ? {uri: merchantLogoUrl} : null;
         const brantaVerified =
+          brantaOn &&
           isSending &&
           !!network &&
           merchantLabelRepository.isVerifiedTx(item.txid, network);
@@ -1682,6 +1713,7 @@ const TransactionList = React.forwardRef<
       [
         getTransactionStatus,
         getTransactionAmounts,
+        brantaOn,
         address,
         addresses,
         isMultiAddress,

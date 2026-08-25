@@ -9,11 +9,7 @@ import {
   NativeModules,
   ScrollView,
   Image,
-  Keyboard,
-  KeyboardAvoidingView,
   Platform,
-  FlatList,
-  useWindowDimensions,
   DeviceEventEmitter,
   ActivityIndicator,
 } from 'react-native';
@@ -22,26 +18,31 @@ import AppSwitch from '../components/AppSwitch';
 import Animated, {
   useSharedValue,
   withTiming,
-  withSpring,
   useAnimatedStyle,
   interpolate,
-  runOnJS,
 } from 'react-native-reanimated';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import EncryptedStorage from 'react-native-encrypted-storage';
 const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 import {useUser} from '../context/UserContext';
+import {CANONICAL_TESTNET_MEMPOOL_API_BASE} from '../services/mempoolApiBase';
 import {
-  CANONICAL_TESTNET_MEMPOOL_API_BASE,
-  normalizeUserMempoolApiInput,
-  validateMempoolApiBaseReachable,
-} from '../services/mempoolApiBase';
+  getMempoolHealth,
+  providerHealthDotStyle,
+  subscribeMempoolHealth,
+  type MempoolHealthQuality,
+} from '../services/mempoolHealth';
+import {
+  notifyWalletOnlineToggle,
+  setWalletOnline,
+  useWalletOnline,
+} from '../services/walletOnlineStore';
+import {setNavMenuStyle, useNavMenuStyle} from '../services/navMenuStore';
 import {
   dbg,
   setHapticsEnabled,
   areHapticsEnabled,
-  getMainnetAPIList,
   getKeyshareDisplayLabel,
   getResetToMainTabsWallet,
   getKeyshareMetadata,
@@ -89,24 +90,38 @@ import {
   type NostrRelayEntry,
 } from '../services/nostrRelaysStore';
 import {
+  activeProviderUrls,
+  loadMempoolProviderEntries,
+  primaryProviderUrl,
+  saveMempoolProviderEntries,
+  type MempoolProviderEntry,
+} from '../services/mempoolProvidersStore';
+import {
   CAMOUFLAGE_PRESETS,
+  isCamouflageActive,
   normalizeCamouflagePresetId,
   type CamouflagePresetId,
 } from '../services/camouflagePresets';
+import {
+  hasCamouflagePin,
+  isCamouflagePinEnabled,
+  setCamouflagePin,
+  setCamouflagePinEnabled,
+} from '../services/camouflagePin';
+import CamouflagePinPad from '../components/CamouflagePinPad';
+import GlassModalOverlay from '../components/GlassModalOverlay';
 import LegalModal from '../components/LegalModal';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
+import AirgapKeyshareExportModal from '../components/AirgapKeyshareExportModal';
 import RestoringIndexesModal from '../components/RestoringIndexesModal';
 import NostrRelaysEditor from '../components/NostrRelaysEditor';
-import {fetchDynamicAPIEndpoints} from '../utils';
+import MempoolProvidersEditor from '../components/MempoolProvidersEditor';
 import FontComparisonScreen from '../components/FontComparisonScreen';
 import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
 import Toast from 'react-native-toast-message';
 import {useRoute, useFocusEffect, RouteProp} from '@react-navigation/native';
 
 const {IconChanger} = NativeModules; // This is fine here, as it's not a Hook
-// Predefined API endpoints
-const MAINNET_APIS = ['https://mempool.space/api'];
-const TESTNET_APIS = [CANONICAL_TESTNET_MEMPOOL_API_BASE];
 
 type SettingsParams = {expandSection?: string};
 
@@ -209,489 +224,13 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
     </View>
   );
 };
-// API Endpoint Autocomplete Component
-interface APIAutocompleteProps {
-  value: string;
-  onChangeText: (text: string) => void;
-  isTestnet: boolean;
-  styles: any;
-  theme: any;
-}
-const APIAutocomplete: React.FC<APIAutocompleteProps> = ({
-  value,
-  onChangeText,
-  isTestnet,
-  styles,
-  theme,
-}) => {
-  const [isModalVisible, setIsModalVisible] = useState(false);
-  const [filteredOptions, setFilteredOptions] = useState<string[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [isFocused, setIsFocused] = useState(false);
-  const [dynamicAPIs, setDynamicAPIs] = useState<string[]>([]);
-  const [isLoadingAPIs, setIsLoadingAPIs] = useState(false);
-  const inputRef = useRef<TextInput>(null);
-  const searchInputRef = useRef<TextInput>(null);
-  const flatListRef = useRef<FlatList<string>>(null);
-  const {height} = useWindowDimensions();
-  const modalAnimation = useSharedValue(0);
-  const reversedOptions = useMemo(
-    () => [...filteredOptions].reverse(),
-    [filteredOptions],
-  );
-  // Get the appropriate API list - filter by network
-  const [predefinedAPIs, setPredefinedAPIs] = useState<string[]>([]);
-  const [isLoadingPredefinedAPIs, setIsLoadingPredefinedAPIs] = useState(false);
-  const lastLoadedNetworkRef = useRef<string | null>(null);
-  // Load API lists - restrict testnet to only the hardcoded endpoint
-  useEffect(() => {
-    const currentNetwork = isTestnet ? 'testnet' : 'mainnet';
-    // Only load if network changed
-    if (lastLoadedNetworkRef.current === currentNetwork) {
-      return; // Already loaded for this network
-    }
-    if (isLoadingPredefinedAPIs) return;
-    const loadAPIList = async () => {
-      setIsLoadingPredefinedAPIs(true);
-      try {
-        if (isTestnet) {
-          // For testnet, only use the hardcoded TESTNET endpoint
-          setPredefinedAPIs(TESTNET_APIS);
-          dbg('Testnet API list loaded:', TESTNET_APIS);
-        } else {
-          // For mainnet, use dynamic loading
-          const apiList = await getMainnetAPIList();
-          setPredefinedAPIs(apiList);
-          dbg('Mainnet API list loaded:', apiList);
-        }
-        lastLoadedNetworkRef.current = currentNetwork;
-      } catch (error) {
-        dbg('Failed to load API list:', error);
-        // Fallback to hardcoded APIs
-        setPredefinedAPIs(isTestnet ? TESTNET_APIS : MAINNET_APIS);
-        lastLoadedNetworkRef.current = currentNetwork;
-      } finally {
-        setIsLoadingPredefinedAPIs(false);
-      }
-    };
-    loadAPIList();
-    // Only re-fetch when mainnet/testnet toggles; ref + isLoadingPredefinedAPIs gate duplicates — do not add those deps or the effect would re-run every loading state change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTestnet]);
-  // Fetch dynamic APIs - load when in mainnet mode and not already loaded
-  const dynamicAPIsLoadingRef = useRef(false);
-  useEffect(() => {
-    // Only load dynamic APIs for mainnet
-    if (isTestnet) {
-      return;
-    }
-    // If already loading or already have dynamic APIs, don't reload
-    if (isLoadingAPIs || dynamicAPIs.length > 0) {
-      return;
-    }
-    // Prevent multiple simultaneous load attempts
-    if (dynamicAPIsLoadingRef.current) {
-      return;
-    }
-    const loadDynamicAPIs = async () => {
-      dynamicAPIsLoadingRef.current = true;
-      setIsLoadingAPIs(true);
-      try {
-        const fetchedAPIs = await fetchDynamicAPIEndpoints();
-        if (fetchedAPIs.length > 0) {
-          setDynamicAPIs(fetchedAPIs);
-          dbg('Dynamic APIs loaded:', fetchedAPIs);
-        }
-      } catch (error) {
-        dbg('Failed to load dynamic APIs:', error);
-      } finally {
-        setIsLoadingAPIs(false);
-        dynamicAPIsLoadingRef.current = false;
-      }
-    };
-    loadDynamicAPIs();
-  }, [isTestnet, dynamicAPIs.length, isLoadingAPIs]);
-  // Compute available APIs based on network - use useMemo to prevent unnecessary recalculations
-  const availableAPIs = useMemo(() => {
-    if (isTestnet) {
-      return predefinedAPIs;
-    } else {
-      // For mainnet, combine predefined and dynamic APIs, but filter out testnet URLs
-      const combined = [...predefinedAPIs, ...dynamicAPIs];
-      const filtered = combined.filter(
-        api => !api.toLowerCase().includes('testnet'),
-      );
-      // Remove duplicates
-      return [...new Set(filtered)];
-    }
-  }, [isTestnet, predefinedAPIs, dynamicAPIs]);
-  // Filter options based on search query - only update when search query or available APIs change
-  useEffect(() => {
-    if (searchQuery.trim() === '') {
-      setFilteredOptions(availableAPIs);
-    } else {
-      const filtered = availableAPIs.filter(api =>
-        api.toLowerCase().includes(searchQuery.toLowerCase()),
-      );
-      setFilteredOptions(filtered);
-    }
-  }, [searchQuery, availableAPIs]);
-  // Reset search query when network changes
-  useEffect(() => {
-    setSearchQuery('');
-  }, [isTestnet]);
-  // Handle keyboard appearance - modal adjusts via KeyboardAvoidingView
-  useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      'keyboardDidShow',
-      () => {
-        // Scroll list to top when keyboard shows to see more items
-        setTimeout(() => {
-          flatListRef.current?.scrollToOffset({offset: 0, animated: true});
-        }, 100);
-      },
-    );
-    return () => {
-      keyboardDidShowListener.remove();
-    };
-  }, []);
-  const handleTextChange = (text: string) => {
-    onChangeText(text);
-  };
-  const handleFocus = () => {
-    setIsFocused(true);
-  };
-  const handleBlur = () => {
-    setIsFocused(false);
-  };
-  const openModal = () => {
-    // Prevent modal opening in testnet mode
-    if (isTestnet) return;
-    // The filtered options will be set by the useEffect that handles API options
-    setSearchQuery('');
-    setIsModalVisible(true);
-    inputRef.current?.blur();
-    // Reset and animate modal entrance
-    modalAnimation.value = 0;
-    modalAnimation.value = withSpring(1, {
-      damping: 11,
-      stiffness: 65,
-    });
-  };
-  const closeModal = () => {
-    // Animate modal exit
-    const finishCallback = () => {
-      setIsModalVisible(false);
-      setSearchQuery('');
-    };
-    modalAnimation.value = withTiming(0, {duration: 200}, () => {
-      runOnJS(finishCallback)();
-    });
-  };
-  const selectOption = async (option: string) => {
-    dbg('selectOption called with:', option);
-    await onChangeText(option);
-    closeModal();
-  };
-  const getNetworkIcon = (api: string) => {
-    return api.toLowerCase().includes('testnet')
-      ? require('../assets/testnet-icon.png')
-      : require('../assets/mainnet-icon.png');
-  };
-  const renderApiItem = ({item}: {item: string}) => {
-    const isSelected = item === value;
-    return (
-      <AppPressable
-        key={item}
-        style={[
-          styles.apiModalItem,
-          {borderBottomColor: theme.colors.border},
-          isSelected && styles.apiModalItemSelected,
-        ]}
-        onPress={() => selectOption(item)}
-        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-        <Image
-          source={getNetworkIcon(item)}
-          style={styles.apiModalItemIcon}
-          resizeMode="contain"
-        />
-        <Text
-          style={[
-            styles.apiModalItemText,
-            {color: theme.colors.text},
-            isSelected && [
-              styles.apiModalItemTextSelected,
-              {
-                color:
-                  theme.colors.background === '#ffffff'
-                    ? theme.colors.primary
-                    : theme.colors.bitcoinOrange,
-              },
-            ],
-          ]}
-          numberOfLines={1}
-          ellipsizeMode="middle">
-          {item}
-        </Text>
-        {isSelected && (
-          <View
-            style={[
-              styles.apiModalItemCheckContainer,
-              {backgroundColor: theme.colors.primary},
-            ]}>
-            <Text style={styles.apiModalItemCheck}>✓</Text>
-          </View>
-        )}
-      </AppPressable>
-    );
-  };
-  const renderListEmpty = () => {
-    if (isLoadingAPIs && !isTestnet) {
-      return (
-        <View style={styles.apiModalLoading}>
-          <Text
-            style={[
-              styles.apiModalLoadingText,
-              {color: theme.colors.textSecondary},
-            ]}>
-            Loading API endpoints...
-          </Text>
-        </View>
-      );
-    }
-    return (
-      <View style={styles.apiModalEmpty}>
-        <Text
-          style={[
-            styles.apiModalEmptyText,
-            {color: theme.colors.textSecondary},
-          ]}>
-          No endpoints found
-        </Text>
-      </View>
-    );
-  };
-  const getInputContainerStyle = () => {
-    const baseStyle = [styles.apiInputContainer];
-    if (isFocused) {
-      baseStyle.push(styles.apiInputContainerFocused);
-    }
-    return baseStyle;
-  };
-  // Animated style for modal
-  const modalAnimatedStyle = useAnimatedStyle(() => {
-    const translateY = interpolate(modalAnimation.value, [0, 1], [100, 0]);
-    return {
-      opacity: modalAnimation.value,
-      transform: [{translateY}],
-    };
-  });
-  return (
-    <>
-      <View style={styles.apiAutocompleteContainer}>
-        <View style={styles.apiInputRow}>
-          <View style={getInputContainerStyle()}>
-            <TextInput
-              ref={inputRef}
-              style={styles.apiTextInput}
-              returnKeyType="done"
-              value={value}
-              onChangeText={handleTextChange}
-              onFocus={handleFocus}
-              onBlur={handleBlur}
-              placeholder="Your Mempool Endpoint"
-              placeholderTextColor={theme.colors.textSecondary + '80'}
-              autoCapitalize="none"
-              autoCorrect={false}
-              editable={!isTestnet}
-            />
-            <AppPressable
-              style={styles.apiDropdownButton}
-              onPress={() => {
-                if (!isTestnet) {
-                  openModal();
-                }
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-              disabled={isTestnet}>
-              <Text
-                style={[
-                  styles.apiDropdownIcon,
-                  {
-                    color: isTestnet
-                      ? theme.colors.textSecondary
-                      : theme.colors.text,
-                  },
-                ]}>
-                ▼
-              </Text>
-            </AppPressable>
-          </View>
-        </View>
-      </View>
-      <Modal
-        visible={isModalVisible}
-        transparent={true}
-        animationType="fade"
-        onRequestClose={closeModal}>
-        <KeyboardAvoidingView
-          style={styles.apiModalKeyboardView}
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          keyboardVerticalOffset={0}>
-          <AppPressable
-            style={styles.apiModalBackdrop}
-            onPress={() => {
-              Keyboard.dismiss();
-              closeModal();
-            }}>
-            <AppPressable
-              onPress={e => {
-                e.stopPropagation();
-              }}>
-              <Animated.View
-                style={[
-                  styles.apiModalContent,
-                  {maxHeight: height * 0.8},
-                  modalAnimatedStyle,
-                ]}>
-                <View
-                  style={[
-                    styles.apiModalHeader,
-                    {borderBottomColor: theme.colors.border},
-                  ]}>
-                  <View style={styles.apiModalHeaderTop}>
-                    <View style={styles.apiModalHeaderTitleContainer}>
-                      <Image
-                        source={require('../assets/api-icon.png')}
-                        style={[
-                          styles.apiModalHeaderIcon,
-                          {tintColor: theme.colors.text}, // Use text color for better visibility in dark mode
-                        ]}
-                        resizeMode="contain"
-                      />
-                      <Text
-                        style={[
-                          styles.apiModalTitle,
-                          {color: theme.colors.text},
-                        ]}>
-                        Select Mempool.Space Provider
-                      </Text>
-                    </View>
-                    <AppPressable
-                      onPress={closeModal}
-                      style={[
-                        styles.apiModalCloseButton,
-                        {backgroundColor: theme.colors.cardBackground},
-                      ]}
-                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                      <Text
-                        style={[
-                          styles.apiModalCloseText,
-                          {color: theme.colors.text},
-                        ]}>
-                        ✕
-                      </Text>
-                    </AppPressable>
-                  </View>
-                </View>
-                <View style={styles.apiModalListWrapper}>
-                  {isLoadingAPIs && !isTestnet ? (
-                    <View style={styles.apiModalLoading}>
-                      <Text
-                        style={[
-                          styles.apiModalLoadingText,
-                          {color: theme.colors.textSecondary},
-                        ]}>
-                        Loading API endpoints...
-                      </Text>
-                    </View>
-                  ) : filteredOptions.length === 0 ? (
-                    <View style={styles.apiModalEmpty}>
-                      <Text
-                        style={[
-                          styles.apiModalEmptyText,
-                          {color: theme.colors.textSecondary},
-                        ]}>
-                        No endpoints found
-                      </Text>
-                    </View>
-                  ) : (
-                    <FlatList
-                      ref={flatListRef}
-                      data={reversedOptions}
-                      renderItem={renderApiItem}
-                      keyExtractor={item => item}
-                      ListEmptyComponent={renderListEmpty}
-                      keyboardShouldPersistTaps="always"
-                      keyboardDismissMode="none"
-                      showsVerticalScrollIndicator={true}
-                      contentContainerStyle={styles.apiModalListContent}
-                      removeClippedSubviews={false}
-                      initialNumToRender={10}
-                      maxToRenderPerBatch={10}
-                      style={styles.apiModalFlatList}
-                    />
-                  )}
-                </View>
-                <View style={styles.apiModalFooter}>
-                  <View
-                    style={[
-                      styles.apiModalSearchContainer,
-                      {
-                        backgroundColor: theme.colors.cardBackground,
-                        borderColor: theme.colors.border,
-                      },
-                    ]}>
-                    <Image
-                      source={require('../assets/search-icon.png')}
-                      style={styles.apiModalSearchIcon}
-                      resizeMode="contain"
-                    />
-                    <TextInput
-                      ref={searchInputRef}
-                      style={[
-                        styles.apiModalSearchInput,
-                        {color: theme.colors.text},
-                      ]}
-                      placeholder="Search endpoints..."
-                      placeholderTextColor={theme.colors.textSecondary + '80'}
-                      value={searchQuery}
-                      onChangeText={setSearchQuery}
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      returnKeyType="search"
-                      onSubmitEditing={() => Keyboard.dismiss()}
-                      blurOnSubmit={false}
-                    />
-                    {searchQuery.length > 0 && (
-                      <AppPressable
-                        onPress={() => setSearchQuery('')}
-                        style={styles.apiModalSearchClear}
-                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                        <Text
-                          style={[
-                            styles.apiModalSearchClearText,
-                            {color: theme.colors.textSecondary},
-                          ]}>
-                          ✕
-                        </Text>
-                      </AppPressable>
-                    )}
-                  </View>
-                </View>
-              </Animated.View>
-            </AppPressable>
-          </AppPressable>
-        </KeyboardAvoidingView>
-      </Modal>
-    </>
-  );
-};
 // Helper function to get section icons
 const getSectionIcon = (title: string): any => {
   switch (title.toLowerCase()) {
     case 'theme':
       return require('../assets/theme-icon.png');
+    case 'menu':
+      return require('../assets/nav-icon.png');
     case 'address type':
       return require('../assets/address-type-icon.png');
     case 'network providers':
@@ -716,6 +255,8 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/nostr-icon.png');
     case 'app icon':
       return require('../assets/spy-icon.png');
+    case 'branta':
+      return require('../assets/branta-icon.png');
     case 'hd options':
       return require('../assets/prefs-icon.png');
     case 'font testing':
@@ -791,15 +332,38 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [selectedIcon, setSelectedIcon] = useState<
     CamouflagePresetId | 'loading'
   >('loading');
+  const [camouflagePinOn, setCamouflagePinOn] = useState(false);
+  const [camouflagePinSet, setCamouflagePinSet] = useState(false);
+  const [pinSetupVisible, setPinSetupVisible] = useState(false);
+  const [pinSetupStep, setPinSetupStep] = useState<'create' | 'confirm'>(
+    'create',
+  );
+  const [pinSetupValue, setPinSetupValue] = useState('');
+  const [pinSetupError, setPinSetupError] = useState(false);
+  const pinFirstRef = useRef('');
+  const pendingCamouflageIconRef = useRef<CamouflagePresetId | null>(null);
   const [deleteInput, setDeleteInput] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [isModalResetVisible, setIsModalResetVisible] = useState(false);
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
+  const [isAirgapExportModalVisible, setIsAirgapExportModalVisible] =
+    useState(false);
   const [isTestnet, setIsTestnet] = useState(true);
   const [party, setParty] = useState('');
-  const [baseAPI, setBaseAPI] = useState('');
-  const [pendingAPI, setPendingAPI] = useState('');
-  const [isAPISaving, setIsAPISaving] = useState(false);
+  const [providerEntries, setProviderEntries] = useState<
+    MempoolProviderEntry[]
+  >([]);
+  const [savedProviderSnapshot, setSavedProviderSnapshot] = useState('');
+  const walletOnline = useWalletOnline();
+  const [providerQuality, setProviderQuality] =
+    useState<MempoolHealthQuality | null>(
+      () => getMempoolHealth()?.quality ?? null,
+    );
+  useEffect(() => {
+    return subscribeMempoolHealth(state => {
+      setProviderQuality(state.quality);
+    });
+  }, []);
   const [relayEntries, setRelayEntries] = useState<NostrRelayEntry[]>([]);
   const [savedRelaySnapshot, setSavedRelaySnapshot] = useState('');
   const [hasNostr, setHasNostr] = useState(false);
@@ -841,6 +405,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     useState(true);
   const [lockScreenUpdateCheckerEnabled, setLockScreenUpdateCheckerEnabled] =
     useState(true);
+  const [brantaEnabled, setBrantaEnabled] = useState(false);
   const [isApiInfoVisible, setIsApiInfoVisible] = useState(false);
   const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(false);
   const [devDebugEnabled, setDevDebugEnabled] = useState(false);
@@ -890,6 +455,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     });
   }, [runWithWalletBiometric]);
 
+  const openAirgapExportModalWithAuth = useCallback(() => {
+    runWithWalletBiometric(
+      () => setIsAirgapExportModalVisible(true),
+      WALLET_SENSITIVE_ACTION_AUTH.airgapKeyshareExport,
+    ).catch(error => {
+      dbg('openAirgapExportModalWithAuth failed', error);
+    });
+  }, [runWithWalletBiometric]);
+
   const openDeleteWalletModalWithAuth = useCallback(() => {
     runWithWalletBiometric(
       () => setIsModalResetVisible(true),
@@ -934,6 +508,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     [key: string]: boolean;
   }>({
     theme: false,
+    menu: false,
     haptics: false,
     manchette: false,
     updater: false,
@@ -946,6 +521,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     legal: false,
     storage: false,
     appIcon: false,
+    branta: false,
     devicePairing: false,
     addressType: false,
     fontTesting: false,
@@ -957,6 +533,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     wallet: false,
   });
   const {theme, themeMode, setThemeMode} = useTheme();
+  const menuStyle = useNavMenuStyle();
   // Force re-render on Android when theme changes
   const [themeUpdateKey, setThemeUpdateKey] = useState(0);
   const [appVersion, setAppVersion] = useState('');
@@ -1292,6 +869,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const section = route.params?.expandSection;
     const validSections = new Set([
       'theme',
+      'menu',
       'haptics',
       'manchette',
       'updater',
@@ -1303,6 +881,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       'legal',
       'storage',
       'appIcon',
+      'branta',
       'devicePairing',
       'addressType',
       'fontTesting',
@@ -1332,6 +911,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         CONFIG_KEYS.LOCK_SCREEN_UPDATE_CHECKER_ENABLED,
         true,
       ),
+    );
+    setBrantaEnabled(
+      appConfigRepository.getBool(CONFIG_KEYS.BRANTA_ENABLED, false),
     );
     refreshUsageSize();
     // Initialize debug logging state from module-level ref
@@ -1366,6 +948,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       try {
         const savedIcon = await EncryptedStorage.getItem('app_icon_preference');
         setSelectedIcon(normalizeCamouflagePresetId(savedIcon));
+        const [enabled, hasPin] = await Promise.all([
+          isCamouflagePinEnabled(),
+          hasCamouflagePin(),
+        ]);
+        setCamouflagePinOn(enabled);
+        setCamouflagePinSet(hasPin);
       } catch (error) {
         dbg('Error loading icon preference:', error);
         setSelectedIcon('default');
@@ -1384,7 +972,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       const net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
       dbg('=== Loading settings for network:', net);
       setIsTestnet(net !== 'mainnet');
-      setPendingAPI('');
       let resolvedApi =
         appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
       if (!resolvedApi) {
@@ -1395,14 +982,16 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         appConfigRepository.set('api', resolvedApi);
         if (net) appConfigRepository.set(`api_${net}`, resolvedApi);
       }
-      setBaseAPI(resolvedApi);
-      setPendingAPI(resolvedApi);
       if (net) BBMTLibNativeModule.setAPI(net, resolvedApi);
     })();
     // Load Nostr relays (from cache if available, otherwise fetch dynamically)
     loadNostrRelayEntries().then(entries => {
       setRelayEntries(entries);
       setSavedRelaySnapshot(JSON.stringify(entries));
+    });
+    loadMempoolProviderEntries().then(entries => {
+      setProviderEntries(entries);
+      setSavedProviderSnapshot(JSON.stringify(entries));
     });
   }, []);
   const toggleNetwork = async (
@@ -1487,104 +1076,31 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       }
     });
   }, [devDebugPrefLoaded, devDebugEnabled]); // eslint-disable-line react-hooks/exhaustive-deps -- one-shot when dev prefs load
-  const resetAPI = async () => {
-    dbg('resetAPI called');
-    const net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
-    const api =
-      net === 'mainnet'
-        ? 'https://mempool.space/api'
-        : 'https://mempool.space/testnet/api';
-    setPendingAPI(api);
-    setBaseAPI(api);
-    if (net) {
-      appConfigRepository.set(`api_${net}`, api);
-      appConfigRepository.set('api', api);
-    }
-    // Update native module
-    if (net) {
-      await BBMTLibNativeModule.setAPI(net, api);
-    }
-    dbg('Native module updated with network:', net, 'API:', api);
-    // Update WalletService if it has the method
-    if (WalletService.getInstance().handleNetworkChange && net) {
-      await WalletService.getInstance().handleNetworkChange(net, api);
-      dbg('WalletService updated with reset API');
-    }
-    // Update API via UserContext
-    await setActiveApiProvider(api);
-    dbg('API reset and propagated successfully:', api);
-    // Navigate to home after reset
-    navigation.reset(
-      getResetToMainTabsWallet(
-        {},
-        {
-          showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
-          showUtxos: showUtxosTab,
-          showAddresses: showAddressesTab,
-          showPsbt: showPsbtTab,
-          showWallet: showWalletTab,
-        },
-      ),
-    );
-    // Show success alert after navigation
-    setTimeout(() => {
-      Alert.alert('Success', 'API endpoint reset to default!');
-    }, 300);
-  };
-  const saveAPI = async (api: string) => {
-    if (!api || api.trim() === '') {
-      Alert.alert('Error', 'Please select a valid API endpoint.');
-      return;
-    }
-    // Testnet: only the canonical mempool.space testnet base (no custom endpoints).
-    const normalizedApi = isTestnet
-      ? CANONICAL_TESTNET_MEMPOOL_API_BASE
-      : normalizeUserMempoolApiInput(api);
-    dbg('Original API URL:', api);
-    dbg('Normalized API URL:', normalizedApi);
-    setIsAPISaving(true);
+  const saveMempoolProviders = async () => {
     try {
-      // Validate the API endpoint first (using normalized URL)
-      const isValid = await validateMempoolApiBaseReachable(normalizedApi);
-      if (!isValid) {
-        Alert.alert(
-          'Invalid API Endpoint',
-          'The selected API endpoint is not responding correctly. Please choose a different endpoint.',
-        );
+      if (activeProviderUrls(providerEntries).length === 0) {
+        Alert.alert('Error', 'Please keep at least one provider enabled');
         return;
       }
-      // Update API via UserContext (using normalized URL)
-      await setActiveApiProvider(normalizedApi);
-      // Update local state (using normalized URL)
-      setBaseAPI(normalizedApi);
-      // Reset pending API to the saved API (using normalized URL)
-      setPendingAPI(normalizedApi);
-      dbg('Local state updated with API:', normalizedApi);
-      Alert.alert('Success', 'API endpoint updated successfully!');
-      dbg('=== API saved and propagated successfully:', normalizedApi);
-      // Navigate to home after successful save
-      navigation.reset(
-        getResetToMainTabsWallet(
-          {},
-          {
-            showPlay: activeNetwork === 'mainnet' && showMempoolPlayground,
-            showUtxos: showUtxosTab,
-            showAddresses: showAddressesTab,
-            showPsbt: showPsbtTab,
-            showWallet: showWalletTab,
-          },
-        ),
-      );
+      saveMempoolProviderEntries(providerEntries);
+      const primary = primaryProviderUrl(providerEntries);
+      const enabled = activeProviderUrls(providerEntries);
+      await setActiveApiProvider(primary);
+      mempoolClient.setPublicBases(enabled);
+      try {
+        await BBMTLibNativeModule.setFeeAPIs(enabled.join(','));
+      } catch {
+        // no-op
+      }
+      setSavedProviderSnapshot(JSON.stringify(providerEntries));
+      Alert.alert('Success', 'Mempool providers saved successfully!');
     } catch (error) {
-      dbg('Error in saveAPI:', error);
-      Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
-    } finally {
-      setIsAPISaving(false);
+      dbg('Error saving mempool providers:', error);
+      Alert.alert(
+        'Error',
+        'Failed to save mempool providers. Please try again.',
+      );
     }
-  };
-  const handleAPISelection = (api: string) => {
-    // Just update the pending API selection - don't save immediately
-    setPendingAPI(api);
   };
   const handleResetWallet = async () => {
     if (deleteInput.trim().toLowerCase() === 'delete my wallet') {
@@ -1614,6 +1130,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             EncryptedStorage.removeItem('bitcoin_display_sats'),
             EncryptedStorage.removeItem('balance_formatting_enabled'),
             EncryptedStorage.removeItem('app_icon_preference'),
+            EncryptedStorage.removeItem('camouflage_pin_hash'),
+            EncryptedStorage.removeItem('camouflage_pin_enabled'),
             EncryptedStorage.removeItem('devDebugEnabled'),
             EncryptedStorage.removeItem('psbt_mode_first_visit'),
           ]);
@@ -1639,6 +1157,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     setHapticsEnabledState(value);
     setHapticsEnabled(value);
   };
+  const handleToggleMenuStyle = (value: boolean) => {
+    setNavMenuStyle(value ? 'floating' : 'docked');
+  };
   const handleToggleLockScreenManchette = (value: boolean) => {
     setLockScreenManchetteEnabled(value);
     appConfigRepository.setBool(
@@ -1652,6 +1173,135 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       CONFIG_KEYS.LOCK_SCREEN_UPDATE_CHECKER_ENABLED,
       value,
     );
+  };
+  const handleToggleBranta = (value: boolean) => {
+    setBrantaEnabled(value);
+    appConfigRepository.setBool(CONFIG_KEYS.BRANTA_ENABLED, value);
+  };
+  const camouflageIconActive =
+    selectedIcon !== 'loading' && isCamouflageActive(selectedIcon);
+  const openCamouflagePinSetup = (pendingIcon: CamouflagePresetId | null) => {
+    pendingCamouflageIconRef.current = pendingIcon;
+    pinFirstRef.current = '';
+    setPinSetupStep('create');
+    setPinSetupValue('');
+    setPinSetupError(false);
+    setPinSetupVisible(true);
+  };
+  const closeCamouflagePinSetup = () => {
+    pendingCamouflageIconRef.current = null;
+    pinFirstRef.current = '';
+    setPinSetupVisible(false);
+    setPinSetupValue('');
+    setPinSetupError(false);
+    setPinSetupStep('create');
+  };
+  const applyCamouflageIcon = async (preset: CamouflagePresetId) => {
+    const previous = selectedIcon;
+    try {
+      const change = IconChanger?.changeIcon;
+      if (!IconChanger || !change) {
+        Alert.alert(
+          'Error',
+          'Icon switching is not available on this device.',
+          [{text: 'OK'}],
+        );
+        return false;
+      }
+      setSelectedIcon(preset);
+      await EncryptedStorage.setItem('app_icon_preference', preset);
+      await change(preset);
+      const label =
+        CAMOUFLAGE_PRESETS.find(p => p.id === preset)?.label ?? preset;
+      Toast.show({
+        type: 'success',
+        text1: label,
+        text2: 'If the old tile lingers, refresh the app drawer.',
+        visibilityTime: 2500,
+      });
+      return true;
+    } catch (error: any) {
+      dbg('Error changing icon:', error);
+      setSelectedIcon(previous === 'loading' ? 'default' : previous);
+      Alert.alert(
+        'Error',
+        error?.message || 'Failed to change app icon. Please try again.',
+        [{text: 'OK'}],
+      );
+      return false;
+    }
+  };
+  const handleSelectCamouflageIcon = async (preset: CamouflagePresetId) => {
+    if (selectedIcon === 'loading' || selectedIcon === preset) {
+      return;
+    }
+    if (isCamouflageActive(preset)) {
+      const hasPin = await hasCamouflagePin();
+      if (!hasPin) {
+        openCamouflagePinSetup(preset);
+        return;
+      }
+      await setCamouflagePinEnabled(true);
+      setCamouflagePinOn(true);
+      await applyCamouflageIcon(preset);
+      return;
+    }
+    await setCamouflagePinEnabled(false);
+    setCamouflagePinOn(false);
+    await applyCamouflageIcon(preset);
+  };
+  const handleToggleCamouflagePin = async (value: boolean) => {
+    if (!value && camouflageIconActive) {
+      Alert.alert(
+        'PIN stays on',
+        'A camouflage icon requires a 4-digit PIN before fingerprint unlock.',
+      );
+      return;
+    }
+    if (value) {
+      const hasPin = await hasCamouflagePin();
+      if (!hasPin) {
+        openCamouflagePinSetup(null);
+        return;
+      }
+      await setCamouflagePinEnabled(true);
+      setCamouflagePinOn(true);
+      return;
+    }
+    await setCamouflagePinEnabled(false);
+    setCamouflagePinOn(false);
+  };
+  const handleCamouflagePinComplete = async (pin: string) => {
+    if (pinSetupStep === 'create') {
+      pinFirstRef.current = pin;
+      setPinSetupValue('');
+      setPinSetupError(false);
+      setPinSetupStep('confirm');
+      return;
+    }
+    if (pin !== pinFirstRef.current) {
+      setPinSetupError(true);
+      setPinSetupValue('');
+      setTimeout(() => {
+        pinFirstRef.current = '';
+        setPinSetupError(false);
+        setPinSetupStep('create');
+      }, 500);
+      return;
+    }
+    try {
+      await setCamouflagePin(pin);
+      setCamouflagePinSet(true);
+      setCamouflagePinOn(true);
+      const pendingIcon = pendingCamouflageIconRef.current;
+      closeCamouflagePinSetup();
+      if (pendingIcon && isCamouflageActive(pendingIcon)) {
+        await applyCamouflageIcon(pendingIcon);
+      }
+    } catch (error: any) {
+      dbg('Error saving camouflage PIN', error);
+      Alert.alert('Error', 'Could not save PIN. Please try again.');
+    }
   };
   const handleToggleBalanceFormatting = (value: boolean) => {
     setBalanceFormattingEnabled(value);
@@ -1806,68 +1456,84 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         hintSpacing: {
           marginBottom: 12,
         },
-        appIconHintRow: {
-          flexDirection: 'row',
-          alignItems: 'center',
-        },
-        appIconSpyIcon: {
-          width: 28,
-          height: 28,
-          marginRight: 10,
-        },
-        appIconHintTextContainer: {
-          flex: 1,
-        },
-        appIconHintTitle: {
-          fontSize: theme.fontSizes?.base || 14,
-          fontFamily: theme.fontFamilies?.bold,
-          color: theme.colors.text,
-          marginBottom: 2,
+        appIconBody: {
+          paddingTop: 10,
+          paddingBottom: 12,
         },
         appIconHintSubtitle: {
-          fontSize: theme.fontSizes?.sm || 12,
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.regular,
           color: theme.colors.textSecondary,
-          lineHeight: 16,
+          lineHeight: 15,
+          marginTop: 8,
         },
         iconPresetGrid: {
           flexDirection: 'row' as const,
-          flexWrap: 'wrap' as const,
-          justifyContent: 'space-between',
-          marginTop: 4,
+          alignItems: 'flex-start' as const,
         },
         iconPresetCell: {
-          width: '48%' as unknown as number,
-          borderWidth: 1,
-          borderColor: theme.colors.border,
-          borderRadius: 10,
-          paddingVertical: 12,
-          paddingHorizontal: 8,
-          marginBottom: 10,
+          flex: 1,
           alignItems: 'center' as const,
-          backgroundColor: theme.colors.cardBackground,
+          paddingVertical: 4,
+          paddingHorizontal: 1,
+          borderWidth: 2,
+          borderColor: 'transparent',
+          borderRadius: 14,
         },
         iconPresetCellSelected: {
           borderColor: theme.colors.bitcoinOrange,
-          borderWidth: 2,
         },
-        iconPresetSwatch: {
-          width: 48,
-          height: 48,
-          borderRadius: 12,
-          alignItems: 'center' as const,
-          justifyContent: 'center' as const,
-          marginBottom: 8,
-        },
-        iconPresetGlyph: {
-          color: '#FFFFFF',
-          fontSize: theme.fontSizes?.lg || 18,
-          fontFamily: theme.fontFamilies?.bold,
+        iconPresetPreview: {
+          width: 42,
+          height: 42,
+          borderRadius: 10,
+          backgroundColor: theme.colors.background,
         },
         iconPresetLabel: {
-          fontSize: theme.fontSizes?.sm || 12,
+          marginTop: 4,
+          fontSize: 10,
+          lineHeight: 12,
+          fontFamily: theme.fontFamilies?.regular,
+          color: theme.colors.textSecondary,
+          textAlign: 'center' as const,
+        },
+        iconPresetLabelSelected: {
           fontFamily: theme.fontFamilies?.medium,
           color: theme.colors.text,
-          textAlign: 'center' as const,
+        },
+        pinRow: {
+          flexDirection: 'row' as const,
+          alignItems: 'center' as const,
+          justifyContent: 'space-between',
+          marginTop: 8,
+          paddingTop: 8,
+          borderTopWidth: StyleSheet.hairlineWidth,
+          borderTopColor: theme.colors.border,
+        },
+        pinRowText: {
+          flex: 1,
+          marginRight: 8,
+        },
+        pinRowTitleLine: {
+          flexDirection: 'row' as const,
+          alignItems: 'center' as const,
+        },
+        pinRowTitle: {
+          fontSize: theme.fontSizes?.sm || 13,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.text,
+        },
+        pinRowMeta: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.regular,
+          color: theme.colors.textSecondary,
+          marginTop: 1,
+        },
+        pinChangeLink: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.bitcoinOrange,
+          marginLeft: 8,
         },
         inputAPI: {
           borderWidth: 1,
@@ -2079,7 +1745,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         },
         apiModalBackdrop: {
           flex: 1,
-          backgroundColor: theme.colors.modalBackdrop,
           justifyContent: 'flex-end',
         },
         apiModalContent: {
@@ -2382,6 +2047,36 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           textTransform: 'uppercase',
           letterSpacing: 0.5,
         },
+        walletOnlineStatusRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          marginBottom: 8,
+          paddingHorizontal: 4,
+        },
+        walletOnlineStatus: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 6,
+        },
+        walletOnlineStatusDot: {
+          width: 8,
+          height: 8,
+          borderRadius: 4,
+        },
+        walletOnlineStatusDotHollow: {
+          backgroundColor: 'transparent',
+          borderWidth: 1.5,
+        },
+        walletOnlineStatusDotFilled: {
+          borderWidth: 0,
+        },
+        walletOnlineStatusText: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.medium,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+        },
         disableDevModeButton: {
           backgroundColor:
             theme.colors.background === '#ffffff'
@@ -2446,7 +2141,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         },
         modalOverlay: {
           flex: 1,
-          backgroundColor: theme.colors.modalBackdrop,
           alignItems: 'center',
           justifyContent: 'center',
         },
@@ -2875,6 +2569,28 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     setThemeUpdateKey(prev => prev + 1);
   }, [theme.colors.background, themeMode]);
+  const walletOnlineDot = providerHealthDotStyle(theme.colors, {
+    online: walletOnline,
+    quality: providerQuality,
+  });
+  const walletOnlineDotPaint = useMemo(() => {
+    const paint: {
+      borderColor: string;
+      opacity: number;
+      backgroundColor?: string;
+    } = {
+      borderColor: walletOnlineDot.color,
+      opacity: walletOnlineDot.opacity,
+    };
+    if (!walletOnlineDot.hollow) {
+      paint.backgroundColor = walletOnlineDot.color;
+    }
+    return paint;
+  }, [walletOnlineDot]);
+  const walletOnlineDotTextStyle = useMemo(
+    () => ({color: walletOnlineDot.color}),
+    [walletOnlineDot.color],
+  );
   return (
     <SafeAreaView
       style={styles.container}
@@ -2891,7 +2607,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         nestedScrollEnabled={true}
         bounces={true}
         scrollEventThrottle={16}>
-        {/* App: Theme, Balance Display, Haptics, Manchette, Updater, Storage */}
+        {/* App: Theme, Menu, Balance Display, Haptics, Manchette, Updater, Storage */}
         <SettingsSectionGroup title="App" styles={styles} theme={theme}>
           <CollapsibleSection
             title="Theme"
@@ -2982,6 +2698,25 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   )}
                 </View>
               </AppPressable>
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="Menu"
+            isExpanded={expandedSections.menu}
+            onToggle={() => toggleSection('menu')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Floating is the default bottom pill (max 90% width) that scrolls
+              if tabs overflow. Docked is the full-width tab bar.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Docked</Text>
+              <AppSwitch
+                onValueChange={handleToggleMenuStyle}
+                value={menuStyle === 'floating'}
+              />
+              <Text style={styles.toggleLabel}>Floating</Text>
             </View>
           </CollapsibleSection>
           <CollapsibleSection
@@ -3170,90 +2905,75 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               onToggle={() => toggleSection('appIcon')}
               styles={styles}
               theme={theme}>
-              <View style={styles.appIconHintRow}>
-                <View style={styles.appIconHintTextContainer}>
-                  <Text style={styles.appIconHintTitle}>
-                    Blend in when you need to.
-                  </Text>
-                  <Text style={styles.appIconHintSubtitle}>
-                    Switch the home-screen icon and name to a bundled
-                    camouflage. A photo from your gallery cannot become the
-                    real launcher icon.
-                  </Text>
-                </View>
-              </View>
-              <Text style={styles.toggleDescription}>
-                Choose a launcher tile. The previous Bold icon may linger until
-                your home screen refreshes.
-              </Text>
-              <View style={styles.iconPresetGrid}>
-                {CAMOUFLAGE_PRESETS.map(preset => {
-                  const selected = selectedIcon === preset.id;
-                  return (
-                    <AppPressable
-                      key={preset.id}
-                      style={[
-                        styles.iconPresetCell,
-                        selected && styles.iconPresetCellSelected,
-                      ]}
-                      onPress={async () => {
-                        if (selectedIcon === 'loading' || selected) {
-                          return;
-                        }
-                        const previous = selectedIcon;
-                        try {
-                          const change = IconChanger?.changeIcon;
-                          if (!IconChanger || !change) {
-                            Alert.alert(
-                              'Error',
-                              'Icon switching is not available on this device.',
-                              [{text: 'OK'}],
-                            );
-                            return;
-                          }
-                          setSelectedIcon(preset.id);
-                          await EncryptedStorage.setItem(
-                            'app_icon_preference',
-                            preset.id,
-                          );
-                          await change(preset.id);
-                          Alert.alert(
-                            'Icon Changed',
-                            `App icon switched to ${preset.label}.\n\nIf you still see Bold Wallet, pull down the app drawer or reboot the launcher.`,
-                            [{text: 'OK'}],
-                          );
-                        } catch (error: any) {
-                          dbg('Error changing icon:', error);
-                          setSelectedIcon(previous);
-                          Alert.alert(
-                            'Error',
-                            error?.message ||
-                              'Failed to change app icon. Please try again.',
-                            [{text: 'OK'}],
-                          );
-                        }
-                      }}
-                      disabled={selectedIcon === 'loading'}
-                      accessibilityRole="button"
-                      accessibilityState={{selected}}
-                      accessibilityLabel={`${preset.label} launcher icon`}>
-                      <View
+              <View style={styles.appIconBody}>
+                <View style={styles.iconPresetGrid}>
+                  {CAMOUFLAGE_PRESETS.map(preset => {
+                    const selected = selectedIcon === preset.id;
+                    return (
+                      <AppPressable
+                        key={preset.id}
                         style={[
-                          styles.iconPresetSwatch,
-                          {backgroundColor: preset.swatch},
-                        ]}>
-                        <Text style={styles.iconPresetGlyph}>{preset.glyph}</Text>
-                      </View>
-                      <Text style={styles.iconPresetLabel}>{preset.label}</Text>
-                    </AppPressable>
-                  );
-                })}
+                          styles.iconPresetCell,
+                          selected && styles.iconPresetCellSelected,
+                        ]}
+                        onPress={() => handleSelectCamouflageIcon(preset.id)}
+                        disabled={selectedIcon === 'loading'}
+                        accessibilityRole="button"
+                        accessibilityState={{selected}}
+                        accessibilityLabel={`${preset.label} launcher icon`}>
+                        <Image
+                          source={preset.preview}
+                          style={styles.iconPresetPreview}
+                          resizeMode="cover"
+                          accessibilityIgnoresInvertColors
+                        />
+                        <Text
+                          style={[
+                            styles.iconPresetLabel,
+                            selected && styles.iconPresetLabelSelected,
+                          ]}
+                          numberOfLines={1}>
+                          {preset.label}
+                        </Text>
+                      </AppPressable>
+                    );
+                  })}
+                </View>
+                <View style={styles.pinRow}>
+                  <View style={styles.pinRowText}>
+                    <View style={styles.pinRowTitleLine}>
+                      <Text style={styles.pinRowTitle}>Unlock PIN</Text>
+                      {camouflagePinSet ? (
+                        <AppPressable
+                          onPress={() => openCamouflagePinSetup(null)}
+                          accessibilityRole="button"
+                          accessibilityLabel="Change unlock PIN">
+                          <Text style={styles.pinChangeLink}>Change</Text>
+                        </AppPressable>
+                      ) : null}
+                    </View>
+                    <Text style={styles.pinRowMeta}>
+                      {camouflageIconActive
+                        ? 'Required for camouflage'
+                        : 'Optional before fingerprint'}
+                    </Text>
+                  </View>
+                  <AppSwitch
+                    onValueChange={handleToggleCamouflagePin}
+                    value={camouflagePinOn || camouflageIconActive}
+                    disabled={camouflageIconActive}
+                  />
+                </View>
+                <Text style={styles.appIconHintSubtitle}>
+                  Fingerprint still shows Bold. Forgot PIN? Restore your
+                  keyshare.
+                </Text>
               </View>
             </CollapsibleSection>
           )}
         </SettingsSectionGroup>
 
-        {/* Wallet: Security, Address Type, Network providers, Nostr Relays */}
+        {/* Wallet: Security, Address Type, Network providers, Nostr Relays, Branta */}
         <SettingsSectionGroup title="Wallet" styles={styles} theme={theme}>
           <CollapsibleSection
             title="Security"
@@ -3278,6 +2998,25 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   resizeMode="contain"
                 />
                 <Text style={styles.buttonText}>Backup {party}</Text>
+              </View>
+            </AppPressable>
+            <Text style={styles.apiName}>Airgap QR Keyshare</Text>
+            <AppPressable
+              style={[
+                styles.button,
+                styles.backupButton,
+                walletSensitiveAuthPending && styles.halfOpacity,
+              ]}
+              onPress={openAirgapExportModalWithAuth}
+              disabled={walletSensitiveAuthPending}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/qr-icon.png')}
+                  style={[styles.buttonIcon, styles.whiteTint]}
+                  resizeMode="contain"
+                />
+                <Text style={styles.buttonText}>Show Airgap QR</Text>
               </View>
             </AppPressable>
             <View style={styles.apiItem}>
@@ -3500,6 +3239,42 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             onToggle={() => toggleSection('advanced')}
             styles={styles}
             theme={theme}>
+            <View style={styles.walletOnlineStatusRow}>
+              <Text style={styles.toggleLabel}>Internet</Text>
+              <View style={styles.walletOnlineStatus}>
+                <View
+                  style={[
+                    styles.walletOnlineStatusDot,
+                    walletOnlineDot.hollow
+                      ? styles.walletOnlineStatusDotHollow
+                      : styles.walletOnlineStatusDotFilled,
+                    walletOnlineDotPaint,
+                  ]}
+                />
+                <Text
+                  style={[
+                    styles.walletOnlineStatusText,
+                    walletOnlineDotTextStyle,
+                  ]}>
+                  {walletOnline ? 'Online' : 'Offline'}
+                </Text>
+              </View>
+            </View>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Offline</Text>
+              <AppSwitch
+                onValueChange={value => {
+                  setWalletOnline(value);
+                  notifyWalletOnlineToggle(value);
+                }}
+                value={walletOnline}
+              />
+              <Text style={styles.toggleLabel}>Online</Text>
+            </View>
+            <Text style={[styles.hintText, styles.hintSpacing]}>
+              When offline, the wallet uses cached data and makes no network
+              calls.
+            </Text>
             <View style={styles.apiNetworkInfoContainer}>
               <View style={styles.apiNetworkModeRow}>
                 <View
@@ -3564,75 +3339,38 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 ]}>
                 {isTestnet
                   ? 'Testnet Provider is restricted to mempool.space/testnet'
-                  : 'Mainnet Providers are customizable.'}
+                  : 'Toggle providers on for failover. At least one must stay on.'}
               </Text>
             </View>
-            <APIAutocomplete
-              value={pendingAPI || baseAPI}
-              onChangeText={handleAPISelection}
-              isTestnet={isTestnet}
-              styles={styles}
-              theme={theme}
-            />
-            <View style={styles.apiActionButtonsRow}>
-              {!isTestnet && (
-                <AppPressable
-                  style={[
-                    styles.button,
-                    styles.backupButton,
-                    styles.apiActionButton,
-                    (isAPISaving || !pendingAPI || pendingAPI === baseAPI) &&
-                      styles.disabledButton,
-                    isAPISaving && styles.halfOpacity,
-                  ]}
-                  onPress={() => {
-                    saveAPI(pendingAPI);
-                  }}
-                  disabled={
-                    isAPISaving || !pendingAPI || pendingAPI === baseAPI
+            {isTestnet ? (
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>
+                  {CANONICAL_TESTNET_MEMPOOL_API_BASE}
+                </Text>
+                <Text style={styles.apiDescription}>
+                  Testnet uses a single fixed mempool.space endpoint.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <View style={styles.apiItem}>
+                  <Text style={styles.apiName}>Mempool Provider List</Text>
+                  <Text style={styles.apiDescription}>
+                    Enabled hosts are used for balance, UTXO, and transaction
+                    sync with automatic failover to the most reliable ones.
+                  </Text>
+                </View>
+                <MempoolProvidersEditor
+                  entries={providerEntries}
+                  onChange={setProviderEntries}
+                  showSave
+                  saveDisabled={
+                    JSON.stringify(providerEntries) === savedProviderSnapshot
                   }
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <View style={styles.buttonContent}>
-                    <Image
-                      source={require('../assets/check-icon.png')}
-                      style={[styles.buttonIcon, styles.whiteTint]}
-                      resizeMode="contain"
-                    />
-                    <Text
-                      style={[
-                        styles.buttonText,
-                        (isAPISaving ||
-                          !pendingAPI ||
-                          pendingAPI === baseAPI) &&
-                          styles.disabledButtonText,
-                      ]}>
-                      {isAPISaving ? 'Verifying...' : 'Verify & Save'}
-                    </Text>
-                  </View>
-                </AppPressable>
-              )}
-              {!isTestnet && (
-                <AppPressable
-                  style={[
-                    styles.button,
-                    styles.resetButton,
-                    styles.apiActionButton,
-                  ]}
-                  onPress={() => {
-                    resetAPI();
-                  }}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <View style={styles.buttonContent}>
-                    <Image
-                      source={require('../assets/refresh-icon.png')}
-                      style={[styles.buttonIcon, styles.whiteTint]}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.buttonText}>Defaults</Text>
-                  </View>
-                </AppPressable>
-              )}
-            </View>
+                  onSave={saveMempoolProviders}
+                />
+              </>
+            )}
           </CollapsibleSection>
           <CollapsibleSection
             title="HD Options"
@@ -3899,10 +3637,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     }
                     await saveNostrRelayEntries(relayEntries);
                     setSavedRelaySnapshot(JSON.stringify(relayEntries));
-                    Alert.alert(
-                      'Success',
-                      'Nostr relays saved successfully!',
-                    );
+                    Alert.alert('Success', 'Nostr relays saved successfully!');
                   } catch (error) {
                     dbg('Error saving Nostr relays:', error);
                     Alert.alert('Error', 'Failed to save Nostr relays');
@@ -3911,6 +3646,26 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               />
             </CollapsibleSection>
           )}
+          <CollapsibleSection
+            title="Branta"
+            isExpanded={expandedSections.branta}
+            onToggle={() => toggleSection('branta')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Verify merchant pay-to addresses via Branta when you scan a
+              Branta-enhanced QR. Off by default; when off, sends stay normal
+              BIP-21 and history hides merchant names.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Off</Text>
+              <AppSwitch
+                onValueChange={handleToggleBranta}
+                value={brantaEnabled}
+              />
+              <Text style={styles.toggleLabel}>On</Text>
+            </View>
+          </CollapsibleSection>
         </SettingsSectionGroup>
 
         {/* Tabs: Wallet, UTXO, PSBT, Playground */}
@@ -3942,9 +3697,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             styles={styles}
             theme={theme}>
             <Text style={styles.hintText}>
-              Show the <Text style={styles.hintBold}>UTXOs</Text> tab in the tab
-              bar. This tab lists your unspent outputs (date, output, address,
-              value in BTC and fiat). Off by default.
+              Show the{' '}
+              <Text style={styles.hintBold}>UTXOs and Coin control</Text> tab in
+              the tab bar. This tab lists your unspent outputs (date, output,
+              address, value in BTC and fiat). Off by default, when enabled it
+              allows Coin Control when spending your bitcoins.
             </Text>
             <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
               <Text style={styles.toggleLabel}>Hide UTXOs tab</Text>
@@ -4231,8 +3988,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             styles={styles}
             theme={theme}>
             <Text style={styles.toggleDescription}>
-              Make sure that your wallet keyshares apps are all aligned
-              running the latest version for optimal compatibility and security.
+              Make sure that your wallet keyshares apps are all aligned running
+              the latest version for optimal compatibility and security.
             </Text>
             <AppPressable
               onPress={handleAppVersionRowPress}
@@ -4329,7 +4086,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         transparent
         animationType="fade"
         onRequestClose={() => setShowAppUpdateModal(false)}>
-        <View style={styles.modalOverlay}>
+        <GlassModalOverlay style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Image
@@ -4356,19 +4113,68 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </AppPressable>
             </View>
           </View>
-        </View>
+        </GlassModalOverlay>
+      </Modal>
+      <Modal
+        visible={pinSetupVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeCamouflagePinSetup}>
+        <GlassModalOverlay style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>
+                {pinSetupStep === 'create'
+                  ? 'Set a 4-digit PIN'
+                  : 'Enter it again'}
+              </Text>
+            </View>
+            <Text style={styles.modalDescription}>
+              Forgot later? Delete the app and restore your keyshare — no PIN
+              after restore.
+            </Text>
+            <CamouflagePinPad
+              value={pinSetupValue}
+              onChange={next => {
+                setPinSetupError(false);
+                setPinSetupValue(next);
+              }}
+              onComplete={handleCamouflagePinComplete}
+              error={pinSetupError}
+              hint={
+                pinSetupError
+                  ? 'PINs did not match'
+                  : pinSetupStep === 'create'
+                  ? 'Choose 4 digits'
+                  : 'Confirm PIN'
+              }
+            />
+            <View style={styles.modalActions}>
+              <AppPressable
+                style={[styles.modalButton, styles.cancelButton]}
+                onPress={closeCamouflagePinSetup}
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </AppPressable>
+            </View>
+          </View>
+        </GlassModalOverlay>
       </Modal>
       <BackupKeyshareModal
         visible={isBackupModalVisible}
         onClose={() => setIsBackupModalVisible(false)}
         description="Store your keyshares in separate private locations e.g. cloud, emails, external drives, etc. Do not keep them together so no one can access them all and steal your funds."
       />
+      <AirgapKeyshareExportModal
+        visible={isAirgapExportModalVisible}
+        onClose={() => setIsAirgapExportModalVisible(false)}
+      />
       <Modal
         visible={isModalResetVisible}
         transparent={true}
         animationType="fade"
         onRequestClose={() => setIsModalResetVisible(false)}>
-        <View style={styles.modalOverlay}>
+        <GlassModalOverlay style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Image
@@ -4420,7 +4226,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </AppPressable>
             </View>
           </View>
-        </View>
+        </GlassModalOverlay>
       </Modal>
       <LegalModal
         visible={isLegalModalVisible}
@@ -4435,99 +4241,97 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         transparent={true}
         animationType="fade"
         onRequestClose={() => setIsApiInfoVisible(false)}>
-        <AppPressable
+        <GlassModalOverlay
           style={styles.modalOverlay}
           onPress={() => setIsApiInfoVisible(false)}>
-          <AppPressable onPress={e => e.stopPropagation()}>
-            <View style={styles.apiInfoModalContent}>
-              <View style={styles.apiInfoModalHeader}>
-                <View style={styles.apiInfoModalIconContainer}>
-                  <Image
-                    source={require('../assets/api-icon.png')}
-                    style={styles.apiInfoModalIcon}
-                    resizeMode="contain"
-                  />
-                </View>
-                <Text style={styles.apiInfoModalTitle}>
-                  Mempool.Space Providers
-                </Text>
-                <AppPressable
-                  style={styles.apiInfoModalCloseButton}
-                  onPress={() => {
-                    setIsApiInfoVisible(false);
-                  }}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <Text style={styles.apiInfoModalCloseText}>✕</Text>
-                </AppPressable>
+          <View style={styles.apiInfoModalContent}>
+            <View style={styles.apiInfoModalHeader}>
+              <View style={styles.apiInfoModalIconContainer}>
+                <Image
+                  source={require('../assets/api-icon.png')}
+                  style={styles.apiInfoModalIcon}
+                  resizeMode="contain"
+                />
               </View>
-              <View style={styles.apiInfoModalBody}>
-                <View style={styles.apiInfoSection}>
-                  <View style={styles.apiInfoSectionRow}>
-                    <Image
-                      source={require('../assets/privacy-icon.png')}
-                      style={styles.apiInfoSectionIcon}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.apiInfoSectionTitle}>
-                      Privacy & Control
-                    </Text>
-                  </View>
-                  <Text style={styles.apiInfoSectionText}>
-                    Using your own mempool.space server can improve privacy by
-                    keeping your wallet queries off public servers.
-                  </Text>
-                </View>
-                <View style={styles.apiInfoSection}>
-                  <View style={styles.apiInfoSectionRow}>
-                    <Image
-                      source={require('../assets/eye-on-icon.png')}
-                      style={styles.apiInfoSectionIcon}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.apiInfoSectionTitle}>
-                      Reduce Tracking
-                    </Text>
-                  </View>
-                  <Text style={styles.apiInfoSectionText}>
-                    This reduces third‑party insight into your addresses and
-                    activity.
-                  </Text>
-                </View>
-                <View style={styles.apiInfoSection}>
-                  <View style={styles.apiInfoSectionRow}>
-                    <Image
-                      source={require('../assets/info-icon.png')}
-                      style={styles.apiInfoSectionIcon}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.apiInfoSectionTitle}>How to Use</Text>
-                  </View>
-                  <Text style={styles.apiInfoSectionText}>
-                    Enter your self‑hosted URL above or pick from the
-                    suggestions.
-                  </Text>
-                </View>
-              </View>
+              <Text style={styles.apiInfoModalTitle}>
+                Mempool.Space Providers
+              </Text>
               <AppPressable
-                style={[
-                  styles.apiInfoModalButton,
-                  {backgroundColor: theme.colors.primary},
-                ]}
+                style={styles.apiInfoModalCloseButton}
                 onPress={() => {
                   setIsApiInfoVisible(false);
                 }}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                <Text
-                  style={[
-                    styles.apiInfoModalButtonText,
-                    {color: theme.colors.textOnPrimary},
-                  ]}>
-                  Got it
-                </Text>
+                <Text style={styles.apiInfoModalCloseText}>✕</Text>
               </AppPressable>
             </View>
-          </AppPressable>
-        </AppPressable>
+            <View style={styles.apiInfoModalBody}>
+              <View style={styles.apiInfoSection}>
+                <View style={styles.apiInfoSectionRow}>
+                  <Image
+                    source={require('../assets/privacy-icon.png')}
+                    style={styles.apiInfoSectionIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.apiInfoSectionTitle}>
+                    Privacy & Control
+                  </Text>
+                </View>
+                <Text style={styles.apiInfoSectionText}>
+                  Using your own mempool.space server can improve privacy by
+                  keeping your wallet queries off public servers.
+                </Text>
+              </View>
+              <View style={styles.apiInfoSection}>
+                <View style={styles.apiInfoSectionRow}>
+                  <Image
+                    source={require('../assets/eye-on-icon.png')}
+                    style={styles.apiInfoSectionIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.apiInfoSectionTitle}>
+                    Reduce Tracking
+                  </Text>
+                </View>
+                <Text style={styles.apiInfoSectionText}>
+                  This reduces third‑party insight into your addresses and
+                  activity.
+                </Text>
+              </View>
+              <View style={styles.apiInfoSection}>
+                <View style={styles.apiInfoSectionRow}>
+                  <Image
+                    source={require('../assets/info-icon.png')}
+                    style={styles.apiInfoSectionIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.apiInfoSectionTitle}>How to Use</Text>
+                </View>
+                <Text style={styles.apiInfoSectionText}>
+                  Enable curated public mirrors for failover, or add your
+                  self‑hosted URL and disable the others for privacy.
+                </Text>
+              </View>
+            </View>
+            <AppPressable
+              style={[
+                styles.apiInfoModalButton,
+                {backgroundColor: theme.colors.primary},
+              ]}
+              onPress={() => {
+                setIsApiInfoVisible(false);
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <Text
+                style={[
+                  styles.apiInfoModalButtonText,
+                  {color: theme.colors.textOnPrimary},
+                ]}>
+                Got it
+              </Text>
+            </AppPressable>
+          </View>
+        </GlassModalOverlay>
       </Modal>
     </SafeAreaView>
   );

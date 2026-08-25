@@ -66,6 +66,20 @@ grep -q 'android:name=".DefaultIconActivity"' "$MANIFEST" \
   && grep -A8 'android:name=".DefaultIconActivity"' "$MANIFEST" | grep -q 'android:enabled="true"' \
   || fail "DefaultIconActivity must be enabled by default"
 
+grep -q 'android.permission.FOREGROUND_SERVICE' "$MANIFEST" \
+  || fail "FOREGROUND_SERVICE permission missing"
+grep -q 'android.permission.FOREGROUND_SERVICE_SPECIAL_USE' "$MANIFEST" \
+  || fail "FOREGROUND_SERVICE_SPECIAL_USE permission missing"
+grep -q 'android.permission.POST_NOTIFICATIONS' "$MANIFEST" \
+  || fail "POST_NOTIFICATIONS permission missing"
+grep -q 'android:name=".MpcKeepAliveService"' "$MANIFEST" \
+  || fail "MpcKeepAliveService missing"
+grep -q 'android:foregroundServiceType="specialUse"' "$MANIFEST" \
+  || fail "MpcKeepAliveService must use specialUse FGS type"
+
+grep -q 'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS' "$MANIFEST" \
+  || fail "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS permission missing"
+
 echo "Play Console packaging check OK"
 echo ""
 echo "Device QA before Play promote:"
@@ -73,3 +87,9 @@ echo "  - LAN NSD pair on API 29, 32, and 34+"
 echo "  - Camera QR still prompts only when used"
 echo "  - GG18 + DKLS keygen/sign on this minify+shrink build"
 echo "  - F-Droid/unsigned path still builds (no Play Integrity library)"
+echo "  - Play Console → App content → Foreground service → Special use"
+echo "      Video or description: two phones complete LAN or Nostr keygen/co-sign while one is backgrounded; notification shows progress; service stops when done"
+echo "      Subtype text (already in the manifest property): Short-lived threshold cryptography (wallet setup and co-signing) that cannot be paused; the process must stay running until the ceremony completes or is cancelled."
+echo "      Duration: minutes (preparams) or ~60–120s (keysign/keygen), then stopForeground"
+echo "      Not dataSync, microphone, location, or camera FGS types"
+echo "  - REQUEST_IGNORE_BATTERY_OPTIMIZATIONS is user-initiated (in-ceremony Allow tap), not auto on every launch"

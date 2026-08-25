@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {Text, View as RNView, StyleSheet, Platform} from 'react-native';
 import AppPressable from './AppPressable';
 import {Image} from 'react-native';
@@ -10,6 +10,19 @@ import AppText from './AppText';
 import {createStyles} from './Styles';
 import {presentFiat, getCurrencySymbol} from '../utils';
 import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
+import {
+  getMempoolHealth,
+  providerHealthA11yQuality,
+  providerHealthDotStyle,
+  subscribeMempoolHealth,
+  type MempoolHealthQuality,
+} from '../services/mempoolHealth';
+import {
+  notifyWalletOnlineToggle,
+  setWalletOnline,
+  useWalletOnline,
+} from '../services/walletOnlineStore';
+import {getHeaderProviderDisplay, subscribeMempoolProviders} from '../services/mempoolProvidersStore';
 interface HeaderPriceButtonProps {
   btcPrice?: string;
   selectedCurrency?: string;
@@ -33,22 +46,25 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
 }) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
-  const cleanProviderUrl = apiBase
-    ? apiBase
-        .replace('https://', '')
-        .replace('http://', '')
-        .replace('/api', '')
-        .replace(/\/+$/, '')
-    : 'Loading...';
-  const providerHost = cleanProviderUrl.includes('/')
-    ? cleanProviderUrl.split('/')[0]
-    : cleanProviderUrl;
+  const [providersRev, setProvidersRev] = useState(0);
+  useEffect(
+    () => subscribeMempoolProviders(() => setProvidersRev(n => n + 1)),
+    [],
+  );
+  const display = useMemo(
+    () => getHeaderProviderDisplay(apiBase),
+    [apiBase, providersRev],
+  );
+  const providerHost = display.host || 'Loading...';
+  const providerLabel = display.label || providerHost;
   const networkLabel = network
     ? network === 'mainnet'
       ? 'MAINNET'
       : 'TESTNET'
     : '';
-  const hasProvider = Boolean(providerHost && providerHost !== 'Loading...');
+  const hasProvider = Boolean(
+    providerHost && providerHost !== 'Loading...' && display.host,
+  );
   const hasNetwork = Boolean(networkLabel);
   if (!hasProvider && !hasNetwork && !onSettingsPress) {
     return null;
@@ -157,10 +173,6 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     color: providerTextColor,
     textAlign: 'left',
   };
-  const providerIconStyle: any = {
-    ...segmentIconStyle,
-    tintColor: providerTextColor,
-  };
   const networkTextStyle: any = {
     fontSize: theme.fontSizes?.xs || 10,
     fontFamily: theme.fontFamilies?.bold,
@@ -199,17 +211,13 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
       ) : null}
       {hasProvider ? (
         <View style={providerSegmentStyle}>
-          <Image
-            source={require('../assets/api-icon.png')}
-            style={providerIconStyle}
-          />
           <View style={providerTextWrapStyle}>
             <AppText
               style={providerTextStyle}
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.5}>
-              {providerHost}
+              {providerLabel}
             </AppText>
           </View>
         </View>
@@ -226,7 +234,7 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
         android_ripple={{color: 'rgba(0,0,0,0.08)'}}
         accessible={true}
         accessibilityRole="button"
-        accessibilityLabel={`Provider: ${providerHost}. Network: ${networkLabel}. Double tap to open settings.`}>
+        accessibilityLabel={`Provider: ${providerLabel}. Network: ${networkLabel}. Double tap to open settings.`}>
         {leftContent}
       </AppPressable>
     ) : (
@@ -265,16 +273,27 @@ interface HeaderProviderProps {
 }
 export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
   const {theme} = useTheme();
-  const cleanProviderUrl = apiBase
-    ? apiBase
-        .replace('https://', '')
-        .replace('http://', '')
-        .replace('/api', '')
-        .replace(/\/+$/, '')
-    : '';
-  const providerHost = cleanProviderUrl.includes('/')
-    ? cleanProviderUrl.split('/')[0]
-    : cleanProviderUrl;
+  const online = useWalletOnline();
+  const [quality, setQuality] = useState<MempoolHealthQuality | null>(
+    () => getMempoolHealth()?.quality ?? null,
+  );
+  // Re-read enabled pool when primary apiBase changes or providers are saved.
+  const [providersRev, setProvidersRev] = useState(0);
+  useEffect(
+    () => subscribeMempoolProviders(() => setProvidersRev(n => n + 1)),
+    [],
+  );
+  const display = useMemo(
+    () => getHeaderProviderDisplay(apiBase),
+    [apiBase, providersRev],
+  );
+  useEffect(() => {
+    return subscribeMempoolHealth(state => {
+      setQuality(state.quality);
+    });
+  }, []);
+  const providerHost = display.host;
+  const providerLabel = display.label || providerHost;
   const hasProvider = Boolean(providerHost && providerHost !== 'Loading...');
   if (!hasProvider) {
     return null;
@@ -287,6 +306,14 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
     ? theme.colors.border + '80'
     : theme.colors.blackOverlay10;
   const providerTextColor = theme.colors.text;
+  const dot = providerHealthDotStyle(theme.colors, {online, quality});
+  const healthLabel = online
+    ? providerHealthA11yQuality(quality)
+    : 'offline';
+  const backupHint =
+    display.extraCount > 0
+      ? `, ${display.extraCount} backup${display.extraCount === 1 ? '' : 's'}`
+      : '';
   const pillHeight = 36;
   const innerRadius = 9;
   const containerStyle: any = {
@@ -304,6 +331,7 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
     borderColor: containerBorderColor,
     backgroundColor: containerBg,
     overflow: 'hidden',
+    opacity: online ? 1 : 0.7,
   };
   const innerRowStyle: any = {
     flexDirection: 'row',
@@ -325,12 +353,7 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
     color: providerTextColor,
     textAlign: 'center',
   };
-  const providerIconStyle: any = {
-    width: 14,
-    height: 14,
-    marginRight: 5,
-    tintColor: providerTextColor,
-  };
+
   const wrapperStyle: any = {
     paddingTop: 12,
     paddingBottom: 12,
@@ -339,14 +362,33 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
     flex: 1,
     alignSelf: 'stretch',
   };
+  const healthDotStyle = {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 6,
+    opacity: dot.opacity,
+    backgroundColor: dot.hollow ? 'transparent' : dot.color,
+    borderWidth: dot.hollow ? 1.5 : 0,
+    borderColor: dot.color,
+  };
+  const onToggleOnline = () => {
+    const next = !online;
+    setWalletOnline(next);
+    notifyWalletOnlineToggle(next);
+  };
   return (
     <View style={wrapperStyle}>
-      <View style={containerStyle}>
+      <AppPressable
+        style={containerStyle}
+        onPress={onToggleOnline}
+        accessibilityRole="switch"
+        accessibilityState={{checked: online}}
+        accessibilityLabel={`${providerHost}${backupHint}, ${
+          online ? 'online' : 'offline'
+        }, ${healthLabel}. Double tap to go ${online ? 'offline' : 'online'}.`}>
         <View style={innerRowStyle}>
-          <Image
-            source={require('../assets/api-icon.png')}
-            style={providerIconStyle}
-          />
+          <View style={healthDotStyle} />
           <View style={providerTextWrapStyle}>
             <Text
               style={providerTextStyle}
@@ -354,11 +396,11 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
               adjustsFontSizeToFit
               minimumFontScale={0.3}
               ellipsizeMode="tail">
-              {providerHost}
+              {providerLabel}
             </Text>
           </View>
         </View>
-      </View>
+      </AppPressable>
     </View>
   );
 };

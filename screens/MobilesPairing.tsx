@@ -16,6 +16,7 @@ import {
   BackHandler,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import GlassModalOverlay from '../components/GlassModalOverlay';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -55,6 +56,7 @@ import {
 } from '../utils';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
+import {guardOnlineAction} from '../services/walletOnlineStore';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {waitMS, WalletService} from '../services/WalletService';
@@ -69,7 +71,14 @@ import {
   parseEciesKeypairJson,
   resolveLanKeysignTransportKeys,
 } from '../services/lanMpcTransport';
-import {LAN_KEYGEN_STATUS} from '../services/walletSetupUi';
+import {LAN_KEYGEN_STATUS, getMpcKeepAliveCheckboxLabel, getMpcKeepAlivePrepareModalSubtitle, getMpcKeepAliveSetupHint} from '../services/walletSetupUi';
+import {
+  startMpcKeepAlive,
+  stopMpcKeepAlive,
+  updateMpcKeepAlive,
+  withMpcKeepAlive,
+  type MpcKeepAliveOutcome,
+} from '../services/mpcKeepAlive';
 import {
   buildLanRelayServerUrl,
   coalesceLanHost,
@@ -128,6 +137,7 @@ import {
   type ConnectionQualityState,
 } from '../services/mpcConnectionQuality';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
+import {MpcKeepAliveHints, useMpcKeepAliveUi} from '../components/MpcKeepAliveHints';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
 import appConfigRepository, {
@@ -157,6 +167,7 @@ import {
   parseLanSendBtcSessionPayload,
 } from '../services/lanSession';
 import {generateMpcAttemptId} from '../services/mpcAttemptId';
+import {secureRandomHex} from '../services/secureRandom';
 import {
   isMpcAbortedOrCanceledError,
   shouldShowMpcFlowAlert,
@@ -320,7 +331,15 @@ const MobilesPairing = ({navigation}: any) => {
   const [spendBackend, setSpendBackend] = useState<TssBackend | null>(null);
   const prepareCopy = getPrepareModalCopy(keygenBackend ?? undefined);
   const prepCardCopy = getWalletSetupPrepCardCopy(keygenBackend ?? undefined);
-  const keygenModalCopy = getWalletSetupKeygenModalCopy();
+  const keepAliveOs = Platform.OS === 'ios' ? 'ios' : 'android';
+  const keepAliveUi = useMpcKeepAliveUi();
+  const keepAliveHintOpts = {
+    notificationsGranted: keepAliveUi.notificationsGranted,
+  };
+  const keygenModalCopy = getWalletSetupKeygenModalCopy(
+    keepAliveOs,
+    keepAliveHintOpts,
+  );
   const title =
     isSendBitcoin || isSignPSBT
       ? isSignPSBT
@@ -364,10 +383,20 @@ const MobilesPairing = ({navigation}: any) => {
   const activeMpcSessionIdRef = useRef<string | null>(null);
   const doingMpcRef = useRef(false);
   const keysharePersistedRef = useRef(false);
+  const keepAliveOutcomeRef = useRef<MpcKeepAliveOutcome>('failure');
   const setMpcModalActive = useCallback((active: boolean) => {
     doingMpcRef.current = active;
     setDoingMPC(active);
-  }, []);
+    if (active) {
+      keepAliveOutcomeRef.current = 'failure';
+      void startMpcKeepAlive({
+        kind: isSendBitcoin || isSignPSBT ? 'sign' : 'keygen',
+        transport: 'lan',
+      });
+    } else {
+      void stopMpcKeepAlive(keepAliveOutcomeRef.current);
+    }
+  }, [isSendBitcoin, isSignPSBT]);
   const {displayPercent, setCircleTarget, resetCircle} =
     useMpcCircleProgress(doingMPC);
   const broadcastSuccessPayloadRef = useRef<{
@@ -423,6 +452,7 @@ const MobilesPairing = ({navigation}: any) => {
               mpcHookProgressRef.current,
             );
             setCircleTarget(aborted.percent);
+            keepAliveOutcomeRef.current = 'abort';
             setMpcModalActive(false);
             setMpcTransportSubprogress(emptyMpcTransportSubprogress());
             setConnectionQuality(emptyConnectionQuality('lan'));
@@ -571,13 +601,17 @@ const MobilesPairing = ({navigation}: any) => {
     setIsPreParamsReady(false);
     setPrepCounter(0);
     try {
-      const backend = await runWalletSetupPrepare({
-        ppmFile,
-        transport: 'lan',
-        setupMode: keygenSetupMode,
-        backend: keygenBackend ?? routeKeygenBackend,
-        skipDeletePpm: __DEV__,
-      });
+      const backend = await withMpcKeepAlive(
+        {kind: 'prepare', transport: 'lan'},
+        () =>
+          runWalletSetupPrepare({
+            ppmFile,
+            transport: 'lan',
+            setupMode: keygenSetupMode,
+            backend: keygenBackend ?? routeKeygenBackend,
+            skipDeletePpm: __DEV__,
+          }),
+      );
       setKeygenBackend(backend);
       setIsPreParamsReady(true);
     } catch (error: any) {
@@ -644,8 +678,9 @@ const MobilesPairing = ({navigation}: any) => {
       setStatus(sessionWaitMessage(isMaster, keygenFlow));
       if (isMaster) {
         dbg('initSession: Running as master device');
-        const attemptId = generateMpcAttemptId();
-        let _data = `${attemptId}:${randomSeed(64)}`;
+        const attemptId = await generateMpcAttemptId();
+        const sessionSeed = await secureRandomHex(64);
+        let _data = `${attemptId}:${sessionSeed}`;
         dbg('initSession: Generated attempt id and session seed');
         if (isSendBitcoin) {
           dbg('initSession: Preparing for Bitcoin send');
@@ -833,18 +868,6 @@ const MobilesPairing = ({navigation}: any) => {
       throw `Error initializing session:\n${detail}`;
     }
   }
-  const randomSeed = (length = 32) => {
-    // Use cryptographically secure random generation
-    const array = new Uint8Array(length);
-    crypto.getRandomValues(array);
-    let result = '';
-    const characters = '0123456789abcdef';
-    for (let i = 0; i < length; i++) {
-      // Map random bytes to hex characters (0-15)
-      result += characters.charAt(array[i] % 16);
-    }
-    return result;
-  };
   const formatMpcError = (error: unknown): string => {
     if (error == null) {
       return 'Unknown error';
@@ -858,6 +881,9 @@ const MobilesPairing = ({navigation}: any) => {
   };
 
   const mpcTssSetup = async () => {
+    if (!guardOnlineAction('Wallet is offline — pairing needs the network')) {
+      return;
+    }
     try {
       let backend = keygenBackend ?? routeKeygenBackend;
       if (!backend && keygenSetupMode) {
@@ -963,6 +989,7 @@ const MobilesPairing = ({navigation}: any) => {
         }
         const persisted = await persistWalletKeyshare(result);
         keysharePersistedRef.current = true;
+        keepAliveOutcomeRef.current = 'success';
         try {
           const ksParsed = JSON.parse(persisted);
           const display = getKeyshareDisplayLabel(ksParsed);
@@ -1036,6 +1063,9 @@ const MobilesPairing = ({navigation}: any) => {
     }
   };
   const runKeysign = async () => {
+    if (!guardOnlineAction('Wallet is offline — co-signing needs the network')) {
+      return;
+    }
     let backend = spendBackend;
     if (!backend) {
       backend = await resolveTssBackend();
@@ -1255,6 +1285,7 @@ const MobilesPairing = ({navigation}: any) => {
         )
           .then(async (signedPsbt: any) => {
             if (mpcAbortRef.current) {
+              keepAliveOutcomeRef.current = 'abort';
               setMpcModalActive(false);
               return;
             }
@@ -1278,6 +1309,7 @@ const MobilesPairing = ({navigation}: any) => {
               return;
             }
             dbg(partyID, 'PSBT signed successfully');
+            keepAliveOutcomeRef.current = 'success';
             dbg(
               'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
             );
@@ -1435,10 +1467,12 @@ const MobilesPairing = ({navigation}: any) => {
             brantaInitiated: route.params?.brantaInitiated === true,
           };
           if (mpcAbortRef.current) {
+            keepAliveOutcomeRef.current = 'abort';
             setMpcModalActive(false);
             return;
           }
           setSignedTxRawHex(rawTxHex);
+          keepAliveOutcomeRef.current = 'success';
           setMpcModalActive(false);
         } catch (multiPathErr) {
           dbg('MobilesPairing: multi-path send failed:', multiPathErr);
@@ -1581,6 +1615,10 @@ const MobilesPairing = ({navigation}: any) => {
       if (result.statusLabel) {
         setStatus(result.statusLabel);
       }
+      updateMpcKeepAlive({
+        percent: result.percent,
+        status: result.statusLabel,
+      });
       if (result.sessionShort) {
         setMpcSessionShort(result.sessionShort);
       }
@@ -1589,6 +1627,7 @@ const MobilesPairing = ({navigation}: any) => {
           setMpcDone(true);
         } else {
           setStatus(KEYGEN_FINALIZING_STORAGE_STATUS);
+          updateMpcKeepAlive({status: KEYGEN_FINALIZING_STORAGE_STATUS});
         }
       }
     };
@@ -1710,6 +1749,9 @@ const MobilesPairing = ({navigation}: any) => {
   }, [peerIP, connectionAnimation]);
   async function initiatePairing() {
     if (!allChecked) {
+      return;
+    }
+    if (!guardOnlineAction('Wallet is offline — pairing needs the network')) {
       return;
     }
     mpcAbortRef.current = false;
@@ -3013,7 +3055,6 @@ const MobilesPairing = ({navigation}: any) => {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: theme.colors.modalBackdrop,
     },
     modalContent: {
       backgroundColor: theme.colors.cardBackground,
@@ -3705,6 +3746,7 @@ const MobilesPairing = ({navigation}: any) => {
                   onPress={() => {
                     mpcAbortRef.current = true;
                     isFocusedRef.current = false;
+                    keepAliveOutcomeRef.current = 'abort';
                     setIsPairing(false);
                     setMpcModalActive(false);
                     navigation.dispatch(
@@ -4168,7 +4210,8 @@ const MobilesPairing = ({navigation}: any) => {
                           {prepCardCopy.title}
                         </Text>
                         <Text style={styles.requirementsDescription}>
-                          {prepCardCopy.description}
+                          {prepCardCopy.description}{' '}
+                          {getMpcKeepAliveSetupHint(keepAliveOs, keepAliveHintOpts)}
                         </Text>
                         <AppPressable
                           onPress={() => {
@@ -4197,7 +4240,7 @@ const MobilesPairing = ({navigation}: any) => {
                             ]}
                           />
                           <Text style={styles.checkboxLabel}>
-                            Keep app open during setup
+                            {getMpcKeepAliveCheckboxLabel(keepAliveOs)}
                           </Text>
                         </AppPressable>
                         <AppPressable
@@ -4236,13 +4279,17 @@ const MobilesPairing = ({navigation}: any) => {
                             onRequestClose={
                               () => {} /* non-dismissible: block Android back */
                             }>
-                            <View style={styles.modalOverlay}>
+                            <GlassModalOverlay style={styles.modalOverlay}>
                               <View style={styles.modalContent}>
                                 <MpcProgressModalHeader
                                   icon={require('../assets/prepare-icon.png')}
                                   title={prepareCopy.title}
-                                  subtitle={prepareCopy.subtitle}
+                                  subtitle={getMpcKeepAlivePrepareModalSubtitle(
+                                    keepAliveOs,
+                                    keepAliveHintOpts,
+                                  )}
                                 />
+                                <MpcKeepAliveHints />
                                 {/* Loading Indicator */}
                                 <View style={styles.progressContainer}>
                                   <View
@@ -4274,7 +4321,7 @@ const MobilesPairing = ({navigation}: any) => {
                                   </Text>
                                 </View>
                               </View>
-                            </View>
+                            </GlassModalOverlay>
                           </Modal>
                         )}
                       </View>
@@ -4352,7 +4399,7 @@ const MobilesPairing = ({navigation}: any) => {
                           <Text style={styles.warningHint}>
                             Tap {isMaster ? 'Start' : 'Join'} Setup on this
                             phone and {isMaster ? 'Join' : 'Start'} Setup on the
-                            other within ~20s. Stay in the app.
+                            other within ~20s.
                           </Text>
                         </View>
                         <Text style={styles.warningIcon}>⚠️</Text>
@@ -4365,13 +4412,14 @@ const MobilesPairing = ({navigation}: any) => {
                           onRequestClose={
                             () => {} /* non-dismissible: block Android back */
                           }>
-                          <View style={styles.modalOverlay}>
+                          <GlassModalOverlay style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
                               <MpcProgressModalHeader
                                 icon={require('../assets/security-icon.png')}
                                 title={keygenModalCopy.title}
                                 subtitle={keygenModalCopy.subtitle}
                               />
+                              <MpcKeepAliveHints />
                               {/* Progress Container */}
                               <View style={styles.progressContainer}>
                                 {/* Circular Progress */}
@@ -4432,7 +4480,7 @@ const MobilesPairing = ({navigation}: any) => {
                                 </AppPressable>
                               </View>
                             </View>
-                          </View>
+                          </GlassModalOverlay>
                         </Modal>
                       )}
                       <AppPressable
@@ -4712,7 +4760,7 @@ const MobilesPairing = ({navigation}: any) => {
           visible={doingMPC}
           animationType="fade"
           onRequestClose={() => {} /* non-dismissible: block Android back */}>
-          <View style={styles.modalOverlay}>
+          <GlassModalOverlay style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <MpcProgressModalHeader
                 icon={require('../assets/key-icon.png')}
@@ -4720,6 +4768,7 @@ const MobilesPairing = ({navigation}: any) => {
                   isSignPSBT ? 'PSBT Co-Signing' : 'Co-Signing Your Transaction'
                 }
               />
+              <MpcKeepAliveHints />
               <View style={styles.progressContainer}>
                 <Progress.Circle
                   size={80}
@@ -4773,7 +4822,7 @@ const MobilesPairing = ({navigation}: any) => {
                 </View>
               )}
             </View>
-          </View>
+          </GlassModalOverlay>
         </Modal>
       )}
       {/* Backup Modal */}

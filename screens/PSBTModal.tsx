@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
+import GlassModalOverlay from '../components/GlassModalOverlay';
 import DocumentPicker from 'react-native-document-picker';
 import * as RNFS from 'react-native-fs';
 import QRScanner from '../components/QRScanner';
@@ -695,8 +696,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     },
     [processScannedData],
   );
+  const Overlay = useOverlay ? GlassModalOverlay : View;
   return (
-    <View style={useOverlay ? styles.modalOverlay : undefined}>
+    <Overlay style={useOverlay ? styles.modalOverlay : undefined}>
       <View style={useOverlay ? styles.modalContent : styles.embeddedContent}>
         {/* Description */}
         <AppText style={styles.description} tone="muted">
@@ -864,7 +866,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
           closeButtonText="Cancel"
         />
       </View>
-    </View>
+    </Overlay>
   );
 };
 const PSBTModal: React.FC<PSBTModalProps> = ({visible, onClose, onSign}) => {
@@ -885,7 +887,6 @@ const createStyles = (theme: any) =>
   StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'center',
       alignItems: 'center',
       padding: 10,
@@ -1469,7 +1470,6 @@ const createStyles = (theme: any) =>
     // Android scanning progress modal styles
     androidScanModalOverlay: {
       flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'center',
       alignItems: 'center',
       padding: 20,

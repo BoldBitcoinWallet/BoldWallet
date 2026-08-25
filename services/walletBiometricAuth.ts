@@ -1,6 +1,8 @@
-import {Alert} from 'react-native';
+import {Alert, Platform} from 'react-native';
 import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
+import EncryptedStorage from 'react-native-encrypted-storage';
 import {dbg} from '../utils';
+import {camouflageUnlockPrompt} from './camouflagePresets';
 
 const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
 
@@ -19,6 +21,10 @@ export const WALLET_SENSITIVE_ACTION_AUTH = {
     promptMessage: 'Authenticate to backup your wallet keyshare',
     fallbackPromptMessage: PASSCODE_FALLBACK,
   },
+  airgapKeyshareExport: {
+    promptMessage: 'Authenticate to export airgap keyshare QR',
+    fallbackPromptMessage: PASSCODE_FALLBACK,
+  },
   deleteWallet: {
     promptMessage: 'Authenticate to delete your wallet on this device',
     fallbackPromptMessage: PASSCODE_FALLBACK,
@@ -33,6 +39,21 @@ export const WALLET_SENSITIVE_ACTION_AUTH = {
   },
 } as const satisfies Record<string, WalletBiometricPromptOptions>;
 
+async function resolveDefaultUnlockPrompt(): Promise<{
+  promptMessage: string;
+  fallbackPromptMessage: string;
+}> {
+  if (Platform.OS !== 'android') {
+    return camouflageUnlockPrompt('default');
+  }
+  try {
+    const raw = await EncryptedStorage.getItem('app_icon_preference');
+    return camouflageUnlockPrompt(raw);
+  } catch {
+    return camouflageUnlockPrompt('default');
+  }
+}
+
 /**
  * Device biometric / passcode prompt (same stack as lock screen unlock).
  * Returns true when authenticated or when no sensor is available (same as App startup).
@@ -40,10 +61,10 @@ export const WALLET_SENSITIVE_ACTION_AUTH = {
 export async function promptWalletBiometricAuth(
   opts?: WalletBiometricPromptOptions,
 ): Promise<boolean> {
-  const promptMessage =
-    opts?.promptMessage ?? 'Authenticate to access your wallet';
+  const defaults = await resolveDefaultUnlockPrompt();
+  const promptMessage = opts?.promptMessage ?? defaults.promptMessage;
   const fallbackPromptMessage =
-    opts?.fallbackPromptMessage ?? 'Use your device passcode to unlock';
+    opts?.fallbackPromptMessage ?? defaults.fallbackPromptMessage;
   const showFailureAlert = opts?.showFailureAlert !== false;
 
   try {
@@ -66,7 +87,9 @@ export async function promptWalletBiometricAuth(
             fallbackPromptMessage,
           }
         : {
-            promptMessage: 'Enter your device passcode to unlock',
+            promptMessage: defaults.promptMessage.startsWith('Unlock')
+              ? defaults.promptMessage
+              : 'Enter your device passcode to unlock',
           },
     );
 

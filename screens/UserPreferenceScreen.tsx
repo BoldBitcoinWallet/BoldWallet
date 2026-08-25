@@ -15,7 +15,7 @@ import AppText from '../components/AppText';
 import RestoringIndexesModal from '../components/RestoringIndexesModal';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
-import {dbg, getMainnetAPIList, getResetToMainTabsWallet} from '../utils';
+import {dbg, getResetToMainTabsWallet} from '../utils';
 import {useUser} from '../context/UserContext';
 import {WalletService, waitMS} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
@@ -33,12 +33,20 @@ import appConfigRepository, {
 import {
   CANONICAL_TESTNET_MEMPOOL_API_BASE,
   getStoredUserMempoolApiBaseFromDb,
-  isKnownPublicMempoolMainnetBase,
   isTestnetNetworkKey,
   normalizeUserMempoolApiInput,
   resolveStoredMempoolApiBase,
   validateMempoolApiBaseReachable,
 } from '../services/mempoolApiBase';
+import {
+  activeProviderUrls,
+  exclusiveEnable,
+  loadDefaultMempoolProviderEntries,
+  loadMempoolProviderEntries,
+  primaryProviderUrl,
+  saveMempoolProviderEntries,
+} from '../services/mempoolProvidersStore';
+import {BBMTLibNativeModule} from '../native_modules';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute();
@@ -71,7 +79,18 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [isFocused, setIsFocused] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
-  // Save API and proceed
+  const seedClientFromEnabled = async (enabled: string[]) => {
+    const bases =
+      enabled.length > 0 ? enabled : ['https://mempool.space/api'];
+    mempoolClient.setPublicBases(bases);
+    try {
+      await BBMTLibNativeModule.setFeeAPIs(bases.join(','));
+    } catch {
+      // no-op
+    }
+  };
+
+  // Save API and proceed — exclusive-enable the typed URL (even if curated).
   const saveAPIAndProceed = async (api: string) => {
     // If no API entered, just proceed
     if (!api || api.trim() === '') {
@@ -94,13 +113,16 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
         );
         return;
       }
+      if (!isTestnetNetworkKey(activeNetwork)) {
+        const curated = await loadDefaultMempoolProviderEntries();
+        const exclusive = exclusiveEnable(normalizedApi, curated);
+        saveMempoolProviderEntries(exclusive);
+        await seedClientFromEnabled(activeProviderUrls(exclusive));
+      }
       await setActiveApiProvider(normalizedApi);
       setPendingAPI(normalizedApi);
       dbg('=== API saved and propagated successfully:', normalizedApi);
-      // Proceed to home after successful save — pass the resolved API so the
-      // restore uses the endpoint the user just configured, not the stale state.
-      const useRR = await isKnownPublicMempoolMainnetBase(normalizedApi);
-      await handleProceed(normalizedApi, useRR);
+      await handleProceed(normalizedApi);
     } catch (error) {
       dbg('Error in saveAPIAndProceed:', error);
       Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
@@ -143,10 +165,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     );
   };
 
-  const runRestoreIfNeeded = async (
-    apiUrl: string,
-    useRoundRobin: boolean,
-  ) => {
+  const runRestoreIfNeeded = async (apiUrl: string) => {
     if (!pendingRestore) {
       return;
     }
@@ -167,15 +186,6 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     appConfigRepository.set(`api_${network}`, apiUrl);
     try {
       const ws = WalletService.getInstance();
-
-      // Round-robin: only seed the public mirror pool when restoring via that pool.
-      // Private / self-hosted bases must clear the pool so MempoolClient never fails over off-host.
-      if (useRoundRobin) {
-        const publicBases = await getMainnetAPIList();
-        mempoolClient.setPublicBases(publicBases);
-      } else {
-        mempoolClient.setPublicBases([]);
-      }
 
       // ── Discovery: gap-limit scan for native segwit only ──────────────────
       await ws.discoverHdIndexesForNetwork(
@@ -260,12 +270,18 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const handleSkip = async () => {
-    const fallbackApi =
-      activeApiProvider || resolveStoredMempoolApiBase(activeNetwork);
     try {
-      const useRoundRobin =
-        await isKnownPublicMempoolMainnetBase(fallbackApi);
-      await runRestoreIfNeeded(fallbackApi, useRoundRobin);
+      if (!isTestnetNetworkKey(activeNetwork)) {
+        const list = await loadMempoolProviderEntries();
+        await seedClientFromEnabled(activeProviderUrls(list));
+        const primary = primaryProviderUrl(list);
+        await setActiveApiProvider(primary);
+        await runRestoreIfNeeded(primary);
+      } else {
+        const fallbackApi =
+          activeApiProvider || resolveStoredMempoolApiBase(activeNetwork);
+        await runRestoreIfNeeded(fallbackApi);
+      }
       navigateToHome();
     } catch (e) {
       Alert.alert(
@@ -277,22 +293,13 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
-  /**
-   * @param useRoundRobin - When true, seed public mirror list for MempoolClient failover (public pool only).
-   */
-  const handleProceed = async (
-    resolvedApi?: string,
-    useRoundRobin?: boolean,
-  ) => {
+  const handleProceed = async (resolvedApi?: string) => {
     try {
       const apiUrl =
         resolvedApi ||
         activeApiProvider ||
         resolveStoredMempoolApiBase(activeNetwork);
-      const rr =
-        useRoundRobin ??
-        (await isKnownPublicMempoolMainnetBase(apiUrl));
-      await runRestoreIfNeeded(apiUrl, rr);
+      await runRestoreIfNeeded(apiUrl);
       navigateToHome();
     } catch (e) {
       Alert.alert(
@@ -500,6 +507,8 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
             </AppText>
             <AppText style={styles.infoCardTechNote} tone="muted">
               Enter a mempool.space API endpoint (mainnet) or just skip that.
+              {'\n'}
+              Validate uses only that host; Skip keeps the curated public pool.
               {'\n'}
               You can change this later from Settings.
             </AppText>

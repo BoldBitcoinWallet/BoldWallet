@@ -1,5 +1,5 @@
 import {CommonActions} from '@react-navigation/native';
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -14,11 +14,13 @@ import {
   Pressable,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import GlassModalOverlay from '../components/GlassModalOverlay';
 import DocumentPicker from 'react-native-document-picker';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {useTheme} from '../theme';
 import {dbg, hasWalletKeyshareInSecureStorage} from '../utils';
 import KeyshareImportPasswordModal from '../components/KeyshareImportPasswordModal';
+import QRScanner from '../components/QRScanner';
 import {
   assertNoExistingWallet,
   importKeyshareFromBase64,
@@ -26,6 +28,7 @@ import {
   showKeyshareImportError,
   showWalletAlreadyLoadedAlert,
   WalletAlreadyLoadedError,
+  WrongKeysharePasswordError,
 } from '../services/keyshareImport';
 import LegalModal from '../components/LegalModal';
 import EntropyInfoCard from '../components/EntropyInfoCard';
@@ -42,10 +45,29 @@ import {WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
 import LocalCache from '../services/LocalCache';
 import {useUser} from '../context/UserContext';
+import {shouldIgnoreNonUrDuringSendScan} from '../utils/sendQrScan';
+import {
+  createUrDecoder,
+  formatUrFragmentProgress,
+  receiveUrBytesPartAsBase64,
+  type UrBytesProgress,
+} from '../utils/urBytesQr';
 const ShowcaseScreen = ({navigation}: any) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [fileContent, setFileContent] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [restoreMode, setRestoreMode] = useState<'file' | 'airgap' | null>(
+    null,
+  );
+  const [airgapCipherBase64, setAirgapCipherBase64] = useState('');
+  const [isAirgapScannerVisible, setIsAirgapScannerVisible] = useState(false);
+  const [airgapUrProgress, setAirgapUrProgress] =
+    useState<UrBytesProgress | null>(null);
+  const airgapUrDecoderRef = useRef<ReturnType<typeof createUrDecoder> | null>(
+    null,
+  );
+  const airgapImportingRef = useRef(false);
+  const airgapPasswordRef = useRef('');
   const [walletAlreadyLoaded, setWalletAlreadyLoaded] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [agreeToPrivacy, setAgreeToPrivacy] = useState(false);
@@ -95,6 +117,8 @@ const ShowcaseScreen = ({navigation}: any) => {
           EncryptedStorage.removeItem('bitcoin_display_sats'),
           EncryptedStorage.removeItem('balance_formatting_enabled'),
           EncryptedStorage.removeItem('app_icon_preference'),
+          EncryptedStorage.removeItem('camouflage_pin_hash'),
+          EncryptedStorage.removeItem('camouflage_pin_enabled'),
           EncryptedStorage.removeItem('devDebugEnabled'),
           EncryptedStorage.removeItem('psbt_mode_first_visit'),
         ]);
@@ -174,6 +198,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         type: [DocumentPicker.types.allFiles],
       });
       const content = await readKeyshareBase64FromUri(`${res.uri}`);
+      setRestoreMode('file');
       setFileContent(content);
       setModalVisible(true);
     } catch (err: any) {
@@ -189,7 +214,75 @@ const ShowcaseScreen = ({navigation}: any) => {
       }
     }
   };
+  const resetAirgapRestore = useCallback(() => {
+    airgapPasswordRef.current = '';
+    setAirgapCipherBase64('');
+    setIsAirgapScannerVisible(false);
+    setAirgapUrProgress(null);
+    airgapUrDecoderRef.current = null;
+    airgapImportingRef.current = false;
+  }, []);
+  const handleRestoreViaAirgap = async () => {
+    try {
+      await assertNoExistingWallet();
+      setRestoreMode('airgap');
+      setAirgapCipherBase64('');
+      airgapPasswordRef.current = '';
+      setModalVisible(true);
+    } catch (err: any) {
+      if (err instanceof WalletAlreadyLoadedError) {
+        showWalletAlreadyLoadedAlert();
+        return;
+      }
+      dbg('Error starting airgap restore:', err?.message || err);
+    }
+  };
+  const importAirgapCipher = useCallback(
+    async (base64Content: string, password: string) => {
+      if (airgapImportingRef.current) {
+        return;
+      }
+      airgapImportingRef.current = true;
+      setIsImporting(true);
+      try {
+        await importKeyshareFromBase64(base64Content, password, {
+          setActiveNetwork,
+          navigate: action => navigation.dispatch(action),
+        });
+        setModalVisible(false);
+        setRestoreMode(null);
+        resetAirgapRestore();
+      } catch (error) {
+        airgapImportingRef.current = false;
+        if (error instanceof WrongKeysharePasswordError) {
+          Alert.alert('Wrong PIN', 'That PIN does not match this QR.');
+          setIsAirgapScannerVisible(false);
+          setModalVisible(true);
+        } else {
+          showKeyshareImportError(error);
+          setModalVisible(false);
+          setRestoreMode(null);
+          resetAirgapRestore();
+        }
+      } finally {
+        setIsImporting(false);
+      }
+    },
+    [navigation, resetAirgapRestore, setActiveNetwork],
+  );
   const handlePasswordSubmit = async (password: string) => {
+    if (restoreMode === 'airgap') {
+      airgapPasswordRef.current = password;
+      if (airgapCipherBase64) {
+        await importAirgapCipher(airgapCipherBase64, password);
+        return;
+      }
+      setModalVisible(false);
+      airgapUrDecoderRef.current = null;
+      setAirgapUrProgress(null);
+      setIsAirgapScannerVisible(true);
+      return;
+    }
     try {
       setIsImporting(true);
       await importKeyshareFromBase64(fileContent, password, {
@@ -198,6 +291,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       });
       setModalVisible(false);
       setFileContent('');
+      setRestoreMode(null);
     } catch (error) {
       showKeyshareImportError(error);
     } finally {
@@ -207,6 +301,57 @@ const ShowcaseScreen = ({navigation}: any) => {
   const handleCloseModal = () => {
     setModalVisible(false);
     setFileContent('');
+    if (restoreMode === 'airgap') {
+      resetAirgapRestore();
+    }
+    setRestoreMode(null);
+  };
+  const handleAirgapScannerClose = () => {
+    setIsAirgapScannerVisible(false);
+    setAirgapUrProgress(null);
+    airgapUrDecoderRef.current = null;
+    if (airgapCipherBase64) {
+      setModalVisible(true);
+      return;
+    }
+    airgapPasswordRef.current = '';
+    setRestoreMode(null);
+  };
+  const handleAirgapScan = (qrData: string) => {
+    if (airgapImportingRef.current) {
+      return;
+    }
+    const trimmed = qrData.trim();
+    if (
+      shouldIgnoreNonUrDuringSendScan(
+        trimmed,
+        airgapUrDecoderRef.current !== null,
+      )
+    ) {
+      return;
+    }
+    if (!trimmed.toLowerCase().startsWith('ur:')) {
+      return;
+    }
+    if (!airgapUrDecoderRef.current) {
+      airgapUrDecoderRef.current = createUrDecoder();
+    }
+    const urResult = receiveUrBytesPartAsBase64(
+      airgapUrDecoderRef.current,
+      trimmed,
+    );
+    if (urResult.kind === 'progress') {
+      setAirgapUrProgress(urResult.progress);
+      return;
+    }
+    if (urResult.kind === 'complete') {
+      airgapUrDecoderRef.current = null;
+      setAirgapUrProgress(null);
+      setAirgapCipherBase64(urResult.payload);
+      setIsAirgapScannerVisible(false);
+      importAirgapCipher(urResult.payload, airgapPasswordRef.current);
+      return;
+    }
   };
   const styles = StyleSheet.create({
     container: {
@@ -423,7 +568,6 @@ const ShowcaseScreen = ({navigation}: any) => {
     // Enhanced Modal Styles
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.75)',
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -1032,6 +1176,34 @@ const ShowcaseScreen = ({navigation}: any) => {
               </Text>
             </View>
           </AppPressable>
+          <AppPressable
+            style={[
+              styles.ctaButtonSecondary,
+              ((!agreeToTerms || !agreeToPrivacy) || walletAlreadyLoaded) &&
+                styles.disabledButton,
+            ]}
+            onPress={() => {
+              if (walletAlreadyLoaded) {
+                showWalletAlreadyLoadedAlert();
+                return;
+              }
+              handleRestoreViaAirgap();
+            }}
+            disabled={!agreeToTerms || !agreeToPrivacy || walletAlreadyLoaded}>
+            <View style={styles.ctaButtonIconContainer}>
+              <Image
+                source={require('../assets/qr-icon.png')}
+                style={[
+                  styles.ctaButtonIconLeft,
+                  {tintColor: theme.colors.text},
+                ]}
+                resizeMode="contain"
+              />
+              <Text style={styles.ctaButtonSecondaryText}>
+                Restore via Airgap QR
+              </Text>
+            </View>
+          </AppPressable>
         </View>
       </View>
       <KeyshareImportPasswordModal
@@ -1039,6 +1211,39 @@ const ShowcaseScreen = ({navigation}: any) => {
         onClose={handleCloseModal}
         onSubmit={handlePasswordSubmit}
         isSubmitting={isImporting}
+        title={
+          restoreMode === 'airgap' ? 'Restore via Airgap QR' : 'Restore Keyshare'
+        }
+        description={
+          restoreMode === 'airgap'
+            ? airgapCipherBase64
+              ? 'Enter the PIN from the other phone. Eyes on these two screens only.'
+              : 'Enter the 6-digit PIN from the other phone, then scan. Eyes on these two screens only.'
+            : undefined
+        }
+        submitLabel={
+          restoreMode === 'airgap' && !airgapCipherBase64 ? 'Continue' : 'Import'
+        }
+        inputMode={restoreMode === 'airgap' ? 'pin' : 'password'}
+      />
+      <QRScanner
+        visible={isAirgapScannerVisible}
+        onClose={handleAirgapScannerClose}
+        onScan={handleAirgapScan}
+        mode="continuous"
+        title="Scanning Animated QR..."
+        subtitle={
+          airgapUrProgress && airgapUrProgress.total > 1
+            ? airgapUrProgress.received >= airgapUrProgress.total
+              ? 'Processing keyshare…'
+              : `Keep scanning animated QR: ${formatUrFragmentProgress(
+                  airgapUrProgress,
+                )}`
+            : 'Point camera at the encrypted keyshare QR'
+        }
+        showProgress={!!airgapUrProgress && airgapUrProgress.total > 1}
+        progress={airgapUrProgress || undefined}
+        closeButtonText="Cancel"
       />
       {/* Legal Modal */}
       <LegalModal
@@ -1108,7 +1313,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         visible={isModeModalVisible}
         animationType="fade"
         onRequestClose={() => setIsModeModalVisible(false)}>
-        <View style={styles.modalOverlay}>
+        <GlassModalOverlay style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Image
@@ -1402,7 +1607,7 @@ const ShowcaseScreen = ({navigation}: any) => {
               </AppPressable>
             </View>
           </View>
-        </View>
+        </GlassModalOverlay>
       </Modal>
       <EntropyInfoCard
         visible={showEntropyCard}

@@ -4,6 +4,8 @@
 
 import {
   cacheIndicatorHealthHint,
+  providerHealthA11yQuality,
+  providerHealthDotStyle,
   qualityFromAttempt,
   recordMempoolAttempt,
   resetMempoolHealthForTests,
@@ -115,5 +117,60 @@ describe('CacheIndicator healthHint precedence', () => {
   it('hides hint for fine and bad', () => {
     expect(cacheIndicatorHealthHint('fine', null)).toBeNull();
     expect(cacheIndicatorHealthHint('bad', null)).toBeNull();
+  });
+});
+
+describe('providerHealthDotStyle', () => {
+  const light = {
+    primary: '#1A2B3C',
+    secondary: '#344960',
+    bitcoinOrange: '#F7931A',
+    background: '#ffffff',
+  };
+  const dark = {
+    primary: '#3A3A3A',
+    secondary: '#00D2B8',
+    bitcoinOrange: '#F7931A',
+    background: '#121212',
+  };
+
+  it('maps light-mode health and offline', () => {
+    expect(
+      providerHealthDotStyle(light, {online: true, quality: 'fine'}),
+    ).toEqual({color: light.primary, hollow: false, opacity: 1});
+    expect(
+      providerHealthDotStyle(light, {online: true, quality: 'slow'}),
+    ).toEqual({color: light.bitcoinOrange, hollow: false, opacity: 1});
+    expect(
+      providerHealthDotStyle(light, {online: true, quality: 'bad'}),
+    ).toEqual({color: light.secondary, hollow: false, opacity: 1});
+    expect(
+      providerHealthDotStyle(light, {online: false, quality: 'fine'}),
+    ).toEqual({color: light.secondary, hollow: true, opacity: 1});
+    expect(
+      providerHealthDotStyle(light, {online: true, quality: null}),
+    ).toEqual({color: light.primary, hollow: false, opacity: 0.5});
+  });
+
+  it('maps dark-mode health and offline', () => {
+    expect(
+      providerHealthDotStyle(dark, {online: true, quality: 'fine'}),
+    ).toEqual({color: dark.secondary, hollow: false, opacity: 1});
+    expect(
+      providerHealthDotStyle(dark, {online: true, quality: 'slow'}),
+    ).toEqual({color: dark.bitcoinOrange, hollow: false, opacity: 1});
+    expect(
+      providerHealthDotStyle(dark, {online: true, quality: 'bad'}),
+    ).toEqual({color: dark.primary, hollow: false, opacity: 1});
+    expect(
+      providerHealthDotStyle(dark, {online: false, quality: 'fine'}),
+    ).toEqual({color: dark.primary, hollow: true, opacity: 1});
+  });
+
+  it('labels quality for accessibility', () => {
+    expect(providerHealthA11yQuality('fine')).toBe('healthy');
+    expect(providerHealthA11yQuality('slow')).toBe('slow');
+    expect(providerHealthA11yQuality('bad')).toBe('unreachable');
+    expect(providerHealthA11yQuality(null)).toBe('checking');
   });
 });

@@ -90,6 +90,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)aesEncrypt:(NSString *)data key:(NSString *)key;
 + (NSString *)aesDecrypt:(NSString *)data key:(NSString *)key;
 + (NSString *)sha256:(NSString *)message;
++ (NSString *)secureRandom:(int)length;
 + (NSString *)secP256k1RecoverR:(NSString *)r s:(NSString *)s v:(NSString *)v h:(NSString *)h;
 + (NSString *)getDerivedPubKey:(NSString *)hexPub hexChain:(NSString *)hexChain path:(NSString *)path isEdDSA:(BOOL)isEdDSA;
 + (NSString *)encodeXpub:(NSString *)hexPub hexChain:(NSString *)hexChain network:(NSString *)network;

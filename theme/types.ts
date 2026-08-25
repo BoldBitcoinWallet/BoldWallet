@@ -21,6 +21,8 @@ export interface ThemeColors {
   buttonText: string;
   disabledText: string;
   modalBackdrop: string;
+  /** Lighter tint over BlurView so frost stays visible. */
+  modalBackdropGlass: string;
   lightGray: string;
   mediumGray: string;
   white: string;

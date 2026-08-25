@@ -4,19 +4,31 @@ import {
   View,
   Image,
   StyleSheet,
-  ScrollView,
   Linking,
+  ScrollView,
 } from 'react-native';
+import Animated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import Clipboard from '@react-native-clipboard/clipboard';
 import AppPressable from './AppPressable';
 import AppText from './AppText';
+import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {dbg, explorerWebBaseFromApiUrl, formatBitcoinDisplay} from '../utils';
 import mempoolClient from '../services/MempoolClient';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
+import {isBrantaEnabled} from '../services/BrantaService';
 import {ActiveTxVisualizer} from './TransactionVisualizer';
 import ErrorBoundary from './ErrorBoundary';
+
+/** Scroll distance (px) over which the compact visualizer fully collapses. */
+const VISUALIZER_COLLAPSE_DISTANCE = 140;
 
 interface TransactionDetailsModalProps {
   visible: boolean;
@@ -65,6 +77,34 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     number | null
   >(null);
   const [txidCopied, setTxidCopied] = React.useState(false);
+  const collapseProgress = useSharedValue(0);
+  const detailsScrollRef = React.useRef<ScrollView>(null);
+
+  const onDetailsScroll = useAnimatedScrollHandler({
+    onScroll: event => {
+      collapseProgress.value = interpolate(
+        event.contentOffset.y,
+        [0, VISUALIZER_COLLAPSE_DISTANCE],
+        [0, 1],
+        Extrapolation.CLAMP,
+      );
+    },
+  });
+
+  const visualizerSectionAnim = useAnimatedStyle(() => ({
+    paddingTop: interpolate(
+      collapseProgress.value,
+      [0, 1],
+      [12, 4],
+      Extrapolation.CLAMP,
+    ),
+    paddingBottom: interpolate(
+      collapseProgress.value,
+      [0, 1],
+      [8, 2],
+      Extrapolation.CLAMP,
+    ),
+  }));
 
   const baseUrl =
     explorerWebBaseFromApiUrl(baseApi) ||
@@ -105,8 +145,14 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   React.useEffect(() => {
     if (!visible) {
       setTxidCopied(false);
+      collapseProgress.value = 0;
+      return;
     }
-  }, [visible]);
+    collapseProgress.value = 0;
+    requestAnimationFrame(() => {
+      detailsScrollRef.current?.scrollTo({y: 0, animated: false});
+    });
+  }, [visible, transaction?.txid, collapseProgress]);
 
   const confirmations = React.useMemo(() => {
     if (
@@ -123,6 +169,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     return null;
   }
 
+  const brantaOn = isBrantaEnabled();
   const getFiatAmount = (btcAmount: number): string | null => {
     if (historicalRate == null || historicalRate <= 0) return null;
     const amount = btcAmount * historicalRate;
@@ -173,7 +220,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.85)',
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -510,6 +556,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       paddingHorizontal: 16,
       paddingTop: 12,
       paddingBottom: 8,
+      overflow: 'hidden',
       borderBottomWidth: 1,
       borderBottomColor:
         theme.colors.background === '#ffffff'
@@ -524,7 +571,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       transparent
       animationType="fade"
       onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <GlassModalOverlay style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <AppText variant="h2" style={styles.modalTitle}>
@@ -539,7 +586,8 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
           </View>
 
           {transaction.txid && (
-            <View style={styles.visualizerSection}>
+            <Animated.View
+              style={[styles.visualizerSection, visualizerSectionAnim]}>
               <ErrorBoundary
                 key={transaction.txid}
                 fallback={
@@ -556,13 +604,17 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   origin={isWalletOrigin ? 'wallet' : 'external'}
                   blockHeight={status.confirmed ? blockHeight : null}
                   confirmedAtMs={status.confirmed ? confirmedAtMs : null}
+                  collapseProgress={collapseProgress}
                 />
               </ErrorBoundary>
-            </View>
+            </Animated.View>
           )}
 
-          <ScrollView
+          <Animated.ScrollView
+            ref={detailsScrollRef}
             style={styles.scrollContent}
+            onScroll={onDetailsScroll}
+            scrollEventThrottle={16}
             removeClippedSubviews
             keyboardShouldPersistTaps="handled"
             overScrollMode="never"
@@ -644,9 +696,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                         const pathInfo = addr
                           ? addressPathMap?.[addr]
                           : undefined;
-                        const merchantLabel = addr
-                          ? merchantLabelRepository.getByAddress(addr)
-                          : null;
+                        const merchantLabel =
+                          addr && brantaOn
+                            ? merchantLabelRepository.getByAddress(addr)
+                            : null;
                         const short = addr
                           ? `${addr.slice(0, 9)}…${addr.slice(-6)}`
                           : 'coinbase';
@@ -764,9 +817,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                         const pathInfo = addr
                           ? addressPathMap?.[addr]
                           : undefined;
-                        const merchantLabel = addr
-                          ? merchantLabelRepository.getByAddress(addr)
-                          : null;
+                        const merchantLabel =
+                          addr && brantaOn
+                            ? merchantLabelRepository.getByAddress(addr)
+                            : null;
                         const isChange = pathInfo?.chain === 'change';
                         const short = addr
                           ? `${addr.slice(0, 9)}…${addr.slice(-6)}`
@@ -971,9 +1025,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   </AppText>,
                 )}
             </View>
-          </ScrollView>
+          </Animated.ScrollView>
         </View>
-      </View>
+      </GlassModalOverlay>
     </Modal>
   );
 };

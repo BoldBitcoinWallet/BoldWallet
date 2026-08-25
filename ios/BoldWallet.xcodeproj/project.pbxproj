@@ -38,6 +38,17 @@
 		KS009A1B2C3D4E5F60718293 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = KS010A1B2C3D4E5F60718293 /* ShareViewController.swift */; };
 		KS011A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = KS012A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift */; };
 		KS021A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = KS016A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		LA001A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA002A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift */; };
+		LA007A1B2C3D4E5F60718293 /* MpcKeepAliveWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA003A1B2C3D4E5F60718293 /* MpcKeepAliveWidgetBundle.swift */; };
+		LA008A1B2C3D4E5F60718293 /* MpcKeepAliveLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA004A1B2C3D4E5F60718293 /* MpcKeepAliveLiveActivity.swift */; };
+		LA009A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA002A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift */; };
+		LA010A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = LA006A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		LA022A1B2C3D4E5F60718293 /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LA021A1B2C3D4E5F60718293 /* ActivityKit.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
+		LA024A1B2C3D4E5F60718293 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LA023A1B2C3D4E5F60718293 /* WidgetKit.framework */; };
+		LA026A1B2C3D4E5F60718293 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LA025A1B2C3D4E5F60718293 /* SwiftUI.framework */; };
+		LA027A1B2C3D4E5F60718293 /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LA021A1B2C3D4E5F60718293 /* ActivityKit.framework */; };
+		MK001A1B2C3D4E5F60718293 /* MpcKeepAliveModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = MK005A1B2C3D4E5F60718293 /* MpcKeepAliveModule.swift */; };
+		MK002A1B2C3D4E5F60718293 /* MpcKeepAliveModule.m in Sources */ = {isa = PBXBuildFile; fileRef = MK006A1B2C3D4E5F60718293 /* MpcKeepAliveModule.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -55,6 +66,13 @@
 			remoteGlobalIDString = KS018A1B2C3D4E5F60718293;
 			remoteInfo = BoldWalletShareExtension;
 		};
+		LA011A1B2C3D4E5F60718293 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 83CBB9F71A601CBA00E9B192 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = LA013A1B2C3D4E5F60718293;
+			remoteInfo = MpcKeepAliveWidget;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
@@ -65,6 +83,7 @@
 			dstSubfolderSpec = 13;
 			files = (
 				KS021A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex in Embed App Extensions */,
+				LA010A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex in Embed App Extensions */,
 			);
 			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -118,6 +137,16 @@
 		KS014A1B2C3D4E5F60718293 /* BoldWalletShareExtension.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = BoldWalletShareExtension.entitlements; sourceTree = "<group>"; };
 		KS015A1B2C3D4E5F60718293 /* BoldWallet.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; name = BoldWallet.entitlements; path = BoldWallet/BoldWallet.entitlements; sourceTree = "<group>"; };
 		KS016A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = BoldWalletShareExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		LA002A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MpcKeepAliveAttributes.swift; sourceTree = "<group>"; };
+		LA003A1B2C3D4E5F60718293 /* MpcKeepAliveWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MpcKeepAliveWidgetBundle.swift; sourceTree = "<group>"; };
+		LA004A1B2C3D4E5F60718293 /* MpcKeepAliveLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MpcKeepAliveLiveActivity.swift; sourceTree = "<group>"; };
+		LA005A1B2C3D4E5F60718293 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		LA006A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = MpcKeepAliveWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		LA021A1B2C3D4E5F60718293 /* ActivityKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ActivityKit.framework; path = System/Library/Frameworks/ActivityKit.framework; sourceTree = SDKROOT; };
+		LA023A1B2C3D4E5F60718293 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		LA025A1B2C3D4E5F60718293 /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+		MK005A1B2C3D4E5F60718293 /* MpcKeepAliveModule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MpcKeepAliveModule.swift; sourceTree = "<group>"; };
+		MK006A1B2C3D4E5F60718293 /* MpcKeepAliveModule.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = MpcKeepAliveModule.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -135,6 +164,7 @@
 			files = (
 				BBMT00042D48369D00FE370B /* libbbmtmobile.xcframework in Frameworks */,
 				ABFD1A7D0A9C1E3B52BE4826 /* libPods-BoldWallet.a in Frameworks */,
+				LA022A1B2C3D4E5F60718293 /* ActivityKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -142,6 +172,16 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		LA016A1B2C3D4E5F60718293 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				LA024A1B2C3D4E5F60718293 /* WidgetKit.framework in Frameworks */,
+				LA026A1B2C3D4E5F60718293 /* SwiftUI.framework in Frameworks */,
+				LA027A1B2C3D4E5F60718293 /* ActivityKit.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -170,6 +210,9 @@
 			children = (
 				0440EA692D48369D00FE370B /* BBMTLibNativeModule.m */,
 				0440EA6A2D48369D00FE370B /* BBMTLibNativeModule.swift */,
+				MK005A1B2C3D4E5F60718293 /* MpcKeepAliveModule.swift */,
+				MK006A1B2C3D4E5F60718293 /* MpcKeepAliveModule.m */,
+				LA002A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift */,
 				BBMT00032D48369D00FE370B /* BbmtBridge.h */,
 				BBMT00022D48369D00FE370B /* BbmtBridge.mm */,
 				BBMT00072D48369D00FE370B /* TssShim.swift */,
@@ -191,6 +234,9 @@
 			children = (
 				BBMT00052D48369D00FE370B /* libbbmtmobile.xcframework */,
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
+				LA021A1B2C3D4E5F60718293 /* ActivityKit.framework */,
+				LA023A1B2C3D4E5F60718293 /* WidgetKit.framework */,
+				LA025A1B2C3D4E5F60718293 /* SwiftUI.framework */,
 				42B71AC30DBE14FE7026BFF1 /* libPods-BoldWallet.a */,
 				CF244333124C48401EA96FBE /* libPods-BoldWallet-BoldWalletTests.a */,
 			);
@@ -211,6 +257,7 @@
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				00E356EF1AD99517003FC87E /* BoldWalletTests */,
 				KS017A1B2C3D4E5F60718293 /* BoldWalletShareExtension */,
+				LA014A1B2C3D4E5F60718293 /* MpcKeepAliveWidget */,
 				KS028A1B2C3D4E5F60718293 /* KeyshareShare */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
@@ -228,6 +275,7 @@
 				13B07F961A680F5B00A75B9A /* BoldWallet.app */,
 				00E356EE1AD99517003FC87E /* BoldWalletTests.xctest */,
 				KS016A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex */,
+				LA006A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -283,6 +331,16 @@
 			name = KeyshareShare;
 			sourceTree = "<group>";
 		};
+		LA014A1B2C3D4E5F60718293 /* MpcKeepAliveWidget */ = {
+			isa = PBXGroup;
+			children = (
+				LA003A1B2C3D4E5F60718293 /* MpcKeepAliveWidgetBundle.swift */,
+				LA004A1B2C3D4E5F60718293 /* MpcKeepAliveLiveActivity.swift */,
+				LA005A1B2C3D4E5F60718293 /* Info.plist */,
+			);
+			path = MpcKeepAliveWidget;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -325,6 +383,7 @@
 			);
 			dependencies = (
 				KS023A1B2C3D4E5F60718293 /* PBXTargetDependency */,
+				LA012A1B2C3D4E5F60718293 /* PBXTargetDependency */,
 			);
 			name = BoldWallet;
 			productName = BoldWallet;
@@ -346,6 +405,23 @@
 			name = BoldWalletShareExtension;
 			productName = BoldWalletShareExtension;
 			productReference = KS016A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		LA013A1B2C3D4E5F60718293 /* MpcKeepAliveWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = LA020A1B2C3D4E5F60718293 /* Build configuration list for PBXNativeTarget "MpcKeepAliveWidget" */;
+			buildPhases = (
+				LA015A1B2C3D4E5F60718293 /* Sources */,
+				LA016A1B2C3D4E5F60718293 /* Frameworks */,
+				LA017A1B2C3D4E5F60718293 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MpcKeepAliveWidget;
+			productName = MpcKeepAliveWidget;
+			productReference = LA006A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex */;
 			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
@@ -382,6 +458,7 @@
 				13B07F861A680F5B00A75B9A /* BoldWallet */,
 				00E356ED1AD99517003FC87E /* BoldWalletTests */,
 				KS018A1B2C3D4E5F60718293 /* BoldWalletShareExtension */,
+				LA013A1B2C3D4E5F60718293 /* MpcKeepAliveWidget */,
 			);
 		};
 /* End PBXProject section */
@@ -414,6 +491,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		KS029A1B2C3D4E5F60718293 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		LA017A1B2C3D4E5F60718293 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -593,6 +677,9 @@
 				KS004A1B2C3D4E5F60718293 /* KeyshareShareAppDelegate.swift in Sources */,
 				IU001A1B2C3D4E5F60718293 /* IncomingUrlModule.swift in Sources */,
 				IU002A1B2C3D4E5F60718293 /* IncomingUrlModule.m in Sources */,
+				MK001A1B2C3D4E5F60718293 /* MpcKeepAliveModule.swift in Sources */,
+				MK002A1B2C3D4E5F60718293 /* MpcKeepAliveModule.m in Sources */,
+				LA001A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -602,6 +689,16 @@
 			files = (
 				KS009A1B2C3D4E5F60718293 /* ShareViewController.swift in Sources */,
 				KS011A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		LA015A1B2C3D4E5F60718293 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				LA007A1B2C3D4E5F60718293 /* MpcKeepAliveWidgetBundle.swift in Sources */,
+				LA008A1B2C3D4E5F60718293 /* MpcKeepAliveLiveActivity.swift in Sources */,
+				LA009A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -617,6 +714,11 @@
 			isa = PBXTargetDependency;
 			target = KS018A1B2C3D4E5F60718293 /* BoldWalletShareExtension */;
 			targetProxy = KS024A1B2C3D4E5F60718293 /* PBXContainerItemProxy */;
+		};
+		LA012A1B2C3D4E5F60718293 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = LA013A1B2C3D4E5F60718293 /* MpcKeepAliveWidget */;
+			targetProxy = LA011A1B2C3D4E5F60718293 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -711,6 +813,8 @@
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
+					"-weak_framework",
+					ActivityKit,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet;
 				PRODUCT_NAME = BoldWallet;
@@ -758,6 +862,8 @@
 					"$(inherited)",
 					"-ObjC",
 					"-lc++",
+					"-weak_framework",
+					ActivityKit,
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet;
 				PRODUCT_NAME = BoldWallet;
@@ -976,6 +1082,56 @@
 			};
 			name = Release;
 		};
+		LA018A1B2C3D4E5F60718293 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CURRENT_PROJECT_VERSION = 68;
+				DEVELOPMENT_TEAM = 2G529K765N;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MpcKeepAliveWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 4.0.6;
+				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet.MpcKeepAliveWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		LA019A1B2C3D4E5F60718293 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CURRENT_PROJECT_VERSION = 68;
+				DEVELOPMENT_TEAM = 2G529K765N;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = MpcKeepAliveWidget/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 4.0.6;
+				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet.MpcKeepAliveWidget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -1011,6 +1167,15 @@
 			buildConfigurations = (
 				KS025A1B2C3D4E5F60718293 /* Debug */,
 				KS026A1B2C3D4E5F60718293 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		LA020A1B2C3D4E5F60718293 /* Build configuration list for PBXNativeTarget "MpcKeepAliveWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				LA018A1B2C3D4E5F60718293 /* Debug */,
+				LA019A1B2C3D4E5F60718293 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -51,6 +51,10 @@ func TssSha256(_ message: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.sha256(message), error)
 }
 
+func TssSecureRandom(_ length: Int32, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.secureRandom(length), error)
+}
+
 func TssUseFeePolicy(_ policy: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.useFeePolicy(policy), error)
 }

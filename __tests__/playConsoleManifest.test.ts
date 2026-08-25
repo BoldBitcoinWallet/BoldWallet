@@ -25,12 +25,17 @@ const playCopyShPath = path.join(
   __dirname,
   '../android/scripts/copy-play-artifacts.sh',
 );
+const checkPlayShPath = path.join(
+  __dirname,
+  '../android/scripts/check-play-manifest.sh',
+);
 
 describe('Play Console packaging', () => {
   const manifest = fs.readFileSync(manifestPath, 'utf8');
   const gradle = fs.readFileSync(gradlePath, 'utf8');
   const playAabSh = fs.readFileSync(playAabShPath, 'utf8');
   const playCopySh = fs.readFileSync(playCopyShPath, 'utf8');
+  const checkPlaySh = fs.readFileSync(checkPlayShPath, 'utf8');
 
   it('marks camera, location, and wifi features optional', () => {
     const features = [
@@ -96,6 +101,32 @@ describe('Play Console packaging', () => {
       manifest.match(/android\.intent\.category\.LAUNCHER/g) || []
     ).length;
     expect(launcherCount).toBe(5);
+  });
+
+  it('declares MPC keep-alive foreground service and permissions', () => {
+    expect(manifest).toContain('android.permission.FOREGROUND_SERVICE');
+    expect(manifest).toContain(
+      'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
+    );
+    expect(manifest).toContain('android.permission.POST_NOTIFICATIONS');
+    expect(manifest).toContain('android.permission.WAKE_LOCK');
+    expect(manifest).toContain(
+      'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+    );
+    expect(manifest).toContain('android:name=".MpcKeepAliveService"');
+    expect(manifest).toContain('android:foregroundServiceType="specialUse"');
+    expect(manifest).toContain('android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE');
+    expect(manifest).toContain('threshold cryptography');
+  });
+
+  it('documents Play Console specialUse declaration in Device QA', () => {
+    expect(checkPlaySh).toContain(
+      'REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
+    );
+    expect(checkPlaySh).toContain('Foreground service');
+    expect(checkPlaySh).toContain('Special use');
+    expect(checkPlaySh).toContain('stopForeground');
+    expect(checkPlaySh).toContain('dataSync');
   });
 });
 

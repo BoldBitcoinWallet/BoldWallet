@@ -10,7 +10,6 @@ import {
   Animated,
   PanResponder,
   Dimensions,
-  TouchableWithoutFeedback,
 } from 'react-native';
 import {useTheme} from '../theme';
 import {
@@ -18,6 +17,7 @@ import {
   type DeviceEntropyMetadata,
 } from '../native_modules';
 import AppPressable from './AppPressable';
+import GlassModalOverlay from './GlassModalOverlay';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const DISMISS_THRESHOLD = 120; // px to drag down before dismissing
@@ -122,12 +122,7 @@ export default function EntropyInfoCard({visible, onClose}: EntropyInfoCardProps
       transparent={true}
       statusBarTranslucent
       onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        {/* Tap backdrop to dismiss */}
-        <TouchableWithoutFeedback onPress={onClose}>
-          <View style={StyleSheet.absoluteFill} />
-        </TouchableWithoutFeedback>
-
+      <GlassModalOverlay contentPosition="bottom" onPress={onClose}>
         {/* Bottom sheet card */}
         <Animated.View
           style={[
@@ -252,7 +247,7 @@ export default function EntropyInfoCard({visible, onClose}: EntropyInfoCardProps
 
           </ScrollView>
         </Animated.View>
-      </View>
+      </GlassModalOverlay>
     </Modal>
   );
 }
@@ -286,12 +281,7 @@ const makeStyles = (
   fontFamilies: any,
 ) =>
   StyleSheet.create({
-    // ── Backdrop & sheet container ──
-    backdrop: {
-      flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.45)',
-      justifyContent: 'flex-end',
-    },
+    // ── Sheet container (backdrop is GlassModalOverlay) ──
     sheet: {
       backgroundColor: colors.cardBackground,
       borderTopLeftRadius: borderRadius.large,

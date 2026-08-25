@@ -21,5 +21,8 @@ describe('walletSetupUi', () => {
 
   it('exposes keygen modal copy', () => {
     expect(getWalletSetupKeygenModalCopy().title).toBe('Finalizing Your Wallet');
+    expect(getWalletSetupKeygenModalCopy('android').subtitle).toMatch(
+      /notification/,
+    );
   });
 });

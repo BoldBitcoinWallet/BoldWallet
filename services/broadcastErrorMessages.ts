@@ -1,5 +1,10 @@
 /** User-facing message for native PostTx / broadcast failures. */
+import {isWalletOfflineError} from './walletOfflineError';
+
 export function formatBroadcastError(err: unknown): string {
+  if (isWalletOfflineError(err)) {
+    return 'Wallet is offline. Go online to broadcast.';
+  }
   const raw = err instanceof Error ? err.message : String(err ?? '');
   const stripped = raw
     .replace(/^failed after \d+ attempts:\s*/i, '')

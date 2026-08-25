@@ -161,6 +161,9 @@ export async function prepareSendBtcMultiPathInputs(
   const skipEmptyCache = {skipEmptyCache: true};
   let utxos: UtxoWithPath[] | null = null;
 
+  // Coin control (and compact send QR) pass an explicit outpoint list.
+  // Never expand a non-empty route pool with a full-wallet fetch — that would
+  // ignore exclusive-pool selection and spend coins the user did not check.
   const fromRoute = params.utxosJsonFromRoute?.trim();
   if (fromRoute) {
     utxos = parseRouteUtxosJson(fromRoute);
@@ -178,6 +181,7 @@ export async function prepareSendBtcMultiPathInputs(
   }
 
   if (!utxos?.length) {
+    // Only when the caller did not supply a pool (no coin-control / QR subset).
     utxos = await ws.fetchUtxosWithPaths(
       network,
       addressType,

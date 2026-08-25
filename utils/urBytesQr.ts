@@ -38,6 +38,43 @@ export function utf8ToUr(payload: string): UR | null {
   }
 }
 
+/** Encode raw bytes (e.g. AES ciphertext) as `ur:bytes`. */
+export function bufferToUr(buf: Buffer): UR | null {
+  try {
+    if (!buf || buf.length === 0) {
+      return null;
+    }
+    return UR.fromBuffer(buf);
+  } catch {
+    return null;
+  }
+}
+
+function decodeCborBuffer(ur: UR): Buffer | null {
+  try {
+    if (!ur || ur.type !== UR_BYTES_TYPE) {
+      return null;
+    }
+    const cborPayload = ur.decodeCBOR();
+    if (Buffer.isBuffer(cborPayload)) {
+      return cborPayload;
+    }
+    if (cborPayload instanceof Uint8Array) {
+      return Buffer.from(cborPayload);
+    }
+    if (
+      cborPayload &&
+      typeof cborPayload === 'object' &&
+      Array.isArray((cborPayload as {data?: number[]}).data)
+    ) {
+      return Buffer.from((cborPayload as {data: number[]}).data);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function urFragmentCount(ur: UR): number {
   try {
     const encoder = new UREncoder(ur, UR_BYTES_FRAGMENT_SIZE) as UREncoder & {
@@ -96,30 +133,14 @@ export function urTypeFromPart(part: string): string | null {
 }
 
 export function urToUtf8(ur: UR): string | null {
-  try {
-    if (!ur || ur.type !== UR_BYTES_TYPE) {
-      return null;
-    }
-    const cborPayload = ur.decodeCBOR();
-    if (Buffer.isBuffer(cborPayload)) {
-      return cborPayload.toString('utf8');
-    }
-    if (cborPayload instanceof Uint8Array) {
-      return Buffer.from(cborPayload).toString('utf8');
-    }
-    if (
-      cborPayload &&
-      typeof cborPayload === 'object' &&
-      Array.isArray((cborPayload as {data?: number[]}).data)
-    ) {
-      return Buffer.from((cborPayload as {data: number[]}).data).toString(
-        'utf8',
-      );
-    }
-    return null;
-  } catch {
-    return null;
-  }
+  const buf = decodeCborBuffer(ur);
+  return buf ? buf.toString('utf8') : null;
+}
+
+/** Decode `ur:bytes` CBOR payload as base64 (airgap keyshare ciphertext). */
+export function urToBase64(ur: UR): string | null {
+  const buf = decodeCborBuffer(ur);
+  return buf ? buf.toString('base64') : null;
 }
 
 /** Unique fragments received vs expected. Never 100% until `decoder.isComplete()`. */
@@ -140,10 +161,11 @@ export function formatUrFragmentProgress(progress: UrBytesProgress): string {
   return `${progress.received} of ${progress.total}`;
 }
 
-export function receiveUrBytesPart(
+function receiveUrBytesPartWith(
   decoder: URDecoder,
   part: string,
-  acceptedTypes: string[] = [UR_BYTES_TYPE],
+  acceptedTypes: string[],
+  completePayload: (ur: UR) => string | null,
 ): UrBytesReceiveResult {
   const lower = part.trim().toLowerCase();
   if (!lower.startsWith('ur:')) {
@@ -160,7 +182,7 @@ export function receiveUrBytesPart(
       if (!decoder.isSuccess()) {
         return {kind: 'error'};
       }
-      const payload = urToUtf8(decoder.resultUR());
+      const payload = completePayload(decoder.resultUR());
       if (!payload) {
         return {kind: 'error'};
       }
@@ -170,6 +192,23 @@ export function receiveUrBytesPart(
   } catch {
     return {kind: 'error'};
   }
+}
+
+export function receiveUrBytesPart(
+  decoder: URDecoder,
+  part: string,
+  acceptedTypes: string[] = [UR_BYTES_TYPE],
+): UrBytesReceiveResult {
+  return receiveUrBytesPartWith(decoder, part, acceptedTypes, urToUtf8);
+}
+
+/** Same fountain receive path, but complete payload is base64 of the raw bytes. */
+export function receiveUrBytesPartAsBase64(
+  decoder: URDecoder,
+  part: string,
+  acceptedTypes: string[] = [UR_BYTES_TYPE],
+): UrBytesReceiveResult {
+  return receiveUrBytesPartWith(decoder, part, acceptedTypes, urToBase64);
 }
 
 export function createUrDecoder(): URDecoder {

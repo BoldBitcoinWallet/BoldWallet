@@ -5,6 +5,8 @@
 import {
   CAMOUFLAGE_LABEL_MAX_LEN,
   CAMOUFLAGE_PRESETS,
+  camouflageUnlockPrompt,
+  isCamouflageActive,
   isValidCamouflageLabel,
   normalizeCamouflagePresetId,
 } from '../services/camouflagePresets';
@@ -24,5 +26,31 @@ describe('camouflagePresets', () => {
     expect(normalizeCamouflagePresetId('notes')).toBe('notes');
     expect(normalizeCamouflagePresetId('unknown')).toBe('default');
     expect(normalizeCamouflagePresetId(null)).toBe('default');
+  });
+
+  it('exposes a preview image for every preset', () => {
+    for (const preset of CAMOUFLAGE_PRESETS) {
+      expect(preset.preview).toBeDefined();
+    }
+  });
+
+  it('treats only non-default presets as active camouflage', () => {
+    expect(isCamouflageActive('default')).toBe(false);
+    expect(isCamouflageActive(null)).toBe(false);
+    expect(isCamouflageActive('quickcalc')).toBe(true);
+    expect(isCamouflageActive('alternative')).toBe(true);
+    expect(isCamouflageActive('notes')).toBe(true);
+  });
+
+  it('uses camouflage unlock copy instead of wallet wording', () => {
+    expect(camouflageUnlockPrompt('default').promptMessage).toContain('wallet');
+    expect(camouflageUnlockPrompt('quickcalc').promptMessage).toBe('Unlock QuickCalc');
+    expect(camouflageUnlockPrompt('notes').promptMessage).toBe('Unlock Notes');
+    expect(camouflageUnlockPrompt('weather').promptMessage.toLowerCase()).not.toContain(
+      'wallet',
+    );
+    expect(camouflageUnlockPrompt('files').promptMessage.toLowerCase()).not.toContain(
+      'bold',
+    );
   });
 });

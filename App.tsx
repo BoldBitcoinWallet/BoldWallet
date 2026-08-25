@@ -60,11 +60,33 @@ import {createToastConfig} from './utils/toastConfig';
 import {promptWalletBiometricAuth} from './services/walletBiometricAuth';
 import IncomingShareHandler from './components/IncomingShareHandler';
 import IncomingUrlHandler from './components/IncomingUrlHandler';
+import {installWalletOnlineNetworkGuard} from './services/walletOnlineStore';
+import {useNavMenuStyle} from './services/navMenuStore';
+import FloatingTabBar, {
+  FLOATING_TAB_BAR_CONTENT_HEIGHT,
+} from './components/FloatingTabBar';
+import {
+  startProviderHealthPoller,
+  setProviderHealthApiBase,
+} from './services/providerHealthPoller';
 // Initialize react-native-screens for Fabric compatibility
 enableScreens(true);
+installWalletOnlineNetworkGuard();
 const {BBMTLibNativeModule} = NativeModules;
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+/** Starts the 30s provider tip probe once UserContext has an API base. */
+function ProviderHealthPollerHost() {
+  const {activeApiProvider} = useUser();
+  useEffect(() => {
+    startProviderHealthPoller(activeApiProvider || '');
+    if (activeApiProvider) {
+      setProviderHealthApiBase(activeApiProvider);
+    }
+  }, [activeApiProvider]);
+  return null;
+}
 
 const linking: LinkingOptions<any> = {
   prefixes: ['boldwallet://', 'bitcoin:'],
@@ -308,6 +330,8 @@ const TabBarButton = (props: TabBarButtonProps) => {
 const MainTabs = () => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
+  const menuStyle = useNavMenuStyle();
+  const isFloatingMenu = menuStyle === 'floating';
   const isDarkMode = theme.colors.background !== '#ffffff';
   const lockFabOverlayStyle = {
     position: 'absolute' as const,
@@ -320,10 +344,18 @@ const MainTabs = () => {
     backgroundColor: 'transparent',
     pointerEvents: 'box-none' as const,
   };
+  // Docked: sit above the default tab bar. Floating: sit above the pill + gap.
+  const lockFabBottom = isFloatingMenu
+    ? FLOATING_TAB_BAR_CONTENT_HEIGHT +
+      Math.max(insets.bottom, 0) +
+      8 +
+      8 +
+      12
+    : 80 + insets.bottom;
   const lockFabPosition = {
     position: 'absolute' as const,
     right: 30 + insets.right,
-    bottom: 80 + insets.bottom,
+    bottom: lockFabBottom,
     zIndex: 1000,
   };
   const lockFabSize = 48; // 15% smaller than 56
@@ -336,50 +368,30 @@ const MainTabs = () => {
     backgroundColor: isDarkMode
       ? theme.colors.cardBackground
       : theme.colors.primaryOverlay95,
-    borderWidth: Platform.OS === 'android' ? 0 : 1,
+    borderWidth: 1,
     borderColor: isDarkMode
-      ? theme.colors.border + '80'
+      ? theme.colors.whiteOverlay12
       : theme.colors.blackOverlay10,
   };
+  // Android: elevation on the pressable itself (same view as bg + radius).
+  // Nested wrappers / overflow:hidden / glow rings cast square rims.
   const lockFabStyle =
     Platform.OS === 'android'
       ? {
+          ...lockFabPosition,
           ...lockFabShape,
-          position: 'absolute' as const,
-          top: 0,
-          left: 0,
-          overflow: 'hidden' as const,
-          elevation: 0,
+          elevation: 10,
+          shadowColor: theme.colors.shadowColor || '#000',
         }
       : {
           ...lockFabPosition,
           ...lockFabShape,
           shadowColor: theme.colors.shadowColor || '#000',
-          shadowOffset: {width: 0, height: 2},
-          shadowOpacity: 0.15,
-          shadowRadius: 4,
-          elevation: 4,
+          shadowOffset: {width: 0, height: 8},
+          shadowOpacity: 0.32,
+          shadowRadius: 16,
+          elevation: 12,
         };
-  const lockFabWrapperStyle =
-    Platform.OS === 'android'
-      ? {
-          ...lockFabPosition,
-          width: lockFabSize,
-          height: lockFabSize,
-        }
-      : undefined;
-  const lockFabShadowStyle =
-    Platform.OS === 'android'
-      ? {
-          position: 'absolute' as const,
-          top: -1,
-          left: -1,
-          width: lockFabSize + 2,
-          height: lockFabSize + 2,
-          borderRadius: lockFabSize / 2 + 1,
-          backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        }
-      : undefined;
   const lockFabIconStyle = {
     width: 20,
     height: 20,
@@ -392,6 +404,12 @@ const MainTabs = () => {
       <TabBarButton {...props} isDarkMode={isDarkMode} />
     ),
     [isDarkMode],
+  );
+  const renderFloatingTabBar = useCallback(
+    (props: React.ComponentProps<typeof FloatingTabBar>) => (
+      <FloatingTabBar {...props} />
+    ),
+    [],
   );
   const {
     activeNetwork,
@@ -407,18 +425,29 @@ const MainTabs = () => {
     <View style={tabBarStyles.mainTabsContainer}>
       <Tab.Navigator
         initialRouteName={initialTab}
+        tabBar={isFloatingMenu ? renderFloatingTabBar : undefined}
         screenOptions={{
           headerShown: true,
           headerLeft: () => null,
           headerTitle: '',
           headerTitleAlign: 'left',
-          tabBarStyle: {
-            backgroundColor: theme.colors.background,
-            borderTopWidth: 1,
-            borderTopColor: isDarkMode
-              ? theme.colors.border + 'CC'
-              : theme.colors.border + '60',
-          },
+          tabBarStyle: isFloatingMenu
+            ? {
+                position: 'absolute',
+                backgroundColor: 'transparent',
+                borderTopWidth: 0,
+                elevation: 0,
+                shadowOpacity: 0,
+                // Reserve no layout height — FloatingTabBar overlays screens.
+                height: 0,
+              }
+            : {
+                backgroundColor: theme.colors.background,
+                borderTopWidth: 1,
+                borderTopColor: isDarkMode
+                  ? theme.colors.border + 'CC'
+                  : theme.colors.border + '60',
+              },
           tabBarActiveTintColor: isDarkMode
             ? theme.colors.text
             : theme.colors.primary || theme.colors.text,
@@ -505,42 +534,20 @@ const MainTabs = () => {
         />
       </Tab.Navigator>
       <View style={lockFabOverlayStyle}>
-        {Platform.OS === 'android' &&
-        lockFabWrapperStyle &&
-        lockFabShadowStyle ? (
-          <View style={lockFabWrapperStyle}>
-            <View style={lockFabShadowStyle} pointerEvents="none" />
-            <AppPressable
-              style={lockFabStyle}
-              onPress={() => {
-                DeviceEventEmitter.emit('app:reload');
-              }}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Lock wallet"
-              accessibilityHint="Double tap to lock the wallet">
-              <Image
-                source={require('./assets/locker-icon.png')}
-                style={lockFabIconStyle}
-              />
-            </AppPressable>
-          </View>
-        ) : (
-          <AppPressable
-            style={lockFabStyle}
-            onPress={() => {
-              DeviceEventEmitter.emit('app:reload');
-            }}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel="Lock wallet"
-            accessibilityHint="Double tap to lock the wallet">
-            <Image
-              source={require('./assets/locker-icon.png')}
-              style={lockFabIconStyle}
-            />
-          </AppPressable>
-        )}
+        <AppPressable
+          style={lockFabStyle}
+          onPress={() => {
+            DeviceEventEmitter.emit('app:reload');
+          }}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Lock wallet"
+          accessibilityHint="Double tap to lock the wallet">
+          <Image
+            source={require('./assets/locker-icon.png')}
+            style={lockFabIconStyle}
+          />
+        </AppPressable>
       </View>
     </View>
   );
@@ -819,6 +826,7 @@ const App = () => {
       <SafeAreaProvider>
         <ThemeProvider>
           <UserProvider key={`user-${userProviderResetKey}`}>
+            <ProviderHealthPollerHost />
             {initialRoute === null || !isAuthenticated ? (
               <LoadingScreen onRetry={handleRetryAuthentication} />
             ) : (

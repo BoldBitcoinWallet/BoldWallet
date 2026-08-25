@@ -11,6 +11,8 @@
 // SHA256 Method
 RCT_EXTERN_METHOD(sha256:(NSString *)message resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(secureRandom:(int)length resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
 // ECIES Key Pair Generation
 RCT_EXTERN_METHOD(eciesKeypair:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 

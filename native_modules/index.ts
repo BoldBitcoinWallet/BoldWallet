@@ -1,5 +1,5 @@
 import {NativeModules} from 'react-native';
-export const {BBMTLibNativeModule, KeyshareShareModule, IncomingUrlModule} = NativeModules;
+export const {BBMTLibNativeModule, KeyshareShareModule, IncomingUrlModule, MpcKeepAliveModule} = NativeModules;
 
 /** Device entropy source metadata returned by native modules (iOS/Android). */
 export type DeviceEntropyMetadata = {

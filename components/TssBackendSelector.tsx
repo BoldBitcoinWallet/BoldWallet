@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import {View, Text, StyleSheet, Modal, Image, Linking} from 'react-native';
 import AppPressable from './AppPressable';
+import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
 import type {TssBackend} from '../services/tssBackend';
 import {getTssBackendDisplayLabel} from '../services/tssBackend';
@@ -42,7 +43,6 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -259,7 +259,7 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
       visible={visible}
       animationType="fade"
       onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <GlassModalOverlay style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Image
@@ -357,7 +357,7 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
             ) : null}
           </View>
         </View>
-      </View>
+      </GlassModalOverlay>
     </Modal>
   );
 };

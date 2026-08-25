@@ -1,5 +1,6 @@
 import appConfigRepository from './repositories/AppConfigRepository';
 import {dbg, getMainnetAPIList} from '../utils';
+import {isWalletOnline} from './walletOnlineStore';
 
 const MEMPOOL_API_VALIDATE_TIMEOUT_MS = 10_000;
 
@@ -35,6 +36,10 @@ export function normalizeUserMempoolApiInput(url: string): string {
 export async function validateMempoolApiBaseReachable(
   apiBase: string,
 ): Promise<boolean> {
+  if (!isWalletOnline()) {
+    dbg('API validation skipped: wallet offline');
+    return false;
+  }
   try {
     const testUrl = `${apiBase.replace(/\/$/, '')}/blocks/tip/hash`;
     dbg('Testing API endpoint:', testUrl);
@@ -98,8 +103,8 @@ export function isValidTestnetMempoolApiUrl(url: string): boolean {
 }
 
 /**
- * True when the URL is one of the dynamic public mainnet mirror bases (failover pool).
- * Private / self-hosted endpoints return false — MempoolClient must not round-robin them.
+ * True when the URL is one of the curated public mainnet mirror bases.
+ * Prefer the checkable provider list (`mempoolProvidersStore`) for runtime pool logic.
  */
 export async function isKnownPublicMempoolMainnetBase(
   apiUrl: string,

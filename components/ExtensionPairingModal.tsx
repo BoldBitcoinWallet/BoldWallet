@@ -2,6 +2,7 @@ import React from 'react';
 import {Modal, View, Image, StyleSheet} from 'react-native';
 import AppPressable from './AppPressable';
 import AppText from './AppText';
+import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 
@@ -93,11 +94,9 @@ const ExtensionPairingModal: React.FC<ExtensionPairingModalProps> = ({
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}>
-      <AppPressable style={styles.modalOverlay} onPress={onClose}>
+      <GlassModalOverlay onPress={onClose}>
         <View style={[styles.modalContent, localStyles.contentInner]}>
-          <AppPressable
-            onPress={e => e.stopPropagation()}
-            style={localStyles.contentWrapper}>
+          <View style={localStyles.contentWrapper}>
             <View style={styles.modalHeaderRow}>
               <Image
                 source={require('../assets/extension-icon.png')}
@@ -160,9 +159,9 @@ const ExtensionPairingModal: React.FC<ExtensionPairingModalProps> = ({
                 </AppPressable>
               </View>
             </View>
-          </AppPressable>
+          </View>
         </View>
-      </AppPressable>
+      </GlassModalOverlay>
     </Modal>
   );
 };

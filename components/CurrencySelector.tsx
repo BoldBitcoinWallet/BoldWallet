@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
 import AppPressable from './AppPressable';
+import GlassModalOverlay from './GlassModalOverlay';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -115,7 +116,6 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
   const styles = StyleSheet.create({
     modalContainer: {
       flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'flex-end',
     },
     modalContent: {
@@ -222,7 +222,7 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
       transparent
       animationType="fade"
       onRequestClose={handleClose}>
-      <View style={styles.modalContainer}>
+      <GlassModalOverlay contentPosition="bottom" style={styles.modalContainer}>
         <Animated.View style={[styles.modalContent, modalAnimatedStyle]}>
           <View style={styles.header}>
             <View style={styles.headerTitleContainer}>
@@ -246,7 +246,7 @@ const CurrencySelector: React.FC<CurrencySelectorProps> = ({
             ))}
           </View>
         </Animated.View>
-      </View>
+      </GlassModalOverlay>
     </Modal>
   );
 };

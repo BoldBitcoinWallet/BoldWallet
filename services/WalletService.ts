@@ -4,7 +4,6 @@ import {BBMTLibNativeModule} from '../native_modules';
 import {
   dbg,
   getChangePath,
-  getMainnetAPIList,
   getReceivePath,
   resolveUseLegacyDerivationPaths,
   getKeyshareMetadata,
@@ -16,10 +15,13 @@ import {
   getUtxoEmptyCacheTtlMs,
 } from './HdOptionsConfig';
 import mempoolClient from './MempoolClient';
-import {with429Retry} from './sync/rateLimitRetry';
+import {mapPool, with429Retry} from './sync/rateLimitRetry';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from './repositories/AppConfigRepository';
+import {
+  ensureMempoolProvidersSeeded,
+} from './mempoolProvidersStore';
 import {
   normalizeNetworkKey,
   resolveStoredMempoolApiBase,
@@ -239,9 +241,9 @@ export class WalletService {
       }
       // Initialize network state from storage
       await this.initializeNetworkState();
-      // Seed MempoolClient's public host list for round-robin failover.
-      // Fire-and-forget — get() uses the hardcoded default until this resolves.
-      getMainnetAPIList()
+      // Seed MempoolClient's enabled host list for ranked failover.
+      // Fire-and-forget — get() uses a single host until this resolves.
+      ensureMempoolProvidersSeeded()
         .then(bases => mempoolClient.setPublicBases(bases))
         .catch(() => {});
       dbg('WalletService: Initialization completed successfully');
@@ -1525,37 +1527,15 @@ export class WalletService {
       }
 
       // Price is always fetched from mainnet (even in testnet mode).
-      const network = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
-      const userMainnetApi =
-        appConfigRepository.get('api_mainnet') ||
-        (network === 'mainnet' ? appConfigRepository.get('api') : null) ||
-        '';
-      const apiEndpoints = await getMainnetAPIList();
-      mempoolClient.setPublicBases(apiEndpoints);
-
-      const normalizeBase = (url: string) =>
-        (url || '').replace(/\/+$/, '').replace(/\/api\/?$/, '');
-      const publicBases = new Set(apiEndpoints.map(normalizeBase));
-      const userBase = normalizeBase(userMainnetApi);
-
-      // Use failover (public list) only when the user's mainnet API is one of the offered public ones.
-      // When the user has a custom mainnet host for privacy, hit only that host — no public round-robin.
-      const basesToTry: string[] =
-        userMainnetApi && !publicBases.has(userBase)
-          ? [userMainnetApi]
-          : apiEndpoints;
-
-      if (userMainnetApi && !publicBases.has(userBase)) {
-        dbg(
-          'WalletService: Using custom mainnet API only for price (no public failover):',
-          userMainnetApi,
-        );
-      } else {
-        dbg(
-          'WalletService: Attempting to fetch BTC price using round-robin from APIs:',
-          basesToTry,
-        );
-      }
+      const enabledBases = await ensureMempoolProvidersSeeded();
+      mempoolClient.setPublicBases(enabledBases);
+      const basesToTry = enabledBases.length > 0 ? enabledBases : [
+        'https://mempool.space/api',
+      ];
+      dbg(
+        'WalletService: Attempting to fetch BTC price from enabled providers:',
+        basesToTry,
+      );
       let lastError: any = null;
       for (const baseApiUrl of basesToTry) {
         try {
@@ -1908,14 +1888,10 @@ export class WalletService {
       if (!api) throw new Error('No API URL found');
       const cleanApi = api.replace(/\/+$/, '');
 
-      if (_force) {
-        mempoolClient.invalidate(`${cleanApi}/api/address/`);
-      }
-
       // Reuse the cached address list — no re-derivation if indexes haven't changed.
       // When activeOnly is true (tap-to-refresh) only query the active address set:
       // recent-index window + UTXO holders + pending-tx addresses + current receive.
-      // Background SyncCoordinator continues to scan the full range.
+      // Background SyncCoordinator continues to scan the active set.
       const addressesWithPaths = activeOnly
         ? await this.getActiveAddressesWithPaths(network, addressType)
         : await this.getHdAddressesWithPaths(network, addressType);
@@ -1954,81 +1930,70 @@ export class WalletService {
       }> = [];
       let confirmedSats = new Big(0);
       let mempoolSats = new Big(0);
-      const total = addresses.length;
+      const concurrency = mempoolClient.syncPoolConcurrency(cleanApi);
 
-      for (let i = 0; i < addresses.length; i++) {
-        const addr = addresses[i];
-        onProgress?.(i + 1, total);
-        try {
-          const res = await mempoolClient.get<{
-            chain_stats: {funded_txo_sum: number; spent_txo_sum: number};
-            mempool_stats: {funded_txo_sum: number; spent_txo_sum: number};
-          }>(`${cleanApi}/address/${encodeURIComponent(addr)}`);
+      try {
+        const rows = await mapPool(
+          addresses,
+          concurrency,
+          async addr => {
+            const res = await mempoolClient.get<{
+              chain_stats: {funded_txo_sum: number; spent_txo_sum: number};
+              mempool_stats: {funded_txo_sum: number; spent_txo_sum: number};
+            }>(`${cleanApi}/address/${encodeURIComponent(addr)}`);
 
-          if (!res.ok || !res.data) {
-            dbg(
-              '[BALANCE] getWalletBalanceAggregate: address failed',
-              addr.slice(0, 10),
-              res.status,
-            );
-            const cached = await this.getCachedAggregateBalance(
-              network,
-              addressType,
-            );
-            if (cached) return cached;
+            if (!res.ok || !res.data) {
+              throw new Error(
+                `Balance fetch failed for ${addr.slice(0, 10)} (${res.status})`,
+              );
+            }
+
+            const {chain_stats, mempool_stats} = res.data;
+            const addrConfirmed =
+              chain_stats.funded_txo_sum - chain_stats.spent_txo_sum;
+            const addrMempool =
+              mempool_stats.funded_txo_sum - mempool_stats.spent_txo_sum;
+            const balanceSats = Math.max(0, addrConfirmed);
             return {
-              btc: '0.00000000',
-              usd: '$0.00',
-              hasNonZeroBalance: false,
-              timestamp: Date.now(),
-              pendingSats: 0,
+              address: addr,
+              addrConfirmed,
+              addrMempool,
+              balanceSats,
+              fetchedAt: Date.now(),
             };
-          }
+          },
+          (completed, poolTotal) => onProgress?.(completed, poolTotal),
+        );
 
-          const {chain_stats, mempool_stats} = res.data;
-          const addrConfirmed =
-            chain_stats.funded_txo_sum - chain_stats.spent_txo_sum;
-          const addrMempool =
-            mempool_stats.funded_txo_sum - mempool_stats.spent_txo_sum;
-          // Match BalanceSyncer: confirmed in balanceSats, mempool delta in pendingSats.
-          // Do not add max(0, mempool) to balanceSats — that double-counts self-sends
-          // (source still confirmed + destination pending incoming).
-          const balanceSats = Math.max(0, addrConfirmed);
-          const now = Date.now();
-
-          if (Number.isFinite(addrConfirmed) && addrConfirmed > 0) {
-            confirmedSats = confirmedSats.add(addrConfirmed);
+        for (const row of rows) {
+          if (Number.isFinite(row.addrConfirmed) && row.addrConfirmed > 0) {
+            confirmedSats = confirmedSats.add(row.addrConfirmed);
           }
-          if (Number.isFinite(addrMempool) && addrMempool !== 0) {
-            mempoolSats = mempoolSats.add(addrMempool);
+          if (Number.isFinite(row.addrMempool) && row.addrMempool !== 0) {
+            mempoolSats = mempoolSats.add(row.addrMempool);
           }
-
           perAddressBalances.push({
-            address: addr,
-            balanceSats,
-            pendingSats: addrMempool,
-            hasNonzero: addrConfirmed > 0 || addrMempool > 0,
-            fetchedAt: now,
+            address: row.address,
+            balanceSats: row.balanceSats,
+            pendingSats: row.addrMempool,
+            hasNonzero: row.addrConfirmed > 0 || row.addrMempool > 0,
+            fetchedAt: row.fetchedAt,
           });
-        } catch (err) {
-          dbg(
-            '[BALANCE] getWalletBalanceAggregate: network error for',
-            addr.slice(0, 10),
-            err,
-          );
-          const cached = await this.getCachedAggregateBalance(
-            network,
-            addressType,
-          );
-          if (cached) return cached;
-          return {
-            btc: '0.00000000',
-            usd: '$0.00',
-            hasNonZeroBalance: false,
-            timestamp: Date.now(),
-            pendingSats: 0,
-          };
         }
+      } catch (err) {
+        dbg('[BALANCE] getWalletBalanceAggregate: network error', err);
+        const cached = await this.getCachedAggregateBalance(
+          network,
+          addressType,
+        );
+        if (cached) return cached;
+        return {
+          btc: '0.00000000',
+          usd: '$0.00',
+          hasNonZeroBalance: false,
+          timestamp: Date.now(),
+          pendingSats: 0,
+        };
       }
 
       // All addresses succeeded — write per-address + aggregate in one go

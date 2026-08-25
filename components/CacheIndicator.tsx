@@ -5,16 +5,45 @@ import React, {
   forwardRef,
   useImperativeHandle,
 } from 'react';
-import {View, Text, Image, Animated, StyleSheet} from 'react-native';
+import {
+  View,
+  Text,
+  Image,
+  Animated,
+  Easing,
+  StyleSheet,
+} from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import AppPressable from './AppPressable';
 import {createStyles} from './Styles';
 import {HapticFeedback} from '../utils';
+import {getFetchTimeoutMs} from '../services/HdOptionsConfig';
+import {
+  syncFillFailureKind,
+  syncFillWarmth,
+  formatSyncFillProgress,
+  syncFillWindow,
+  type SyncFillWarmth,
+} from '../services/syncFillWindow';
+
 export interface CacheTimestamp {
   price: number;
   balance: number;
 }
-// Add clock icon import
+
 const clockIcon = require('../assets/clock-icon.png');
+
+const FILL_OPACITY = 0.2;
+const FILL_PULSE_MIN = 0.16;
+const FILL_PULSE_MAX = 0.34;
+const SUCCESS_FF_MS = 280;
+const SUCCESS_HOLD_MS = 450;
+const OUTCOME_FADE_MS = 400;
+const FAILURE_FLASH_OPACITY = 0.28;
+const FAILURE_PERSIST_OPACITY = 0.18;
+const LEADING_EDGE_PX = 24;
+const PULSE_MS = 700;
+
 interface CacheIndicatorProps {
   timestamps: CacheTimestamp;
   onRefresh: () => void;
@@ -27,7 +56,7 @@ interface CacheIndicatorProps {
   usingCache?: boolean; // explicitly indicate cached mode (e.g., offline)
   /** When isRefreshing, show this instead of generic "Refreshing..." (e.g. "Fetching balance…"). */
   statusMessage?: string;
-  /** When isRefreshing and set, append " current/total" (e.g. "Fetching balance… 3/5"). */
+  /** When isRefreshing and set, append address progress (e.g. "3 of 5 addresses"). */
   progress?: {current: number; total: number};
   /** Temporary message after sync failure (e.g. "Sync failed — cached data"); parent clears after ~4s. */
   syncErrorMessage?: string | null;
@@ -35,10 +64,33 @@ interface CacheIndicatorProps {
   lastSyncFailed?: boolean;
   /** Optional extra line (e.g. "Network is slow"); ignored while syncErrorMessage is set. */
   healthHint?: string | null;
+  /** Per-request timeout window for the fill. Defaults to the user-facing fetch timeout. */
+  timeoutMs?: number;
 }
+
 export interface CacheIndicatorHandle {
   press: () => void;
 }
+
+function warmthColor(
+  warmth: SyncFillWarmth,
+  colors: {
+    accent: string;
+    secondary: string;
+    bitcoinOrange: string;
+    danger: string;
+    background: string;
+  },
+): string {
+  if (warmth === 'danger') {
+    return colors.danger;
+  }
+  if (warmth === 'patience') {
+    return colors.bitcoinOrange;
+  }
+  return colors.background === '#ffffff' ? colors.accent : colors.secondary;
+}
+
 export const CacheIndicator = forwardRef<
   CacheIndicatorHandle,
   CacheIndicatorProps
@@ -57,17 +109,42 @@ export const CacheIndicator = forwardRef<
       syncErrorMessage,
       lastSyncFailed = false,
       healthHint,
+      timeoutMs: timeoutMsProp,
     },
     ref,
   ) => {
     const latestTimestamp = Math.max(timestamps.price, timestamps.balance);
-    const shimmerValue = useRef(new Animated.Value(-100)).current;
-    const shimmerAnimationRef = useRef<Animated.CompositeAnimation | null>(
-      null,
+    const progressLabel = formatSyncFillProgress(progress);
+    const timeoutMs = timeoutMsProp ?? getFetchTimeoutMs();
+    const fillProgress = useRef(new Animated.Value(0)).current;
+    const fillOpacity = useRef(new Animated.Value(0)).current;
+    const windowElapsed = useRef(new Animated.Value(0)).current;
+    const successOpacity = useRef(new Animated.Value(0)).current;
+    const timeoutOpacity = useRef(new Animated.Value(0)).current;
+    const errorOpacity = useRef(new Animated.Value(0)).current;
+    const fillAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+    const warmthAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+    const pulseAnimRef = useRef<Animated.CompositeAnimation | null>(null);
+    const outcomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const wasRefreshingRef = useRef(false);
+    const lastFailureKindRef = useRef<'timeout' | 'error' | null>(null);
+    const syncErrorRef = useRef(syncErrorMessage);
+    const lastSyncFailedRef = useRef(lastSyncFailed);
+    const progressRef = useRef(progress);
+    const warmthRef = useRef<SyncFillWarmth>('calm');
+    const justFinishedRefreshRef = useRef(false);
+    const themeColorsRef = useRef(theme.colors);
+    syncErrorRef.current = syncErrorMessage;
+    lastSyncFailedRef.current = lastSyncFailed;
+    progressRef.current = progress;
+    themeColorsRef.current = theme.colors;
+    const [barWidth, setBarWidth] = useState(0);
+    const [edgeColor, setEdgeColor] = useState(() =>
+      warmthColor('calm', theme.colors),
     );
     const [currentTime, setCurrentTime] = useState(Date.now());
     const [isUsingCache, setIsUsingCache] = useState(false);
-    // Expose a press() method to parent
+
     useImperativeHandle(
       ref,
       () => ({
@@ -81,37 +158,250 @@ export const CacheIndicator = forwardRef<
       }),
       [onRefresh, onAbortRequested, isRefreshing],
     );
+
     useEffect(() => {
-      // Stop any prior loop (prevents stacked animations on rapid toggles)
-      shimmerAnimationRef.current?.stop?.();
-      shimmerAnimationRef.current = null;
+      if (syncErrorMessage) {
+        lastFailureKindRef.current = syncFillFailureKind(syncErrorMessage);
+      } else if (!lastSyncFailed) {
+        lastFailureKindRef.current = null;
+      }
+    }, [syncErrorMessage, lastSyncFailed]);
+
+    const windowKey = `${statusMessage ?? ''}|${progress?.current ?? ''}|${
+      progress?.total ?? ''
+    }`;
+
+    useEffect(() => {
+      let cancelled = false;
+      const stopFillAnims = () => {
+        fillAnimRef.current?.stop();
+        fillAnimRef.current = null;
+        warmthAnimRef.current?.stop();
+        warmthAnimRef.current = null;
+        pulseAnimRef.current?.stop();
+        pulseAnimRef.current = null;
+      };
+      const clearOutcomeTimer = () => {
+        if (outcomeTimerRef.current) {
+          clearTimeout(outcomeTimerRef.current);
+          outcomeTimerRef.current = null;
+        }
+      };
 
       if (isRefreshing) {
-        const anim = Animated.loop(
-          Animated.sequence([
-            Animated.timing(shimmerValue, {
-              toValue: 100,
-              duration: 1000,
+        wasRefreshingRef.current = true;
+        if (barWidth <= 0) {
+          return;
+        }
+        stopFillAnims();
+        clearOutcomeTimer();
+        successOpacity.setValue(0);
+        timeoutOpacity.setValue(0);
+        errorOpacity.setValue(0);
+
+        const start = syncFillWindow({
+          elapsedMs: 0,
+          timeoutMs,
+          progress: progressRef.current,
+        });
+        fillProgress.setValue(start.sliceStart);
+        windowElapsed.setValue(0);
+        fillOpacity.setValue(FILL_OPACITY);
+        warmthRef.current = start.warmth;
+        setEdgeColor(warmthColor(start.warmth, themeColorsRef.current));
+
+        const duration = Math.max(1, timeoutMs);
+        const warmthAnim = Animated.timing(windowElapsed, {
+          toValue: 1,
+          duration,
+          easing: Easing.linear,
+          useNativeDriver: false,
+        });
+        const fillAnim = Animated.timing(fillProgress, {
+          toValue: start.sliceEnd,
+          duration,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        });
+        warmthAnimRef.current = warmthAnim;
+        fillAnimRef.current = fillAnim;
+        warmthAnim.start();
+        fillAnim.start(({finished}) => {
+          if (!finished || cancelled) {
+            return;
+          }
+          fillProgress.setValue(1);
+          windowElapsed.setValue(1);
+          warmthRef.current = 'danger';
+          setEdgeColor(warmthColor('danger', themeColorsRef.current));
+          const pulse = Animated.loop(
+            Animated.sequence([
+              Animated.timing(fillOpacity, {
+                toValue: FILL_PULSE_MAX,
+                duration: PULSE_MS,
+                useNativeDriver: true,
+              }),
+              Animated.timing(fillOpacity, {
+                toValue: FILL_PULSE_MIN,
+                duration: PULSE_MS,
+                useNativeDriver: true,
+              }),
+            ]),
+          );
+          pulseAnimRef.current = pulse;
+          pulse.start();
+        });
+
+        return () => {
+          cancelled = true;
+          stopFillAnims();
+        };
+      }
+
+      if (wasRefreshingRef.current) {
+        wasRefreshingRef.current = false;
+        justFinishedRefreshRef.current = true;
+        stopFillAnims();
+        clearOutcomeTimer();
+        const kind =
+          syncFillFailureKind(syncErrorRef.current) ??
+          (lastSyncFailedRef.current
+            ? lastFailureKindRef.current ?? 'error'
+            : null);
+
+        if (kind === 'timeout' || kind === 'error') {
+          const overlay = kind === 'timeout' ? timeoutOpacity : errorOpacity;
+          Animated.parallel([
+            Animated.timing(fillProgress, {
+              toValue: 1,
+              duration: 200,
+              easing: Easing.out(Easing.cubic),
               useNativeDriver: true,
             }),
-            Animated.timing(shimmerValue, {
-              toValue: -100,
-              duration: 0,
+            Animated.timing(fillOpacity, {
+              toValue: 0,
+              duration: 200,
               useNativeDriver: true,
             }),
-          ]),
-        );
-        shimmerAnimationRef.current = anim;
-        anim.start();
-      } else {
-        shimmerValue.setValue(-100);
+            Animated.timing(overlay, {
+              toValue: FAILURE_FLASH_OPACITY,
+              duration: 200,
+              useNativeDriver: true,
+            }),
+          ]).start(({finished}) => {
+            if (!finished || cancelled) {
+              return;
+            }
+            Animated.timing(overlay, {
+              toValue: FAILURE_PERSIST_OPACITY,
+              duration: 300,
+              useNativeDriver: true,
+            }).start();
+          });
+        } else {
+          Animated.parallel([
+            Animated.timing(fillProgress, {
+              toValue: 1,
+              duration: SUCCESS_FF_MS,
+              easing: Easing.out(Easing.cubic),
+              useNativeDriver: true,
+            }),
+            Animated.timing(fillOpacity, {
+              toValue: 0,
+              duration: 200,
+              useNativeDriver: true,
+            }),
+            Animated.timing(successOpacity, {
+              toValue: 1,
+              duration: 200,
+              useNativeDriver: true,
+            }),
+          ]).start(({finished}) => {
+            if (!finished || cancelled) {
+              return;
+            }
+            outcomeTimerRef.current = setTimeout(() => {
+              Animated.timing(successOpacity, {
+                toValue: 0,
+                duration: OUTCOME_FADE_MS,
+                useNativeDriver: true,
+              }).start(() => {
+                if (!cancelled) {
+                  fillProgress.setValue(0);
+                }
+              });
+            }, SUCCESS_HOLD_MS);
+          });
+        }
+
+        return () => {
+          cancelled = true;
+          clearOutcomeTimer();
+        };
       }
 
       return () => {
-        shimmerAnimationRef.current?.stop?.();
-        shimmerAnimationRef.current = null;
+        cancelled = true;
+        clearOutcomeTimer();
       };
-    }, [isRefreshing, shimmerValue]);
+    }, [
+      isRefreshing,
+      windowKey,
+      barWidth,
+      timeoutMs,
+      fillProgress,
+      fillOpacity,
+      windowElapsed,
+      successOpacity,
+      timeoutOpacity,
+      errorOpacity,
+    ]);
+
+    useEffect(() => {
+      if (isRefreshing) {
+        return;
+      }
+      if (justFinishedRefreshRef.current) {
+        justFinishedRefreshRef.current = false;
+        return;
+      }
+      if (lastSyncFailed) {
+        const kind =
+          lastFailureKindRef.current ??
+          syncFillFailureKind(syncErrorMessage) ??
+          'error';
+        if (kind === 'timeout') {
+          timeoutOpacity.setValue(FAILURE_PERSIST_OPACITY);
+          errorOpacity.setValue(0);
+        } else {
+          errorOpacity.setValue(FAILURE_PERSIST_OPACITY);
+          timeoutOpacity.setValue(0);
+        }
+        return;
+      }
+      timeoutOpacity.setValue(0);
+      errorOpacity.setValue(0);
+    }, [
+      lastSyncFailed,
+      isRefreshing,
+      syncErrorMessage,
+      timeoutOpacity,
+      errorOpacity,
+    ]);
+
+    useEffect(() => {
+      const id = windowElapsed.addListener(({value}) => {
+        const next = syncFillWarmth(value);
+        if (next === warmthRef.current) {
+          return;
+        }
+        warmthRef.current = next;
+        setEdgeColor(warmthColor(next, themeColorsRef.current));
+      });
+      return () => {
+        windowElapsed.removeListener(id);
+      };
+    }, [windowElapsed]);
 
     // Update "time ago" without recreating intervals every tick
     useEffect(() => {
@@ -131,7 +421,6 @@ export const CacheIndicator = forwardRef<
         }, delay);
       };
 
-      // Ensure we render with a fresh "now" when timestamps change
       setCurrentTime(Date.now());
       scheduleNext();
 
@@ -142,38 +431,31 @@ export const CacheIndicator = forwardRef<
         }
       };
     }, [latestTimestamp]);
-    // Check if we're using cache
     useEffect(() => {
       const timeDiff = Date.now() - latestTimestamp;
-      const isCache = usingCache || timeDiff > 60000; // Explicit or older than 1 minute
+      const isCache = usingCache || timeDiff > 60000;
       setIsUsingCache(isCache);
     }, [latestTimestamp, usingCache]);
     const getTimeAgo = (timestamp: number) => {
-      // Handle case when timestamp is 0
       if (timestamp === 0) {
         return 'No data';
       }
       const diffInSeconds = Math.floor((currentTime - timestamp) / 1000);
-      // Handle edge cases
       if (diffInSeconds < 0) {
         return 'Just updated';
       }
-      // Less than 10 seconds
       if (diffInSeconds < 10) {
         return 'Just updated';
       }
-      // Less than a minute
       if (diffInSeconds < 60) {
         return `${diffInSeconds} seconds ago`;
       }
-      // Less than an hour
       const diffInMinutes = Math.floor(diffInSeconds / 60);
       if (diffInMinutes < 60) {
         return `${diffInMinutes} ${
           diffInMinutes === 1 ? 'minute' : 'minutes'
         } ago`;
       }
-      // Less than a day
       const diffInHours = Math.floor(diffInMinutes / 60);
       if (diffInHours < 24) {
         const remainingMinutes = diffInMinutes % 60;
@@ -186,39 +468,52 @@ export const CacheIndicator = forwardRef<
           remainingMinutes === 1 ? 'minute' : 'minutes'
         } ago`;
       }
-      // Less than a week
       const diffInDays = Math.floor(diffInHours / 24);
       if (diffInDays < 7) {
         return `${diffInDays} ${diffInDays === 1 ? 'day' : 'days'} ago`;
       }
-      // Less than a month
       const diffInWeeks = Math.floor(diffInDays / 7);
       if (diffInWeeks < 4) {
         return `${diffInWeeks} ${diffInWeeks === 1 ? 'week' : 'weeks'} ago`;
       }
-      // Less than a year
       const diffInMonths = Math.floor(diffInDays / 30);
       if (diffInMonths < 12) {
         return `${diffInMonths} ${diffInMonths === 1 ? 'month' : 'months'} ago`;
       }
-      // Years
       const diffInYears = Math.floor(diffInDays / 365);
       return `${diffInYears} ${diffInYears === 1 ? 'year' : 'years'} ago`;
     };
     const timeAgo = getTimeAgo(latestTimestamp);
     const shownHealthHint =
       healthHint && !syncErrorMessage ? healthHint : null;
+    const isLight = theme.colors.background === '#ffffff';
+    const barBg = isRefreshing
+      ? theme.colors.cardBackground
+      : isLight
+      ? theme.colors.background
+      : theme.colors.whiteOverlay08;
+    const calmColor = warmthColor('calm', theme.colors);
+    const patienceColor = warmthColor('patience', theme.colors);
+    const dangerColor = warmthColor('danger', theme.colors);
+    const fillTranslateX =
+      barWidth > 0
+        ? fillProgress.interpolate({
+            inputRange: [0, 1],
+            outputRange: [-barWidth, 0],
+          })
+        : 0;
+    const fillBackground = windowElapsed.interpolate({
+      inputRange: [0, 0.6, 0.9, 1],
+      outputRange: [calmColor, patienceColor, dangerColor, dangerColor],
+    });
+
     return (
       <AppPressable
         id="cacheRefresher"
         style={[
           createStyles(theme).cacheIndicator,
-          {
-            backgroundColor: isRefreshing
-              ? theme.colors.cardBackground
-              : theme.colors.background,
-          },
-          isRefreshing && createStyles(theme).disabled,
+          styles.pressableClip,
+          {backgroundColor: barBg},
         ]}
         onPress={() => {
           if (isRefreshing) {
@@ -232,18 +527,63 @@ export const CacheIndicator = forwardRef<
           onLongPress?.();
         }}
         disabled={false}>
-        {isRefreshing && (
-          <View style={createStyles(theme).shimmerContainer}>
+        <View
+          pointerEvents="none"
+          style={styles.fillClip}
+          onLayout={e => {
+            const w = e.nativeEvent.layout.width;
+            if (w > 0 && Math.abs(w - barWidth) > 0.5) {
+              setBarWidth(w);
+            }
+          }}>
+          <Animated.View
+            style={[
+              styles.fillWipe,
+              barWidth > 0 ? {width: barWidth} : null,
+              {
+                opacity: fillOpacity,
+                transform: [{translateX: fillTranslateX}],
+              },
+            ]}>
             <Animated.View
-              style={[
-                createStyles(theme).shimmer,
-                {
-                  transform: [{translateX: shimmerValue}],
-                },
-              ]}
+              style={[styles.fillBody, {backgroundColor: fillBackground}]}
             />
-          </View>
-        )}
+            <LinearGradient
+              pointerEvents="none"
+              colors={[edgeColor, 'transparent']}
+              start={{x: 0, y: 0}}
+              end={{x: 1, y: 0}}
+              style={styles.fillLeadingEdge}
+            />
+          </Animated.View>
+          <Animated.View
+            style={[
+              styles.outcomeFill,
+              {
+                backgroundColor: theme.colors.receivedOverlay15,
+                opacity: successOpacity,
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.outcomeFill,
+              {
+                backgroundColor: theme.colors.warning,
+                opacity: timeoutOpacity,
+              },
+            ]}
+          />
+          <Animated.View
+            style={[
+              styles.outcomeFill,
+              {
+                backgroundColor: theme.colors.danger,
+                opacity: errorOpacity,
+              },
+            ]}
+          />
+        </View>
         <View style={styles.indicatorBody}>
           <View style={styles.indicatorRow}>
             <View
@@ -280,8 +620,11 @@ export const CacheIndicator = forwardRef<
                   ? 'Tap to retry'
                   : 'Tap to refresh'}
               </Text>
-              {isRefreshing && progress ? (
+              {isRefreshing && progressLabel ? (
                 <Text
+                  numberOfLines={1}
+                  adjustsFontSizeToFit
+                  minimumFontScale={0.5}
                   style={[
                     styles.progressText,
                     {
@@ -290,7 +633,7 @@ export const CacheIndicator = forwardRef<
                       fontFamily: theme.fontFamilies?.medium,
                     },
                   ]}>
-                  {progress.current}/{progress.total}
+                  {progressLabel}
                 </Text>
               ) : null}
             </View>
@@ -339,9 +682,37 @@ export const CacheIndicator = forwardRef<
   },
 );
 const styles = StyleSheet.create({
+  pressableClip: {
+    overflow: 'hidden',
+  },
+  fillClip: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  fillWipe: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+  },
+  fillBody: {
+    flex: 1,
+  },
+  fillLeadingEdge: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    width: LEADING_EDGE_PX,
+  },
+  outcomeFill: {
+    ...StyleSheet.absoluteFillObject,
+  },
   indicatorBody: {
     flex: 1,
     minWidth: 0,
+    zIndex: 1,
   },
   indicatorRow: {
     flexDirection: 'row',

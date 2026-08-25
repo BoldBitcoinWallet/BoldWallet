@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
   View,
   Text,
@@ -9,13 +9,19 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import AppPressable from './AppPressable';
+import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
+import {AIRGAP_PIN_DIGITS, isAirgapPin} from '../services/airgapPin';
 
 type Props = {
   visible: boolean;
   onClose: () => void;
   onSubmit: (password: string) => Promise<void>;
   isSubmitting?: boolean;
+  title?: string;
+  description?: string;
+  submitLabel?: string;
+  inputMode?: 'password' | 'pin';
 };
 
 const KeyshareImportPasswordModal = ({
@@ -23,8 +29,13 @@ const KeyshareImportPasswordModal = ({
   onClose,
   onSubmit,
   isSubmitting = false,
+  title = 'Restore Keyshare',
+  description,
+  submitLabel = 'Import',
+  inputMode = 'password',
 }: Props) => {
   const {theme} = useTheme();
+  const isPin = inputMode === 'pin';
   const [password, setPassword] = useState('');
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [isPasswordFocused, setIsPasswordFocused] = useState(false);
@@ -35,14 +46,34 @@ const KeyshareImportPasswordModal = ({
     onClose();
   };
 
+  const pinReady = isPin && isAirgapPin(password);
+  const canSubmit = isPin ? pinReady : true;
+
+  useEffect(() => {
+    if (!visible) {
+      setPassword('');
+      setIsPasswordFocused(false);
+    }
+  }, [visible, inputMode]);
+
   const handleSubmit = async () => {
+    if (!canSubmit || isSubmitting) {
+      return;
+    }
     await onSubmit(password);
+  };
+
+  const handleChangeText = (text: string) => {
+    if (isPin) {
+      setPassword(text.replace(/\D/g, '').slice(0, AIRGAP_PIN_DIGITS));
+      return;
+    }
+    setPassword(text);
   };
 
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.75)',
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -104,6 +135,13 @@ const KeyshareImportPasswordModal = ({
       paddingHorizontal: 24,
       paddingVertical: 20,
     },
+    modalDescription: {
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      marginBottom: 16,
+      lineHeight: 20,
+    },
     passwordInputContainer: {
       marginBottom: 24,
     },
@@ -127,10 +165,14 @@ const KeyshareImportPasswordModal = ({
           : theme.colors.bitcoinOrange,
       borderRadius: 12,
       paddingHorizontal: 16,
-      paddingRight: 50,
+      paddingRight: isPin ? 16 : 50,
       paddingVertical: 14,
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.medium,
+      fontSize: isPin ? theme.fontSizes?.['2xl'] || 22 : theme.fontSizes?.lg || 16,
+      fontFamily: isPin
+        ? theme.fontFamilies?.monospaceBold || theme.fontFamilies?.bold
+        : theme.fontFamilies?.medium,
+      letterSpacing: isPin ? 8 : 0,
+      textAlign: isPin ? 'center' : 'left',
       color: theme.colors.text,
       backgroundColor: 'rgba(0,0,0,0.02)',
       flex: 1,
@@ -176,6 +218,9 @@ const KeyshareImportPasswordModal = ({
           ? theme.colors.primary
           : theme.colors.bitcoinOrange,
     },
+    modalSubmitButtonDisabled: {
+      opacity: 0.5,
+    },
     modalActionButtonText: {
       fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.bold,
@@ -214,14 +259,14 @@ const KeyshareImportPasswordModal = ({
       visible={visible}
       animationType="fade"
       onRequestClose={handleClose}>
-      <View style={styles.modalOverlay}>
+      <GlassModalOverlay style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Image
               source={require('../assets/locker-icon.png')}
               style={styles.modalHeaderIconImage}
             />
-            <Text style={styles.modalTitle}>Restore Keyshare</Text>
+            <Text style={styles.modalTitle}>{title}</Text>
             <AppPressable
               style={styles.closeButton}
               onPress={handleClose}
@@ -231,36 +276,46 @@ const KeyshareImportPasswordModal = ({
             </AppPressable>
           </View>
           <View style={styles.modalBody}>
+            {description ? (
+              <Text style={styles.modalDescription}>{description}</Text>
+            ) : null}
             <View style={styles.passwordInputContainer}>
-              <Text style={styles.passwordInputLabel}>Keyshare Password</Text>
+              <Text style={styles.passwordInputLabel}>
+                {isPin ? 'Airgap PIN' : 'Keyshare Password'}
+              </Text>
               <View style={styles.passwordInputWrapper}>
                 <TextInput
                   style={[
                     styles.passwordInput,
                     isPasswordFocused && styles.passwordInputFocused,
                   ]}
-                  secureTextEntry={!passwordVisible}
-                  placeholder="Enter the password"
+                  secureTextEntry={!isPin && !passwordVisible}
+                  keyboardType={isPin ? 'number-pad' : 'default'}
+                  maxLength={isPin ? AIRGAP_PIN_DIGITS : undefined}
+                  placeholder={isPin ? '000000' : 'Enter the password'}
                   placeholderTextColor={`${theme.colors.text}40`}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={handleChangeText}
                   onFocus={() => setIsPasswordFocused(true)}
                   onBlur={() => setIsPasswordFocused(false)}
                   editable={!isSubmitting}
+                  autoFocus={isPin}
                 />
-                <AppPressable
-                  style={styles.eyeButton}
-                  onPress={() => setPasswordVisible(!passwordVisible)}>
-                  <Image
-                    source={
-                      passwordVisible
-                        ? require('../assets/eye-off-icon.png')
-                        : require('../assets/eye-on-icon.png')
-                    }
-                    style={styles.eyeIcon}
-                    resizeMode="contain"
-                  />
-                </AppPressable>
+                {isPin ? null : (
+                  <AppPressable
+                    style={styles.eyeButton}
+                    onPress={() => setPasswordVisible(!passwordVisible)}>
+                    <Image
+                      source={
+                        passwordVisible
+                          ? require('../assets/eye-off-icon.png')
+                          : require('../assets/eye-on-icon.png')
+                      }
+                      style={styles.eyeIcon}
+                      resizeMode="contain"
+                    />
+                  </AppPressable>
+                )}
               </View>
             </View>
             <View style={styles.modalActions}>
@@ -278,9 +333,14 @@ const KeyshareImportPasswordModal = ({
                 </Text>
               </AppPressable>
               <AppPressable
-                style={[styles.modalActionButton, styles.modalSubmitButton]}
+                style={[
+                  styles.modalActionButton,
+                  styles.modalSubmitButton,
+                  (!canSubmit || isSubmitting) &&
+                    styles.modalSubmitButtonDisabled,
+                ]}
                 onPress={handleSubmit}
-                disabled={isSubmitting}
+                disabled={!canSubmit || isSubmitting}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 {isSubmitting ? (
                   <ActivityIndicator color={theme.colors.white} size="small" />
@@ -296,7 +356,7 @@ const KeyshareImportPasswordModal = ({
                         styles.modalActionButtonText,
                         styles.modalSubmitButtonText,
                       ]}>
-                      Import
+                      {submitLabel}
                     </Text>
                   </>
                 )}
@@ -304,7 +364,7 @@ const KeyshareImportPasswordModal = ({
             </View>
           </View>
         </View>
-      </View>
+      </GlassModalOverlay>
     </Modal>
   );
 };

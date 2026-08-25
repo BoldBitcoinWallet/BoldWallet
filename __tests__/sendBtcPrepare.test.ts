@@ -157,4 +157,62 @@ describe('prepareSendBtcMultiPathInputs', () => {
       }),
     ).rejects.toThrow(/No spendable UTXOs/);
   });
+
+  it('does not expand a 1-coin route pool with extra wallet UTXOs', async () => {
+    mockWs.fetchUtxosWithPaths.mockResolvedValue([
+      {
+        ...compactRouteUtxo,
+        derivationPath: compactRouteUtxo.derivation_path,
+        chain: 'receive',
+        chainIndex: 0,
+      },
+      {
+        txid: 'bb'.repeat(32),
+        vout: 1,
+        value: 50000,
+        address: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
+        derivationPath: "m/84'/1'/0'/0/1",
+        chain: 'receive',
+        chainIndex: 1,
+      },
+    ]);
+    (utxoRepository.getUtxosForNetwork as jest.Mock).mockReturnValue([
+      {
+        txid: compactRouteUtxo.txid,
+        vout: 0,
+        address: compactRouteUtxo.address,
+        network: 'testnet3',
+        valueSats: 100000,
+        scriptPubkey: '0014fromdb',
+        derivationPath: compactRouteUtxo.derivation_path,
+        isConfirmed: true,
+        blockHeight: 1,
+        blockTime: 1,
+        fetchedAt: 1,
+      },
+      {
+        txid: 'bb'.repeat(32),
+        vout: 1,
+        address: compactRouteUtxo.address,
+        network: 'testnet3',
+        valueSats: 50000,
+        scriptPubkey: '0014extra',
+        derivationPath: "m/84'/1'/0'/0/1",
+        isConfirmed: true,
+        blockHeight: 1,
+        blockTime: 1,
+        fetchedAt: 1,
+      },
+    ]);
+    const result = await prepareSendBtcMultiPathInputs({
+      network: 'testnet',
+      addressType: 'segwit-native',
+      utxosJsonFromRoute: JSON.stringify([compactRouteUtxo]),
+      changeAddressFromRoute: 'tb1qchg',
+    });
+    const native = JSON.parse(result.utxosWithPathsJSON);
+    expect(native).toHaveLength(1);
+    expect(native[0].txid).toBe(compactRouteUtxo.txid);
+    expect(mockWs.fetchUtxosWithPaths).not.toHaveBeenCalled();
+  });
 });

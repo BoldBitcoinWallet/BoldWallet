@@ -26,6 +26,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       let tag = "TssHook"
       let params: [String: Any] = ["tag": tag, "message": msg]
       sendEvent(withName: "BBMT_APPLE", body: params)
+      MpcKeepAliveModule.onTssHook(msg)
     }
     onGoLog(message)
   }
@@ -541,6 +542,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
     var error: NSError?
     let output = TssSha256(message, &error)
     resolve("sha256", output, error, resolver)
+  }
+
+  @objc func secureRandom(
+    _ length: Int, resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    var error: NSError?
+    let output = TssSecureRandom(Int32(length), &error)
+    resolve("secureRandom", output, error, resolver)
   }
 
   @objc func recoverPubkey(

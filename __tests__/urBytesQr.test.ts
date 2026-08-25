@@ -27,12 +27,14 @@ import {encodeSendBitcoinQR, decodeSendBitcoinQR} from '../utils';
 import {
   createUrDecoder,
   receiveUrBytesPart,
+  receiveUrBytesPartAsBase64,
   urAllSequentialParts,
   urFountainParts,
   urFragmentCount,
   urPartAt,
   urTypeFromPart,
   utf8ToUr,
+  bufferToUr,
 } from '../utils/urBytesQr';
 
 const MAX_STATIC_QR_CHARS = 1800;
@@ -233,5 +235,34 @@ describe('urBytesQr send-bitcoin round-trip', () => {
     expect(payload).toBe(largePayload);
     const decoded = decodeSendBitcoinQR(payload!) as {utxosJson?: string};
     expect(JSON.parse(decoded.utxosJson || '[]')).toHaveLength(40);
+  });
+});
+
+describe('urBytesQr binary airgap payload', () => {
+  it('round-trips AES ciphertext bytes through UR fountain parts as base64', () => {
+    const encryptedBytes = Buffer.alloc(8192);
+    for (let i = 0; i < encryptedBytes.length; i++) {
+      encryptedBytes[i] = (i * 17 + 43) % 256;
+    }
+    const originalBase64 = encryptedBytes.toString('base64');
+    const ur = bufferToUr(Buffer.from(originalBase64, 'base64'));
+    expect(ur).not.toBeNull();
+    expect(urFragmentCount(ur!)).toBeGreaterThan(1);
+
+    const parts = urFountainParts(ur!, 4);
+    expect(urTypeFromPart(parts[0]!)).toBe('bytes');
+
+    const decoder = createUrDecoder();
+    let recovered: string | null = null;
+    for (const part of parts) {
+      const result = receiveUrBytesPartAsBase64(decoder, part);
+      if (result.kind === 'complete') {
+        recovered = result.payload;
+        break;
+      }
+      expect(['progress', 'not-ur', 'ignored']).toContain(result.kind);
+    }
+    expect(recovered).toBe(originalBase64);
+    expect(Buffer.from(recovered!, 'base64').equals(encryptedBytes)).toBe(true);
   });
 });

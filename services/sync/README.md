@@ -13,6 +13,7 @@ Screens typically **read** balances, UTXOs, and metadata from SQLite (through re
 The home transaction list ([`components/TransactionList.tsx`](../../components/TransactionList.tsx)) is a deliberate exception:
 
 - It **pre-populates** from the local cache / DB so rows appear immediately.
-- On pull-to-refresh, initial load, and pagination, it may call **Mempool REST** (via `MempoolClient`, `TransactionSyncer`, or `WalletService`) to fetch newer pages, merge with pending sends, and update the cache. On errors it **falls back** to cached data instead of clearing the list.
+- Home owns the initial live tx sync (`deferInitialFetch`) via `runWalletRefreshSession`. Pull-to-refresh waits for that session then reloads SQLite.
+- Pagination and non-Home callers may still call Mempool REST (via `MempoolClient`, `TransactionSyncer`, or `WalletService`) to fetch newer pages, merge with pending sends, and update the cache. On errors they **fall back** to cached data instead of clearing the list.
 
 So the statement “UI reads only from SQLite” describes the **default** data path and **SyncCoordinator’s** role; it does not apply to every interactive code path in the transaction list. Do not remove those API calls without a product decision and regression testing around pull-to-refresh and pagination.

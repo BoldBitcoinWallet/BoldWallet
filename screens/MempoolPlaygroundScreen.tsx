@@ -10,7 +10,6 @@ import {
   KeyboardAvoidingView,
   Modal,
   FlatList,
-  TouchableOpacity,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -19,6 +18,7 @@ import Animated, {
   interpolate,
 } from 'react-native-reanimated';
 import AppPressable from '../components/AppPressable';
+import GlassModalOverlay from '../components/GlassModalOverlay';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
@@ -31,6 +31,7 @@ import {
 } from '../components/Header';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Toast from 'react-native-toast-message';
+import {guardOnlineAction} from '../services/walletOnlineStore';
 import {
   MEMPOOL_PLAYGROUND_SECTIONS,
   type PlaygroundEndpoint,
@@ -293,6 +294,9 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   const runRequest = useCallback(
     async (section: PlaygroundSection, endpoint: PlaygroundEndpoint) => {
+      if (!guardOnlineAction()) {
+        return;
+      }
       const sid = section.id;
       setLoading(prev => ({...prev, [sid]: true}));
       setResponses(prev => ({...prev, [sid]: ''}));
@@ -462,7 +466,6 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
         },
         modalOverlay: {
           flex: 1,
-          backgroundColor: 'rgba(0,0,0,0.5)',
           justifyContent: 'center',
           padding: 24,
         },
@@ -610,13 +613,10 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   transparent
                   animationType="fade"
                   onRequestClose={() => setEndpointPickerSectionId(null)}>
-                  <TouchableOpacity
-                    activeOpacity={1}
+                  <GlassModalOverlay
                     style={styles.modalOverlay}
                     onPress={() => setEndpointPickerSectionId(null)}>
-                    <TouchableOpacity
-                      activeOpacity={1}
-                      onPress={() => {}}
+                    <View
                       style={[
                         styles.modalContent,
                         {
@@ -669,8 +669,8 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
                           Cancel
                         </Text>
                       </AppPressable>
-                    </TouchableOpacity>
-                  </TouchableOpacity>
+                    </View>
+                  </GlassModalOverlay>
                 </Modal>
               </View>
               {endpoint && (

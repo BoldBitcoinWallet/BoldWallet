@@ -1,6 +1,7 @@
 import React from 'react';
 import {Modal, View, Text, Image} from 'react-native';
 import AppPressable from './AppPressable';
+import GlassModalOverlay from './GlassModalOverlay';
 import {shorten} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
@@ -33,11 +34,7 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}>
-      <AppPressable
-        style={styles.modalOverlay}
-        onPress={() => {
-          onClose();
-        }}>
+      <GlassModalOverlay onPress={onClose}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeaderRow}>
             <Image
@@ -144,7 +141,7 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
             )}
           </AppPressable>
         </View>
-      </AppPressable>
+      </GlassModalOverlay>
     </Modal>
   );
 };

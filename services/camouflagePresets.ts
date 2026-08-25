@@ -1,7 +1,10 @@
 /**
  * Android camouflage launcher presets.
  * Labels are compile-time on activity-alias; keep ASCII and ≤12 chars.
+ * Preview images match the home-screen launcher icons (mipmap / adaptive vectors).
  */
+
+import type {ImageSourcePropType} from 'react-native';
 
 export const CAMOUFLAGE_LABEL_MAX_LEN = 12;
 
@@ -15,17 +18,36 @@ export type CamouflagePresetId =
 export type CamouflagePreset = {
   id: CamouflagePresetId;
   label: string;
-  /** Tile color in settings (not the Play listing icon). */
-  swatch: string;
-  glyph: string;
+  /** Exact launcher artwork shown in settings and on the lock screen when camouflaged. */
+  preview: ImageSourcePropType;
 };
 
 export const CAMOUFLAGE_PRESETS: CamouflagePreset[] = [
-  {id: 'default', label: 'Bold Wallet', swatch: '#1A2B3C', glyph: 'B'},
-  {id: 'quickcalc', label: 'QuickCalc', swatch: '#3D3D3D', glyph: '='},
-  {id: 'notes', label: 'Notes', swatch: '#C4B8A5', glyph: 'N'},
-  {id: 'weather', label: 'Weather', swatch: '#4BA3C7', glyph: 'W'},
-  {id: 'files', label: 'Files', swatch: '#F5C542', glyph: 'F'},
+  {
+    id: 'default',
+    label: 'Bold Wallet',
+    preview: require('../assets/camouflage/default.png'),
+  },
+  {
+    id: 'quickcalc',
+    label: 'QuickCalc',
+    preview: require('../assets/camouflage/quickcalc.png'),
+  },
+  {
+    id: 'notes',
+    label: 'Notes',
+    preview: require('../assets/camouflage/notes.png'),
+  },
+  {
+    id: 'weather',
+    label: 'Weather',
+    preview: require('../assets/camouflage/weather.png'),
+  },
+  {
+    id: 'files',
+    label: 'Files',
+    preview: require('../assets/camouflage/files.png'),
+  },
 ];
 
 const VALID_IDS = new Set<string>(CAMOUFLAGE_PRESETS.map(p => p.id));
@@ -55,4 +77,34 @@ export function camouflagePresetById(
   id: CamouflagePresetId,
 ): CamouflagePreset {
   return CAMOUFLAGE_PRESETS.find(p => p.id === id) ?? CAMOUFLAGE_PRESETS[0];
+}
+
+/** True when a non-Bold launcher identity is selected. */
+export function isCamouflageActive(
+  raw: string | null | undefined,
+): boolean {
+  return normalizeCamouflagePresetId(raw) !== 'default';
+}
+
+const DEFAULT_UNLOCK_PROMPT = {
+  promptMessage: 'Authenticate to access your wallet',
+  fallbackPromptMessage: 'Use your device passcode to unlock',
+} as const;
+
+/** System biometric sheet copy: no wallet wording when camouflage is on. */
+export function camouflageUnlockPrompt(
+  raw: string | null | undefined,
+): {promptMessage: string; fallbackPromptMessage: string} {
+  const id = normalizeCamouflagePresetId(raw);
+  if (id === 'default') {
+    return {
+      promptMessage: DEFAULT_UNLOCK_PROMPT.promptMessage,
+      fallbackPromptMessage: DEFAULT_UNLOCK_PROMPT.fallbackPromptMessage,
+    };
+  }
+  const label = camouflagePresetById(id).label;
+  return {
+    promptMessage: `Unlock ${label}`,
+    fallbackPromptMessage: 'Use your device passcode',
+  };
 }

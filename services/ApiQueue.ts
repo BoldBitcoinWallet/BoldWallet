@@ -18,7 +18,7 @@ export type ApiQueueLabel =
 export interface ApiQueueState {
   label: ApiQueueLabel | null;
   startedAt: number;
-  /** When set, show progress e.g. "3/5" next to the label. */
+  /** When set, show address progress e.g. "3 of 5 addresses" next to the label. */
   progress?: { current: number; total: number };
 }
 

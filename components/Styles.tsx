@@ -25,6 +25,7 @@ export interface Theme {
     buttonText: string;
     disabledText: string;
     modalBackdrop: string;
+    modalBackdropGlass: string;
     lightGray: string;
     mediumGray: string;
     bitcoinOrange: string;
@@ -840,7 +841,6 @@ export const createStyles = (theme: Theme): Styles => ({
   },
   modalOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: theme.colors.modalBackdrop,
     justifyContent: 'center' as const,
     alignItems: 'center' as const,
     zIndex: 100,

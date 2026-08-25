@@ -1,8 +1,18 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
-import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {
+  CANONICAL_TESTNET_MEMPOOL_API_BASE,
+  resolveStoredMempoolApiBase,
+} from '../services/mempoolApiBase';
+import {
+  activeProviderUrls,
+  ensureMempoolProvidersSeeded,
+  loadMempoolProviderEntries,
+} from '../services/mempoolProvidersStore';
+import mempoolClient from '../services/MempoolClient';
 import { BBMTLibNativeModule } from '../native_modules';
-import {dbg, getMainnetAPIList, getTestnetAPIList} from '../utils';
+import {dbg, getTestnetAPIList} from '../utils';
+
 interface NetworkContextType {
   network: string;
   apiBase: string;
@@ -11,6 +21,24 @@ interface NetworkContextType {
   refreshFromCache: () => Promise<void>;
 }
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
+
+async function applyFeeAndFailoverBases(net: string): Promise<void> {
+  if (net === 'mainnet') {
+    const enabled = await ensureMempoolProvidersSeeded();
+    mempoolClient.setPublicBases(enabled);
+    await BBMTLibNativeModule.setFeeAPIs(enabled.join(','));
+    return;
+  }
+  const testnetAPIs = await getTestnetAPIList();
+  mempoolClient.setPublicBases([]);
+  await BBMTLibNativeModule.setFeeAPIs(
+    (testnetAPIs.length > 0
+      ? testnetAPIs
+      : [CANONICAL_TESTNET_MEMPOOL_API_BASE]
+    ).join(','),
+  );
+}
+
 export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [network, setNetwork] = useState<string>('mainnet');
   const [apiBase, setApiBase] = useState<string>('');
@@ -47,10 +75,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setNetwork(newNetwork);
       setApiBase(api);
       await BBMTLibNativeModule.setAPI(newNetwork, api);
-      const networkAPIs = newNetwork === 'mainnet'
-        ? await getMainnetAPIList()
-        : await getTestnetAPIList();
-      await BBMTLibNativeModule.setFeeAPIs(networkAPIs.join(','));
+      await applyFeeAndFailoverBases(newNetwork);
       dbg('NetworkContext: Network update completed', newNetwork, api);
     } catch (error) {
       dbg('NetworkContext: Error updating network:', error);
@@ -63,6 +88,17 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
       appConfigRepository.set('api', newAPI);
       setApiBase(newAPI);
       await BBMTLibNativeModule.setAPI(network, newAPI);
+      if (network === 'mainnet') {
+        const list = await loadMempoolProviderEntries();
+        const enabled = activeProviderUrls(list);
+        // Never seed disabled hosts. If the list is empty, use the new API only
+        // (caller is setting primary — still a single enabled target).
+        const bases = enabled.length > 0 ? enabled : [newAPI];
+        // If newAPI is not among enabled, do not add it as a silent extra host;
+        // primary config was updated above — pool stays enabled-only.
+        mempoolClient.setPublicBases(bases);
+        await BBMTLibNativeModule.setFeeAPIs(bases.join(','));
+      }
       dbg('NetworkContext: API updated to:', newAPI);
     } catch (error) {
       dbg('NetworkContext: Error updating API:', error);
@@ -82,10 +118,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
         setApiBase(api);
         await BBMTLibNativeModule.setAPI(net, api);
-        const networkAPIs = net === 'mainnet'
-          ? await getMainnetAPIList()
-          : await getTestnetAPIList();
-        await BBMTLibNativeModule.setFeeAPIs(networkAPIs.join(','));
+        await applyFeeAndFailoverBases(net);
         dbg('NetworkContext: initialized', net, api);
       } catch (error) {
         dbg('NetworkContext: Error during initialization:', error);

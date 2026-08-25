@@ -52,6 +52,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     /** Called from JNI (libbbmtmobile) so MPC hooks reach React Native. */
     fun deliverMpcHook(msg: String) {
         sendLogEvent("TssHook", msg)
+        MpcKeepAliveService.onTssHook(msg)
     }
 
     /** Called from JNI (BbmtSetGoLogListener) for Go runtime logs. */
@@ -1025,6 +1026,31 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         } catch (e: Throwable) {
             ld("sha256", "error: ${e.stackTraceToString()}")
             promise.reject("SHA256_ERROR", "Failed to compute SHA256: ${e.message}", e)
+        }
+    }
+
+    @ReactMethod
+    fun secureRandom(length: Int, promise: Promise) {
+        try {
+            if (rejectBbmtUnavailable(promise, "secureRandom")) return
+            if (length <= 0) {
+                promise.reject("SECURE_RANDOM_ERROR", "length must be positive", null)
+                return
+            }
+            val result = DklsNative.bbmtSecureRandomNative(length)
+            if (result.startsWith("error:")) {
+                promise.reject(
+                    "SECURE_RANDOM_ERROR",
+                    result.removePrefix("error:"),
+                    null,
+                )
+                return
+            }
+            ld("secureRandom", "len=$length")
+            promise.resolve(result)
+        } catch (e: Throwable) {
+            ld("secureRandom", "error: ${e.stackTraceToString()}")
+            promise.reject("SECURE_RANDOM_ERROR", "Failed to generate random: ${e.message}", e)
         }
     }
 

@@ -3,6 +3,7 @@
  */
 
 import {formatBroadcastError} from '../services/broadcastErrorMessages';
+import {WalletOfflineError} from '../services/walletOfflineError';
 
 describe('formatBroadcastError', () => {
   it('maps failed-after-N PostTx wrapping to a friendly network message', () => {
@@ -27,5 +28,11 @@ describe('formatBroadcastError', () => {
     expect(
       formatBroadcastError(new Error('txn-already-in-mempool')),
     ).toMatch(/already in the mempool/i);
+  });
+
+  it('maps in-app offline sandbox', () => {
+    expect(formatBroadcastError(new WalletOfflineError())).toMatch(
+      /go online to broadcast/i,
+    );
   });
 });

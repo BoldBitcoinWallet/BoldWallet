@@ -1,15 +1,17 @@
 import React from 'react';
 import {Modal, View, StyleSheet, ActivityIndicator} from 'react-native';
 import AppText from './AppText';
+import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
 import {getGapLimit} from '../services/HdOptionsConfig';
+import {formatSyncFillProgress} from '../services/syncFillWindow';
 
 /**
  * Non-dismissible modal shown during restore discovery / chain indexing.
  * Used when clearing storage or importing keyshare.
  *
  * phase — optional free-text label (e.g. "Syncing balances…", "Syncing transactions…").
- * progress — when set with phase, show address progress e.g. "3/5".
+ * progress — when set with phase, show address progress e.g. "3 of 5 addresses".
  */
 const RestoringIndexesModal: React.FC<{
   visible: boolean;
@@ -21,12 +23,12 @@ const RestoringIndexesModal: React.FC<{
 }> = ({visible, chain, index = 0, gapIndex = 0, phase, progress}) => {
   const {theme} = useTheme();
   const chainLabel = chain === 'external' ? 'Receive' : chain === 'internal' ? 'Change' : null;
+  const progressLabel = formatSyncFillProgress(progress);
   const styles = StyleSheet.create({
     overlay: {
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: theme.colors.modalBackdrop,
     },
     content: {
       backgroundColor: theme.colors.cardBackground,
@@ -67,7 +69,7 @@ const RestoringIndexesModal: React.FC<{
         // Non-dismissible: ignore back button
       }}
       statusBarTranslucent>
-      <View style={styles.overlay}>
+      <GlassModalOverlay style={styles.overlay}>
         <View style={styles.content}>
           <ActivityIndicator
             size="large"
@@ -79,15 +81,15 @@ const RestoringIndexesModal: React.FC<{
           </AppText>
           <AppText style={styles.subtitle} tone="muted">
             {phase
-              ? progress
-                ? `${phase} ${progress.current}/${progress.total}`
+              ? progressLabel
+                ? `${phase} ${progressLabel}`
                 : phase
               : chainLabel
               ? `Scanning ${chainLabel} chain… index ${index}, gap ${gapIndex}/${getGapLimit()}`
               : 'Scanning chain for addresses…'}
           </AppText>
         </View>
-      </View>
+      </GlassModalOverlay>
     </Modal>
   );
 };

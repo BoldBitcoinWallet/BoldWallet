@@ -154,5 +154,7 @@
 	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 </dict>
 </plist>

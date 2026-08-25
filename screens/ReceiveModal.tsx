@@ -11,6 +11,7 @@ import {
 import AppPressable from '../components/AppPressable';
 import StaticQRCode from '../components/StaticQRCode';
 import AppText from '../components/AppText';
+import GlassModalOverlay from '../components/GlassModalOverlay';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
@@ -103,7 +104,6 @@ const ReceiveModal: React.FC<{
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: theme.colors.modalBackdrop,
     },
     modalContent: {
       backgroundColor: theme.colors.cardBackground,
@@ -314,7 +314,7 @@ const ReceiveModal: React.FC<{
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}>
-      <View style={styles.modalContainer}>
+      <GlassModalOverlay style={styles.modalContainer}>
         <View style={styles.modalContent}>
           <View style={styles.header}>
             <View style={styles.titleContainer}>
@@ -427,7 +427,7 @@ const ReceiveModal: React.FC<{
             </View>
           </View>
         </View>
-      </View>
+      </GlassModalOverlay>
     </Modal>
   );
 };

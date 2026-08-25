@@ -33,6 +33,8 @@ static BOOL resolveFree(void) {
 #endif
 }
 
+extern "C" char *BbmtSecureRandom(int length);
+
 static void (^s_hookBlock)(NSString *) = nil;
 static void (^s_logBlock)(NSString *) = nil;
 
@@ -151,6 +153,9 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   char *k0=dupC(message);
   NSString *out = wrap(BbmtSha256(k0));
   free(k0); return out;
+}
++ (NSString *)secureRandom:(int)length {
+  return wrap(BbmtSecureRandom(length));
 }
 + (NSString *)secP256k1RecoverR:(NSString *)r s:(NSString *)s v:(NSString *)v h:(NSString *)h {
   char *k0=dupC(r); char *k1=dupC(s); char *k2=dupC(v); char *k3=dupC(h);

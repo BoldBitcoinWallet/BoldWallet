@@ -7,7 +7,6 @@ import {
   RefreshControl,
   ActivityIndicator,
   Platform,
-  Linking,
   Alert,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
@@ -34,7 +33,11 @@ import {
   getCurrencySymbol,
   dbg,
   explorerWebBaseFromApiUrl,
+  formatBitcoinDisplay,
 } from '../utils';
+import UtxoDetailsModal from '../components/UtxoDetailsModal';
+import utxoTagRepository from '../services/repositories/UtxoTagRepository';
+import {outpointKey} from '../services/utxoCoinControl';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import AppPressable from '../components/AppPressable';
 import {CacheIndicator} from '../components/CacheIndicator';
@@ -43,7 +46,14 @@ import {
   getMempoolHealth,
   subscribeMempoolHealth,
 } from '../services/mempoolHealth';
+import {
+  isWalletOnline,
+  notifyWalletOnlineToggle,
+  setWalletOnline,
+  useWalletOnline,
+} from '../services/walletOnlineStore';
 import CurrencySelector from '../components/CurrencySelector';
+import WalletOfflineSandboxModal from '../components/WalletOfflineSandboxModal';
 
 /** Mempool.space UTXO item: txid, vout, value (sats), status { confirmed, block_height?, block_hash?, block_time? }. */
 type ApiUtxo = {
@@ -130,6 +140,8 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     activeApiProvider: apiBase,
     activeNetwork: network,
     activeAddressType: addressType,
+    showSats,
+    balanceFormattingEnabled,
   } = useUser();
   const [btcPrice, setBtcPrice] = useState<string>('');
   const [btcRate, setBtcRate] = useState<number>(0);
@@ -152,9 +164,17 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
   const [lastSyncFailed, setLastSyncFailed] = useState(false);
   const [abortRequested, setAbortRequested] = useState(false);
+  const [offlineSandboxModalVisible, setOfflineSandboxModalVisible] =
+    useState(false);
+  const pendingOnlineActionRef = React.useRef<(() => void) | null>(null);
+  const [detailsUtxo, setDetailsUtxo] = useState<UtxoWithPath | null>(null);
+  const [tagByOutpoint, setTagByOutpoint] = useState<Map<string, string>>(
+    () => new Map(),
+  );
   const [healthHint, setHealthHint] = useState<string | null>(() =>
     cacheIndicatorHealthHint(getMempoolHealth()?.quality),
   );
+  const walletOnline = useWalletOnline();
 
   useEffect(() => {
     return subscribeMempoolHealth(state => {
@@ -239,6 +259,21 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       setUtxoFetchTimestamp(Date.now());
       setLoading(false);
       setRefreshing(false);
+      return;
+    }
+
+    if (!isWalletOnline()) {
+      const allFromDB = utxoRepository.getUtxosForAddresses(
+        addressesWithPaths.map(a => a.address),
+        network,
+      );
+      setUtxosWithPath(storedToUtxoWithPath(allFromDB, addressesWithPaths));
+      setUtxoFetchTimestamp(Date.now());
+      setFetchError(null);
+      setLoading(false);
+      setRefreshing(false);
+      setRefreshStatusMessage(null);
+      setRefreshProgress(null);
       return;
     }
 
@@ -348,6 +383,18 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     };
   }, [fetchUtxos, network, addressType]);
 
+  useEffect(() => {
+    if (utxosWithPath.length === 0) {
+      setTagByOutpoint(new Map());
+      return;
+    }
+    setTagByOutpoint(
+      utxoTagRepository.getByOutpoints(
+        utxosWithPath.map(u => outpointKey(u.txid, u.vout ?? 0)),
+      ),
+    );
+  }, [utxosWithPath]);
+
   const handleCurrencySelect = useCallback(
     (currency: {code: string}) => {
       setSelectedCurrency(currency.code);
@@ -404,9 +451,32 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   ]);
 
   const onRefresh = useCallback(() => {
+    if (!isWalletOnline()) {
+      pendingOnlineActionRef.current = () => {
+        setRefreshing(true);
+        fetchUtxos();
+      };
+      setOfflineSandboxModalVisible(true);
+      setRefreshing(false);
+      return;
+    }
     setRefreshing(true);
     fetchUtxos();
   }, [fetchUtxos]);
+
+  const dismissOfflineSandboxModal = useCallback(() => {
+    pendingOnlineActionRef.current = null;
+    setOfflineSandboxModalVisible(false);
+  }, []);
+
+  const goOnlineFromSandboxModal = useCallback(() => {
+    const pending = pendingOnlineActionRef.current;
+    pendingOnlineActionRef.current = null;
+    setOfflineSandboxModalVisible(false);
+    setWalletOnline(true);
+    notifyWalletOnlineToggle(true);
+    pending?.();
+  }, []);
 
   const isDarkMode = theme.colors.background !== '#ffffff';
   const cardBg = isDarkMode ? theme.colors.cardBackground : '#ffffff';
@@ -432,7 +502,11 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       }
     }
     const totalSats = confirmedSats + unconfirmedSats;
-    const fmt = (sats: number) => (sats / 1e8).toFixed(8);
+    const fmt = (sats: number) =>
+      formatBitcoinDisplay(sats / 1e8, {
+        inSats: showSats,
+        formatted: balanceFormattingEnabled,
+      });
     const fiat = (sats: number) =>
       btcRate > 0
         ? getCurrencySymbol(selectedCurrency || 'USD') +
@@ -447,7 +521,13 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       fmt,
       fiat,
     };
-  }, [utxosWithPath, btcRate, selectedCurrency]);
+  }, [
+    utxosWithPath,
+    btcRate,
+    selectedCurrency,
+    showSats,
+    balanceFormattingEnabled,
+  ]);
 
   const shortTxId = (txid: string) =>
     txid ? `${txid.slice(0, 6)}…${txid.slice(-6)}` : '—';
@@ -578,6 +658,26 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         chainBadgeText: {
           fontSize: theme.fontSizes?.xs || 11,
           fontFamily: theme.fontFamilies?.bold,
+        },
+        tagChip: {
+          alignSelf: 'flex-start' as const,
+          paddingHorizontal: 8,
+          paddingVertical: 3,
+          borderRadius: 6,
+          marginBottom: 6,
+          maxWidth: '100%' as const,
+          borderWidth: isDarkMode ? 0 : 1,
+          borderColor: isDarkMode
+            ? 'transparent'
+            : theme.colors.primary + '40',
+          backgroundColor: isDarkMode
+            ? theme.colors.secondary + '22'
+            : theme.colors.primary + '14',
+        },
+        tagChipText: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.bold,
+          color: isDarkMode ? theme.colors.secondary : theme.colors.primary,
         },
         pathRow: {
           marginTop: 4,
@@ -751,26 +851,22 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           ? moment(blockTime).fromNow()
           : moment(blockTime).format('MMM D, YYYY · h:mm A')
         : 'Unconfirmed';
-      const valueBtc = (u.value / 1e8).toFixed(8);
+      const valueDisplay = formatBitcoinDisplay(u.value / 1e8, {
+        inSats: showSats,
+        formatted: balanceFormattingEnabled,
+      });
       const valueFiat =
         getCurrencySymbol(selectedCurrency || 'USD') +
         presentFiat((u.value / 1e8) * btcRate);
-      const openInExplorer = () => {
-        if (!baseUrl || !u.txid) return;
-        const vout = u.vout ?? 0;
-        const url = `${baseUrl}/tx/${u.txid}#vout=${vout}`;
-        Linking.openURL(url).catch(() => {
-          Alert.alert('Error', 'Could not open explorer');
-        });
-      };
       const isReceive = u.chain === 'receive';
+      const tag = tagByOutpoint.get(outpointKey(u.txid, u.vout ?? 0));
       return (
         <AppPressable
           style={[
             styles.utxoCard,
             {backgroundColor: cardBg, borderColor: cardBorder},
           ]}
-          onPress={openInExplorer}
+          onPress={() => setDetailsUtxo(u)}
           android_ripple={{
             color: isDarkMode ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.08)',
             borderless: false,
@@ -782,7 +878,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             u.chainIndex,
           )} UTXO ${shortTxId(u.txid || '')} vout ${
             u.vout ?? 0
-          }. Tap to open in explorer.`}>
+          }. Tap for details.`}>
           <View
             style={[
               styles.chainBadge,
@@ -806,6 +902,13 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
               {u.derivationPath}
             </Text>
           </View>
+          {tag ? (
+            <View style={styles.tagChip}>
+              <Text style={styles.tagChipText} numberOfLines={1}>
+                {tag}
+              </Text>
+            </View>
+          ) : null}
           <View style={styles.utxoRow}>
             <Text
               style={[styles.utxoLeft, {color: theme.colors.text}]}
@@ -820,7 +923,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             <Text
               style={[styles.utxoAmount, {color: receivedColor}]}
               selectable>
-              +{valueBtc} BTC
+              +{valueDisplay}
             </Text>
           </View>
           <View style={styles.utxoRow}>
@@ -860,7 +963,9 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
       btcRate,
       isDarkMode,
       receivedColor,
-      baseUrl,
+      showSats,
+      balanceFormattingEnabled,
+      tagByOutpoint,
     ],
   );
 
@@ -936,7 +1041,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
               style={[styles.heroTotalBtc, {color: theme.colors.textOnPrimary}]}
               numberOfLines={1}
               adjustsFontSizeToFit>
-              {balanceSummary.fmt(balanceSummary.totalSats)} BTC
+              {balanceSummary.fmt(balanceSummary.totalSats)}
             </Text>
             {balanceSummary.fiat(balanceSummary.totalSats) && (
               <Text
@@ -971,7 +1076,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
             <View style={styles.summaryRight}>
               <Text style={[styles.summaryBtc, {color: receivedColor}]}>
-                {balanceSummary.fmt(balanceSummary.confirmedSats)} BTC
+                {balanceSummary.fmt(balanceSummary.confirmedSats)}
               </Text>
               {balanceSummary.fiat(balanceSummary.confirmedSats) && (
                 <Text
@@ -1010,7 +1115,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
               <View style={styles.summaryRight}>
                 <Text
                   style={[styles.summaryBtc, {color: theme.colors.warning}]}>
-                  +{balanceSummary.fmt(balanceSummary.unconfirmedSats)} BTC
+                  +{balanceSummary.fmt(balanceSummary.unconfirmedSats)}
                 </Text>
                 {balanceSummary.fiat(balanceSummary.unconfirmedSats) && (
                   <Text
@@ -1052,6 +1157,53 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
             );
           }}
           onLongPress={() => {
+            if (!isWalletOnline()) {
+              pendingOnlineActionRef.current = () => {
+                Alert.alert(
+                  'Full sync',
+                  'Re-scan all addresses and sync. Existing data is kept. Continue?',
+                  [
+                    {text: 'Cancel', style: 'cancel'},
+                    {
+                      text: 'Continue',
+                      onPress: async () => {
+                        const effectiveType = addressType || 'segwit-native';
+                        const api =
+                          apiBase || resolveStoredMempoolApiBase(network);
+                        setRefreshing(true);
+                        try {
+                          dbg(
+                            '[UtxosScreen] Long-press: full sync (discovery + refresh)',
+                          );
+                          setRefreshStatusMessage('Discovering addresses…');
+                          await WalletService.getInstance().discoverHdIndexesForNetwork(
+                            network,
+                            effectiveType,
+                            api,
+                            chain =>
+                              setRefreshStatusMessage(
+                                `Scanning ${
+                                  chain === 'external' ? 'receive' : 'change'
+                                } addresses…`,
+                              ),
+                          );
+                          setRefreshStatusMessage('Rebuilding wallet data…');
+                        } catch (e) {
+                          dbg(
+                            '[UtxosScreen] Long-press reconstruction error',
+                            e,
+                          );
+                        }
+                        setRefreshStatusMessage(null);
+                        onRefresh();
+                      },
+                    },
+                  ],
+                );
+              };
+              setOfflineSandboxModalVisible(true);
+              return;
+            }
             Alert.alert(
               'Full sync',
               'Re-scan all addresses and sync. Existing data is kept. Continue?',
@@ -1096,9 +1248,10 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           statusMessage={refreshStatusMessage ?? undefined}
           progress={refreshProgress ?? undefined}
           usingCache={
-            !refreshing &&
-            utxoFetchTimestamp > 0 &&
-            Date.now() - utxoFetchTimestamp > 60000
+            !walletOnline ||
+            (!refreshing &&
+              utxoFetchTimestamp > 0 &&
+              Date.now() - utxoFetchTimestamp > 60000)
           }
         />
       </View>
@@ -1140,6 +1293,43 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         onSelect={handleCurrencySelect}
         currentCurrency={selectedCurrency}
         availableCurrencies={priceData}
+      />
+      <UtxoDetailsModal
+        visible={!!detailsUtxo}
+        onClose={() => setDetailsUtxo(null)}
+        utxo={detailsUtxo}
+        initialTag={
+          detailsUtxo
+            ? tagByOutpoint.get(
+                outpointKey(detailsUtxo.txid, detailsUtxo.vout ?? 0),
+              ) || ''
+            : ''
+        }
+        onTagSaved={(txid, vout, tag) => {
+          setTagByOutpoint(prev => {
+            const next = new Map(prev);
+            const key = outpointKey(txid, vout);
+            if (tag) {
+              next.set(key, tag);
+            } else {
+              next.delete(key);
+            }
+            return next;
+          });
+        }}
+        explorerUrl={
+          detailsUtxo && baseUrl
+            ? `${baseUrl}/tx/${detailsUtxo.txid}#vout=${detailsUtxo.vout ?? 0}`
+            : null
+        }
+        selectedCurrency={selectedCurrency}
+        btcRate={btcRate}
+      />
+      <WalletOfflineSandboxModal
+        visible={offlineSandboxModalVisible}
+        onClose={dismissOfflineSandboxModal}
+        onKeepOffline={dismissOfflineSandboxModal}
+        onGoOnline={goOnlineFromSandboxModal}
       />
     </View>
   );
