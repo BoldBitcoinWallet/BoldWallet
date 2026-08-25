@@ -1987,7 +1987,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       'BarcodeZxingScanContinuous',
       (event: {data?: string; error?: string}) => {
         if (event.error) {
-          dbg('WalletHome: Android send scan error', event.error);
+          // Send BIP-21 success closes the capture activity with RESULT_CANCELED.
+          // Ignore that here only. Airgap restore uses QRScanner, which still
+          // treats Back / cancel as onClose so the HUD can dismiss.
+          if (!String(event.error).toLowerCase().includes('cancel')) {
+            dbg('WalletHome: Android send scan error', event.error);
+          }
           stopSendQrScan();
           return;
         }

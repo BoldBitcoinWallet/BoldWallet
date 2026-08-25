@@ -144,6 +144,15 @@ describe('brantaOnChainAddressesMatch', () => {
       ),
     ).toBe(false);
   });
+
+  test('compares testnet bech32 case-insensitively', () => {
+    expect(
+      brantaOnChainAddressesMatch(
+        'tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s',
+        'TB1QSHRA2MLUJC9WFSCVN4D8AQPYQGXZL55853XG7S',
+      ),
+    ).toBe(true);
+  });
 });
 
 describe('resolveBrantaQr gating', () => {
@@ -170,7 +179,7 @@ describe('resolveBrantaQr gating', () => {
     expect(MockBrantaSdk).not.toHaveBeenCalled();
   });
 
-  test('returns null when BIP-21 address differs from decrypted destination', async () => {
+  test('still shows merchant when SDK returned a payment (tamper is SDK-side)', async () => {
     setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
     mockGetPaymentsByQrCode.mockResolvedValue({
       payments: [
@@ -191,7 +200,8 @@ describe('resolveBrantaQr gating', () => {
       'bitcoin:bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh?amount=0.01&branta_id=1&branta_secret=2',
       'mainnet',
     );
-    expect(result).toBeNull();
+    expect(result?.platform).toBe('Test Shop');
+    expect(result?.address).toBe('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
   });
 
   test('returns merchant payment when BIP-21 and decrypted bech32 match', async () => {
@@ -223,6 +233,69 @@ describe('resolveBrantaQr gating', () => {
       logoLightUrl: 'https://example.com/logo-light.png',
       verifyUrl: 'https://branta.pro/verify/test',
     });
+  });
+
+  test('returns merchant payment when lightning is listed before matching on-chain dest', async () => {
+    setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
+    mockGetPaymentsByQrCode.mockResolvedValue({
+      payments: [
+        {
+          platform: 'Test Shop',
+          description: 'order',
+          platformLogoUrl: 'https://example.com/logo.png',
+          platformLogoLightUrl: 'https://example.com/logo-light.png',
+          destinations: [
+            {type: 'bolt11', value: 'lntb1invalidinvoice'},
+            {
+              type: 'bitcoin_address',
+              value: 'tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s',
+            },
+          ],
+        },
+      ],
+      verifyUrl: 'https://branta.pro/verify/test',
+    });
+
+    const result = await resolveBrantaQr(
+      'bitcoin:tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s?branta_id=1&branta_secret=2',
+      'testnet3',
+    );
+    expect(result).toEqual({
+      address: 'tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s',
+      platform: 'Test Shop',
+      description: 'order',
+      logoUrl: 'https://example.com/logo.png',
+      logoLightUrl: 'https://example.com/logo-light.png',
+      verifyUrl: 'https://branta.pro/verify/test',
+    });
+  });
+
+  test('uses typed on-chain dest for address even if listed after lightning', async () => {
+    setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
+    mockGetPaymentsByQrCode.mockResolvedValue({
+      payments: [
+        {
+          platform: 'Test Shop',
+          destinations: [
+            {type: 'bolt11', value: 'lntb1invalidinvoice'},
+            {
+              type: 'bitcoin_address',
+              value: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
+            },
+          ],
+        },
+      ],
+      verifyUrl: 'https://branta.pro/verify/test',
+    });
+
+    const result = await resolveBrantaQr(
+      'bitcoin:tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s?branta_id=1&branta_secret=2',
+      'testnet3',
+    );
+    expect(result?.platform).toBe('Test Shop');
+    expect(result?.address).toBe(
+      'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
+    );
   });
 });
 

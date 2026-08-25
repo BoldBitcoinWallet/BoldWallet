@@ -272,7 +272,7 @@ index 0000000..c03fd85
 \ No newline at end of file
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/aar_main_jar/release/syncReleaseLibJars/classes.jar b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/aar_main_jar/release/syncReleaseLibJars/classes.jar
 new file mode 100644
-index 0000000..8d94e0b
+index 0000000..54be265
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/aar_main_jar/release/syncReleaseLibJars/classes.jar differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties
 new file mode 100644
@@ -323,7 +323,7 @@ index 0000000..f756f32
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/compile_library_classes_jar/debug/bundleLibCompileToJarDebug/classes.jar differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/compile_library_classes_jar/release/bundleLibCompileToJarRelease/classes.jar b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/compile_library_classes_jar/release/bundleLibCompileToJarRelease/classes.jar
 new file mode 100644
-index 0000000..59052cc
+index 0000000..9cf7290
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/compile_library_classes_jar/release/bundleLibCompileToJarRelease/classes.jar differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar
 new file mode 100644
@@ -632,7 +632,7 @@ index 0000000..7bbb228
 +-dontnote java.lang.invoke.**
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/full_jar/release/createFullJarRelease/full.jar b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/full_jar/release/createFullJarRelease/full.jar
 new file mode 100644
-index 0000000..6dac7eb
+index 0000000..0175adf
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/full_jar/release/createFullJarRelease/full.jar differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties
 new file mode 100644
@@ -16848,7 +16848,7 @@ index 0000000..c64784d
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity.class differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/BarcodeZxingScanModule.class b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/BarcodeZxingScanModule.class
 new file mode 100644
-index 0000000..0053e3a
+index 0000000..0fed10f
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/BarcodeZxingScanModule.class differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/BarcodeZxingScanPackage.class b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/BarcodeZxingScanPackage.class
 new file mode 100644
@@ -16860,19 +16860,19 @@ index 0000000..f47b688
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/BuildConfig.class differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity$1.class b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity$1.class
 new file mode 100644
-index 0000000..541b9c4
+index 0000000..e8efede
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity$1.class differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity$2.class b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity$2.class
 new file mode 100644
-index 0000000..bf87309
+index 0000000..5338495
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity$2.class differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity$3.class b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity$3.class
 new file mode 100644
-index 0000000..77c7df3
+index 0000000..830a931
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity$3.class differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity.class b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity.class
 new file mode 100644
-index 0000000..52a1153
+index 0000000..d8c7192
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/javac/release/compileReleaseJavaWithJavac/classes/com/reactlibrary/ContinuousCaptureActivity.class differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/lint-cache/lintVitalAnalyzeRelease/lint-cache-version.txt b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/lint-cache/lintVitalAnalyzeRelease/lint-cache-version.txt
 new file mode 100644
@@ -19877,7 +19877,7 @@ new file mode 100644
 index 0000000..e69de29
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/local_aar_for_lint/release/out.aar b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/local_aar_for_lint/release/out.aar
 new file mode 100644
-index 0000000..59b273a
+index 0000000..26e5042
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/local_aar_for_lint/release/out.aar differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt
 new file mode 100644
@@ -52491,7 +52491,7 @@ index 0000000..f545771
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/runtime_library_classes_jar/debug/bundleLibRuntimeToJarDebug/classes.jar differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/runtime_library_classes_jar/release/bundleLibRuntimeToJarRelease/classes.jar b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/runtime_library_classes_jar/release/bundleLibRuntimeToJarRelease/classes.jar
 new file mode 100644
-index 0000000..d30ef2b
+index 0000000..f5e5126
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/runtime_library_classes_jar/release/bundleLibRuntimeToJarRelease/classes.jar differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/intermediates/source_set_path_map/release/mapReleaseSourceSetPaths/file-map.txt b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/source_set_path_map/release/mapReleaseSourceSetPaths/file-map.txt
 new file mode 100644
@@ -54599,7 +54599,7 @@ index 0000000..51f93c3
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/intermediates/verified_library_resources/release/verifyReleaseResources/compiled/xml_rn_dev_preferences.xml.flat differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/outputs/aar/rn-barcode-zxing-scan-release.aar b/node_modules/rn-barcode-zxing-scan/android/build/outputs/aar/rn-barcode-zxing-scan-release.aar
 new file mode 100644
-index 0000000..d9a5668
+index 0000000..bb13bda
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/outputs/aar/rn-barcode-zxing-scan-release.aar differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/outputs/logs/manifest-merger-debug-report.txt b/node_modules/rn-barcode-zxing-scan/android/build/outputs/logs/manifest-merger-debug-report.txt
 new file mode 100644
@@ -54677,27 +54677,31 @@ index 0000000..efd2210
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileDebugJavaWithJavac/previous-compilation-data.bin differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/BarcodeZxingScanModule.class.uniqueId3 b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/BarcodeZxingScanModule.class.uniqueId3
 new file mode 100644
-index 0000000..0053e3a
+index 0000000..67881cb
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/BarcodeZxingScanModule.class.uniqueId3 differ
+diff --git a/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/BarcodeZxingScanPackage.class.uniqueId4 b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/BarcodeZxingScanPackage.class.uniqueId4
+new file mode 100644
+index 0000000..4dcd641
+Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/BarcodeZxingScanPackage.class.uniqueId4 differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$1.class.uniqueId0 b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$1.class.uniqueId0
 new file mode 100644
-index 0000000..541b9c4
+index 0000000..e8efede
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$1.class.uniqueId0 differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$2.class.uniqueId1 b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$2.class.uniqueId1
 new file mode 100644
-index 0000000..bf87309
+index 0000000..5338495
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$2.class.uniqueId1 differ
-diff --git a/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$3.class.uniqueId4 b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$3.class.uniqueId4
+diff --git a/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$3.class.uniqueId5 b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$3.class.uniqueId5
 new file mode 100644
-index 0000000..9353873
-Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$3.class.uniqueId4 differ
+index 0000000..830a931
+Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity$3.class.uniqueId5 differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity.class.uniqueId2 b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity.class.uniqueId2
 new file mode 100644
-index 0000000..12eeddc
+index 0000000..d8c7192
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/compileTransaction/stash-dir/ContinuousCaptureActivity.class.uniqueId2 differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/previous-compilation-data.bin b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/previous-compilation-data.bin
 new file mode 100644
-index 0000000..92cabc5
+index 0000000..721a893
 Binary files /dev/null and b/node_modules/rn-barcode-zxing-scan/android/build/tmp/compileReleaseJavaWithJavac/previous-compilation-data.bin differ
 diff --git a/node_modules/rn-barcode-zxing-scan/android/src/main/AndroidManifest.xml b/node_modules/rn-barcode-zxing-scan/android/src/main/AndroidManifest.xml
 index 24227e9..5685fe8 100644
@@ -54712,7 +54716,7 @@ index 24227e9..5685fe8 100644
  
      <activity
 diff --git a/node_modules/rn-barcode-zxing-scan/android/src/main/java/com/reactlibrary/BarcodeZxingScanModule.java b/node_modules/rn-barcode-zxing-scan/android/src/main/java/com/reactlibrary/BarcodeZxingScanModule.java
-index fe94d5b..294fbc3 100644
+index fe94d5b..4ccbdc7 100644
 --- a/node_modules/rn-barcode-zxing-scan/android/src/main/java/com/reactlibrary/BarcodeZxingScanModule.java
 +++ b/node_modules/rn-barcode-zxing-scan/android/src/main/java/com/reactlibrary/BarcodeZxingScanModule.java
 @@ -4,11 +4,14 @@ import android.app.Activity;
@@ -54753,7 +54757,7 @@ index fe94d5b..294fbc3 100644
      }
  
      @Override
-@@ -47,30 +61,165 @@ public class BarcodeZxingScanModule extends ReactContextBaseJavaModule implement
+@@ -47,30 +61,169 @@ public class BarcodeZxingScanModule extends ReactContextBaseJavaModule implement
              integrator.setOrientationLocked(true);
              integrator.setBeepEnabled(false);      // Disable beep sound
              integrator.setCaptureActivity(ContinuousCaptureActivity.class);
@@ -54838,6 +54842,10 @@ index fe94d5b..294fbc3 100644
 +
 +    @ReactMethod
 +    public void stopContinuousScan() {
++        // Only JS-initiated stop may suppress the activity-result "Scan canceled"
++        // event. Do not set this from sendContinuousScanResult: airgap UR sessions
++        // emit junk non-UR frames while the camera locks on, and Back must still
++        // reach QRScanner.onClose.
 +        synchronized (callbackLock) {
 +            lastProcessedText = null;
 +            suppressContinuousCloseEvent = true;

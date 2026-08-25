@@ -23,7 +23,6 @@ import {dbg} from '../utils';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from './repositories/AppConfigRepository';
-import {parseBitcoinUri} from './incomingUrlRouter';
 import {isWalletOnline} from './walletOnlineStore';
 
 export interface BrantaNormalizedPayment {
@@ -49,13 +48,54 @@ function isHttpsUrl(val: unknown): boolean {
   return typeof val === 'string' && val.startsWith('https://');
 }
 
-/** Bech32 compared case-insensitively; otherwise exact (matches Branta SDK 3.2.1). */
+/** Bech32 HRPs used by this wallet: mainnet, testnet, regtest. */
+function isBitcoinBech32(value: string): boolean {
+  const lower = value.toLowerCase();
+  return (
+    lower.startsWith('bc1') ||
+    lower.startsWith('tb1') ||
+    lower.startsWith('bcrt1')
+  );
+}
+
+function looksLikeOnChainAddress(value: string): boolean {
+  if (!value) {
+    return false;
+  }
+  if (isBitcoinBech32(value)) {
+    return true;
+  }
+  return value.startsWith('1') || value.startsWith('3');
+}
+
+/** Bech32 compared case-insensitively; otherwise exact (matches Branta SDK 3.2.1 + testnet). */
 export function brantaOnChainAddressesMatch(a: string, b: string): boolean {
-  const isBech32 = (v: string): boolean => v.toLowerCase().startsWith('bc1');
-  if (isBech32(a) && isBech32(b)) {
+  if (isBitcoinBech32(a) && isBitcoinBech32(b)) {
     return a.toLowerCase() === b.toLowerCase();
   }
   return a === b;
+}
+
+function pickOnChainDestination(
+  destinations: Array<{value?: string; type?: string} | undefined> | undefined,
+): {value: string} | undefined {
+  if (!destinations?.length) {
+    return undefined;
+  }
+  const typed = destinations.find(
+    d =>
+      d?.type === 'bitcoin_address' && typeof d.value === 'string' && d.value,
+  );
+  if (typed?.value) {
+    return {value: typed.value};
+  }
+  const inferred = destinations.find(
+    d => typeof d?.value === 'string' && looksLikeOnChainAddress(d.value),
+  );
+  if (inferred?.value) {
+    return {value: inferred.value};
+  }
+  return undefined;
 }
 
 /** Merchant verify is opt-in; absent preference is off. */
@@ -142,30 +182,22 @@ export async function resolveBrantaQr(
       return null;
     }
 
+    dbg('resolveBrantaQr: payments', JSON.stringify(payments, null, 2));
+    dbg('resolveBrantaQr: verifyUrl', JSON.stringify(verifyUrl, null, 2));
+
     const payment = payments[0] as Payment;
     if (!payment) {
       return null;
     }
 
-    // Extract destination address from first destination in the array
-    const destination = payment.destinations?.[0];
-    const address = destination?.value || '';
+    // SDK 3.2.1 already throws Tampered if the BIP-21 address does not match
+    // the decrypted on-chain dest. Do not drop merchant UI here: dest[0] is
+    // often Lightning, and this wrapper is shared by iOS and Android Send.
+    const onChainDest = pickOnChainDestination(payment.destinations);
+    const address =
+      onChainDest?.value || payment.destinations?.[0]?.value || '';
 
-    const parsed = parseBitcoinUri(rawQr.trim());
-    if (
-      parsed.kind === 'bitcoin-pay' &&
-      parsed.address &&
-      address &&
-      !brantaOnChainAddressesMatch(parsed.address, address)
-    ) {
-      dbg(
-        'resolveBrantaQr: BIP-21 address does not match decrypted destination',
-      );
-      return null;
-    }
-
-    // Normalize and sanitize URLs (HTTPS-only for security)
-    return {
+    const result = {
       address,
       platform: payment.platform || 'Unknown',
       description: payment.description,
@@ -177,6 +209,8 @@ export async function resolveBrantaQr(
         : undefined,
       verifyUrl: isHttpsUrl(verifyUrl) ? (verifyUrl as string) : undefined,
     };
+    dbg('resolveBrantaQr: merchant', result.platform, result.address);
+    return result;
   } catch (err) {
     // Swallow errors — missing record / tamper is not shown as a send failure
     dbg('resolveBrantaQr error', err);

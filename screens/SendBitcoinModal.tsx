@@ -941,6 +941,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     selectionKey,
     validateAddressForCurrentNetwork,
   ]);
+  const btcToFiatRateRef = useRef(btcToFiatRate);
+  btcToFiatRateRef.current = btcToFiatRate;
+  const validateAddressRef = useRef(validateAddressForCurrentNetwork);
+  validateAddressRef.current = validateAddressForCurrentNetwork;
   // Initialize Branta service and pre-load QR data if provided
   useEffect(() => {
     try {
@@ -962,9 +966,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
               try {
                 const amountBTC = Big(parsed.amountBtc);
                 if (amountBTC.gt(0)) {
+                  const rate = btcToFiatRateRef.current;
                   setBtcAmount(amountBTC);
                   setInBtcAmount(amountBTC.toFixed(8));
-                  setInUsdAmount(amountBTC.times(btcToFiatRate).toFixed(2));
+                  setInUsdAmount(amountBTC.times(rate).toFixed(2));
                 }
               } catch (e) {
                 // Ignore invalid amount
@@ -985,7 +990,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       dbg('Error initializing Branta', err);
       setBrantaRawQrProp('');
     }
-  }, [activeNetwork, initialBrantaRawQr, btcToFiatRate]);
+  }, [activeNetwork, initialBrantaRawQr]);
   // Resolve Branta QR when raw QR data is set (strict mode: only ZK-encoded QRs)
   useEffect(() => {
     const rawQr = brantaRawQr || brantaRawQrProp;
@@ -1010,10 +1015,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       try {
         const result = await resolveBrantaQr(rawQr, activeNetwork);
         
-        if (cancelled) return;
+        if (cancelled) {
+          dbg('resolveBrantaQr: result ignored (effect cancelled)');
+          return;
+        }
 
         if (!result) {
           // Silent fallback: no Branta data found, continue with manual entry
+          dbg('SendBitcoinModal: no Branta merchant result');
           setBrantaPayment(null);
           setBrantaVerifyUrl(undefined);
           setBrantaLoading(false);
@@ -1024,14 +1033,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         try {
           // Validate address
           const persistAddresses = new Set<string>();
-          if (validateAddressForCurrentNetwork(result.address)) {
+          if (validateAddressRef.current(result.address)) {
             setAddress(result.address);
             persistAddresses.add(result.address);
           }
           const formAddress = addressRef.current;
           if (
             formAddress &&
-            validateAddressForCurrentNetwork(formAddress)
+            validateAddressRef.current(formAddress)
           ) {
             persistAddresses.add(formAddress);
           }
@@ -1056,6 +1065,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           }
 
           // Update UI state
+          dbg('SendBitcoinModal: showing Branta merchant', result.platform);
           setBrantaPayment({
             platform: result.platform,
             description: result.description,
@@ -1087,7 +1097,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [brantaRawQr, brantaRawQrProp, activeNetwork, validateAddressForCurrentNetwork]);
+  }, [brantaRawQr, brantaRawQrProp, activeNetwork]);
   const pasteAddress = useCallback(async () => {
     const text = await Clipboard.getString();
     // Validate that the clipboard contains what looks like a Bitcoin address
