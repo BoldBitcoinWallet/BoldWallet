@@ -317,7 +317,7 @@ const ShowcaseScreen = ({navigation}: any) => {
     airgapPasswordRef.current = '';
     setRestoreMode(null);
   };
-  const handleAirgapScan = (qrData: string) => {
+  const handleAirgapScan = useCallback((qrData: string) => {
     if (airgapImportingRef.current) {
       return;
     }
@@ -350,9 +350,8 @@ const ShowcaseScreen = ({navigation}: any) => {
       setAirgapCipherBase64(urResult.payload);
       setIsAirgapScannerVisible(false);
       importAirgapCipher(urResult.payload, airgapPasswordRef.current);
-      return;
     }
-  };
+  }, [importAirgapCipher]);
   const styles = StyleSheet.create({
     container: {
       flex: 1,
