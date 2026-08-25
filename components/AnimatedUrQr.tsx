@@ -4,6 +4,7 @@ import QRCode from 'react-native-qrcode-svg';
 import type {UR} from '@ngraveio/bc-ur';
 import {dbg} from '../utils';
 import {
+  UR_BYTES_FRAGMENT_SIZE,
   UR_FRAME_INTERVAL_MS,
   createUrEncoder,
   urFragmentCount,
@@ -21,6 +22,10 @@ type AnimatedUrQrProps = {
   fallbackText?: string;
   /** Changing this recreates the fountain encoder from the first frame. */
   restartNonce?: number;
+  /** Override default UR fragment size (bytes). Larger = fewer denser frames. */
+  maxFragmentLen?: number;
+  /** Override default frame interval (ms). Lower = faster animation. */
+  frameIntervalMs?: number;
 };
 
 const DEFAULT_HINT =
@@ -37,6 +42,8 @@ const AnimatedUrQr: React.FC<AnimatedUrQrProps> = ({
   hint = DEFAULT_HINT,
   fallbackText = DEFAULT_FALLBACK,
   restartNonce = 0,
+  maxFragmentLen = UR_BYTES_FRAGMENT_SIZE,
+  frameIntervalMs = UR_FRAME_INTERVAL_MS,
 }) => {
   const ur = useMemo(() => {
     if (urProp) {
@@ -47,10 +54,13 @@ const AnimatedUrQr: React.FC<AnimatedUrQrProps> = ({
     }
     return null;
   }, [urProp, pipePayload]);
-  const totalParts = useMemo(() => (ur ? urFragmentCount(ur) : 1), [ur]);
+  const totalParts = useMemo(
+    () => (ur ? urFragmentCount(ur, maxFragmentLen) : 1),
+    [ur, maxFragmentLen],
+  );
   const encoder = useMemo(
-    () => (ur ? createUrEncoder(ur) : null),
-    [ur, restartNonce],
+    () => (ur ? createUrEncoder(ur, maxFragmentLen) : null),
+    [ur, restartNonce, maxFragmentLen],
   );
   const [qrData, setQrData] = useState<string | null>(null);
   const [frameIndex, setFrameIndex] = useState(0);
@@ -66,9 +76,9 @@ const AnimatedUrQr: React.FC<AnimatedUrQrProps> = ({
     const interval = setInterval(() => {
       setQrData(encoder.nextPart());
       setFrameIndex(prev => prev + 1);
-    }, UR_FRAME_INTERVAL_MS);
+    }, frameIntervalMs);
     return () => clearInterval(interval);
-  }, [encoder]);
+  }, [encoder, frameIntervalMs]);
 
   if (!qrData) {
     return <Text style={hintStyle}>{fallbackText}</Text>;

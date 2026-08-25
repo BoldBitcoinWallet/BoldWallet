@@ -35,6 +35,8 @@ import {
   urTypeFromPart,
   utf8ToUr,
   bufferToUr,
+  UR_AIRGAP_FRAGMENT_SIZE,
+  UR_BYTES_FRAGMENT_SIZE,
 } from '../utils/urBytesQr';
 
 const MAX_STATIC_QR_CHARS = 1800;
@@ -264,5 +266,34 @@ describe('urBytesQr binary airgap payload', () => {
     }
     expect(recovered).toBe(originalBase64);
     expect(Buffer.from(recovered!, 'base64').equals(encryptedBytes)).toBe(true);
+  });
+
+  it('uses fewer frames with airgap fragment size than the send default', () => {
+    const encryptedBytes = Buffer.alloc(140_000);
+    for (let i = 0; i < encryptedBytes.length; i++) {
+      encryptedBytes[i] = (i * 31 + 7) % 256;
+    }
+    const ur = bufferToUr(encryptedBytes);
+    expect(ur).not.toBeNull();
+    const defaultFrames = urFragmentCount(ur!);
+    const airgapFrames = urFragmentCount(ur!, UR_AIRGAP_FRAGMENT_SIZE);
+    expect(defaultFrames).toBeGreaterThan(600);
+    expect(airgapFrames).toBeLessThan(defaultFrames);
+    expect(airgapFrames).toBeLessThanOrEqual(
+      Math.ceil(encryptedBytes.length / UR_AIRGAP_FRAGMENT_SIZE) + 2,
+    );
+    expect(UR_AIRGAP_FRAGMENT_SIZE).toBeGreaterThan(UR_BYTES_FRAGMENT_SIZE);
+
+    const parts = urFountainParts(ur!, 8, UR_AIRGAP_FRAGMENT_SIZE);
+    const decoder = createUrDecoder();
+    let recovered: string | null = null;
+    for (const part of parts) {
+      const result = receiveUrBytesPartAsBase64(decoder, part);
+      if (result.kind === 'complete') {
+        recovered = result.payload;
+        break;
+      }
+    }
+    expect(recovered).toBe(encryptedBytes.toString('base64'));
   });
 });

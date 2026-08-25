@@ -18,7 +18,11 @@ import GlassModalOverlay from './GlassModalOverlay';
 import AnimatedUrQr from './AnimatedUrQr';
 import {dbg, getKeyshareMetadata} from '../utils';
 import {useTheme} from '../theme';
-import {bufferToUr} from '../utils/urBytesQr';
+import {
+  bufferToUr,
+  UR_AIRGAP_FRAGMENT_SIZE,
+  UR_AIRGAP_FRAME_INTERVAL_MS,
+} from '../utils/urBytesQr';
 import {formatAirgapPinDisplay, generateAirgapPin} from '../services/airgapPin';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -41,7 +45,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
 }) => {
   const {theme} = useTheme();
   const {width: windowWidth} = useWindowDimensions();
-  const qrSize = Math.min(280, Math.max(220, Math.round(windowWidth * 0.62)));
+  const qrSize = Math.min(320, Math.max(260, Math.round(windowWidth * 0.72)));
 
   const [step, setStep] = useState<ExportStep>('pin');
   const [exportUr, setExportUr] = useState<UR | null>(null);
@@ -399,6 +403,8 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
                       ur={exportUr}
                       size={qrSize}
                       restartNonce={restartNonce}
+                      maxFragmentLen={UR_AIRGAP_FRAGMENT_SIZE}
+                      frameIntervalMs={UR_AIRGAP_FRAME_INTERVAL_MS}
                       frameLabelStyle={styles.qrFrameLabel}
                       hintStyle={styles.qrAnimatedHint}
                       containerStyle={styles.qrCodeContainer}

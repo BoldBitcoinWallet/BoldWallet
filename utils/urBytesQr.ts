@@ -4,6 +4,7 @@
  * Frame helpers (`urPartAt`, `urFragmentCount`) work for any UR type
  * (`bytes`, `crypto-psbt`, …). Send-bitcoin uses `utf8ToUr` → `ur:bytes`.
  * Signed PSBT keeps `CryptoPSBT.toUR()` → `ur:crypto-psbt`.
+ * Airgap keyshare uses larger fragments + faster cadence (see `UR_AIRGAP_*`).
  */
 import {Buffer} from 'buffer';
 // Buffer polyfill is loaded in polyfills.js for React Native.
@@ -12,6 +13,14 @@ import {UR, UREncoder, URDecoder} from '@ngraveio/bc-ur';
 /** Fragment size balances QR density vs frame count. Fountain mixes reconstruct without a full sequential pass. */
 export const UR_BYTES_FRAGMENT_SIZE = 200;
 export const UR_FRAME_INTERVAL_MS = 250;
+
+/**
+ * Airgap keyshare ciphertext is large (~100KB+). Larger fragments cut frame count;
+ * faster cadence still works phone-to-phone with fountain recovery if a frame is missed.
+ * ~500B / 125ms ≈ 5× wall-clock vs default 200B / 250ms for the same payload.
+ */
+export const UR_AIRGAP_FRAGMENT_SIZE = 500;
+export const UR_AIRGAP_FRAME_INTERVAL_MS = 125;
 export const UR_BYTES_TYPE = 'bytes';
 
 export type UrBytesProgress = {
@@ -75,9 +84,12 @@ function decodeCborBuffer(ur: UR): Buffer | null {
   }
 }
 
-export function urFragmentCount(ur: UR): number {
+export function urFragmentCount(
+  ur: UR,
+  maxFragmentLen: number = UR_BYTES_FRAGMENT_SIZE,
+): number {
   try {
-    const encoder = new UREncoder(ur, UR_BYTES_FRAGMENT_SIZE) as UREncoder & {
+    const encoder = new UREncoder(ur, maxFragmentLen) as UREncoder & {
       fragmentsLength?: number;
     };
     return encoder.fragmentsLength || 1;
@@ -86,9 +98,13 @@ export function urFragmentCount(ur: UR): number {
   }
 }
 
-export function urPartAt(ur: UR, partIndex: number): string | null {
+export function urPartAt(
+  ur: UR,
+  partIndex: number,
+  maxFragmentLen: number = UR_BYTES_FRAGMENT_SIZE,
+): string | null {
   try {
-    const encoder = new UREncoder(ur, UR_BYTES_FRAGMENT_SIZE);
+    const encoder = new UREncoder(ur, maxFragmentLen);
     for (let i = 0; i < partIndex; i++) {
       encoder.nextPart();
     }
@@ -98,13 +114,19 @@ export function urPartAt(ur: UR, partIndex: number): string | null {
   }
 }
 
-export function createUrEncoder(ur: UR): UREncoder {
-  return new UREncoder(ur, UR_BYTES_FRAGMENT_SIZE);
+export function createUrEncoder(
+  ur: UR,
+  maxFragmentLen: number = UR_BYTES_FRAGMENT_SIZE,
+): UREncoder {
+  return new UREncoder(ur, maxFragmentLen);
 }
 
-export function urAllSequentialParts(ur: UR): string[] {
-  const n = urFragmentCount(ur);
-  const encoder = createUrEncoder(ur);
+export function urAllSequentialParts(
+  ur: UR,
+  maxFragmentLen: number = UR_BYTES_FRAGMENT_SIZE,
+): string[] {
+  const n = urFragmentCount(ur, maxFragmentLen);
+  const encoder = createUrEncoder(ur, maxFragmentLen);
   const parts: string[] = [];
   for (let i = 0; i < n; i++) {
     parts.push(encoder.nextPart());
@@ -113,9 +135,13 @@ export function urAllSequentialParts(ur: UR): string[] {
 }
 
 /** Sequential fragments plus extra fountain mixes (what the animated sender emits). */
-export function urFountainParts(ur: UR, extraMixed = 0): string[] {
-  const n = urFragmentCount(ur);
-  const encoder = createUrEncoder(ur);
+export function urFountainParts(
+  ur: UR,
+  extraMixed = 0,
+  maxFragmentLen: number = UR_BYTES_FRAGMENT_SIZE,
+): string[] {
+  const n = urFragmentCount(ur, maxFragmentLen);
+  const encoder = createUrEncoder(ur, maxFragmentLen);
   const parts: string[] = [];
   const total = n + Math.max(0, extraMixed);
   for (let i = 0; i < total; i++) {
