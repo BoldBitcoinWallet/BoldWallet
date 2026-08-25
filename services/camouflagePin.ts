@@ -1,9 +1,8 @@
 /**
- * 4-digit camouflage PIN — stored as salt+SHA-256 in EncryptedStorage.
+ * 4-digit camouflage PIN — stored as salt+SHA-256 in SQLite `app_config`.
  * Default off on the Bold icon. Forced on while a camouflage launcher icon is active.
- * Fail count + lockout-until live in SQLite `app_config` (3 failures → 30s retry).
+ * Fail count + lockout-until also live in `app_config` (3 failures → 30s retry).
  */
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {sha256} from '@noble/hashes/sha2';
 import {bytesToHex, hexToBytes, randomBytes} from '@noble/hashes/utils';
 import appConfigRepository, {
@@ -11,8 +10,8 @@ import appConfigRepository, {
 } from './repositories/AppConfigRepository';
 
 export const CAMOUFLAGE_PIN_LENGTH = 4;
-export const CAMOUFLAGE_PIN_HASH_KEY = 'camouflage_pin_hash';
-export const CAMOUFLAGE_PIN_ENABLED_KEY = 'camouflage_pin_enabled';
+export const CAMOUFLAGE_PIN_HASH_KEY = CONFIG_KEYS.CAMOUFLAGE_PIN_HASH;
+export const CAMOUFLAGE_PIN_ENABLED_KEY = CONFIG_KEYS.CAMOUFLAGE_PIN_ENABLED;
 export const CAMOUFLAGE_PIN_MAX_FAILURES = 3;
 export const CAMOUFLAGE_PIN_LOCKOUT_MS = 30_000;
 
@@ -58,31 +57,16 @@ function timingSafeEqual(a: string, b: string): boolean {
 }
 
 export async function isCamouflagePinEnabled(): Promise<boolean> {
-  try {
-    const raw = await EncryptedStorage.getItem(CAMOUFLAGE_PIN_ENABLED_KEY);
-    if (raw == null) {
-      return false;
-    }
-    return raw === 'true';
-  } catch {
-    return false;
-  }
+  return appConfigRepository.getBool(CONFIG_KEYS.CAMOUFLAGE_PIN_ENABLED, false);
 }
 
 export async function setCamouflagePinEnabled(enabled: boolean): Promise<void> {
-  await EncryptedStorage.setItem(
-    CAMOUFLAGE_PIN_ENABLED_KEY,
-    enabled ? 'true' : 'false',
-  );
+  appConfigRepository.setBool(CONFIG_KEYS.CAMOUFLAGE_PIN_ENABLED, enabled);
 }
 
 export async function hasCamouflagePin(): Promise<boolean> {
-  try {
-    const stored = await EncryptedStorage.getItem(CAMOUFLAGE_PIN_HASH_KEY);
-    return !!stored && stored.includes(':');
-  } catch {
-    return false;
-  }
+  const stored = appConfigRepository.get(CONFIG_KEYS.CAMOUFLAGE_PIN_HASH);
+  return !!stored && stored.includes(':');
 }
 
 export async function setCamouflagePin(pin: string): Promise<void> {
@@ -91,8 +75,8 @@ export async function setCamouflagePin(pin: string): Promise<void> {
   }
   const salt = randomBytes(16);
   const hash = digestPin(pin, salt);
-  await EncryptedStorage.setItem(
-    CAMOUFLAGE_PIN_HASH_KEY,
+  appConfigRepository.set(
+    CONFIG_KEYS.CAMOUFLAGE_PIN_HASH,
     `${bytesToHex(salt)}:${hash}`,
   );
   await setCamouflagePinEnabled(true);
@@ -102,28 +86,22 @@ export async function verifyCamouflagePin(pin: string): Promise<boolean> {
   if (!isValidCamouflagePin(pin)) {
     return false;
   }
-  try {
-    const stored = await EncryptedStorage.getItem(CAMOUFLAGE_PIN_HASH_KEY);
-    if (!stored) {
-      return false;
-    }
-    const sep = stored.indexOf(':');
-    if (sep <= 0) {
-      return false;
-    }
-    const salt = hexToBytes(stored.slice(0, sep));
-    const expected = stored.slice(sep + 1);
-    return timingSafeEqual(digestPin(pin, salt), expected);
-  } catch {
+  const stored = appConfigRepository.get(CONFIG_KEYS.CAMOUFLAGE_PIN_HASH);
+  if (!stored) {
     return false;
   }
+  const sep = stored.indexOf(':');
+  if (sep <= 0) {
+    return false;
+  }
+  const salt = hexToBytes(stored.slice(0, sep));
+  const expected = stored.slice(sep + 1);
+  return timingSafeEqual(digestPin(pin, salt), expected);
 }
 
 export async function clearCamouflagePin(): Promise<void> {
-  await Promise.all([
-    EncryptedStorage.removeItem(CAMOUFLAGE_PIN_HASH_KEY),
-    EncryptedStorage.removeItem(CAMOUFLAGE_PIN_ENABLED_KEY),
-  ]);
+  appConfigRepository.remove(CONFIG_KEYS.CAMOUFLAGE_PIN_HASH);
+  appConfigRepository.remove(CONFIG_KEYS.CAMOUFLAGE_PIN_ENABLED);
   clearCamouflagePinLockout();
 }
 

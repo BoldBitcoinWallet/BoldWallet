@@ -15,13 +15,15 @@ import {Buffer} from 'buffer';
 import type {UR} from '@ngraveio/bc-ur';
 import AppPressable from './AppPressable';
 import GlassModalOverlay from './GlassModalOverlay';
-import AnimatedUrQr from './AnimatedUrQr';
+import AnimatedUrQr, {UR_QR_QUIET_ZONE_PX} from './AnimatedUrQr';
 import {dbg, getKeyshareMetadata} from '../utils';
 import {useTheme} from '../theme';
 import {
   bufferToUr,
-  UR_AIRGAP_FRAGMENT_SIZE,
-  UR_AIRGAP_FRAME_INTERVAL_MS,
+  nextAirgapQrSpeed,
+  UR_AIRGAP_DEFAULT_SPEED,
+  UR_AIRGAP_SPEEDS,
+  type AirgapQrSpeed,
 } from '../utils/urBytesQr';
 import {formatAirgapPinDisplay, generateAirgapPin} from '../services/airgapPin';
 
@@ -37,21 +39,33 @@ interface AirgapKeyshareExportModalProps {
 const PRIVACY_HINT = 'Eyes on these two screens only.';
 const PIN_NEXT_HINT = 'Read the PIN on the new phone, then show the QR.';
 const AIRGAP_QR_HINT =
-  'Keep scanning until the other phone finishes. Restart if it missed the start.';
+  'Fountain can finish before every frame. Changing speed restarts the QR.';
 
 const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
   visible,
   onClose,
 }) => {
   const {theme} = useTheme();
-  const {width: windowWidth} = useWindowDimensions();
-  const qrSize = Math.min(320, Math.max(260, Math.round(windowWidth * 0.72)));
+  const {width: windowWidth, height: windowHeight} = useWindowDimensions();
+  const overlayGutter = 8;
+  const qrBodyPad = 12;
+  const qrSize = Math.max(
+    240,
+    Math.min(
+      windowWidth -
+        overlayGutter * 2 -
+        qrBodyPad * 2 -
+        UR_QR_QUIET_ZONE_PX * 2,
+      Math.round(windowHeight * 0.52) - UR_QR_QUIET_ZONE_PX * 2,
+    ),
+  );
 
   const [step, setStep] = useState<ExportStep>('pin');
   const [exportUr, setExportUr] = useState<UR | null>(null);
   const [pin, setPin] = useState('');
   const [isEncrypting, setIsEncrypting] = useState(false);
   const [restartNonce, setRestartNonce] = useState(0);
+  const [qrSpeed, setQrSpeed] = useState<AirgapQrSpeed>(UR_AIRGAP_DEFAULT_SPEED);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -62,6 +76,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       setIsEncrypting(false);
       setStep('pin');
       setRestartNonce(0);
+      setQrSpeed(UR_AIRGAP_DEFAULT_SPEED);
       return;
     }
 
@@ -71,6 +86,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       setExportUr(null);
       setStep('pin');
       setRestartNonce(0);
+      setQrSpeed(UR_AIRGAP_DEFAULT_SPEED);
       try {
         const nextPin = await generateAirgapPin();
         const meta = await getKeyshareMetadata();
@@ -128,6 +144,13 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
     setRestartNonce(n => n + 1);
   };
 
+  const handleCycleSpeed = () => {
+    setQrSpeed(prev => nextAirgapQrSpeed(prev));
+    setRestartNonce(n => n + 1);
+  };
+
+  const speedPreset = UR_AIRGAP_SPEEDS[qrSpeed];
+
   const isLightTheme = theme.colors.background === '#ffffff';
 
   const styles = StyleSheet.create({
@@ -135,12 +158,13 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       flex: 1,
       alignItems: 'center',
       justifyContent: 'center',
+      paddingHorizontal: overlayGutter,
     },
     modalContent: {
       backgroundColor: theme.colors.cardBackground,
       borderRadius: 16,
-      width: '90%',
-      maxWidth: 440,
+      width: '100%',
+      maxWidth: windowWidth,
       shadowColor: '#000',
       shadowOffset: {width: 0, height: 10},
       shadowOpacity: 0.3,
@@ -157,9 +181,9 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       flexDirection: 'row',
       justifyContent: 'space-between',
       alignItems: 'center',
-      paddingHorizontal: 24,
-      paddingTop: 24,
-      paddingBottom: 16,
+      paddingHorizontal: 16,
+      paddingTop: 20,
+      paddingBottom: 12,
       borderBottomWidth: 1,
       borderBottomColor:
         theme.colors.background === '#ffffff'
@@ -203,6 +227,12 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       paddingVertical: 20,
       alignItems: 'center',
     },
+    modalBodyQr: {
+      paddingHorizontal: qrBodyPad,
+      paddingTop: 12,
+      paddingBottom: 16,
+      width: '100%',
+    },
     privacyHint: {
       fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.medium,
@@ -241,13 +271,19 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
     secondaryButton: {
       backgroundColor: theme.colors.secondary,
       paddingVertical: 14,
-      paddingHorizontal: 20,
+      paddingHorizontal: 16,
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
-      width: '100%',
+      flex: 1,
       minHeight: 48,
+    },
+    qrActionsRow: {
+      flexDirection: 'row',
+      alignItems: 'stretch',
+      width: '100%',
       marginTop: 12,
+      gap: 10,
     },
     buttonContent: {
       flexDirection: 'row',
@@ -285,9 +321,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       textAlign: 'center',
     },
     qrCodeContainer: {
-      backgroundColor: 'white',
-      padding: 0,
-      borderRadius: 8,
+      alignSelf: 'center',
     },
     qrFrameLabel: {
       marginTop: 8,
@@ -352,7 +386,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
               <Text style={styles.closeButtonText}>✕</Text>
             </AppPressable>
           </View>
-          <View style={styles.modalBody}>
+          <View style={[styles.modalBody, step === 'qr' && styles.modalBodyQr]}>
             {isEncrypting && !exportUr ? (
               <View style={styles.loadingWrap}>
                 <ActivityIndicator color={theme.colors.primary} />
@@ -395,8 +429,8 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
                       ur={exportUr}
                       size={qrSize}
                       restartNonce={restartNonce}
-                      maxFragmentLen={UR_AIRGAP_FRAGMENT_SIZE}
-                      frameIntervalMs={UR_AIRGAP_FRAME_INTERVAL_MS}
+                      maxFragmentLen={speedPreset.fragmentSize}
+                      frameIntervalMs={speedPreset.frameIntervalMs}
                       frameLabelStyle={styles.qrFrameLabel}
                       hintStyle={styles.qrAnimatedHint}
                       containerStyle={styles.qrCodeContainer}
@@ -409,21 +443,38 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
                     </Text>
                   )}
                 </ScrollView>
-                <AppPressable
-                  style={styles.secondaryButton}
-                  onPress={handleRestartFrames}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <View style={styles.buttonContent}>
-                    <Image
-                      source={require('../assets/recycle-icon.png')}
-                      style={styles.secondaryButtonIcon}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.secondaryButtonText}>
-                      Restart frames
-                    </Text>
-                  </View>
-                </AppPressable>
+                <View style={styles.qrActionsRow}>
+                  <AppPressable
+                    style={styles.secondaryButton}
+                    onPress={handleRestartFrames}
+                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                    <View style={styles.buttonContent}>
+                      <Image
+                        source={require('../assets/recycle-icon.png')}
+                        style={styles.secondaryButtonIcon}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.secondaryButtonText} numberOfLines={1}>
+                        Restart frames
+                      </Text>
+                    </View>
+                  </AppPressable>
+                  <AppPressable
+                    style={styles.secondaryButton}
+                    onPress={handleCycleSpeed}
+                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                    <View style={styles.buttonContent}>
+                      <Image
+                        source={require('../assets/refresh-icon.png')}
+                        style={styles.secondaryButtonIcon}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.secondaryButtonText} numberOfLines={1}>
+                        Speed: {speedPreset.label}
+                      </Text>
+                    </View>
+                  </AppPressable>
+                </View>
               </View>
             )}
           </View>

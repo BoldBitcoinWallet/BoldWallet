@@ -12,15 +12,19 @@ import {
   Image,
   Linking,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import GlassModalOverlay from '../components/GlassModalOverlay';
 import DocumentPicker from 'react-native-document-picker';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {useTheme} from '../theme';
 import {dbg, hasWalletKeyshareInSecureStorage} from '../utils';
+import {
+  clearShowcaseImportPrefs,
+  removeLegacyEncryptedPrefKeys,
+} from '../services/encryptedPrefsMigration';
 import KeyshareImportPasswordModal from '../components/KeyshareImportPasswordModal';
-import QRScanner from '../components/QRScanner';
+import QRScanner, {stopAndroidContinuousScan} from '../components/QRScanner';
 import {
   assertNoExistingWallet,
   importKeyshareFromBase64,
@@ -48,8 +52,10 @@ import {useUser} from '../context/UserContext';
 import {shouldIgnoreNonUrDuringSendScan} from '../utils/sendQrScan';
 import {
   createUrDecoder,
-  formatUrFragmentProgress,
+  decoderMatchesPartSeqLen,
+  formatUrRecoveredProgress,
   receiveUrBytesPartAsBase64,
+  urSeqIndexFromPart,
   type UrBytesProgress,
 } from '../utils/urBytesQr';
 const ShowcaseScreen = ({navigation}: any) => {
@@ -68,6 +74,7 @@ const ShowcaseScreen = ({navigation}: any) => {
   );
   const airgapImportingRef = useRef(false);
   const airgapPasswordRef = useRef('');
+  const airgapLastLoggedReceivedRef = useRef(-1);
   const [walletAlreadyLoaded, setWalletAlreadyLoaded] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [agreeToPrivacy, setAgreeToPrivacy] = useState(false);
@@ -88,10 +95,9 @@ const ShowcaseScreen = ({navigation}: any) => {
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const connectorAnim = useRef(new Animated.Value(0)).current;
   const connectorLoopRef = useRef(null as Animated.CompositeAnimation | null);
-  // Full reset on mount: wipe all wallet DB tables, all in-memory caches, and
-  // all user-preference EncryptedStorage entries so the import starts from a
-  // guaranteed clean slate. The keyshare itself is preserved so a user who
-  // already onboarded can land here without losing their key material.
+  // Full reset on mount: wipe wallet DB tables, in-memory caches, and
+  // import-time prefs in `app_config`. The keyshare blob and keyshare meta stay
+  // so a user who already onboarded can land here without losing key material.
   useEffect(() => {
     const clearAllCache = async () => {
       try {
@@ -109,20 +115,10 @@ const ShowcaseScreen = ({navigation}: any) => {
         mempoolClient.invalidateAll();
         dbg('In-memory caches cleared');
 
-        // 3. Clear all EncryptedStorage preference items.  btcPub will be
-        //    re-derived from the newly imported keyshare; the rest are user
-        //    preferences that should reset to defaults for a fresh wallet.
-        await Promise.allSettled([
-          EncryptedStorage.removeItem('btcPub'),
-          EncryptedStorage.removeItem('bitcoin_display_sats'),
-          EncryptedStorage.removeItem('balance_formatting_enabled'),
-          EncryptedStorage.removeItem('app_icon_preference'),
-          EncryptedStorage.removeItem('camouflage_pin_hash'),
-          EncryptedStorage.removeItem('camouflage_pin_enabled'),
-          EncryptedStorage.removeItem('devDebugEnabled'),
-          EncryptedStorage.removeItem('psbt_mode_first_visit'),
-        ]);
-        dbg('EncryptedStorage preferences cleared');
+        // Display / PIN / debug prefs. Launcher identity + keyshare meta stay.
+        clearShowcaseImportPrefs();
+        await removeLegacyEncryptedPrefKeys();
+        dbg('Import prefs cleared');
 
         await LocalCache.clear();
         dbg('Local file cache cleared');
@@ -221,6 +217,7 @@ const ShowcaseScreen = ({navigation}: any) => {
     setAirgapUrProgress(null);
     airgapUrDecoderRef.current = null;
     airgapImportingRef.current = false;
+    airgapLastLoggedReceivedRef.current = -1;
   }, []);
   const handleRestoreViaAirgap = async () => {
     try {
@@ -239,9 +236,6 @@ const ShowcaseScreen = ({navigation}: any) => {
   };
   const importAirgapCipher = useCallback(
     async (base64Content: string, password: string) => {
-      if (airgapImportingRef.current) {
-        return;
-      }
       airgapImportingRef.current = true;
       setIsImporting(true);
       try {
@@ -308,6 +302,9 @@ const ShowcaseScreen = ({navigation}: any) => {
   };
   const handleAirgapScannerClose = () => {
     setIsAirgapScannerVisible(false);
+    if (airgapImportingRef.current) {
+      return;
+    }
     setAirgapUrProgress(null);
     airgapUrDecoderRef.current = null;
     if (airgapCipherBase64) {
@@ -333,23 +330,59 @@ const ShowcaseScreen = ({navigation}: any) => {
     if (!trimmed.toLowerCase().startsWith('ur:')) {
       return;
     }
+    if (
+      airgapUrDecoderRef.current &&
+      !decoderMatchesPartSeqLen(airgapUrDecoderRef.current, trimmed)
+    ) {
+      const parsed = urSeqIndexFromPart(trimmed);
+      dbg('airgap scan: seqLen mismatch, reset decoder', parsed);
+      airgapUrDecoderRef.current = createUrDecoder();
+      setAirgapUrProgress(null);
+      airgapLastLoggedReceivedRef.current = -1;
+    }
     if (!airgapUrDecoderRef.current) {
       airgapUrDecoderRef.current = createUrDecoder();
     }
+    const parsed = urSeqIndexFromPart(trimmed);
     const urResult = receiveUrBytesPartAsBase64(
       airgapUrDecoderRef.current,
       trimmed,
     );
+    if (urResult.kind === 'error') {
+      dbg('airgap scan: decoder error', parsed, trimmed.substring(0, 48));
+      return;
+    }
     if (urResult.kind === 'progress') {
+      const rec = urResult.progress.received;
+      if (rec !== airgapLastLoggedReceivedRef.current) {
+        airgapLastLoggedReceivedRef.current = rec;
+        dbg('airgap scan progress', {
+          ...urResult.progress,
+          seq: parsed?.seq,
+          seqLen: parsed?.seqLen,
+          mix: parsed != null && parsed.seq > parsed.seqLen,
+        });
+      }
       setAirgapUrProgress(urResult.progress);
       return;
     }
     if (urResult.kind === 'complete') {
+      dbg('airgap scan complete', {
+        ...urResult.progress,
+        seq: parsed?.seq,
+        seqLen: parsed?.seqLen,
+        payloadChars: urResult.payload.length,
+      });
+      airgapImportingRef.current = true;
       airgapUrDecoderRef.current = null;
-      setAirgapUrProgress(null);
+      setAirgapUrProgress(urResult.progress);
       setAirgapCipherBase64(urResult.payload);
+      // Stop ZXing and import on this event. setTimeout is frozen while
+      // MainActivity is paused behind the capture activity (same as elapsed 0s).
+      stopAndroidContinuousScan();
       setIsAirgapScannerVisible(false);
-      importAirgapCipher(urResult.payload, airgapPasswordRef.current);
+      setIsImporting(true);
+      void importAirgapCipher(urResult.payload, airgapPasswordRef.current);
     }
   }, [importAirgapCipher]);
   const styles = StyleSheet.create({
@@ -1019,6 +1052,28 @@ const ShowcaseScreen = ({navigation}: any) => {
       fontSize: theme.fontSizes?.sm || 12,
       color: theme.colors.text,
     },
+    importingOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: theme.colors.blackOverlay50 || 'rgba(0,0,0,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 50,
+    },
+    importingCard: {
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 16,
+      paddingVertical: 28,
+      paddingHorizontal: 32,
+      alignItems: 'center',
+      minWidth: 220,
+    },
+    importingText: {
+      marginTop: 12,
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+      textAlign: 'center',
+    },
   });
   return (
     <View style={styles.container}>
@@ -1233,11 +1288,11 @@ const ShowcaseScreen = ({navigation}: any) => {
         title="Scanning Animated QR..."
         subtitle={
           airgapUrProgress && airgapUrProgress.total > 1
-            ? airgapUrProgress.received >= airgapUrProgress.total
+            ? airgapUrProgress.percentage >= 100
               ? 'Processing keyshare…'
-              : `Keep scanning animated QR: ${formatUrFragmentProgress(
+              : `${formatUrRecoveredProgress(
                   airgapUrProgress,
-                )}`
+                )} — fountain can finish before ${airgapUrProgress.total}`
             : 'Point camera at the encrypted keyshare QR'
         }
         showProgress={!!airgapUrProgress && airgapUrProgress.total > 1}
@@ -1612,6 +1667,14 @@ const ShowcaseScreen = ({navigation}: any) => {
         visible={showEntropyCard}
         onClose={() => setShowEntropyCard(false)}
       />
+      {isImporting && restoreMode === 'airgap' && !isAirgapScannerVisible ? (
+        <View style={styles.importingOverlay} pointerEvents="auto">
+          <View style={styles.importingCard}>
+            <ActivityIndicator color={theme.colors.primary} />
+            <Text style={styles.importingText}>Importing keyshare…</Text>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 };

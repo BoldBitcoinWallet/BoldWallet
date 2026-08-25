@@ -4,7 +4,7 @@
  * Replaces the file-based LocalCache (react-native-fs) with a single
  * WAL-mode SQLite database as the authoritative local store.
  *
- * EncryptedStorage (keyshare, btcPub, etc.) is NOT touched here.
+ * EncryptedStorage (`keyshare` only) is NOT touched here.
  */
 import {open, type DB, type Scalar} from '@op-engineering/op-sqlite';
 import {dbg} from '../utils';

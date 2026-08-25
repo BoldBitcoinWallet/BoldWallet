@@ -28,6 +28,7 @@ import {
 import {initializeHaptics} from './utils';
 import database from './services/Database';
 import {runMigrationIfNeeded} from './services/LocalCacheMigration';
+import {migrateEncryptedPrefsIfNeeded} from './services/encryptedPrefsMigration';
 import {runBrantaVerifiedBackfillIfNeeded} from './services/BrantaVerifiedBackfill';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
@@ -602,6 +603,7 @@ const App = () => {
         await database.open();
         dbg('App: SQLite database ready');
         await runMigrationIfNeeded();
+        await migrateEncryptedPrefsIfNeeded();
         await runBrantaVerifiedBackfillIfNeeded();
       } catch (dbErr) {
         dbg('App: Database init error (non-fatal):', dbErr);

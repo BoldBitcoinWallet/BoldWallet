@@ -5,7 +5,9 @@
 import fs from 'fs';
 import path from 'path';
 import {AppState, NativeModules, PermissionsAndroid, Platform} from 'react-native';
-import EncryptedStorage from 'react-native-encrypted-storage';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from '../services/repositories/AppConfigRepository';
 import {
   getMpcKeepAliveBatteryCopy,
   getMpcKeepAliveCheckboxLabel,
@@ -33,13 +35,23 @@ import {
   withMpcKeepAlive,
 } from '../services/mpcKeepAlive';
 
-jest.mock('react-native-encrypted-storage', () => ({
-  __esModule: true,
-  default: {
-    getItem: jest.fn(() => Promise.resolve(null)),
-    setItem: jest.fn(() => Promise.resolve()),
-  },
-}));
+jest.mock('../services/repositories/AppConfigRepository', () => {
+  const store = new Map<string, string>();
+  return {
+    __esModule: true,
+    default: {
+      get: jest.fn((key: string) => store.get(key) ?? null),
+      set: jest.fn((key: string, value: string) => {
+        store.set(key, value);
+      }),
+      __store: store,
+    },
+    CONFIG_KEYS: {
+      APP_ICON_PREFERENCE: 'app_icon_preference',
+      MPC_BATTERY_EXEMPT_DONT_ASK: 'mpc_battery_exempt_dont_ask',
+    },
+  };
+});
 
 const mockStart = jest.fn(() => Promise.resolve(true));
 const mockUpdate = jest.fn(() => Promise.resolve(true));
@@ -145,8 +157,9 @@ describe('mpcKeepAlive', () => {
       isIgnoringBatteryOptimizations: mockIsIgnoringBattery,
       requestIgnoreBatteryOptimizations: mockRequestBattery,
     };
-    (EncryptedStorage.getItem as jest.Mock).mockResolvedValue(null);
-    (EncryptedStorage.setItem as jest.Mock).mockResolvedValue(undefined);
+    (
+      appConfigRepository as unknown as {__store: Map<string, string>}
+    ).__store.clear();
     Object.defineProperty(Platform, 'OS', {configurable: true, value: 'ios'});
   });
 
@@ -164,7 +177,7 @@ describe('mpcKeepAlive', () => {
   });
 
   it('resolves default branding on iOS even if camouflage is stored', async () => {
-    (EncryptedStorage.getItem as jest.Mock).mockResolvedValue('quickcalc');
+    appConfigRepository.set(CONFIG_KEYS.APP_ICON_PREFERENCE, 'quickcalc');
     await expect(resolveMpcKeepAliveBranding()).resolves.toEqual({
       appLabel: 'Bold Wallet',
       camouflaged: false,
@@ -176,7 +189,7 @@ describe('mpcKeepAlive', () => {
       configurable: true,
       value: 'android',
     });
-    (EncryptedStorage.getItem as jest.Mock).mockResolvedValue('notes');
+    appConfigRepository.set(CONFIG_KEYS.APP_ICON_PREFERENCE, 'notes');
     await expect(resolveMpcKeepAliveBranding()).resolves.toEqual({
       appLabel: 'Notes',
       camouflaged: true,
@@ -332,9 +345,7 @@ describe('mpcKeepAlive', () => {
       value: 32,
     });
     mockIsIgnoringBattery.mockResolvedValue(false);
-    (EncryptedStorage.getItem as jest.Mock).mockImplementation(
-      async (key: string) => (key === 'app_icon_preference' ? 'notes' : null),
-    );
+    appConfigRepository.set(CONFIG_KEYS.APP_ICON_PREFERENCE, 'notes');
     await startMpcKeepAlive({kind: 'keygen', transport: 'lan'});
     expect(getMpcKeepAliveUiState().camouflaged).toBe(true);
     expect(getMpcKeepAliveUiState().showBatteryPrompt).toBe(false);
@@ -353,7 +364,7 @@ describe('mpcKeepAlive', () => {
     await startMpcKeepAlive({kind: 'sign', transport: 'lan'});
     expect(getMpcKeepAliveUiState().showBatteryPrompt).toBe(true);
     await dismissMpcBatteryPrompt();
-    expect(EncryptedStorage.setItem).toHaveBeenCalledWith(
+    expect(appConfigRepository.set).toHaveBeenCalledWith(
       MPC_BATTERY_EXEMPT_DONT_ASK_KEY,
       '1',
     );
@@ -369,10 +380,6 @@ describe('mpcKeepAlive', () => {
       isIgnoringBatteryOptimizations: mockIsIgnoringBattery,
       requestIgnoreBatteryOptimizations: mockRequestBattery,
     };
-    (EncryptedStorage.getItem as jest.Mock).mockImplementation(
-      async (key: string) =>
-        key === MPC_BATTERY_EXEMPT_DONT_ASK_KEY ? '1' : null,
-    );
     await startMpcKeepAlive({kind: 'sign', transport: 'lan'});
     expect(getMpcKeepAliveUiState().showBatteryPrompt).toBe(false);
   });

@@ -4,7 +4,7 @@
  * Frame helpers (`urPartAt`, `urFragmentCount`) work for any UR type
  * (`bytes`, `crypto-psbt`, …). Send-bitcoin uses `utf8ToUr` → `ur:bytes`.
  * Signed PSBT keeps `CryptoPSBT.toUR()` → `ur:crypto-psbt`.
- * Airgap keyshare uses larger fragments + faster cadence (see `UR_AIRGAP_*`).
+ * Airgap keyshare uses speed presets in `UR_AIRGAP_SPEEDS` (default / medium / fast).
  */
 import {Buffer} from 'buffer';
 // Buffer polyfill is loaded in polyfills.js for React Native.
@@ -15,12 +15,47 @@ export const UR_BYTES_FRAGMENT_SIZE = 200;
 export const UR_FRAME_INTERVAL_MS = 250;
 
 /**
- * Airgap keyshare ciphertext is large (~100KB+). Larger fragments cut frame count;
- * faster cadence still works phone-to-phone with fountain recovery if a frame is missed.
- * ~500B / 125ms ≈ 5× wall-clock vs default 200B / 250ms for the same payload.
+ * Airgap export speed presets (fragment size + frame interval).
+ * Larger fragments = fewer denser QRs; slower interval = more camera time.
+ * Changing speed changes seqLen — encoder and decoder must restart together.
  */
-export const UR_AIRGAP_FRAGMENT_SIZE = 500;
-export const UR_AIRGAP_FRAME_INTERVAL_MS = 125;
+export type AirgapQrSpeed = 'default' | 'medium' | 'fast';
+
+export const UR_AIRGAP_SPEEDS: Record<
+  AirgapQrSpeed,
+  {fragmentSize: number; frameIntervalMs: number; label: string}
+> = {
+  default: {fragmentSize: 500, frameIntervalMs: 500, label: 'Default'},
+  medium: {fragmentSize: 300, frameIntervalMs: 300, label: 'Medium'},
+  fast: {fragmentSize: 150, frameIntervalMs: 150, label: 'Fast'},
+};
+
+export const UR_AIRGAP_DEFAULT_SPEED: AirgapQrSpeed = 'default';
+export const UR_AIRGAP_SPEED_ORDER: AirgapQrSpeed[] = [
+  'default',
+  'medium',
+  'fast',
+];
+
+export function nextAirgapQrSpeed(current: AirgapQrSpeed): AirgapQrSpeed {
+  const i = UR_AIRGAP_SPEED_ORDER.indexOf(current);
+  return UR_AIRGAP_SPEED_ORDER[(i + 1) % UR_AIRGAP_SPEED_ORDER.length];
+}
+
+/**
+ * After one sequential pass plus one mix pass, rewind the encoder so missed
+ * original fragments get another scan chance. Mix-only forever stalls the HUD
+ * at whatever unique originals the camera caught (often ~60%).
+ */
+export function urFountainWrapAfter(seqLen: number): number {
+  return Math.max(2, Math.max(0, seqLen) * 2);
+}
+
+/** Default airgap fragment size (500B). */
+export const UR_AIRGAP_FRAGMENT_SIZE =
+  UR_AIRGAP_SPEEDS.default.fragmentSize;
+export const UR_AIRGAP_FRAME_INTERVAL_MS =
+  UR_AIRGAP_SPEEDS.default.frameIntervalMs;
 export const UR_BYTES_TYPE = 'bytes';
 
 export type UrBytesProgress = {
@@ -33,7 +68,7 @@ export type UrBytesReceiveResult =
   | {kind: 'not-ur'}
   | {kind: 'ignored'; type: string}
   | {kind: 'progress'; progress: UrBytesProgress}
-  | {kind: 'complete'; payload: string}
+  | {kind: 'complete'; payload: string; progress: UrBytesProgress}
   | {kind: 'error'};
 
 export function utf8ToUr(payload: string): UR | null {
@@ -64,7 +99,7 @@ function decodeCborBuffer(ur: UR): Buffer | null {
     if (!ur || ur.type !== UR_BYTES_TYPE) {
       return null;
     }
-    const cborPayload = ur.decodeCBOR();
+    const cborPayload: unknown = ur.decodeCBOR();
     if (Buffer.isBuffer(cborPayload)) {
       return cborPayload;
     }
@@ -158,6 +193,103 @@ export function urTypeFromPart(part: string): string | null {
   return lower.split('/')[0].substring(3);
 }
 
+/**
+ * Multipart UR seqLen from `ur:type/seq-seqLen/…`. Single-part URs have no seq.
+ */
+export function urSeqLenFromPart(part: string): number | null {
+  return urSeqIndexFromPart(part)?.seqLen ?? null;
+}
+
+/**
+ * Multipart UR `seq` and `seqLen` from `ur:type/seq-seqLen/…`.
+ * Same shape the Android ZXing overlay parses for live frame counts.
+ */
+export function urSeqIndexFromPart(
+  part: string,
+): {seq: number; seqLen: number} | null {
+  const lower = part.trim().toLowerCase();
+  const match = lower.match(/^ur:[^/]+\/(\d+)-(\d+)\//);
+  if (!match) {
+    return null;
+  }
+  const seq = parseInt(match[1], 10);
+  const seqLen = parseInt(match[2], 10);
+  if (!Number.isFinite(seq) || !Number.isFinite(seqLen) || seqLen <= 0) {
+    return null;
+  }
+  return {seq, seqLen};
+}
+
+export type UrScanFrameTracker = {
+  seqLen: number;
+  seqs: Set<number>;
+};
+
+export function createUrScanFrameTracker(): UrScanFrameTracker {
+  return {seqLen: 0, seqs: new Set()};
+}
+
+/**
+ * Overlay counts original fragment indexes (`seq` in 1..seqLen).
+ * Fountain mix frames use seq > seqLen — counting those as well hits N/N
+ * while the decoder is still waiting, which looks like a finished scan.
+ * Never reports 100% / N of N; `decoder.isComplete()` closes the scanner.
+ */
+export function urScanHudFromUniqueSimple(
+  seqLen: number,
+  uniqueSimple: number,
+): UrBytesProgress {
+  const total = Math.max(seqLen, 1);
+  const unique = Math.max(0, uniqueSimple);
+  const received = Math.min(unique, Math.max(total - 1, 0));
+  const percentage = Math.min(99, Math.round((unique / total) * 100) || 0);
+  return {total, received, percentage};
+}
+
+/** Unique original-fragment seq indexes vs expected seqLen — matches Android capture HUD. */
+export function recordUrScanFrame(
+  tracker: UrScanFrameTracker,
+  part: string,
+): {novel: boolean; progress: UrBytesProgress | null} {
+  const parsed = urSeqIndexFromPart(part);
+  let novel = false;
+  if (parsed) {
+    if (tracker.seqLen !== 0 && tracker.seqLen !== parsed.seqLen) {
+      tracker.seqs.clear();
+    }
+    tracker.seqLen = parsed.seqLen;
+    const before = tracker.seqs.size;
+    // Mix frames are seq > seqLen; they reconstruct data but must not fill N/N.
+    if (parsed.seq >= 1 && parsed.seq <= parsed.seqLen) {
+      tracker.seqs.add(parsed.seq);
+    }
+    novel = tracker.seqs.size > before;
+  }
+  if (tracker.seqLen <= 0) {
+    return {novel, progress: null};
+  }
+  return {
+    novel,
+    progress: urScanHudFromUniqueSimple(tracker.seqLen, tracker.seqs.size),
+  };
+}
+
+/** False when this part belongs to a different fragment size / seqLen session. */
+export function decoderMatchesPartSeqLen(
+  decoder: URDecoder,
+  part: string,
+): boolean {
+  const seqLen = urSeqLenFromPart(part);
+  if (!seqLen) {
+    return true;
+  }
+  const expected = decoder.expectedPartCount();
+  if (!expected) {
+    return true;
+  }
+  return expected === seqLen;
+}
+
 export function urToUtf8(ur: UR): string | null {
   const buf = decodeCborBuffer(ur);
   return buf ? buf.toString('utf8') : null;
@@ -187,6 +319,11 @@ export function formatUrFragmentProgress(progress: UrBytesProgress): string {
   return `${progress.received} of ${progress.total}`;
 }
 
+/** Airgap restore: unique fragments vs expected; fountain can finish before N/N. */
+export function formatUrRecoveredProgress(progress: UrBytesProgress): string {
+  return `Recovered ${progress.received} / ${progress.total} (~${progress.percentage}%)`;
+}
+
 function receiveUrBytesPartWith(
   decoder: URDecoder,
   part: string,
@@ -212,7 +349,7 @@ function receiveUrBytesPartWith(
       if (!payload) {
         return {kind: 'error'};
       }
-      return {kind: 'complete', payload};
+      return {kind: 'complete', payload, progress};
     }
     return {kind: 'progress', progress};
   } catch {

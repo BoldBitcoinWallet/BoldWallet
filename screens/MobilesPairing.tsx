@@ -32,7 +32,6 @@ import DeviceInfo from 'react-native-device-info';
 import NetInfo from '@react-native-community/netinfo';
 import RNFS from 'react-native-fs';
 import {safeUnlink} from '../services/rnfsSafe';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import * as Progress from 'react-native-progress';
 import {
   CommonActions,
@@ -518,10 +517,7 @@ const MobilesPairing = ({navigation}: any) => {
           // Clear SQLite wallet data
           database.clearWalletData();
           dbg('SQLite wallet data cleared');
-          // Clear stale EncryptedStorage items (but keep keyshare if it exists for signing)
-          // We clear btcPub as it will be regenerated with the new keyshare
-          await EncryptedStorage.removeItem('btcPub');
-          dbg('Cleared stale btcPub from EncryptedStorage');
+          // btcPub is derived in memory; keep the keyshare blob for signing.
           // Clear WalletService cache
           try {
             // stale key removed;

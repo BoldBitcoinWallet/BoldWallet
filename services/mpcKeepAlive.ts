@@ -4,7 +4,6 @@
  * iOS: idle timer + short background task + local complete/fail notifications.
  */
 
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {
   AppState,
   NativeModules,
@@ -13,11 +12,9 @@ import {
   type NativeEventSubscription,
 } from 'react-native';
 import {androidApiLevel} from './lanDiscoveryPermissions';
-import {
-  camouflagePresetById,
-  isCamouflageActive,
-  normalizeCamouflagePresetId,
-} from './camouflagePresets';
+import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigRepository';
+import {camouflagePresetById, isCamouflageActive} from './camouflagePresets';
+import {getLauncherCamouflagePreset} from './camouflageIcon';
 import {
   getMpcKeepAliveCompleteCopy,
   getMpcKeepAliveInitialStatus,
@@ -67,7 +64,8 @@ type NativeKeepAlive = {
 };
 
 const POST_NOTIFICATIONS = 'android.permission.POST_NOTIFICATIONS';
-export const MPC_BATTERY_EXEMPT_DONT_ASK_KEY = 'mpc_battery_exempt_dont_ask';
+export const MPC_BATTERY_EXEMPT_DONT_ASK_KEY =
+  CONFIG_KEYS.MPC_BATTERY_EXEMPT_DONT_ASK;
 
 let sessionGen = 0;
 let activeGen = 0;
@@ -138,11 +136,10 @@ export async function resolveMpcKeepAliveBranding(): Promise<MpcKeepAliveBrandin
     return {appLabel: 'Bold Wallet', camouflaged: false};
   }
   try {
-    const raw = await EncryptedStorage.getItem('app_icon_preference');
-    const id = normalizeCamouflagePresetId(raw);
+    const id = await getLauncherCamouflagePreset();
     return {
       appLabel: camouflagePresetById(id).label,
-      camouflaged: isCamouflageActive(raw),
+      camouflaged: isCamouflageActive(id),
     };
   } catch {
     return {appLabel: 'Bold Wallet', camouflaged: false};
@@ -230,8 +227,8 @@ async function maybeShowBatteryPrompt(camouflaged: boolean): Promise<void> {
       setUiState({showBatteryPrompt: false});
       return;
     }
-    const dismissed = await EncryptedStorage.getItem(
-      MPC_BATTERY_EXEMPT_DONT_ASK_KEY,
+    const dismissed = appConfigRepository.get(
+      CONFIG_KEYS.MPC_BATTERY_EXEMPT_DONT_ASK,
     );
     setUiState({showBatteryPrompt: dismissed !== '1'});
   } catch {
@@ -251,7 +248,7 @@ export async function requestMpcBatteryExemption(): Promise<void> {
 
 export async function dismissMpcBatteryPrompt(): Promise<void> {
   try {
-    await EncryptedStorage.setItem(MPC_BATTERY_EXEMPT_DONT_ASK_KEY, '1');
+    appConfigRepository.set(CONFIG_KEYS.MPC_BATTERY_EXEMPT_DONT_ASK, '1');
   } catch {
     // ignore
   }

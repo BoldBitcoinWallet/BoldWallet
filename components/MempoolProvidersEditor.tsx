@@ -1,4 +1,4 @@
-import React, {useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useState} from 'react';
 import {
   Alert,
   Image,
@@ -9,9 +9,10 @@ import {
 } from 'react-native';
 import AppPressable from './AppPressable';
 import AppSwitch from './AppSwitch';
-import {useTheme} from '../theme';
+import {useTheme, type ThemeColors} from '../theme';
 import {
   getHostQuality,
+  subscribeMempoolHealth,
   type MempoolHealthQuality,
 } from '../services/mempoolHealth';
 import {
@@ -25,6 +26,8 @@ import {
   type MempoolProviderEntry,
 } from '../services/mempoolProvidersStore';
 import {normalizeMempoolApiRoot} from '../services/mempoolApiBase';
+import {probeMempoolApiBasesOnce} from '../services/providerHealthPoller';
+import {useWalletOnline} from '../services/walletOnlineStore';
 
 function hostRoot(url: string): string {
   return normalizeMempoolApiRoot(url);
@@ -39,10 +42,43 @@ type Props = {
   showDefaults?: boolean;
 };
 
-function qualityLabel(q: MempoolHealthQuality | null): string | null {
-  if (q === 'slow') return 'Slow';
-  if (q === 'bad') return 'Unreachable';
-  if (q === 'fine') return 'Healthy';
+function qualityBadge(
+  q: MempoolHealthQuality | null,
+  colors: ThemeColors,
+): {
+  label: string;
+  bg: string;
+  border: string;
+  text: string;
+  dot: string;
+} | null {
+  if (q === 'fine') {
+    return {
+      label: 'Healthy',
+      bg: colors.receivedOverlay15,
+      border: colors.success + '66',
+      text: colors.success,
+      dot: colors.success,
+    };
+  }
+  if (q === 'slow') {
+    return {
+      label: 'Slow',
+      bg: colors.warningBg,
+      border: colors.warningBorder,
+      text: colors.warningText,
+      dot: colors.bitcoinOrange,
+    };
+  }
+  if (q === 'bad') {
+    return {
+      label: 'Unreachable',
+      bg: colors.dangerOverlay15,
+      border: colors.danger + '66',
+      text: colors.danger,
+      dot: colors.danger,
+    };
+  }
   return null;
 }
 
@@ -55,10 +91,31 @@ export default function MempoolProvidersEditor({
   showDefaults = true,
 }: Props) {
   const {theme} = useTheme();
+  const walletOnline = useWalletOnline();
   const [addUrl, setAddUrl] = useState('');
   const [showPaste, setShowPaste] = useState(false);
   const [pasteText, setPasteText] = useState('');
+  const [checking, setChecking] = useState(false);
+  const [, setHealthTick] = useState(0);
   const summary = useMemo(() => providerListSummary(entries), [entries]);
+
+  useEffect(() => {
+    return subscribeMempoolHealth(() => {
+      setHealthTick(t => t + 1);
+    });
+  }, []);
+
+  const checkProviders = async () => {
+    if (checking || !walletOnline || entries.length === 0) {
+      return;
+    }
+    setChecking(true);
+    try {
+      await probeMempoolApiBasesOnce(entries.map(e => e.url));
+    } finally {
+      setChecking(false);
+    }
+  };
 
   const addProvider = (raw: string) => {
     const url = normalizeProviderUrl(raw);
@@ -109,16 +166,12 @@ export default function MempoolProvidersEditor({
   };
 
   const muted = theme.colors.textSecondary;
-  const isDark = theme.colors.background !== '#ffffff';
-  // Match header health-dot: dark primary (#3A3A3A) is unreadable on cards.
-  const healthyColor = isDark ? theme.colors.secondary : theme.colors.primary;
 
   return (
     <View>
       <Text style={[styles.summary, {color: muted}]}>{summary}</Text>
       {entries.map((entry, index) => {
-        const quality = getHostQuality(hostRoot(entry.url));
-        const qLabel = qualityLabel(quality);
+        const badge = qualityBadge(getHostQuality(hostRoot(entry.url)), theme.colors);
         return (
           <View
             key={entry.url}
@@ -142,21 +195,31 @@ export default function MempoolProvidersEditor({
                 ellipsizeMode="middle">
                 {entry.url}
               </Text>
-              {qLabel && entry.enabled ? (
-                <Text
+              {badge ? (
+                <View
                   style={[
-                    styles.hint,
+                    styles.badge,
                     {
-                      color:
-                        quality === 'bad'
-                          ? muted
-                          : quality === 'slow'
-                            ? theme.colors.bitcoinOrange
-                            : healthyColor,
+                      backgroundColor: badge.bg,
+                      borderColor: badge.border,
+                      opacity: entry.enabled ? 1 : 0.72,
                     },
-                  ]}>
-                  {qLabel}
-                </Text>
+                  ]}
+                  accessibilityLabel={`Provider ${badge.label}`}>
+                  <View
+                    style={[styles.badgeDot, {backgroundColor: badge.dot}]}
+                  />
+                  <Text
+                    style={[
+                      styles.badgeText,
+                      {
+                        color: badge.text,
+                        fontFamily: theme.fontFamilies?.medium,
+                      },
+                    ]}>
+                    {badge.label}
+                  </Text>
+                </View>
               ) : null}
             </View>
             <AppSwitch
@@ -259,6 +322,22 @@ export default function MempoolProvidersEditor({
       ) : null}
 
       <View style={styles.actions}>
+        <AppPressable
+          style={[
+            styles.secondaryBtn,
+            {borderColor: theme.colors.border},
+            (checking || !walletOnline || entries.length === 0) &&
+              styles.disabled,
+          ]}
+          disabled={checking || !walletOnline || entries.length === 0}
+          onPress={checkProviders}
+          accessibilityLabel="Check mempool providers"
+          accessibilityHint="Probes each listed endpoint once"
+          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+          <Text style={[styles.secondaryBtnText, {color: theme.colors.text}]}>
+            {checking ? 'Checking…' : 'Check'}
+          </Text>
+        </AppPressable>
         {showSave ? (
           <AppPressable
             style={[
@@ -314,9 +393,25 @@ const styles = StyleSheet.create({
   url: {
     fontSize: 13,
   },
-  hint: {
+  badge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    gap: 5,
+  },
+  badgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  badgeText: {
     fontSize: 11,
-    marginTop: 2,
+    letterSpacing: 0.2,
   },
   deleteBtn: {
     padding: 6,

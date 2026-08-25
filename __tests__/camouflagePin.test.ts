@@ -2,12 +2,6 @@
  * @format
  */
 
-jest.mock('react-native-encrypted-storage', () => ({
-  getItem: jest.fn(),
-  setItem: jest.fn(),
-  removeItem: jest.fn(),
-}));
-
 jest.mock('../utils', () => ({
   dbg: jest.fn(),
 }));
@@ -42,7 +36,6 @@ jest.mock('../services/Database', () => {
   };
 });
 
-import EncryptedStorage from 'react-native-encrypted-storage';
 import database from '../services/Database';
 import {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {
@@ -65,17 +58,12 @@ import {
   verifyCamouflagePin,
 } from '../services/camouflagePin';
 
-const getItem = EncryptedStorage.getItem as jest.Mock;
-const setItem = EncryptedStorage.setItem as jest.Mock;
 const dbStore = (
   database as unknown as {__store: Map<string, string>}
 ).__store;
 
 describe('camouflagePin', () => {
   beforeEach(() => {
-    getItem.mockReset();
-    setItem.mockReset();
-    (EncryptedStorage.removeItem as jest.Mock).mockReset();
     dbStore.clear();
   });
 
@@ -88,63 +76,41 @@ describe('camouflagePin', () => {
   });
 
   it('defaults PIN toggle off when unset', async () => {
-    getItem.mockResolvedValue(null);
     expect(await isCamouflagePinEnabled()).toBe(false);
   });
 
   it('reads stored toggle', async () => {
-    getItem.mockResolvedValue('false');
+    dbStore.set(CAMOUFLAGE_PIN_ENABLED_KEY, 'false');
     expect(await isCamouflagePinEnabled()).toBe(false);
-    getItem.mockResolvedValue('true');
+    dbStore.set(CAMOUFLAGE_PIN_ENABLED_KEY, 'true');
     expect(await isCamouflagePinEnabled()).toBe(true);
   });
 
   it('hashes and verifies a PIN', async () => {
-    const store = new Map<string, string>();
-    getItem.mockImplementation(async (key: string) => store.get(key) ?? null);
-    setItem.mockImplementation(async (key: string, value: string) => {
-      store.set(key, value);
-    });
     await setCamouflagePin('4821');
-    expect(store.get(CAMOUFLAGE_PIN_HASH_KEY)).toMatch(/^[0-9a-f]+:[0-9a-f]+$/);
-    expect(store.get(CAMOUFLAGE_PIN_ENABLED_KEY)).toBe('true');
+    expect(dbStore.get(CAMOUFLAGE_PIN_HASH_KEY)).toMatch(/^[0-9a-f]+:[0-9a-f]+$/);
+    expect(dbStore.get(CAMOUFLAGE_PIN_ENABLED_KEY)).toBe('true');
     expect(await hasCamouflagePin()).toBe(true);
     expect(await verifyCamouflagePin('4821')).toBe(true);
     expect(await verifyCamouflagePin('0000')).toBe(false);
   });
 
   it('prompts on lock for camouflage when a PIN exists, or Bold when toggle is on', async () => {
-    getItem.mockImplementation(async (key: string) => {
-      if (key === CAMOUFLAGE_PIN_HASH_KEY) {
-        return 'ab:cd';
-      }
-      if (key === CAMOUFLAGE_PIN_ENABLED_KEY) {
-        return 'false';
-      }
-      return null;
-    });
+    dbStore.set(CAMOUFLAGE_PIN_HASH_KEY, 'ab:cd');
+    dbStore.set(CAMOUFLAGE_PIN_ENABLED_KEY, 'false');
     expect(await shouldPromptCamouflagePin(true)).toBe(true);
     expect(await shouldPromptCamouflagePin(false)).toBe(false);
 
-    getItem.mockImplementation(async (key: string) => {
-      if (key === CAMOUFLAGE_PIN_HASH_KEY) {
-        return 'ab:cd';
-      }
-      if (key === CAMOUFLAGE_PIN_ENABLED_KEY) {
-        return 'true';
-      }
-      return null;
-    });
+    dbStore.set(CAMOUFLAGE_PIN_ENABLED_KEY, 'true');
     expect(await shouldPromptCamouflagePin(false)).toBe(true);
 
-    getItem.mockResolvedValue(null);
+    dbStore.clear();
     expect(await shouldPromptCamouflagePin(true)).toBe(false);
   });
 
   it('persists enabled flag', async () => {
-    setItem.mockResolvedValue(undefined);
     await setCamouflagePinEnabled(false);
-    expect(setItem).toHaveBeenCalledWith(CAMOUFLAGE_PIN_ENABLED_KEY, 'false');
+    expect(dbStore.get(CAMOUFLAGE_PIN_ENABLED_KEY)).toBe('false');
   });
 
   it('locks for 30s after 3 failures and resets the window after the wait', () => {
@@ -207,10 +173,10 @@ describe('camouflagePin', () => {
     expect(dbStore.has(CONFIG_KEYS.CAMOUFLAGE_PIN_FAIL_COUNT)).toBe(false);
 
     recordCamouflagePinFailure(3);
-    (EncryptedStorage.removeItem as jest.Mock).mockResolvedValue(undefined);
     await clearCamouflagePin();
     expect(dbStore.has(CONFIG_KEYS.CAMOUFLAGE_PIN_FAIL_COUNT)).toBe(false);
     expect(dbStore.has(CONFIG_KEYS.CAMOUFLAGE_PIN_LOCKED_UNTIL)).toBe(false);
+    expect(dbStore.has(CAMOUFLAGE_PIN_HASH_KEY)).toBe(false);
   });
 
   it('formats a retry countdown', () => {

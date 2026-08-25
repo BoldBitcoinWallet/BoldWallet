@@ -19,11 +19,11 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import QRScanner from '../components/QRScanner';
+import {elapsedScanSecondsSince, withElapsedScanLabel} from '../utils/scanElapsed';
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 import {useNavigation, useRoute, useIsFocused, RouteProp} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {AppState, DeviceEventEmitter, type EmitterSubscription} from 'react-native';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
 import TransactionList from '../components/TransactionList';
@@ -45,6 +45,7 @@ import {
   formatBitcoinDisplay,
   getCurrencySymbol,
   HapticFeedback,
+  areHapticsEnabled,
   getKeyshareDisplayLabel,
   getReceivePath,
   resolveUseLegacyDerivationPaths,
@@ -250,6 +251,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const sendScanSessionIdRef = useRef(0);
   const sendContinuousScanSubRef = useRef<EmitterSubscription | null>(null);
   const [isAndroidSendScanning, setIsAndroidSendScanning] = useState(false);
+  const sendScanStartedAtRef = useRef(0);
   const [sendUrProgress, setSendUrProgress] = useState<{
     total: number;
     received: number;
@@ -859,9 +861,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           ks.chain_code_hex,
           path,
         );
-        // Store btcPub for later use in address generation
-        await EncryptedStorage.setItem('btcPub', btcPub);
-        dbg('btcPub derived and stored during re-initialization');
+        dbg('btcPub derived during re-initialization');
         // Get current network from NetworkContext
         const net =
           network || appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
@@ -1292,8 +1292,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           ks.chain_code_hex,
           path,
         );
-        await EncryptedStorage.setItem('btcPub', btcPub);
-        dbg('btcPub stored in EncryptedStorage for address generation');
+        dbg('btcPub derived for address generation');
         // Set default network if not set
         let net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
         if (!net) {
@@ -2022,6 +2021,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const currentSessionId = sendScanSessionIdRef.current;
     isSendScanningRef.current = true;
     setIsAndroidSendScanning(true);
+    sendScanStartedAtRef.current = Date.now();
+    if (BarcodeZxingScan.setScanHud) {
+      BarcodeZxingScan.setScanHud('Scan Send Bitcoin QR', !!areHapticsEnabled());
+    }
     BarcodeZxingScan.showQrReaderContinuous((scanError: unknown, data: unknown) => {
       if (scanError) {
         dbg('WalletHome: Failed to start Android send scanner', scanError);
@@ -2035,7 +2038,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         isSendScanningRef.current = true;
         setIsAndroidSendScanning(true);
         setTimeout(() => {
-          BarcodeZxingScan.updateProgressText('Scanning send QR…');
+          BarcodeZxingScan.updateProgressText(
+            withElapsedScanLabel(
+              'Scanning send QR…',
+              elapsedScanSecondsSince(sendScanStartedAtRef.current),
+            ),
+          );
         }, 100);
       }
     });
@@ -2065,10 +2073,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     if (Platform.OS === 'android' && isAndroidSendScanning && sendUrProgress) {
       BarcodeZxingScan.updateProgressText(
-        `Send QR scanning… ${formatUrFragmentProgress(sendUrProgress)}`,
+        withElapsedScanLabel(
+          `Send QR scanning… ${formatUrFragmentProgress(sendUrProgress)}`,
+          elapsedScanSecondsSince(sendScanStartedAtRef.current),
+        ),
       );
     } else if (Platform.OS === 'android' && isAndroidSendScanning && !sendUrProgress) {
-      BarcodeZxingScan.updateProgressText('Scanning send QR…');
+      BarcodeZxingScan.updateProgressText(
+        withElapsedScanLabel(
+          'Scanning send QR…',
+          elapsedScanSecondsSince(sendScanStartedAtRef.current),
+        ),
+      );
     }
   }, [sendUrProgress, isAndroidSendScanning]);
 

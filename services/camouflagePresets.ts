@@ -60,7 +60,7 @@ export function isValidCamouflageLabel(label: string): boolean {
   );
 }
 
-/** Legacy EncryptedStorage value `alternative` maps to QuickCalc. */
+/** Legacy stored value `alternative` maps to QuickCalc. */
 export function normalizeCamouflagePresetId(
   raw: string | null | undefined,
 ): CamouflagePresetId {

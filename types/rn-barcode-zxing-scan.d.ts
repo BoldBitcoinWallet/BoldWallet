@@ -8,6 +8,7 @@ declare module 'rn-barcode-zxing-scan' {
     stopQrReader: () => void;
     updateProgressText: (text: string) => void;
     setStatusMessage?: (message: string) => void;
+    setScanHud?: (title: string, haptic: boolean) => void;
   }
   const BarcodeZxingScan: BarcodeZxingScanModule;
   export default BarcodeZxingScan;

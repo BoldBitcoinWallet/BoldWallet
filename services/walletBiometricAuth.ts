@@ -1,7 +1,7 @@
 import {Alert, Platform} from 'react-native';
 import ReactNativeBiometrics, {BiometryTypes} from 'react-native-biometrics';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {dbg} from '../utils';
+import {getLauncherCamouflagePreset} from './camouflageIcon';
 import {camouflageUnlockPrompt} from './camouflagePresets';
 
 const rnBiometrics = new ReactNativeBiometrics({allowDeviceCredentials: true});
@@ -47,8 +47,8 @@ async function resolveDefaultUnlockPrompt(): Promise<{
     return camouflageUnlockPrompt('default');
   }
   try {
-    const raw = await EncryptedStorage.getItem('app_icon_preference');
-    return camouflageUnlockPrompt(raw);
+    const id = await getLauncherCamouflagePreset();
+    return camouflageUnlockPrompt(id);
   } catch {
     return camouflageUnlockPrompt('default');
   }

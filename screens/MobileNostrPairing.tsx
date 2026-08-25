@@ -28,7 +28,6 @@ import Animated, {
 import Share from 'react-native-share';
 import {NativeModules} from 'react-native';
 import DeviceInfo from 'react-native-device-info';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import StaticQRCode from '../components/StaticQRCode';
 import Clipboard from '@react-native-clipboard/clipboard';
 import QRScanner from '../components/QRScanner';
@@ -252,7 +251,7 @@ function alertMessageForNostrSendError(err: unknown): string {
 /**
  * Prefer native `getKeyshareNostrPrepJSON` (reads full keyshare from RNES).
  * If that fails (NO_KEYSHARE / timing) or returns incomplete fields, merge from
- * `keyshare_meta` (EncryptedStorage) so flows keep working after metadata-focused storage.
+ * `keyshare_meta_json` (SQLite) so flows keep working after metadata-focused storage.
  */
 async function loadNostrKeysharePrepForSession(): Promise<NostrKeysharePrep> {
   let committee: string[] = [];
@@ -693,10 +692,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           // Clear SQLite wallet data
           database.clearWalletData();
           dbg('SQLite wallet data cleared');
-          // Clear stale EncryptedStorage items (but keep keyshare if it exists for signing)
-          // We clear btcPub as it will be regenerated with the new keyshare
-          await EncryptedStorage.removeItem('btcPub');
-          dbg('Cleared stale btcPub from EncryptedStorage');
+          // btcPub is derived in memory; keep the keyshare blob for signing.
           // Clear WalletService cache
           try {
             // stale key removed;

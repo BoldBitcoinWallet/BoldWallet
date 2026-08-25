@@ -1257,12 +1257,11 @@ function keyshareMetaNeedsCreatedAtBackfill(raw, normalized) {
 
 async function persistNormalizedKeyshareMeta(meta, repo, CONFIG_KEYS) {
   const json = JSON.stringify(meta);
-  await EncryptedStorage.setItem('keyshare_meta', json);
   if (repo && CONFIG_KEYS) {
     try {
       repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, json);
     } catch (e) {
-      dbg('persistNormalizedKeyshareMeta: DB mirror failed (non-fatal)', e);
+      dbg('persistNormalizedKeyshareMeta: DB write failed (non-fatal)', e);
     }
   }
 }
@@ -1307,6 +1306,7 @@ function metaNeedsPersistAfterEnrich(before, after) {
 /**
  * Extract and persist only the non-secret metadata fields from a keyshare JSON string.
  * Call this whenever EncryptedStorage.setItem('keyshare', …) is called.
+ * Metadata lives in SQLite `app_config` (`keyshare_meta_json`).
  * @param {string} keyshareJson - Raw keyshare JSON string
  */
 /**
@@ -1319,17 +1319,18 @@ export const saveKeyshareMetadata = async (keyshareJson, opts = {}) => {
     const parsed = JSON.parse(keyshareJson);
     const meta = normalizeKeyshareMetaObject(parsed);
     const json = JSON.stringify(meta);
-    await EncryptedStorage.setItem('keyshare_meta', json);
     const {repo, CONFIG_KEYS} = loadAppConfigRepository();
     if (repo && CONFIG_KEYS) {
       try {
         repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, json);
       } catch (e) {
-        dbg('saveKeyshareMetadata: DB mirror failed (non-fatal)', e);
+        dbg('saveKeyshareMetadata: DB write failed', e);
         if (throwOnError) {
           throw e;
         }
       }
+    } else if (throwOnError) {
+      throw new Error('Failed to save wallet metadata');
     }
     dbg('saveKeyshareMetadata: saved metadata');
     DeviceEventEmitter.emit('wallet:keyshare-ready');
@@ -1410,9 +1411,8 @@ export async function hasUsableWalletKeyshare() {
 
 /**
  * Read the non-secret keyshare metadata without loading the full MPC blob.
- * Prefers EncryptedStorage `keyshare_meta` (always written with `keyshare` saves)
- * so committee/npub data cannot drift from the keychain keyshare. SQLite is a
- * fallback when Encrypted is empty, then legacy `keyshare` parse.
+ * Prefers SQLite `keyshare_meta_json`. Leftover EncryptedStorage `keyshare_meta`
+ * is copied into the DB then dropped. Last resort: parse the `keyshare` blob.
  * @returns {Promise<import('./types/keyshare').KeyshareMetadata|null>} Metadata object or null if not available
  */
 export const getKeyshareMetadata = async () => {
@@ -1427,61 +1427,58 @@ export const getKeyshareMetadata = async () => {
     }
   };
 
-  try {
-    const rawEnc = await EncryptedStorage.getItem('keyshare_meta');
-    const encParsed = safeParseKeyshareMetaJson(rawEnc);
-    const encNorm = encParsed ? normalizeKeyshareMetaObject(encParsed) : null;
-    const encOk = encNorm && keyshareMetaLooksComplete(encNorm);
+  const readDbMeta = () => {
+    const dbRaw =
+      repo && CONFIG_KEYS ? repo.get(CONFIG_KEYS.KEYSHARE_META_JSON) : null;
+    const dbParsed = safeParseKeyshareMetaJson(dbRaw);
+    const dbNorm = dbParsed ? normalizeKeyshareMetaObject(dbParsed) : null;
+    if (dbNorm && keyshareMetaLooksComplete(dbNorm)) {
+      return {parsed: dbParsed, norm: dbNorm};
+    }
+    return null;
+  };
 
-    if (encOk) {
-      let out = encNorm;
-      const enriched = await enrichMetaTssBackendFromFullKeyshare(encNorm);
-      if (metaNeedsPersistAfterEnrich(encNorm, enriched)) {
+  try {
+    let dbMeta = readDbMeta();
+
+    if (!dbMeta) {
+      const rawEnc = await EncryptedStorage.getItem('keyshare_meta');
+      const encParsed = safeParseKeyshareMetaJson(rawEnc);
+      const encNorm = encParsed ? normalizeKeyshareMetaObject(encParsed) : null;
+      if (encNorm && keyshareMetaLooksComplete(encNorm)) {
+        dbMeta = {parsed: encParsed, norm: encNorm};
+        try {
+          await persistNormalizedKeyshareMeta(encNorm, repo, CONFIG_KEYS);
+        } catch (e) {
+          dbg('getKeyshareMetadata: migrate Encrypted meta to DB failed', e);
+        }
+      }
+      if (rawEnc) {
+        try {
+          await EncryptedStorage.removeItem('keyshare_meta');
+        } catch (e) {
+          dbg('getKeyshareMetadata: drop leftover Encrypted meta failed', e);
+        }
+      }
+    }
+
+    if (dbMeta) {
+      let out = dbMeta.norm;
+      const enriched = await enrichMetaTssBackendFromFullKeyshare(dbMeta.norm);
+      if (metaNeedsPersistAfterEnrich(dbMeta.norm, enriched)) {
         out = enriched;
       }
       if (
-        keyshareMetaNeedsCreatedAtBackfill(encParsed, out) ||
-        metaNeedsPersistAfterEnrich(encNorm, out)
+        keyshareMetaNeedsCreatedAtBackfill(dbMeta.parsed, out) ||
+        metaNeedsPersistAfterEnrich(dbMeta.norm, out)
       ) {
         try {
           await persistNormalizedKeyshareMeta(out, repo, CONFIG_KEYS);
         } catch (e) {
           dbg('getKeyshareMetadata: meta backfill failed', e);
         }
-      } else if (repo && CONFIG_KEYS) {
-        try {
-          repo.set(CONFIG_KEYS.KEYSHARE_META_JSON, JSON.stringify(out));
-        } catch (e) {
-          dbg('getKeyshareMetadata: sync DB from Encrypted failed', e);
-        }
       }
       return out;
-    }
-
-    const dbRaw =
-      repo && CONFIG_KEYS ? repo.get(CONFIG_KEYS.KEYSHARE_META_JSON) : null;
-    const dbParsed = safeParseKeyshareMetaJson(dbRaw);
-    const dbNorm = dbParsed ? normalizeKeyshareMetaObject(dbParsed) : null;
-    const dbOk = dbNorm && keyshareMetaLooksComplete(dbNorm);
-
-    if (dbOk) {
-      if (keyshareMetaNeedsCreatedAtBackfill(dbParsed, dbNorm)) {
-        try {
-          await persistNormalizedKeyshareMeta(dbNorm, repo, CONFIG_KEYS);
-        } catch (e) {
-          dbg('getKeyshareMetadata: DB created_at backfill failed', e);
-        }
-      } else {
-        try {
-          await EncryptedStorage.setItem(
-            'keyshare_meta',
-            JSON.stringify(dbNorm),
-          );
-        } catch (e) {
-          dbg('getKeyshareMetadata: backfill Encrypted from DB failed', e);
-        }
-      }
-      return dbNorm;
     }
 
     const legacy = await EncryptedStorage.getItem('keyshare');
@@ -1489,12 +1486,9 @@ export const getKeyshareMetadata = async () => {
       return null;
     }
     await saveKeyshareMetadata(legacy);
-    const rawAfter = await EncryptedStorage.getItem('keyshare_meta');
-    if (rawAfter) {
-      const again = safeParseKeyshareMetaJson(rawAfter);
-      if (again && keyshareMetaLooksComplete(normalizeKeyshareMetaObject(again))) {
-        return normalizeKeyshareMetaObject(again);
-      }
+    const after = readDbMeta();
+    if (after) {
+      return after.norm;
     }
     const mem = legacyInMemoryFallback(legacy);
     if (mem && keyshareMetaLooksComplete(mem)) {
@@ -1508,12 +1502,16 @@ export const getKeyshareMetadata = async () => {
 };
 
 /**
- * Remove the cached keyshare metadata (EncryptedStorage + SQLite mirror).
+ * Remove the cached keyshare metadata (SQLite, plus leftover EncryptedStorage).
  * Call this whenever EncryptedStorage.removeItem('keyshare') is called.
  */
 export const clearKeyshareMetadata = async () => {
   try {
-    await EncryptedStorage.removeItem('keyshare_meta');
+    try {
+      await EncryptedStorage.removeItem('keyshare_meta');
+    } catch (e) {
+      dbg('clearKeyshareMetadata: Encrypted leftover remove failed', e);
+    }
     const {repo, CONFIG_KEYS} = loadAppConfigRepository();
     if (repo && CONFIG_KEYS) {
       try {

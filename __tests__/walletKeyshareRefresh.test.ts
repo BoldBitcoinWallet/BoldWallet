@@ -34,7 +34,7 @@ jest.mock('../App', () => ({
 }));
 
 import {DeviceEventEmitter} from 'react-native';
-import EncryptedStorage from 'react-native-encrypted-storage';
+import appConfigRepository from '../services/repositories/AppConfigRepository';
 import {saveKeyshareMetadata} from '../utils';
 
 describe('wallet:keyshare-ready', () => {
@@ -53,8 +53,8 @@ describe('wallet:keyshare-ready', () => {
 
     await saveKeyshareMetadata(keyshare);
 
-    expect(EncryptedStorage.setItem).toHaveBeenCalledWith(
-      'keyshare_meta',
+    expect(appConfigRepository.set).toHaveBeenCalledWith(
+      'keyshare_meta_json',
       expect.any(String),
     );
     expect(DeviceEventEmitter.emit).toHaveBeenCalledWith(

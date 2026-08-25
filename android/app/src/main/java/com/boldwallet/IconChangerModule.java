@@ -1,5 +1,6 @@
 package com.boldwallet;
 
+import android.app.Activity;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -59,52 +60,169 @@ public class IconChangerModule extends ReactContextBaseJavaModule {
         return PRESET_DEFAULT;
     }
 
-    /** Ensures exactly one launcher alias is enabled (fixes upgrades / missing LAUNCHER). */
+    /**
+     * Ensures exactly one launcher alias is enabled (fixes upgrades / missing LAUNCHER).
+     * If prefs and the enabled alias disagree, re-apply prefs (DONT_KILL_APP). Do not
+     * overwrite prefs with the launched alias — that would drop a Bold selection while
+     * the old QuickCalc tile is still what opened this process.
+     */
     public static void ensureDefaultLauncher(Context context) {
         try {
             SharedPreferences prefs =
                     context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            String preset = normalizePresetId(prefs.getString(CURRENT_ICON_KEY, PRESET_DEFAULT));
-            applyLauncherPreset(context, preset, true);
+            boolean hasPrefs = prefs.contains(CURRENT_ICON_KEY);
+            String enabled = detectSingleEnabledPreset(context);
+            if (enabled != null && !hasPrefs) {
+                persistPreset(context, enabled);
+                return;
+            }
+            String desired =
+                    normalizePresetId(prefs.getString(CURRENT_ICON_KEY, PRESET_DEFAULT));
+            if (enabled != null && enabled.equals(desired)) {
+                return;
+            }
+            applyLauncherPreset(context, desired, true, false);
         } catch (Exception e) {
             Log.w(TAG, "ensureDefaultLauncher: " + e.getMessage());
         }
     }
 
-    static void applyLauncherPreset(Context context, String presetId, boolean persist) {
+    /** The home-screen tile: launched alias, else the single enabled alias, else prefs. */
+    static String resolveCurrentPreset(Context context) {
+        String launched = presetForLaunchedActivity(context);
+        if (launched != null) {
+            return launched;
+        }
+        String enabled = detectSingleEnabledPreset(context);
+        if (enabled != null) {
+            return enabled;
+        }
+        SharedPreferences prefs =
+                context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        return normalizePresetId(prefs.getString(CURRENT_ICON_KEY, PRESET_DEFAULT));
+    }
+
+    static void applyLauncherPreset(
+            Context context, String presetId, boolean persist, boolean allowKillOnDisable) {
         String preset = normalizePresetId(presetId);
         String targetAlias = PRESET_ALIASES.get(preset);
         PackageManager pm = context.getPackageManager();
         String packageName = context.getPackageName();
+        String launchedClass = launchedComponentClass(context);
+
+        // Persist before disable: leaving the current alias may kill this process.
+        if (persist) {
+            persistPreset(context, preset);
+        }
 
         // Enable the target first so the launcher never sees zero icons.
-        setComponentEnabled(pm, packageName, targetAlias, true);
+        setComponentEnabled(
+                pm, packageName, targetAlias, true, PackageManager.DONT_KILL_APP);
         for (String alias : PRESET_ALIASES.values()) {
             if (!alias.equals(targetAlias)) {
-                setComponentEnabled(pm, packageName, alias, false);
+                int flags = disableFlags(allowKillOnDisable, launchedClass, alias);
+                setComponentEnabled(pm, packageName, alias, false, flags);
             }
         }
         // MainActivity is the targetActivity; keep it enabled (it has no LAUNCHER filter).
-        setComponentEnabled(pm, packageName, MAIN_ACTIVITY, true);
+        setComponentEnabled(
+                pm, packageName, MAIN_ACTIVITY, true, PackageManager.DONT_KILL_APP);
+    }
 
-        if (persist) {
-            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-                    .edit()
-                    .putString(CURRENT_ICON_KEY, preset)
-                    .apply();
+    private static int disableFlags(
+            boolean allowKillOnDisable, String launchedClass, String alias) {
+        if (!allowKillOnDisable) {
+            return PackageManager.DONT_KILL_APP;
+        }
+        if (launchedClass == null || launchedClass.equals(alias)) {
+            return 0;
+        }
+        return PackageManager.DONT_KILL_APP;
+    }
+
+    private static void persistPreset(Context context, String preset) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+                .edit()
+                .putString(CURRENT_ICON_KEY, preset)
+                .commit();
+    }
+
+    /**
+     * Returns the preset id when exactly one launcher alias is enabled; otherwise null.
+     * Manifest default: DefaultIconActivity on, camouflage aliases off.
+     */
+    static String detectSingleEnabledPreset(Context context) {
+        PackageManager pm = context.getPackageManager();
+        String packageName = context.getPackageName();
+        String found = null;
+        int count = 0;
+        for (Map.Entry<String, String> entry : PRESET_ALIASES.entrySet()) {
+            boolean manifestEnabled = PRESET_DEFAULT.equals(entry.getKey());
+            if (isAliasEnabled(pm, packageName, entry.getValue(), manifestEnabled)) {
+                found = entry.getKey();
+                count++;
+            }
+        }
+        return count == 1 ? found : null;
+    }
+
+    private static boolean isAliasEnabled(
+            PackageManager pm,
+            String packageName,
+            String componentName,
+            boolean manifestEnabled) {
+        int state =
+                pm.getComponentEnabledSetting(new ComponentName(packageName, componentName));
+        switch (state) {
+            case PackageManager.COMPONENT_ENABLED_STATE_ENABLED:
+                return true;
+            case PackageManager.COMPONENT_ENABLED_STATE_DISABLED:
+            case PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER:
+            case PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED:
+                return false;
+            case PackageManager.COMPONENT_ENABLED_STATE_DEFAULT:
+            default:
+                return manifestEnabled;
         }
     }
 
+    private static String launchedComponentClass(Context context) {
+        if (!(context instanceof ReactApplicationContext)) {
+            return null;
+        }
+        Activity activity = ((ReactApplicationContext) context).getCurrentActivity();
+        if (activity == null) {
+            return null;
+        }
+        ComponentName name = activity.getComponentName();
+        return name != null ? name.getClassName() : null;
+    }
+
+    private static String presetForLaunchedActivity(Context context) {
+        String className = launchedComponentClass(context);
+        if (className == null) {
+            return null;
+        }
+        for (Map.Entry<String, String> entry : PRESET_ALIASES.entrySet()) {
+            if (entry.getValue().equals(className)) {
+                return entry.getKey();
+            }
+        }
+        return null;
+    }
+
     private static void setComponentEnabled(
-            PackageManager pm, String packageName, String componentName, boolean enabled) {
+            PackageManager pm,
+            String packageName,
+            String componentName,
+            boolean enabled,
+            int flags) {
         int state =
                 enabled
                         ? PackageManager.COMPONENT_ENABLED_STATE_ENABLED
                         : PackageManager.COMPONENT_ENABLED_STATE_DISABLED;
         pm.setComponentEnabledSetting(
-                new ComponentName(packageName, componentName),
-                state,
-                PackageManager.DONT_KILL_APP);
+                new ComponentName(packageName, componentName), state, flags);
         Log.d(TAG, (enabled ? "Enabled" : "Disabled") + " component: " + componentName);
     }
 
@@ -130,7 +248,7 @@ public class IconChangerModule extends ReactContextBaseJavaModule {
                 return;
             }
             String preset = normalizePresetId(iconName);
-            applyLauncherPreset(getReactApplicationContext(), preset, true);
+            applyLauncherPreset(getReactApplicationContext(), preset, true, true);
             refreshLauncher(getReactApplicationContext().getPackageName());
             promise.resolve("Icon changed successfully to: " + preset);
             Log.d(TAG, "=== Icon change completed successfully ===");
@@ -154,11 +272,7 @@ public class IconChangerModule extends ReactContextBaseJavaModule {
     @ReactMethod
     public void getCurrentIcon(Promise promise) {
         try {
-            SharedPreferences prefs =
-                    getReactApplicationContext()
-                            .getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
-            promise.resolve(
-                    normalizePresetId(prefs.getString(CURRENT_ICON_KEY, PRESET_DEFAULT)));
+            promise.resolve(resolveCurrentPreset(getReactApplicationContext()));
         } catch (Exception e) {
             promise.reject("ERROR_GET_ICON", "Failed to get current icon: " + e.getMessage());
         }

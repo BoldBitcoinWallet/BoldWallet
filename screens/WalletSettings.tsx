@@ -47,6 +47,7 @@ import {
   getResetToMainTabsWallet,
   getKeyshareMetadata,
   clearKeyshareMetadata,
+  KEYSHARE_STORAGE_KEY,
 } from '../utils';
 import {compareSemver} from '../utils/compareSemver';
 import {
@@ -99,9 +100,14 @@ import {
 import {
   CAMOUFLAGE_PRESETS,
   isCamouflageActive,
-  normalizeCamouflagePresetId,
   type CamouflagePresetId,
 } from '../services/camouflagePresets';
+import {
+  getLauncherCamouflagePreset,
+  persistLauncherCamouflagePreference,
+  resetLauncherCamouflageToDefault,
+  setLauncherCamouflagePreset,
+} from '../services/camouflageIcon';
 import {
   hasCamouflagePin,
   isCamouflagePinEnabled,
@@ -118,10 +124,10 @@ import NostrRelaysEditor from '../components/NostrRelaysEditor';
 import MempoolProvidersEditor from '../components/MempoolProvidersEditor';
 import FontComparisonScreen from '../components/FontComparisonScreen';
 import {setDebugLoggingEnabled, isDebugLoggingEnabled} from '../App';
+import {setDevDebugEnabledPref} from '../services/devDebug';
+import {removeLegacyEncryptedPrefKeys} from '../services/encryptedPrefsMigration';
 import Toast from 'react-native-toast-message';
 import {useRoute, useFocusEffect, RouteProp} from '@react-navigation/native';
-
-const {IconChanger} = NativeModules; // This is fine here, as it's not a Hook
 
 type SettingsParams = {expandSection?: string};
 
@@ -409,7 +415,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isApiInfoVisible, setIsApiInfoVisible] = useState(false);
   const [debugLoggingEnabled, setDebugLoggingEnabledState] = useState(false);
   const [devDebugEnabled, setDevDebugEnabled] = useState(false);
-  /** False until EncryptedStorage `devDebugEnabled` has been read (avoids startup guard before prefs load). */
+  /** False until `dev_debug_enabled` has been read (avoids startup guard before prefs load). */
   const [devDebugPrefLoaded, setDevDebugPrefLoaded] = useState(false);
   // Click tracking for build number (7 clicks to enable dev mode)
   const [buildNumberClickCount, setBuildNumberClickCount] = useState(0);
@@ -476,11 +482,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const enableDeveloperModeWithAuth = useCallback(() => {
     runWithWalletBiometric(async () => {
       setDevDebugEnabled(true);
-      try {
-        await EncryptedStorage.setItem('devDebugEnabled', 'true');
-      } catch (error) {
-        dbg('Error saving devDebugEnabled:', error);
-      }
+      setDevDebugEnabledPref(true);
       setExpandedSections(prev => ({
         ...prev,
         about: false,
@@ -919,20 +921,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     // Initialize debug logging state from module-level ref
     setDebugLoggingEnabledState(isDebugLoggingEnabled());
     // Load dev debug enabled preference
-    EncryptedStorage.getItem('devDebugEnabled')
-      .then(enabled => {
-        if (enabled === 'true') {
-          setDevDebugEnabled(true);
-        } else {
-          setDevDebugEnabled(false);
-        }
-        setDevDebugPrefLoaded(true);
-      })
-      .catch(error => {
-        dbg('Error loading devDebugEnabled from storage:', error);
-        setDevDebugEnabled(false);
-        setDevDebugPrefLoaded(true);
-      });
+    setDevDebugEnabled(
+      appConfigRepository.getBool(CONFIG_KEYS.DEV_DEBUG_ENABLED, false),
+    );
+    setDevDebugPrefLoaded(true);
     // Cleanup timeout on unmount
     return () => {
       if (buildNumberClickTimeoutRef.current) {
@@ -946,8 +938,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     const loadIconPreference = async () => {
       try {
-        const savedIcon = await EncryptedStorage.getItem('app_icon_preference');
-        setSelectedIcon(normalizeCamouflagePresetId(savedIcon));
+        const savedIcon = await getLauncherCamouflagePreset();
+        setSelectedIcon(savedIcon);
         const [enabled, hasPin] = await Promise.all([
           isCamouflagePinEnabled(),
           hasCamouflagePin(),
@@ -1124,18 +1116,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         } catch (error) {
           dbg('Error clearing encrypted storage:', error);
           await Promise.all([
-            EncryptedStorage.removeItem('keyshare'),
-            EncryptedStorage.removeItem('keyshare_meta'),
-            EncryptedStorage.removeItem('btcPub'),
-            EncryptedStorage.removeItem('bitcoin_display_sats'),
-            EncryptedStorage.removeItem('balance_formatting_enabled'),
-            EncryptedStorage.removeItem('app_icon_preference'),
-            EncryptedStorage.removeItem('camouflage_pin_hash'),
-            EncryptedStorage.removeItem('camouflage_pin_enabled'),
-            EncryptedStorage.removeItem('devDebugEnabled'),
-            EncryptedStorage.removeItem('psbt_mode_first_visit'),
+            EncryptedStorage.removeItem(KEYSHARE_STORAGE_KEY),
+            removeLegacyEncryptedPrefKeys(),
           ]);
         }
+        await resetLauncherCamouflageToDefault();
         // Trigger a full app reload so all providers/contexts re‑initialize
         navigation.reset({index: 0, routes: [{name: 'Welcome'}]});
         DeviceEventEmitter.emit('app:reload', {revalidateRoute: true});
@@ -1199,18 +1184,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const applyCamouflageIcon = async (preset: CamouflagePresetId) => {
     const previous = selectedIcon;
     try {
-      const change = IconChanger?.changeIcon;
-      if (!IconChanger || !change) {
-        Alert.alert(
-          'Error',
-          'Icon switching is not available on this device.',
-          [{text: 'OK'}],
-        );
-        return false;
-      }
       setSelectedIcon(preset);
-      await EncryptedStorage.setItem('app_icon_preference', preset);
-      await change(preset);
+      await setLauncherCamouflagePreset(preset);
       const label =
         CAMOUFLAGE_PRESETS.find(p => p.id === preset)?.label ?? preset;
       Toast.show({
@@ -1222,7 +1197,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       return true;
     } catch (error: any) {
       dbg('Error changing icon:', error);
-      setSelectedIcon(previous === 'loading' ? 'default' : previous);
+      const revert = previous === 'loading' ? 'default' : previous;
+      setSelectedIcon(revert);
+      persistLauncherCamouflagePreference(revert).catch(() => {});
       Alert.alert(
         'Error',
         error?.message || 'Failed to change app icon. Please try again.',
@@ -3897,12 +3874,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                               }
                             }
                             setDevDebugEnabled(false);
-                            EncryptedStorage.setItem(
-                              'devDebugEnabled',
-                              'false',
-                            ).catch(error => {
-                              dbg('Error saving devDebugEnabled:', error);
-                            });
+                            setDevDebugEnabledPref(false);
                             Toast.show({
                               type: 'info',
                               text1: 'Dev Mode Disabled',

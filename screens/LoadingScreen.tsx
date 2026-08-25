@@ -14,7 +14,6 @@ import {
   Platform,
 } from 'react-native';
 import Toast from 'react-native-toast-message';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {dbg} from '../utils';
 import {createToastConfig} from '../utils/toastConfig';
 import {compareSemver} from '../utils/compareSemver';
@@ -35,9 +34,9 @@ import appConfigRepository, {
 import {
   camouflagePresetById,
   isCamouflageActive,
-  normalizeCamouflagePresetId,
   type CamouflagePresetId,
 } from '../services/camouflagePresets';
+import {getLauncherCamouflagePreset} from '../services/camouflageIcon';
 import {
   camouflagePinRetryHint,
   clearCamouflagePinLockout,
@@ -126,8 +125,7 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
         return;
       }
       try {
-        const raw = await EncryptedStorage.getItem('app_icon_preference');
-        const id = normalizeCamouflagePresetId(raw);
+        const id = await getLauncherCamouflagePreset();
         setCamouflagePresetId(id);
         const needPin = await shouldPromptCamouflagePin(isCamouflageActive(id));
         setCamouflagePinRequired(needPin);

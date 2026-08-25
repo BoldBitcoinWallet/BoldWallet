@@ -3,6 +3,7 @@
  *
  * Uses GET `{apiBase}/blocks/tip/hash` (same reachability check as Settings
  * Verify & Save) and records into mempoolHealth. Does not run while offline.
+ * Settings Check uses `probeMempoolApiBasesOnce` for one pass over the list.
  */
 import {
   recordMempoolAttempt,
@@ -12,7 +13,7 @@ import {isWalletOnline, isWalletOfflineError, subscribeWalletOnline} from './wal
 import {dbg} from '../utils';
 
 export const PROVIDER_HEALTH_POLL_MS = 30_000;
-const PROBE_TIMEOUT_MS = 10_000;
+export const PROVIDER_HEALTH_PROBE_TIMEOUT_MS = 10_000;
 
 let apiBase = '';
 let timer: ReturnType<typeof setInterval> | null = null;
@@ -33,28 +34,34 @@ function record(sample: Omit<MempoolAttempt, 'at'>): void {
   recordMempoolAttempt({...sample, at: Date.now()});
 }
 
-async function probe(): Promise<void> {
-  if (!isWalletOnline() || !apiBase || probing) {
+/** One GET `{apiBase}/blocks/tip/hash`; records host quality. No-op when offline. */
+export async function probeMempoolApiBase(apiRoot: string): Promise<void> {
+  if (!isWalletOnline()) {
     return;
   }
-  probing = true;
-  const url = `${apiBase.replace(/\/$/, '')}/blocks/tip/hash`;
+  const base = (apiRoot || '').replace(/\/+$/, '');
+  if (!base) {
+    return;
+  }
+  const url = `${base}/blocks/tip/hash`;
   const hostMatch = url.match(/^(https?:\/\/[^/]+)/);
   const host = hostMatch ? hostMatch[1] : undefined;
   const startedAt = Date.now();
+  // MempoolClient parses JSON; tip/hash is a raw hex string, so use get()
+  // only for cache/offline gating of the round-trip via a height probe
+  // would be wrong for the hash check. Fetch is gated by the online wrapper
+  // and by isWalletOnline above. Record ourselves so JSON parse is not required.
+  const controller = new AbortController();
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    PROVIDER_HEALTH_PROBE_TIMEOUT_MS,
+  );
   try {
-    // MempoolClient parses JSON; tip/hash is a raw hex string, so use get()
-    // only for cache/offline gating of the round-trip via a height probe
-    // would be wrong for the hash check. Fetch is gated by the online wrapper
-    // and by isWalletOnline above. Record ourselves so JSON parse is not required.
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
     const res = await fetch(url, {
       method: 'GET',
       headers: {Accept: 'text/plain, application/json'},
       signal: controller.signal,
     });
-    clearTimeout(timeoutId);
     const body = await res.text();
     const ok = res.ok && /^[a-f0-9]{64}$/i.test(body.trim());
     record({
@@ -77,6 +84,38 @@ async function probe(): Promise<void> {
       host,
     });
     dbg('providerHealthPoller: error', err);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/** One tip-hash probe per unique API root. Does not loop. */
+export async function probeMempoolApiBasesOnce(
+  apiRoots: string[],
+): Promise<void> {
+  if (!isWalletOnline()) {
+    return;
+  }
+  const unique: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of apiRoots) {
+    const base = (raw || '').replace(/\/+$/, '');
+    if (!base || seen.has(base)) {
+      continue;
+    }
+    seen.add(base);
+    unique.push(base);
+  }
+  await Promise.all(unique.map(base => probeMempoolApiBase(base)));
+}
+
+async function probe(): Promise<void> {
+  if (!isWalletOnline() || !apiBase || probing) {
+    return;
+  }
+  probing = true;
+  try {
+    await probeMempoolApiBase(apiBase);
   } finally {
     probing = false;
   }
