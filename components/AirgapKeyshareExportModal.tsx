@@ -241,6 +241,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
     secondaryButton: {
       backgroundColor: theme.colors.secondary,
       paddingVertical: 14,
+      paddingHorizontal: 20,
       borderRadius: 12,
       alignItems: 'center',
       justifyContent: 'center',
@@ -250,16 +251,6 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
     },
     buttonContent: {
       flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    buttonContentBalanced: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      width: '100%',
-    },
-    buttonSideSlot: {
-      width: 32,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -273,8 +264,10 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       tintColor: theme.colors.white,
     },
     secondaryButtonIcon: {
-      width: 20,
-      height: 20,
+      width: 18,
+      height: 18,
+      marginLeft: 4,
+      marginRight: 10,
       tintColor: isLightTheme ? theme.colors.white : theme.colors.text,
     },
     primaryButtonText: {
@@ -286,7 +279,6 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
           : theme.colors.white,
     },
     secondaryButtonText: {
-      flex: 1,
       fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.bold,
       color: isLightTheme ? theme.colors.white : theme.colors.text,
@@ -421,18 +413,15 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
                   style={styles.secondaryButton}
                   onPress={handleRestartFrames}
                   android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                  <View style={styles.buttonContentBalanced}>
-                    <View style={styles.buttonSideSlot}>
-                      <Image
-                        source={require('../assets/recycle-icon.png')}
-                        style={styles.secondaryButtonIcon}
-                        resizeMode="contain"
-                      />
-                    </View>
+                  <View style={styles.buttonContent}>
+                    <Image
+                      source={require('../assets/recycle-icon.png')}
+                      style={styles.secondaryButtonIcon}
+                      resizeMode="contain"
+                    />
                     <Text style={styles.secondaryButtonText}>
                       Restart frames
                     </Text>
-                    <View style={styles.buttonSideSlot} />
                   </View>
                 </AppPressable>
               </View>
