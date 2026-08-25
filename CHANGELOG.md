@@ -42,7 +42,7 @@
 - **Cache bar timeout fill** — while syncing, the cache indicator fills left-to-right over the fetch timeout (Settings HD Options, default 5s), warming from accent/teal to orange to red. Success flashes green; timeout stays amber; other failures stay red. Work past the window holds full and pulses.
 - **Native CSPRNG** — airgap PIN, LAN session seed, Nostr pairing nonce, and MPC attempt ids call Go `tss.SecureRandom` via `BBMTLibNativeModule.secureRandom`. JS `crypto.getRandomValues` is only the fallback.
 - **Airgap export QR size** — Scan Encrypted Keyshare modal and animated QR use nearly full phone width so the other device can scan more easily.
-- **Animated UR quiet zone** — export/send animated QRs sit on a 32pt white pad (ISO quiet zone plus extra camera margin) with a hairline so the code stays black-on-white in light and dark mode. Airgap export shrinks the modules so the plate still fits.
+- **Airgap export patience hint** — PIN step notes a couple of minutes of scanning and PIN + QR only (no files or SD cards); QR step repeats that a couple of minutes is normal.
 
 ### Fixed
 - **Settings App Icon vs launcher** — picker follows the enabled activity-alias (and the tile that opened the app), not only stored prefs. Welcome/import no longer wipes the JS icon pref while QuickCalc stays on the home screen; wallet delete restores the Bold Wallet alias.

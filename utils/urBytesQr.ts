@@ -26,8 +26,8 @@ export const UR_AIRGAP_SPEEDS: Record<
   {fragmentSize: number; frameIntervalMs: number; label: string}
 > = {
   default: {fragmentSize: 500, frameIntervalMs: 500, label: 'Default'},
-  medium: {fragmentSize: 300, frameIntervalMs: 300, label: 'Medium'},
-  fast: {fragmentSize: 150, frameIntervalMs: 150, label: 'Fast'},
+  medium: {fragmentSize: 350, frameIntervalMs: 330, label: 'Medium'},
+  fast: {fragmentSize: 200, frameIntervalMs: 175, label: 'Fast'},
 };
 
 export const UR_AIRGAP_DEFAULT_SPEED: AirgapQrSpeed = 'default';

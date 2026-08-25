@@ -38,8 +38,10 @@ interface AirgapKeyshareExportModalProps {
 
 const PRIVACY_HINT = 'Eyes on these two screens only.';
 const PIN_NEXT_HINT = 'Read the PIN on the new phone, then show the QR.';
+const AIRGAP_PROCESS_HINT =
+  'Takes a couple of minutes — keep scanning. PIN + QR only; no files or SD cards.';
 const AIRGAP_QR_HINT =
-  'Fountain can finish before every frame. Changing speed restarts the QR.';
+  'A couple of minutes is normal. Fountain can finish before every frame.';
 
 const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
   visible,
@@ -241,6 +243,15 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       textAlign: 'center',
       lineHeight: 20,
     },
+    processHint: {
+      fontSize: theme.fontSizes?.sm || 13,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      marginBottom: 16,
+      paddingHorizontal: 8,
+      textAlign: 'center',
+      lineHeight: 18,
+    },
     pinLabel: {
       fontSize: theme.fontSizes?.sm || 12,
       fontFamily: theme.fontFamilies?.bold,
@@ -395,6 +406,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
             ) : step === 'pin' ? (
               <>
                 <Text style={styles.privacyHint}>{PRIVACY_HINT}</Text>
+                <Text style={styles.processHint}>{AIRGAP_PROCESS_HINT}</Text>
                 <Text style={styles.pinLabel}>PIN</Text>
                 <Text style={styles.pinValue}>
                   {pin ? formatAirgapPinDisplay(pin) : '— — —'}
