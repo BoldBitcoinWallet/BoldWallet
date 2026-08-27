@@ -3,7 +3,7 @@
   "version": "4.0.6",
   "private": true,
   "scripts": {
-    "android": "react-native run-android",
+    "android": "react-native run-android --main-activity .MainActivity",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
