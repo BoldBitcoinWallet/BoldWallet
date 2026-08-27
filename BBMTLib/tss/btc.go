@@ -391,6 +391,8 @@ func (u *utxoWithPathJSON) toUTXOWithPath() UTXOWithPath {
 }
 
 // SelectUTXOsWithPaths selects UTXOs from a pool with per-UTXO derivation paths.
+// The input slice is the entire universe — coin control is done by callers passing
+// only the allowed outpoints. Strategy is still smallest/largest-first within that pool.
 func SelectUTXOsWithPaths(utxos []UTXOWithPath, totalAmount int64, strategy string) (result []UTXOWithPath, totalSelectedResult int64, err error) {
 	defer RecoverAsErrorf("SelectUTXOsWithPaths", &err, "internal error (panic) selecting UTXOs: %v", func() {
 		result = nil

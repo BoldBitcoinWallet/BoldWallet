@@ -7,7 +7,6 @@ import React, {
   useState,
 } from 'react';
 import {DeviceEventEmitter} from 'react-native';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {BBMTLibNativeModule} from '../native_modules';
@@ -149,29 +148,17 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     };
     syncApi();
   }, [network, apiBase]);
-  // Load Bitcoin display preference (sats vs BTC)
+  // Load Bitcoin display + formatting prefs from SQLite (synchronous)
   useEffect(() => {
-    const loadShowSats = async () => {
-      try {
-        const stored = await EncryptedStorage.getItem('bitcoin_display_sats');
-        setShowSatsState(stored === 'true');
-      } catch {
-        setShowSatsState(false);
-      }
-    };
-    loadShowSats();
-  }, []);
-  // Load balance formatting preference (Settings: Raw Numbers vs Formatted)
-  useEffect(() => {
-    const loadBalanceFormatting = async () => {
-      try {
-        const stored = await EncryptedStorage.getItem('balance_formatting_enabled');
-        setBalanceFormattingEnabledState(stored === 'true');
-      } catch {
-        setBalanceFormattingEnabledState(false);
-      }
-    };
-    loadBalanceFormatting();
+    setShowSatsState(
+      appConfigRepository.getBool(CONFIG_KEYS.BITCOIN_DISPLAY_SATS, false),
+    );
+    setBalanceFormattingEnabledState(
+      appConfigRepository.getBool(
+        CONFIG_KEYS.BALANCE_FORMATTING_ENABLED,
+        false,
+      ),
+    );
   }, []);
   // Load tab preferences from SQLite (synchronous reads)
   useEffect(() => {
@@ -316,8 +303,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         );
         // Store it for future use (though we'll always derive fresh to ensure consistency)
         if (pub) {
-          await EncryptedStorage.setItem('btcPub', pub);
-          dbg(`[UserContext] refresh() - btcPub derived and stored:`, {
+          dbg(`[UserContext] refresh() - btcPub derived:`, {
             timestamp: Date.now(),
             pubPrefix: pub.substring(0, 16),
           });
@@ -425,7 +411,6 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     async (newType: AddressType) => {
       appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, newType);
       setActiveAddressTypeState(newType);
-      await EncryptedStorage.removeItem('btcPub');
       await refresh();
       if (activeAddress) {
         appConfigRepository.set(CONFIG_KEYS.CURRENT_ADDRESS, activeAddress);
@@ -448,19 +433,11 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   );
   const setShowSats = useCallback(async (value: boolean) => {
     setShowSatsState(value);
-    try {
-      await EncryptedStorage.setItem('bitcoin_display_sats', value ? 'true' : 'false');
-    } catch {
-      // no-op
-    }
+    appConfigRepository.setBool(CONFIG_KEYS.BITCOIN_DISPLAY_SATS, value);
   }, []);
   const setBalanceFormattingEnabled = useCallback(async (value: boolean) => {
     setBalanceFormattingEnabledState(value);
-    try {
-      await EncryptedStorage.setItem('balance_formatting_enabled', value ? 'true' : 'false');
-    } catch {
-      // no-op
-    }
+    appConfigRepository.setBool(CONFIG_KEYS.BALANCE_FORMATTING_ENABLED, value);
   }, []);
   const setShowMempoolPlayground = useCallback(async (value: boolean) => {
     setShowMempoolPlaygroundState(value);

@@ -7,6 +7,7 @@ import {
   Image,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import GlassModalOverlay from '../components/GlassModalOverlay';
 import StaticQRCode from '../components/StaticQRCode';
 import AppText from '../components/AppText';
 import QRCode from 'react-native-qrcode-svg';
@@ -221,7 +222,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0, 0, 0, 0.7)',
       justifyContent: 'center',
       alignItems: 'center',
     },
@@ -356,12 +356,8 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}>
-      <AppPressable
-        style={styles.modalOverlay}
-        onPress={onClose}>
-          <AppPressable
-          style={styles.modalContent}
-          onPress={e => e.stopPropagation()}>
+      <GlassModalOverlay style={styles.modalOverlay} onPress={onClose}>
+          <View style={styles.modalContent}>
           <AppText style={styles.subtitle}>
             Share back the signed PSBT
           </AppText>
@@ -478,8 +474,8 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
             android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
             <AppText style={styles.closeButtonText}>Close</AppText>
           </AppPressable>
-          </AppPressable>
-      </AppPressable>
+          </View>
+      </GlassModalOverlay>
       <View style={styles.toastContainer}>
         <Toast config={createToastConfig(theme)} />
       </View>

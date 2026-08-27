@@ -7,8 +7,9 @@
  *    fetches (refresh, pagination) and merges with cache/DB — see `services/sync/README.md`.
  *  - SyncCoordinator runs on app foreground and on a timer, fetching from the Mempool API
  *    base and writing deltas to SQLite.
- *  - Sync failures are silent (sync_metadata.sync_status = 'failed') and retried
- *    on the next foreground event.
+ *  - Sync failures are silent unless the UI supplies `onSyncFailed` (e.g. Home
+ *    CacheIndicator while focused). Otherwise they are retried on the next
+ *    timer or foreground event.
  *
  * Usage:
  *   import syncCoordinator from './services/sync/SyncCoordinator';
@@ -29,6 +30,7 @@ import priceSyncer from './PriceSyncer';
 import {WalletService} from '../WalletService';
 import walletRepository from '../repositories/WalletRepository';
 import mempoolClient from '../MempoolClient';
+import {isWalletOnline, subscribeWalletOnline} from '../walletOnlineStore';
 import {dbg} from '../../utils';
 
 const BALANCE_INTERVAL_MS = 120_000;
@@ -74,9 +76,14 @@ export interface SyncConfig {
   onAddressesChanged?: (addresses: string[]) => void;
   /** Called with current sync operation status for CacheIndicator UI. null = idle. */
   onSyncStatus?: (status: SyncStatus | null) => void;
+  /**
+   * Called when a background sync phase fails. Home may set CacheIndicator
+   * error copy while focused — no toast per cycle.
+   */
+  onSyncFailed?: (err: unknown) => void;
 }
 
-class SyncCoordinator {
+export class SyncCoordinator {
   private _config: SyncConfig | null = null;
   private _balanceTimer: ReturnType<typeof setInterval> | null = null;
   private _hdDiscoveryTimer: ReturnType<typeof setInterval> | null = null;
@@ -89,23 +96,51 @@ class SyncCoordinator {
   private _running = false;
   /** Nested pause count — background sync yields while Nostr/LAN MPC uses the network. */
   private _pauseCount = 0;
+  /** True when any phase in the current `_syncAll` cycle failed. */
+  private _cycleFailed = false;
+  private _onlineUnsub: (() => void) | null = null;
+  private _syncAllInFlight = false;
+
+  private _notifySyncFailed(context: string, err: unknown): void {
+    dbg(`SyncCoordinator: ${context}`, err);
+    this._cycleFailed = true;
+    this._config?.onSyncStatus?.(null);
+    this._config?.onSyncFailed?.(err);
+  }
 
   /**
    * Start background sync with the given config.
-   * Safe to call multiple times — stops previous timers first.
+   * Safe to call multiple times. Same network + addressType updates callbacks
+   * and address list without tearing down timers or forcing HD discovery.
    */
   start(config: SyncConfig): void {
+    if (
+      this._running &&
+      this._config &&
+      this._config.network === config.network &&
+      this._config.addressType === config.addressType
+    ) {
+      this.updateConfig(config);
+      dbg(
+        'SyncCoordinator: updated config in place',
+        config.addresses.length,
+        'addresses on',
+        config.network,
+      );
+      return;
+    }
     this.stop();
     this._config = config;
     this._running = true;
 
-    // Immediate first sync — force HD re-discovery to fix any stale/diverged indexes
-    this._syncAll(true);
+    // First cycle is not a forced HD re-scan — that is reserved for stale
+    // discoveryLastAt (2h), long-press, and Settings restore.
+    this._syncAll(false);
 
     // Schedule periodic syncs
     this._hdDiscoveryTimer = setInterval(
       () => {
-        if (!this._isPaused()) {
+        if (!this._shouldSkipSync()) {
           this._syncHdDiscovery();
         }
       },
@@ -114,24 +149,24 @@ class SyncCoordinator {
 
     this._balanceTimer = setInterval(
       () => {
-        if (!this._isPaused()) {
+        if (!this._shouldSkipSync()) {
           this._syncBalances();
         }
       },
       BALANCE_INTERVAL_MS,
     );
     this._priceTimer = setInterval(() => {
-      if (!this._isPaused()) {
+      if (!this._shouldSkipSync()) {
         this._syncPrice();
       }
     }, PRICE_INTERVAL_MS);
     this._utxoTimer = setInterval(() => {
-      if (!this._isPaused()) {
+      if (!this._shouldSkipSync()) {
         this._syncUtxos();
       }
     }, UTXO_INTERVAL_MS);
     this._txTimer = setInterval(() => {
-      if (!this._isPaused()) {
+      if (!this._shouldSkipSync()) {
         this._syncTxs();
       }
     }, TX_INTERVAL_MS);
@@ -140,12 +175,31 @@ class SyncCoordinator {
     this._appStateSubscription = AppState.addEventListener(
       'change',
       (state: AppStateStatus) => {
-        if (state === 'active' && this._running && !this._isPaused()) {
-          dbg('SyncCoordinator: app foregrounded — syncing');
-          this._syncAll();
+        if (state === 'active' && this._running && !this._shouldSkipSync()) {
+          dbg('SyncCoordinator: app foregrounded — Home owns resume refresh');
         }
       },
     );
+
+    let primed = false;
+    this._onlineUnsub = subscribeWalletOnline(online => {
+      if (!primed) {
+        primed = true;
+        return;
+      }
+      if (!this._running) {
+        return;
+      }
+      if (!online) {
+        mempoolClient.abortAll();
+        dbg('SyncCoordinator: wallet offline — sync skipped');
+        return;
+      }
+      if (this._pauseCount === 0) {
+        dbg('SyncCoordinator: wallet online — syncing');
+        this._syncAll();
+      }
+    });
 
     dbg(
       'SyncCoordinator: started',
@@ -156,8 +210,11 @@ class SyncCoordinator {
   }
 
   /** Update the config without restarting timers (e.g. addresses changed). */
-  updateConfig(config: SyncConfig): void {
-    this._config = config;
+  updateConfig(config: Partial<SyncConfig>): void {
+    if (!this._config) {
+      return;
+    }
+    this._config = {...this._config, ...config};
   }
 
   /**
@@ -186,9 +243,20 @@ class SyncCoordinator {
     return this._pauseCount > 0;
   }
 
+  /** MPC pause or in-app offline sandbox — skip background HTTP. */
+  private _shouldSkipSync(): boolean {
+    return this._pauseCount > 0 || !isWalletOnline();
+  }
+
   /** Stop all timers and release listeners. */
   stop(): void {
     this._running = false;
+    this._syncAllInFlight = false;
+    this._pauseCount = 0;
+    if (this._onlineUnsub) {
+      this._onlineUnsub();
+      this._onlineUnsub = null;
+    }
     if (this._hdDiscoveryTimer) {
       clearInterval(this._hdDiscoveryTimer);
       this._hdDiscoveryTimer = null;
@@ -219,39 +287,51 @@ class SyncCoordinator {
   // ── Private helpers ────────────────────────────────────────────────────────
 
   private async _syncAll(forceHdDiscovery = false): Promise<void> {
-    if (this._isPaused()) {
+    if (this._syncAllInFlight) {
       return;
     }
-    // HD discovery first — may expand the address set for subsequent syncs
-    await this._syncHdDiscovery(forceHdDiscovery);
-    if (this._isPaused()) {
+    if (this._shouldSkipSync()) {
       return;
     }
+    this._syncAllInFlight = true;
+    try {
+      this._cycleFailed = false;
+      // HD discovery first — may expand the address set for subsequent syncs
+      await this._syncHdDiscovery(forceHdDiscovery);
+      if (this._shouldSkipSync()) {
+        return;
+      }
 
-    // Serialized API phases (price first — few requests), then per-address syncers
-    // one at a time. Avoids pumping balance + txs + UTXOs + price in parallel
-    // against the same apiBase, which eases rate limits on public and custom hosts.
-    await this._syncPrice();
-    if (this._isPaused()) {
-      return;
-    }
-    await this._syncBalances();
-    if (this._isPaused()) {
-      return;
-    }
-    await this._syncUtxos();
-    if (this._isPaused()) {
-      return;
-    }
-    await this._syncTxs();
+      // Serialized API phases (price first — few requests), then per-address syncers
+      // one at a time. Avoids pumping balance + txs + UTXOs + price in parallel
+      // against the same apiBase, which eases rate limits on public and custom hosts.
+      await this._syncPrice();
+      if (this._shouldSkipSync()) {
+        return;
+      }
+      await this._syncBalances();
+      if (this._shouldSkipSync()) {
+        return;
+      }
+      await this._syncUtxos();
+      if (this._shouldSkipSync()) {
+        return;
+      }
+      await this._syncTxs();
 
-    if (!this._isPaused()) {
-      this._config?.onSyncComplete?.();
+      if (!this._shouldSkipSync()) {
+        if (this._cycleFailed) {
+          return;
+        }
+        this._config?.onSyncComplete?.();
+      }
+    } finally {
+      this._syncAllInFlight = false;
     }
   }
 
   private async _syncHdDiscovery(force = false): Promise<void> {
-    if (!this._config || this._isPaused()) return;
+    if (!this._config || this._shouldSkipSync()) return;
     const {network, addressType, apiBase} = this._config;
     try {
       const hdState = walletRepository.getHdState(network, addressType);
@@ -307,13 +387,12 @@ class SyncCoordinator {
         this._config.onAddressesChanged?.(newAddrs);
       }
     } catch (err) {
-      dbg('SyncCoordinator: HD discovery error', err);
-      this._config?.onSyncStatus?.(null);
+      this._notifySyncFailed('HD discovery error', err);
     }
   }
 
   private async _syncBalances(): Promise<void> {
-    if (!this._config || this._isPaused()) return;
+    if (!this._config || this._shouldSkipSync()) return;
     try {
       const network = this._config.network;
       const addressType =
@@ -337,12 +416,12 @@ class SyncCoordinator {
       }));
       await balanceSyncer.syncAddresses(entries, this._config.apiBase);
     } catch (err) {
-      dbg('SyncCoordinator: balance sync error', err);
+      this._notifySyncFailed('balance sync error', err);
     }
   }
 
   private async _syncTxs(): Promise<void> {
-    if (!this._config || this._isPaused()) return;
+    if (!this._config || this._shouldSkipSync()) return;
     try {
       const network = this._config.network;
       const addressType =
@@ -361,7 +440,7 @@ class SyncCoordinator {
         })),
       );
       for (const {address, network: net} of sorted) {
-        if (this._isPaused()) {
+        if (this._shouldSkipSync()) {
           return;
         }
         await transactionSyncer.syncAddress(
@@ -371,12 +450,12 @@ class SyncCoordinator {
         );
       }
     } catch (err) {
-      dbg('SyncCoordinator: tx sync error', err);
+      this._notifySyncFailed('tx sync error', err);
     }
   }
 
   private async _syncUtxos(): Promise<void> {
-    if (!this._config || this._isPaused()) return;
+    if (!this._config || this._shouldSkipSync()) return;
     try {
       const network = this._config.network;
       const addressType =
@@ -416,16 +495,16 @@ class SyncCoordinator {
       }));
       await utxoSyncer.syncAddresses(entries, this._config.apiBase);
     } catch (err) {
-      dbg('SyncCoordinator: utxo sync error', err);
+      this._notifySyncFailed('utxo sync error', err);
     }
   }
 
   private async _syncPrice(): Promise<void> {
-    if (!this._config || this._isPaused()) return;
+    if (!this._config || this._shouldSkipSync()) return;
     try {
       await priceSyncer.syncCurrentPrice(this._config.apiBase);
     } catch (err) {
-      dbg('SyncCoordinator: price sync error', err);
+      this._notifySyncFailed('price sync error', err);
     }
   }
 }

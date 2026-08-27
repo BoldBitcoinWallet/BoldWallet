@@ -1,11 +1,9 @@
 /**
- * AppConfigRepository — replaces all single-value LocalCache preference keys.
+ * AppConfigRepository — string preferences in SQLite `app_config`.
  *
- * Covers: network, address_type, current_address, currency, balance_hidden,
- * haptics_enabled, theme_mode, fee_strategy, legacy_wallet_do_not_remind,
- * tab_wallet_enabled, tab_psbt_enabled, tab_utxos_enabled, tab_addresses_enabled,
- * tab_mempool_enabled, addresses_view_mode (smart | hd_order),
- * sqlite_migration_done, and any future string-typed preferences.
+ * Includes former LocalCache keys (network, theme, tabs, …) and former
+ * EncryptedStorage prefs (display format, camouflage PIN, app icon, keyshare
+ * metadata). EncryptedStorage holds only the `keyshare` secret blob.
  */
 import database from '../Database';
 import {dbg} from '../../utils';
@@ -38,10 +36,29 @@ export const CONFIG_KEYS = {
    */
   LOCK_SCREEN_UPDATE_CHECKER_ENABLED: 'lock_screen_update_checker_enabled',
   /**
-   * JSON blob of non-secret keyshare fields (same shape as EncryptedStorage `keyshare_meta`).
-   * Written whenever the full keyshare is saved; `getKeyshareMetadata` uses Encrypted first, then this fallback.
+   * JSON blob of non-secret keyshare fields. Written whenever the full keyshare
+   * is saved. EncryptedStorage holds only the `keyshare` secret blob.
    */
   KEYSHARE_META_JSON: 'keyshare_meta_json',
+  /** Amounts in sats vs BTC. Absent = BTC. */
+  BITCOIN_DISPLAY_SATS: 'bitcoin_display_sats',
+  /** Formatted balances vs raw. Absent = raw. */
+  BALANCE_FORMATTING_ENABLED: 'balance_formatting_enabled',
+  /** Settings developer mode (7× build number). Absent = off. */
+  DEV_DEBUG_ENABLED: 'dev_debug_enabled',
+  /** One-shot PSBT tab first-open layout. */
+  PSBT_MODE_FIRST_VISIT: 'psbt_mode_first_visit',
+  /** Last selected Android camouflage preset id (`default` / `quickcalc` / …). */
+  APP_ICON_PREFERENCE: 'app_icon_preference',
+  /** Camouflage unlock PIN salt:hash (not the PIN). */
+  CAMOUFLAGE_PIN_HASH: 'camouflage_pin_hash',
+  CAMOUFLAGE_PIN_ENABLED: 'camouflage_pin_enabled',
+  /** Android battery-exemption sheet: user chose don’t ask again. */
+  MPC_BATTERY_EXEMPT_DONT_ASK: 'mpc_battery_exempt_dont_ask',
+  /**
+   * One-time copy of leftover EncryptedStorage prefs into `app_config`.
+   */
+  ENCRYPTED_PREFS_MIGRATION_DONE: 'encrypted_prefs_migration_done',
   /**
    * JSON: `{ "quotes": string[], "fetchedAt": number }` — cached lines from remote QUOTES.md for LoadingScreen ticker.
    */
@@ -52,6 +69,26 @@ export const CONFIG_KEYS = {
   ENABLE_DKLS23: 'enable_dkls23',
   /** One-time backfill of branta_verified_txs from merchant_labels + tx history. */
   BRANTA_VERIFIED_BACKFILL_V1: 'branta_verified_backfill_v1',
+  /**
+   * Merchant verification via Branta. Default off (absent = false).
+   */
+  BRANTA_ENABLED: 'branta_enabled',
+  /**
+   * In-app online/offline sandbox. Absent = online (true). When false, no
+   * Internet or LAN calls are made; UI uses cached SQLite data.
+   */
+  WALLET_ONLINE: 'wallet_online',
+  /**
+   * Main tab bar layout. `floating` (default, bottom pill, max 90% width) or
+   * `docked` (full-width). Absent = floating.
+   */
+  NAV_MENU_STYLE: 'nav_menu_style',
+  /**
+   * Camouflage / unlock PIN lockout. Consecutive wrong entries, then epoch-ms
+   * until the pad may be used again (30s after 3 failures).
+   */
+  CAMOUFLAGE_PIN_FAIL_COUNT: 'camouflage_pin_fail_count',
+  CAMOUFLAGE_PIN_LOCKED_UNTIL: 'camouflage_pin_locked_until',
   /** LAN MPC: this device's KeyShare role after pairing (KeyShare1|2|3). */
   LAN_LOCAL_PARTY: 'lan_local_party',
   LAN_PEER_PARTY: 'lan_peer_party',
@@ -61,6 +98,11 @@ export const CONFIG_KEYS = {
   LAN_IS_MASTER: 'lan_is_master',
   LAN_IS_TRIO: 'lan_is_trio',
   LAN_PEER_PUBKEY2: 'lan_peer_pubkey2',
+  /**
+   * JSON array of `{ url, enabled }` mainnet mempool REST bases (failover pool).
+   * Primary `api` / `api_mainnet` stay in sync with the first enabled entry.
+   */
+  MEMPOOL_PROVIDERS_ENTRIES: 'mempool_providers_entries',
 } as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS];
@@ -70,9 +112,11 @@ export type ConfigKey = (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS];
  * Everything else in `app_config` is removed (theme, tabs, APIs, HD options, etc.).
  *
  * - `sqlite_migration_done`: must stay so one-time LocalCache→SQLite migration is not re-run.
+ * - `encrypted_prefs_migration_done`: leftover EncryptedStorage prefs already copied to DB.
  */
 export const APP_CONFIG_KEYS_PRESERVED_ON_WALLET_DELETE: readonly string[] = [
   CONFIG_KEYS.SQLITE_MIGRATION_DONE,
+  CONFIG_KEYS.ENCRYPTED_PREFS_MIGRATION_DONE,
 ];
 
 class AppConfigRepository {

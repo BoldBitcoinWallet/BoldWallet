@@ -18,6 +18,7 @@ import {dbg} from '../utils';
 import {createToastConfig} from '../utils/toastConfig';
 import {compareSemver} from '../utils/compareSemver';
 import AppPressable from '../components/AppPressable';
+import GlassModalOverlay from '../components/GlassModalOverlay';
 import {ParticlesErrorBoundary} from '../components/ParticlesErrorBoundary';
 import {SafeAreaView, useSafeAreaInsets} from 'react-native-safe-area-context';
 import DeviceInfo from 'react-native-device-info';
@@ -30,6 +31,22 @@ import {
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
+import {
+  camouflagePresetById,
+  isCamouflageActive,
+  type CamouflagePresetId,
+} from '../services/camouflagePresets';
+import {getLauncherCamouflagePreset} from '../services/camouflageIcon';
+import {
+  camouflagePinRetryHint,
+  clearCamouflagePinLockout,
+  getCamouflagePinLockState,
+  recordCamouflagePinFailure,
+  shouldPromptCamouflagePin,
+  verifyCamouflagePin,
+  type CamouflagePinLockState,
+} from '../services/camouflagePin';
+import CamouflagePinPad from '../components/CamouflagePinPad';
 import {LoadingQuotesMarquee} from './loading/LoadingQuotesMarquee';
 
 /** iOS reports a large bottom safe area; with strip padding it sits too high vs Android — trim only for the manchette. */
@@ -73,8 +90,24 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
       ),
     );
   const [reduceMotion, setReduceMotion] = useState(false);
+  /** Android launcher camouflage — hide Bold branding on the lock screen. */
+  const [camouflagePresetId, setCamouflagePresetId] =
+    useState<CamouflagePresetId>('default');
+  const camouflageOn =
+    Platform.OS === 'android' && isCamouflageActive(camouflagePresetId);
+  const camouflagePreset = camouflagePresetById(camouflagePresetId);
+  const [camouflagePinRequired, setCamouflagePinRequired] = useState(false);
+  const [camouflagePinValue, setCamouflagePinValue] = useState('');
+  const [camouflagePinError, setCamouflagePinError] = useState(false);
+  const [camouflagePinUnlocked, setCamouflagePinUnlocked] = useState(false);
+  const [camouflagePinBusy, setCamouflagePinBusy] = useState(false);
+  const [camouflagePinLock, setCamouflagePinLock] =
+    useState<CamouflagePinLockState>(() => getCamouflagePinLockState());
 
   const quotesForMarquee = useMemo(() => {
+    if (camouflageOn) {
+      return [];
+    }
     if (loadingQuotes.length > 0) {
       return loadingQuotes;
     }
@@ -82,9 +115,28 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
       return ['…'];
     }
     return [];
-  }, [loadingQuotes, manchetteEnabled]);
+  }, [loadingQuotes, manchetteEnabled, camouflageOn]);
 
   useEffect(() => {
+    const readCamouflagePref = async () => {
+      if (Platform.OS !== 'android') {
+        setCamouflagePresetId('default');
+        setCamouflagePinRequired(false);
+        return;
+      }
+      try {
+        const id = await getLauncherCamouflagePreset();
+        setCamouflagePresetId(id);
+        const needPin = await shouldPromptCamouflagePin(isCamouflageActive(id));
+        setCamouflagePinRequired(needPin);
+        if (needPin) {
+          setCamouflagePinLock(getCamouflagePinLockState());
+        }
+      } catch {
+        setCamouflagePresetId('default');
+        setCamouflagePinRequired(false);
+      }
+    };
     const readLockScreenPrefs = () => {
       setManchetteEnabled(
         appConfigRepository.getBool(
@@ -100,15 +152,35 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
       );
     };
     readLockScreenPrefs();
+    readCamouflagePref();
     const sub = AppState.addEventListener('change', state => {
       const active = state === 'active';
       setAppActive(active);
       if (active) {
         readLockScreenPrefs();
+        readCamouflagePref();
+      } else {
+        setCamouflagePinUnlocked(false);
+        setCamouflagePinValue('');
+        setCamouflagePinError(false);
       }
     });
     return () => sub.remove();
   }, []);
+
+  useEffect(() => {
+    if (!camouflagePinRequired || !camouflagePinLock.locked) {
+      return;
+    }
+    const id = setInterval(() => {
+      setCamouflagePinLock(getCamouflagePinLockState());
+    }, 250);
+    return () => clearInterval(id);
+  }, [
+    camouflagePinRequired,
+    camouflagePinLock.locked,
+    camouflagePinLock.lockedUntil,
+  ]);
 
   useEffect(() => {
     const cached = getCachedQuotes();
@@ -133,7 +205,7 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
     return () => sub.remove();
   }, []);
   useEffect(() => {
-    if (!appActive || quotesSyncInFlightRef.current) {
+    if (camouflageOn || !appActive || quotesSyncInFlightRef.current) {
       return;
     }
     quotesSyncInFlightRef.current = true;
@@ -147,7 +219,7 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
       .finally(() => {
         quotesSyncInFlightRef.current = false;
       });
-  }, [appActive]);
+  }, [appActive, camouflageOn]);
 
   useEffect(() => {
     Promise.all([DeviceInfo.getVersion(), DeviceInfo.getBuildNumber()]).then(
@@ -177,6 +249,17 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
   const emitterRef = useRef<number | null>(null);
   const loadingRef = useRef(false);
   useEffect(() => {
+    if (!camouflageOn) {
+      return;
+    }
+    setParticles([]);
+    turbulenceRef.current = 0;
+    if (emitterRef.current != null) {
+      clearInterval(emitterRef.current as unknown as number);
+      emitterRef.current = null;
+    }
+  }, [camouflageOn]);
+  useEffect(() => {
     loadingRef.current = loading;
   }, [loading]);
 
@@ -195,6 +278,37 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
       setLoading(false);
     }
   }, [onRetry]);
+  const handleCamouflagePinComplete = useCallback(
+    async (pin: string) => {
+      if (camouflagePinBusy || loading) {
+        return;
+      }
+      const currentLock = getCamouflagePinLockState();
+      if (currentLock.locked) {
+        setCamouflagePinLock(currentLock);
+        setCamouflagePinValue('');
+        return;
+      }
+      setCamouflagePinBusy(true);
+      const ok = await verifyCamouflagePin(pin);
+      if (!ok) {
+        const nextLock = recordCamouflagePinFailure();
+        setCamouflagePinLock(nextLock);
+        setCamouflagePinError(!nextLock.locked);
+        setCamouflagePinValue('');
+        setCamouflagePinBusy(false);
+        return;
+      }
+      clearCamouflagePinLockout();
+      setCamouflagePinLock(getCamouflagePinLockState());
+      setCamouflagePinError(false);
+      setCamouflagePinUnlocked(true);
+      setCamouflagePinBusy(false);
+      setCamouflagePinValue('');
+      await handlePress();
+    },
+    [camouflagePinBusy, loading, handlePress],
+  );
   const handlePressIn = () => {
     Animated.spring(buttonScale, {
       toValue: 0.97,
@@ -247,7 +361,9 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
   };
 
   const createFountain = (count: number = 2, intensity: number = 1) => {
-    if (!particlesEnabled || !appActive || loadingRef.current) return;
+    if (camouflageOn || !particlesEnabled || !appActive || loadingRef.current) {
+      return;
+    }
     try {
       // Continuous vapor-like emission from the logo center
       const newParticles: Array<{
@@ -337,7 +453,9 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
     }
   };
   const handleLogoPress = () => {
-    if (!particlesEnabled || !appActive || loadingRef.current) return;
+    if (camouflageOn || !particlesEnabled || !appActive || loadingRef.current) {
+      return;
+    }
     try {
       // Stronger turbulence boost that decays more slowly
       turbulenceRef.current = Math.min(2, turbulenceRef.current + 1.2);
@@ -370,7 +488,7 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
       friction: 5,
       tension: 180,
     }).start();
-    if (!particlesEnabled) {
+    if (camouflageOn || !particlesEnabled) {
       return;
     }
     try {
@@ -463,7 +581,7 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
 
   const checkForUpdate = useCallback(
     async (silent: boolean) => {
-      if (!lockScreenUpdateCheckerEnabled) {
+      if (camouflageOn || !lockScreenUpdateCheckerEnabled) {
         return;
       }
       if (!version) {
@@ -546,11 +664,11 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
         }
       }
     },
-    [version, lockScreenUpdateCheckerEnabled],
+    [version, lockScreenUpdateCheckerEnabled, camouflageOn],
   );
 
   const handleVersionPress = () => {
-    if (!lockScreenUpdateCheckerEnabled) {
+    if (camouflageOn || !lockScreenUpdateCheckerEnabled) {
       return;
     }
     if (updateAvailable && latestVersion) {
@@ -560,15 +678,16 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
     checkForUpdate(false);
   };
 
-  const showVersionChip = !!version && !!buildNumber;
+  const showVersionChip =
+    !camouflageOn && !!version && !!buildNumber;
 
   // Background check once the local version is known (no chip spinner, no delay, no toast)
   useEffect(() => {
-    if (!version || !lockScreenUpdateCheckerEnabled) {
+    if (camouflageOn || !version || !lockScreenUpdateCheckerEnabled) {
       return;
     }
     checkForUpdate(true);
-  }, [version, lockScreenUpdateCheckerEnabled, checkForUpdate]);
+  }, [version, lockScreenUpdateCheckerEnabled, checkForUpdate, camouflageOn]);
 
   const styles = StyleSheet.create({
     container: {
@@ -607,6 +726,26 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
     storeIcon: {
       width: 128,
       height: 128,
+    },
+    camouflageIcon: {
+      width: 112,
+      height: 112,
+      borderRadius: 28,
+    },
+    camouflageTitle: {
+      marginTop: 16,
+      fontSize: theme.fontSizes?.lg || 18,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      letterSpacing: 0.3,
+    },
+    camouflageBrandBlock: {
+      alignItems: 'center',
+    },
+    camouflagePinBlock: {
+      width: '100%',
+      paddingHorizontal: 24,
+      paddingBottom: 24,
     },
     button: {
       flexDirection: 'row',
@@ -731,7 +870,6 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
           : theme.colors.border,
       backgroundColor: theme.colors.cardBackground,
       alignSelf: 'center',
-      width: 100,
       height: 32,
       justifyContent: 'center',
       opacity: lockScreenUpdateCheckerEnabled ? 1 : 0.72,
@@ -741,7 +879,6 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
       alignItems: 'center',
       gap: 8,
       justifyContent: 'center',
-      width: '100%',
     },
     versionChipLabel: {
       fontSize: theme.fontSizes?.sm || 12,
@@ -756,7 +893,6 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
     },
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.5)',
       justifyContent: 'center',
       alignItems: 'center',
       paddingHorizontal: 24,
@@ -884,7 +1020,13 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
   });
   // Use simple background color instead of gradient, especially in dark mode
   const isDarkMode = theme.colors.background !== '#ffffff';
-  const backgroundColor = isDarkMode ? '#1A1A1A' : theme.colors.background;
+  const backgroundColor = camouflageOn
+    ? isDarkMode
+      ? '#121212'
+      : '#F2F2F2'
+    : isDarkMode
+    ? '#1A1A1A'
+    : theme.colors.background;
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
       <View style={[styles.container, {backgroundColor}]}>
@@ -895,7 +1037,7 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
               const {width, height} = e.nativeEvent.layout;
               logoLayoutRef.current = {width, height};
             }}>
-            {particlesEnabled && (
+            {!camouflageOn && particlesEnabled && (
               <ParticlesErrorBoundary onError={disableParticles}>
                 <View style={styles.particlesContainer}>
                   {particles.map(p => {
@@ -932,30 +1074,48 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
                 </View>
               </ParticlesErrorBoundary>
             )}
-            <Pressable
-              onPress={handleLogoPress}
-              onPressIn={startLogoTouch}
-              onPressOut={endLogoTouch}
-              accessibilityRole="button"
-              accessibilityLabel="Activate vapor turbulence"
-              accessibilityHint="Double tap to increase particle spread">
-              <Animated.View style={{transform: [{scale: logoScale}]}}>
+            {camouflageOn ? (
+              <View style={styles.camouflageBrandBlock}>
                 <Image
-                  style={[styles.storeIcon]}
-                  source={
-                    theme.colors.background === '#ffffff'
-                      ? require('../assets/bold-icon.png') // Original icon in light mode
-                      : require('../assets/bold-icon-inverted.png') // Use inverted icon in dark mode
-                  }
+                  style={styles.camouflageIcon}
+                  source={camouflagePreset.preview}
+                  resizeMode="cover"
+                  accessibilityIgnoresInvertColors
+                  accessibilityRole="image"
+                  accessibilityLabel={camouflagePreset.label}
                 />
-              </Animated.View>
-            </Pressable>
+                <Text style={styles.camouflageTitle}>
+                  {camouflagePreset.label}
+                </Text>
+              </View>
+            ) : (
+              <Pressable
+                onPress={handleLogoPress}
+                onPressIn={startLogoTouch}
+                onPressOut={endLogoTouch}
+                accessibilityRole="button"
+                accessibilityLabel="Activate vapor turbulence"
+                accessibilityHint="Double tap to increase particle spread">
+                <Animated.View style={{transform: [{scale: logoScale}]}}>
+                  <Image
+                    style={[styles.storeIcon]}
+                    source={
+                      theme.colors.background === '#ffffff'
+                        ? require('../assets/bold-icon.png') // Original icon in light mode
+                        : require('../assets/bold-icon-inverted.png') // Use inverted icon in dark mode
+                    }
+                  />
+                </Animated.View>
+              </Pressable>
+            )}
           </Animated.View>
         </View>
         <View
           style={[
             styles.bottomStack,
-            manchetteEnabled && quotesForMarquee.length > 0
+            !camouflageOn &&
+            manchetteEnabled &&
+            quotesForMarquee.length > 0
               ? {
                   paddingBottom:
                     44 +
@@ -966,6 +1126,29 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
               : null,
           ]}>
           <View style={styles.bottomContainer}>
+            {camouflagePinRequired && !camouflagePinUnlocked ? (
+              <View style={styles.camouflagePinBlock}>
+                <CamouflagePinPad
+                  value={camouflagePinValue}
+                  onChange={next => {
+                    setCamouflagePinError(false);
+                    setCamouflagePinValue(next);
+                  }}
+                  onComplete={handleCamouflagePinComplete}
+                  disabled={
+                    camouflagePinBusy || loading || camouflagePinLock.locked
+                  }
+                  error={camouflagePinError && !camouflagePinLock.locked}
+                  hint={
+                    camouflagePinLock.locked
+                      ? camouflagePinRetryHint(camouflagePinLock.remainingMs)
+                      : camouflagePinError
+                      ? 'Try again'
+                      : 'Enter PIN'
+                  }
+                />
+              </View>
+            ) : (
             <Animated.View
               style={[
                 styles.buttonAnimatedContainer,
@@ -981,7 +1164,9 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
                 onPressOut={handlePressOut}
                 disabled={loading}
                 accessibilityRole="button"
-                accessibilityLabel="Unlock with biometrics"
+                accessibilityLabel={
+                  camouflageOn ? 'Unlock' : 'Unlock with biometrics'
+                }
                 accessibilityHint="Double tap to authenticate and unlock"
                 testID="unlock-biometric-button">
                 {loading ? (
@@ -1017,6 +1202,7 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
                 )}
               </Pressable>
             </Animated.View>
+            )}
             {showVersionChip ? (
               <Pressable
                 onPress={handleVersionPress}
@@ -1050,7 +1236,7 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
             ) : null}
           </View>
         </View>
-        {manchetteEnabled && quotesForMarquee.length > 0 ? (
+        {!camouflageOn && manchetteEnabled && quotesForMarquee.length > 0 ? (
           <View style={styles.quotesTickerOverlay} pointerEvents="box-none">
             <LoadingQuotesMarquee
               quotes={quotesForMarquee}
@@ -1071,11 +1257,11 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
           </View>
         ) : null}
         <Modal
-          visible={showUpdateModal}
+          visible={!camouflageOn && showUpdateModal}
           transparent
           animationType="fade"
           onRequestClose={() => setShowUpdateModal(false)}>
-          <View style={styles.modalOverlay}>
+          <GlassModalOverlay style={styles.modalOverlay}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeaderRow}>
                 <Image
@@ -1103,7 +1289,7 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
                 </AppPressable>
               </View>
             </View>
-          </View>
+          </GlassModalOverlay>
         </Modal>
       </View>
       <View pointerEvents="box-none" style={styles.toastWrapper}>

@@ -1,8 +1,13 @@
 import React, {useState, useEffect, useRef} from 'react';
 import {View, Text, StyleSheet, Modal, Platform} from 'react-native';
 import AppPressable from './AppPressable';
+import {ScannerHud, useElapsedScanSeconds, useUrScanFrameHud} from './QRScannerHud';
+import {
+  elapsedScanSecondsSince,
+  formatAndroidZxingProgressLabel,
+} from '../utils/scanElapsed';
 import {useTheme} from '../theme';
-import {dbg} from '../utils';
+import {dbg, areHapticsEnabled, HapticFeedback} from '../utils';
 // iOS-specific imports (only imported when needed)
 let Camera: any = null;
 let useCameraDevice: any = null;
@@ -24,6 +29,19 @@ if (Platform.OS === 'android') {
     BarcodeZxingScan = require('rn-barcode-zxing-scan').default;
   } catch (e) {
     dbg('BarcodeZxingScan not available:', e);
+  }
+}
+
+/** Stop native ZXing continuous scan before heavy JS work (AES import). */
+export function stopAndroidContinuousScan(): void {
+  if (Platform.OS !== 'android' || !BarcodeZxingScan) {
+    return;
+  }
+  try {
+    BarcodeZxingScan.stopContinuousScan();
+    BarcodeZxingScan.updateProgressText('');
+  } catch (e) {
+    dbg('Android: stopAndroidContinuousScan error:', e);
   }
 }
 export interface QRProgress {
@@ -55,12 +73,18 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
   closeButtonText = 'Close',
 }) => {
   const {theme} = useTheme();
+  const elapsedSeconds = useElapsedScanSeconds(visible);
+  const {frameProgress, noteScannedFrame} = useUrScanFrameHud(visible);
   const device = useCameraDevice('back');
   const codeScanner = useCodeScanner({
     codeTypes: ['qr'],
     onCodeScanned: (codes: any) => {
       if (codes.length > 0 && codes[0].value) {
-        onScan(codes[0].value);
+        const value = codes[0].value;
+        if (noteScannedFrame(value)) {
+          HapticFeedback.light();
+        }
+        onScan(value);
         if (mode === 'single') {
           onClose();
         }
@@ -74,51 +98,18 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
     },
     qrFrame: {
       position: 'absolute',
-      borderWidth: 2,
-      borderColor: theme.colors.primary,
-      width: 250,
-      height: 250,
+      borderWidth: 0,
+      width: 260,
+      height: 260,
       alignSelf: 'center',
-      top: '25%',
-      borderRadius: 12,
+      top: '32%',
     },
     scannerHeader: {
       position: 'absolute',
-      top: 80,
+      top: 56,
       left: 0,
       right: 0,
       alignItems: 'center',
-    },
-    scannerTitle: {
-      fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.white,
-      backgroundColor: theme.colors.blackOverlay30,
-      borderRadius: 12,
-      padding: 12,
-      marginBottom: 8,
-    },
-    scannerSubtitle: {
-      fontSize: theme.fontSizes?.base || 14,
-      color: theme.colors.white,
-      backgroundColor: theme.colors.blackOverlay30,
-      borderRadius: 12,
-      padding: 12,
-      textAlign: 'center',
-      paddingHorizontal: 20,
-    },
-    progressBarContainer: {
-      marginTop: 16,
-      width: 200,
-      height: 6,
-      backgroundColor: theme.colors.white + '33', // ~20% opacity
-      borderRadius: 3,
-      overflow: 'hidden',
-    },
-    progressBar: {
-      height: '100%',
-      backgroundColor: theme.colors.bitcoinOrange,
-      borderRadius: 3,
     },
     closeScannerButton: {
       position: 'absolute',
@@ -175,22 +166,34 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
     );
   }
   const isAnimatedQR = showProgress && progress && progress.total > 1;
+  const hudProgress =
+    progress && progress.total > 1 ? progress : frameProgress || undefined;
+  const hudShowProgress = !!(
+    (progress && progress.total > 1) ||
+    (frameProgress && frameProgress.total > 1)
+  );
   const progressPercent = isAnimatedQR
     ? Math.min(
         100,
         progress.percentage ||
           Math.round((progress.received / progress.total) * 100),
       )
-    : 0;
+    : hudShowProgress && hudProgress
+      ? Math.min(
+          100,
+          hudProgress.percentage ||
+            Math.round((hudProgress.received / hudProgress.total) * 100),
+        )
+      : 0;
   const isComplete = isAnimatedQR && progress.received >= progress.total;
   const displayTitle =
     title || (isAnimatedQR ? 'Scanning Animated QR...' : 'Scan QR Code');
   const displaySubtitle =
     subtitle ||
-    (isAnimatedQR
+    (hudShowProgress && hudProgress
       ? isComplete
         ? 'Processing...'
-        : `Keep scanning animated QR: ${progressPercent}%`
+        : `${hudProgress.received} / ${hudProgress.total} (${progressPercent}%)`
       : 'Point camera at the QR code to scan');
   return (
     <Modal
@@ -206,20 +209,13 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
           torch="off"
           codeScanner={codeScanner}
         />
-        <View style={styles.qrFrame} />
-        {(title || subtitle || showProgress) && (
-          <View style={styles.scannerHeader}>
-            <Text style={styles.scannerTitle}>{displayTitle}</Text>
-            <Text style={styles.scannerSubtitle}>{displaySubtitle}</Text>
-            {isAnimatedQR && (
-              <View style={styles.progressBarContainer}>
-                <View
-                  style={[styles.progressBar, {width: `${progressPercent}%`}]}
-                />
-              </View>
-            )}
-          </View>
-        )}
+        <ScannerHud
+          title={displayTitle}
+          subtitle={displaySubtitle}
+          elapsedSeconds={elapsedSeconds}
+          showProgress={hudShowProgress}
+          progress={hudProgress}
+        />
         <AppPressable
           style={styles.closeScannerButton}
           onPress={onClose}
@@ -238,169 +234,152 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
   mode = 'single',
   title,
   subtitle,
-  showProgress = false,
   progress,
-  closeButtonText = 'Close',
 }) => {
-  const {theme} = useTheme();
   const [_isScanning, setIsScanning] = useState(false);
   const scanSubscriptionRef = useRef<any>(null);
   const isScanningRef = useRef(false);
-  const styles = StyleSheet.create({
-    scannerContainer: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-      backgroundColor: 'black',
-    },
-    qrFrame: {
-      width: 250,
-      height: 250,
-      borderWidth: 2,
-      borderColor: theme.colors.primary,
-      borderRadius: 12,
-      position: 'absolute',
-      alignSelf: 'center',
-      top: '25%',
-    },
-    scannerHeader: {
-      position: 'absolute',
-      top: 80,
-      left: 0,
-      right: 0,
-      alignItems: 'center',
-    },
-    scannerTitle: {
-      fontSize: theme.fontSizes?.['2xl'] || 20,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.white,
-      marginBottom: 8,
-    },
-    scannerSubtitle: {
-      fontSize: theme.fontSizes?.base || 14,
-      color: theme.colors.white + 'B3', // ~70% opacity
-      textAlign: 'center',
-      paddingHorizontal: 20,
-    },
-    progressBarContainer: {
-      marginTop: 16,
-      width: 200,
-      height: 6,
-      backgroundColor: theme.colors.white + '33', // ~20% opacity
-      borderRadius: 3,
-      overflow: 'hidden',
-    },
-    progressBar: {
-      height: '100%',
-      backgroundColor: theme.colors.bitcoinOrange,
-      borderRadius: 3,
-    },
-    closeScannerButton: {
-      position: 'absolute',
-      bottom: 60,
-      alignSelf: 'center',
-      backgroundColor: theme.colors.primary,
-      paddingHorizontal: 24,
-      paddingVertical: 12,
-      borderRadius: 12,
-    },
-    closeScannerButtonText: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.textOnPrimary || theme.colors.white,
-    },
-  });
-  // Handle scanner close - properly stop scanner and cleanup
-  const handleClose = () => {
-    if (mode === 'continuous' && isScanningRef.current && BarcodeZxingScan) {
-      dbg('Android: Stopping continuous scan (close requested)');
+  const scanStartedAtRef = useRef(0);
+  // Keep latest callbacks/props in refs so continuous-scan effect does NOT
+  // restart the native ZXing activity when progress / onScan identity changes.
+  // (Airgap / animated UR updates progress every frame — restarting caused flicker.)
+  const onScanRef = useRef(onScan);
+  const onCloseRef = useRef(onClose);
+  const titleRef = useRef(title);
+  const subtitleRef = useRef(subtitle);
+  const progressRef = useRef(progress);
+  onScanRef.current = onScan;
+  onCloseRef.current = onClose;
+  titleRef.current = title;
+  subtitleRef.current = subtitle;
+  progressRef.current = progress;
+  const pushNativeProgressText = () => {
+    if (!BarcodeZxingScan?.updateProgressText || !isScanningRef.current) {
+      return;
+    }
+    BarcodeZxingScan.updateProgressText(
+      formatAndroidZxingProgressLabel({
+        title: titleRef.current,
+        subtitle: subtitleRef.current,
+        progress: progressRef.current,
+        elapsedSeconds: elapsedScanSecondsSince(scanStartedAtRef.current),
+      }),
+    );
+  };
+  const pushNativeProgressTextRef = useRef(pushNativeProgressText);
+  pushNativeProgressTextRef.current = pushNativeProgressText;
+  const stopContinuousScan = () => {
+    if (!BarcodeZxingScan) {
+      if (scanSubscriptionRef.current) {
+        scanSubscriptionRef.current.remove();
+        scanSubscriptionRef.current = null;
+      }
+      isScanningRef.current = false;
+      scanStartedAtRef.current = 0;
+      setIsScanning(false);
+      return;
+    }
+    dbg('Android: Stopping continuous scan');
+    try {
       BarcodeZxingScan.stopContinuousScan();
       BarcodeZxingScan.updateProgressText('');
-      isScanningRef.current = false;
-      setIsScanning(false);
+    } catch (e) {
+      dbg('Android: stopContinuousScan error:', e);
     }
-    if (BarcodeZxingScan?.stopQrReader) {
-      BarcodeZxingScan.stopQrReader();
-    }
+    isScanningRef.current = false;
+    scanStartedAtRef.current = 0;
+    setIsScanning(false);
     if (scanSubscriptionRef.current) {
       scanSubscriptionRef.current.remove();
       scanSubscriptionRef.current = null;
     }
-    onClose();
   };
-  // Handle continuous scanning for Android
+  // Continuous scan: start/stop only when visibility or mode changes — never on
+  // progress / onScan / title updates (those used to reopen the camera each frame).
   useEffect(() => {
-    if (visible && mode === 'continuous' && BarcodeZxingScan) {
-      // Only start if not already scanning
-      if (!isScanningRef.current) {
-        const {DeviceEventEmitter} = require('react-native');
-        scanSubscriptionRef.current = DeviceEventEmitter.addListener(
-          'BarcodeZxingScanContinuous',
-          (event: {data?: string; error?: string}) => {
-            if (event.error) {
-              dbg('Android: Continuous scan error:', event.error);
-              isScanningRef.current = false;
-              setIsScanning(false);
-              return;
+    if (!(visible && mode === 'continuous' && BarcodeZxingScan)) {
+      if (mode === 'continuous') {
+        stopContinuousScan();
+      }
+      return;
+    }
+    if (isScanningRef.current) {
+      return;
+    }
+    const {DeviceEventEmitter} = require('react-native');
+    scanSubscriptionRef.current = DeviceEventEmitter.addListener(
+      'BarcodeZxingScanContinuous',
+      (event: {data?: string; error?: string}) => {
+        if (event.error) {
+          dbg('Android: Continuous scan error:', event.error);
+          isScanningRef.current = false;
+          scanStartedAtRef.current = 0;
+          setIsScanning(false);
+          // Native Back / cancel — close so we do not leave a second RN HUD.
+          onCloseRef.current();
+          return;
+        }
+        if (event.data) {
+          dbg(
+            'Android: Continuous scan result:',
+            event.data.substring(0, 50),
+          );
+          onScanRef.current(event.data);
+          pushNativeProgressTextRef.current();
+        }
+      },
+    );
+    // Mark scanning before native start so cleanup always stops the activity
+    // even if SCANNER_STARTED has not fired yet.
+    isScanningRef.current = true;
+    scanStartedAtRef.current = Date.now();
+    setIsScanning(true);
+    if (BarcodeZxingScan.setStatusMessage) {
+      BarcodeZxingScan.setStatusMessage(
+        subtitleRef.current || titleRef.current || 'Scanning QR…',
+      );
+    }
+    if (BarcodeZxingScan.setScanHud) {
+      BarcodeZxingScan.setScanHud(
+        titleRef.current || 'Scanning QR…',
+        !!areHapticsEnabled(),
+      );
+    }
+    pushNativeProgressTextRef.current();
+    BarcodeZxingScan.showQrReaderContinuous((error: any, data: any) => {
+      if (error) {
+        dbg('Android: Continuous scan error:', error);
+        isScanningRef.current = false;
+        scanStartedAtRef.current = 0;
+        setIsScanning(false);
+        onCloseRef.current();
+        return;
+      }
+      if (data === 'SCANNER_STARTED') {
+        isScanningRef.current = true;
+        setIsScanning(true);
+        // Overlay is created in activity onResume — retry until it can accept text.
+        [100, 350, 800].forEach(ms => {
+          setTimeout(() => {
+            if (isScanningRef.current) {
+              pushNativeProgressTextRef.current();
             }
-            if (event.data) {
-              dbg(
-                'Android: Continuous scan result:',
-                event.data.substring(0, 50),
-              );
-              onScan(event.data);
-            }
-          },
-        );
-        BarcodeZxingScan.showQrReaderContinuous((error: any, data: any) => {
-          if (error) {
-            dbg('Android: Continuous scan error:', error);
-            isScanningRef.current = false;
-            setIsScanning(false);
-            return;
-          }
-          if (data === 'SCANNER_STARTED') {
-            isScanningRef.current = true;
-            setIsScanning(true);
-            if (showProgress) {
-              setTimeout(() => {
-                BarcodeZxingScan.updateProgressText(
-                  title || 'Scanning QR Code...',
-                );
-              }, 100);
-            }
-          }
+          }, ms);
         });
       }
-    } else if (!visible && mode === 'continuous' && BarcodeZxingScan) {
-      // Stop scanner when modal becomes invisible
-      if (isScanningRef.current) {
-        dbg('Android: Stopping continuous scan (modal closed)');
-        BarcodeZxingScan.stopContinuousScan();
-        BarcodeZxingScan.updateProgressText('');
-        isScanningRef.current = false;
-        setIsScanning(false);
-      }
-      if (scanSubscriptionRef.current) {
-        scanSubscriptionRef.current.remove();
-        scanSubscriptionRef.current = null;
-      }
-    }
+    });
     return () => {
-      // Cleanup on unmount or when dependencies change
-      if (scanSubscriptionRef.current) {
-        scanSubscriptionRef.current.remove();
-        scanSubscriptionRef.current = null;
-      }
-      if (mode === 'continuous' && isScanningRef.current && BarcodeZxingScan) {
-        dbg('Android: Cleanup - stopping continuous scan');
-        BarcodeZxingScan.stopContinuousScan();
-        BarcodeZxingScan.updateProgressText('');
-        isScanningRef.current = false;
-        setIsScanning(false);
-      }
+      stopContinuousScan();
     };
-  }, [visible, mode, onScan, showProgress, title]);
+  }, [visible, mode]);
+  // Push progress into the native ZXing overlay without restarting the activity
+  // (same pattern as PSBT / Send continuous scan on WalletHome).
+  useEffect(() => {
+    if (!visible || mode !== 'continuous' || !isScanningRef.current) {
+      return;
+    }
+    pushNativeProgressText();
+  }, [visible, mode, progress, subtitle, title]);
   // Handle single scan - native scanner handles its own UI and back button
   useEffect(() => {
     if (
@@ -411,8 +390,8 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
     ) {
       // For single mode, native scanner opens its own activity
       // Set custom status message before opening scanner (if supported)
-      if (subtitle && BarcodeZxingScan.setStatusMessage) {
-        BarcodeZxingScan.setStatusMessage(subtitle);
+      if (subtitleRef.current && BarcodeZxingScan.setStatusMessage) {
+        BarcodeZxingScan.setStatusMessage(subtitleRef.current);
       }
       // It handles back button itself, we just need to handle the result
       BarcodeZxingScan.showQrReader((error: any, data: any) => {
@@ -423,15 +402,15 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
         if (error) {
           dbg('Android: Single scan error:', error);
           // User pressed back or cancelled - close our modal too
-          onClose();
+          onCloseRef.current();
           return;
         }
         if (data) {
-          onScan(data);
-          onClose();
+          onScanRef.current(data);
+          onCloseRef.current();
         } else {
           // No data but no error - user likely pressed back
-          onClose();
+          onCloseRef.current();
         }
       });
       isScanningRef.current = true;
@@ -446,60 +425,9 @@ const AndroidQRScanner: React.FC<QRScannerProps> = ({
         BarcodeZxingScan.setStatusMessage('');
       }
     }
-  }, [visible, mode, onScan, onClose, subtitle]);
-  const isAnimatedQR = showProgress && progress && progress.total > 1;
-  const progressPercent = isAnimatedQR
-    ? Math.min(
-        100,
-        progress.percentage ||
-          Math.round((progress.received / progress.total) * 100),
-      )
-    : 0;
-  const isComplete = isAnimatedQR && progress.received >= progress.total;
-  const displayTitle =
-    title || (isAnimatedQR ? 'Scanning Animated QR...' : 'Scan QR Code');
-  const displaySubtitle =
-    subtitle ||
-    (isAnimatedQR
-      ? isComplete
-        ? 'Processing...'
-        : `Keep scanning animated QR: ${progressPercent}%`
-      : 'Point camera at the QR code to scan');
-  // For continuous mode, show UI overlay
-  if (mode === 'continuous' && visible) {
-    return (
-      <Modal
-        visible={visible}
-        transparent={false}
-        animationType="fade"
-        onRequestClose={handleClose}>
-        <View style={styles.scannerContainer}>
-          <View style={styles.qrFrame} />
-          {(title || subtitle || showProgress) && (
-            <View style={styles.scannerHeader}>
-              <Text style={styles.scannerTitle}>{displayTitle}</Text>
-              <Text style={styles.scannerSubtitle}>{displaySubtitle}</Text>
-              {isAnimatedQR && (
-                <View style={styles.progressBarContainer}>
-                  <View
-                    style={[styles.progressBar, {width: `${progressPercent}%`}]}
-                  />
-                </View>
-              )}
-            </View>
-          )}
-          <AppPressable
-            style={styles.closeScannerButton}
-            onPress={handleClose}
-            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-            <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
-          </AppPressable>
-        </View>
-      </Modal>
-    );
-  }
-  // For single mode, native scanner handles UI - return null (modal is just a container)
-  // The native activity will handle its own UI and back button
+  }, [visible, mode]);
+  // Native ZXing activity is the only Android scanner UI (single and continuous).
+  // A RN Modal here sat under the capture activity — Back revealed a second HUD.
   return null;
 };
 // Main QRScanner component - routes to platform-specific implementation

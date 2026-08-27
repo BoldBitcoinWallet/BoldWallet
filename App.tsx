@@ -28,6 +28,7 @@ import {
 import {initializeHaptics} from './utils';
 import database from './services/Database';
 import {runMigrationIfNeeded} from './services/LocalCacheMigration';
+import {migrateEncryptedPrefsIfNeeded} from './services/encryptedPrefsMigration';
 import {runBrantaVerifiedBackfillIfNeeded} from './services/BrantaVerifiedBackfill';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
@@ -50,6 +51,7 @@ import {
   getPinnedRemoteIPs,
   resolveInitialWalletRoute,
 } from './utils';
+import {ensureLanDiscoveryPermission} from './services/lanDiscoveryPermissions';
 import MobilesPairing from './screens/MobilesPairing';
 import MobileNostrPairing from './screens/MobileNostrPairing';
 import UserPreferenceScreen from './screens/UserPreferenceScreen';
@@ -59,11 +61,33 @@ import {createToastConfig} from './utils/toastConfig';
 import {promptWalletBiometricAuth} from './services/walletBiometricAuth';
 import IncomingShareHandler from './components/IncomingShareHandler';
 import IncomingUrlHandler from './components/IncomingUrlHandler';
+import {installWalletOnlineNetworkGuard} from './services/walletOnlineStore';
+import {useNavMenuStyle} from './services/navMenuStore';
+import FloatingTabBar, {
+  FLOATING_TAB_BAR_CONTENT_HEIGHT,
+} from './components/FloatingTabBar';
+import {
+  startProviderHealthPoller,
+  setProviderHealthApiBase,
+} from './services/providerHealthPoller';
 // Initialize react-native-screens for Fabric compatibility
 enableScreens(true);
+installWalletOnlineNetworkGuard();
 const {BBMTLibNativeModule} = NativeModules;
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
+
+/** Starts the 30s provider tip probe once UserContext has an API base. */
+function ProviderHealthPollerHost() {
+  const {activeApiProvider} = useUser();
+  useEffect(() => {
+    startProviderHealthPoller(activeApiProvider || '');
+    if (activeApiProvider) {
+      setProviderHealthApiBase(activeApiProvider);
+    }
+  }, [activeApiProvider]);
+  return null;
+}
 
 const linking: LinkingOptions<any> = {
   prefixes: ['boldwallet://', 'bitcoin:'],
@@ -307,6 +331,8 @@ const TabBarButton = (props: TabBarButtonProps) => {
 const MainTabs = () => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
+  const menuStyle = useNavMenuStyle();
+  const isFloatingMenu = menuStyle === 'floating';
   const isDarkMode = theme.colors.background !== '#ffffff';
   const lockFabOverlayStyle = {
     position: 'absolute' as const,
@@ -319,10 +345,18 @@ const MainTabs = () => {
     backgroundColor: 'transparent',
     pointerEvents: 'box-none' as const,
   };
+  // Docked: sit above the default tab bar. Floating: sit above the pill + gap.
+  const lockFabBottom = isFloatingMenu
+    ? FLOATING_TAB_BAR_CONTENT_HEIGHT +
+      Math.max(insets.bottom, 0) +
+      8 +
+      8 +
+      12
+    : 80 + insets.bottom;
   const lockFabPosition = {
     position: 'absolute' as const,
     right: 30 + insets.right,
-    bottom: 80 + insets.bottom,
+    bottom: lockFabBottom,
     zIndex: 1000,
   };
   const lockFabSize = 48; // 15% smaller than 56
@@ -335,50 +369,30 @@ const MainTabs = () => {
     backgroundColor: isDarkMode
       ? theme.colors.cardBackground
       : theme.colors.primaryOverlay95,
-    borderWidth: Platform.OS === 'android' ? 0 : 1,
+    borderWidth: 1,
     borderColor: isDarkMode
-      ? theme.colors.border + '80'
+      ? theme.colors.whiteOverlay12
       : theme.colors.blackOverlay10,
   };
+  // Android: elevation on the pressable itself (same view as bg + radius).
+  // Nested wrappers / overflow:hidden / glow rings cast square rims.
   const lockFabStyle =
     Platform.OS === 'android'
       ? {
+          ...lockFabPosition,
           ...lockFabShape,
-          position: 'absolute' as const,
-          top: 0,
-          left: 0,
-          overflow: 'hidden' as const,
-          elevation: 0,
+          elevation: 10,
+          shadowColor: theme.colors.shadowColor || '#000',
         }
       : {
           ...lockFabPosition,
           ...lockFabShape,
           shadowColor: theme.colors.shadowColor || '#000',
-          shadowOffset: {width: 0, height: 2},
-          shadowOpacity: 0.15,
-          shadowRadius: 4,
-          elevation: 4,
+          shadowOffset: {width: 0, height: 8},
+          shadowOpacity: 0.32,
+          shadowRadius: 16,
+          elevation: 12,
         };
-  const lockFabWrapperStyle =
-    Platform.OS === 'android'
-      ? {
-          ...lockFabPosition,
-          width: lockFabSize,
-          height: lockFabSize,
-        }
-      : undefined;
-  const lockFabShadowStyle =
-    Platform.OS === 'android'
-      ? {
-          position: 'absolute' as const,
-          top: -1,
-          left: -1,
-          width: lockFabSize + 2,
-          height: lockFabSize + 2,
-          borderRadius: lockFabSize / 2 + 1,
-          backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        }
-      : undefined;
   const lockFabIconStyle = {
     width: 20,
     height: 20,
@@ -391,6 +405,12 @@ const MainTabs = () => {
       <TabBarButton {...props} isDarkMode={isDarkMode} />
     ),
     [isDarkMode],
+  );
+  const renderFloatingTabBar = useCallback(
+    (props: React.ComponentProps<typeof FloatingTabBar>) => (
+      <FloatingTabBar {...props} />
+    ),
+    [],
   );
   const {
     activeNetwork,
@@ -406,18 +426,29 @@ const MainTabs = () => {
     <View style={tabBarStyles.mainTabsContainer}>
       <Tab.Navigator
         initialRouteName={initialTab}
+        tabBar={isFloatingMenu ? renderFloatingTabBar : undefined}
         screenOptions={{
           headerShown: true,
           headerLeft: () => null,
           headerTitle: '',
           headerTitleAlign: 'left',
-          tabBarStyle: {
-            backgroundColor: theme.colors.background,
-            borderTopWidth: 1,
-            borderTopColor: isDarkMode
-              ? theme.colors.border + 'CC'
-              : theme.colors.border + '60',
-          },
+          tabBarStyle: isFloatingMenu
+            ? {
+                position: 'absolute',
+                backgroundColor: 'transparent',
+                borderTopWidth: 0,
+                elevation: 0,
+                shadowOpacity: 0,
+                // Reserve no layout height — FloatingTabBar overlays screens.
+                height: 0,
+              }
+            : {
+                backgroundColor: theme.colors.background,
+                borderTopWidth: 1,
+                borderTopColor: isDarkMode
+                  ? theme.colors.border + 'CC'
+                  : theme.colors.border + '60',
+              },
           tabBarActiveTintColor: isDarkMode
             ? theme.colors.text
             : theme.colors.primary || theme.colors.text,
@@ -504,42 +535,20 @@ const MainTabs = () => {
         />
       </Tab.Navigator>
       <View style={lockFabOverlayStyle}>
-        {Platform.OS === 'android' &&
-        lockFabWrapperStyle &&
-        lockFabShadowStyle ? (
-          <View style={lockFabWrapperStyle}>
-            <View style={lockFabShadowStyle} pointerEvents="none" />
-            <AppPressable
-              style={lockFabStyle}
-              onPress={() => {
-                DeviceEventEmitter.emit('app:reload');
-              }}
-              accessible={true}
-              accessibilityRole="button"
-              accessibilityLabel="Lock wallet"
-              accessibilityHint="Double tap to lock the wallet">
-              <Image
-                source={require('./assets/locker-icon.png')}
-                style={lockFabIconStyle}
-              />
-            </AppPressable>
-          </View>
-        ) : (
-          <AppPressable
-            style={lockFabStyle}
-            onPress={() => {
-              DeviceEventEmitter.emit('app:reload');
-            }}
-            accessible={true}
-            accessibilityRole="button"
-            accessibilityLabel="Lock wallet"
-            accessibilityHint="Double tap to lock the wallet">
-            <Image
-              source={require('./assets/locker-icon.png')}
-              style={lockFabIconStyle}
-            />
-          </AppPressable>
-        )}
+        <AppPressable
+          style={lockFabStyle}
+          onPress={() => {
+            DeviceEventEmitter.emit('app:reload');
+          }}
+          accessible={true}
+          accessibilityRole="button"
+          accessibilityLabel="Lock wallet"
+          accessibilityHint="Double tap to lock the wallet">
+          <Image
+            source={require('./assets/locker-icon.png')}
+            style={lockFabIconStyle}
+          />
+        </AppPressable>
       </View>
     </View>
   );
@@ -594,6 +603,7 @@ const App = () => {
         await database.open();
         dbg('App: SQLite database ready');
         await runMigrationIfNeeded();
+        await migrateEncryptedPrefsIfNeeded();
         await runBrantaVerifiedBackfillIfNeeded();
       } catch (dbErr) {
         dbg('App: Database init error (non-fatal):', dbErr);
@@ -610,82 +620,98 @@ const App = () => {
     checkWallet();
   }, []);
   useEffect(() => {
-    try {
-      dbg('publishing service...');
-      const deviceID = DeviceInfo.getUniqueIdSync();
-      if (!deviceID || deviceID.trim() === '') {
-        dbg('Warning: deviceID is empty, skipping service publication');
-        return;
-      }
-      dbg('deviceID:', deviceID);
-      zeroOut.publishService(
-        'http', // Fixed with underscore
-        'tcp',
-        'local.',
-        'bbw_scan',
-        55056,
-        {txt: 'bbw_scan', id: deviceID},
-        ImplType.NSD,
-      );
-      dbg('service bbw_scan published');
-      return () => {
-        try {
-          zeroOut.unpublishService('bbw_scan', ImplType.NSD);
-          zeroOut.stop();
-          dbg('service publish stopped');
-        } catch (e: any) {
-          dbg('error stopping service', e);
+    let cancelled = false;
+    (async () => {
+      try {
+        dbg('publishing service...');
+        const deviceID = DeviceInfo.getUniqueIdSync();
+        if (!deviceID || deviceID.trim() === '') {
+          dbg('Warning: deviceID is empty, skipping service publication');
+          return;
         }
-      };
-    } catch (e: any) {
-      dbg('error publishing service', e);
-    }
+        await ensureLanDiscoveryPermission();
+        if (cancelled) {
+          return;
+        }
+        dbg('deviceID:', deviceID);
+        zeroOut.publishService(
+          'http', // Fixed with underscore
+          'tcp',
+          'local.',
+          'bbw_scan',
+          55056,
+          {txt: 'bbw_scan', id: deviceID},
+          ImplType.NSD,
+        );
+        dbg('service bbw_scan published');
+      } catch (e: any) {
+        dbg('error publishing service', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try {
+        zeroOut.unpublishService('bbw_scan', ImplType.NSD);
+        zeroOut.stop();
+        dbg('service publish stopped');
+      } catch (e: any) {
+        dbg('error stopping service', e);
+      }
+    };
   }, []);
   useEffect(() => {
-    try {
-      dbg('scanning for mDNS Services');
-      const deviceID = DeviceInfo.getUniqueIdSync();
-      // Validate deviceID before scanning
-      if (!deviceID || deviceID.trim() === '') {
-        dbg('Warning: deviceID is empty, skipping mDNS scan');
-        return;
-      }
-      zeroconf.scan('http', 'tcp', 'local.');
-      zeroconf.on('resolved', service => {
-        dbg('Service Found:', service.fullName);
-        if (
-          service.txt &&
-          service.txt.txt === 'bbw_scan' &&
-          service.txt.id &&
-          service.txt.id !== deviceID
-        ) {
-          let addresses = service.addresses || [];
-          for (const address of addresses) {
-            if (address && address.split('.').length === 4) {
-              pinRemoteIP(address);
+    let cancelled = false;
+    (async () => {
+      try {
+        dbg('scanning for mDNS Services');
+        const deviceID = DeviceInfo.getUniqueIdSync();
+        // Validate deviceID before scanning
+        if (!deviceID || deviceID.trim() === '') {
+          dbg('Warning: deviceID is empty, skipping mDNS scan');
+          return;
+        }
+        await ensureLanDiscoveryPermission();
+        if (cancelled) {
+          return;
+        }
+        zeroconf.scan('http', 'tcp', 'local.');
+        zeroconf.on('resolved', service => {
+          dbg('Service Found:', service.fullName);
+          if (
+            service.txt &&
+            service.txt.txt === 'bbw_scan' &&
+            service.txt.id &&
+            service.txt.id !== deviceID
+          ) {
+            let addresses = service.addresses || [];
+            for (const address of addresses) {
+              if (address && address.split('.').length === 4) {
+                pinRemoteIP(address);
+              }
+            }
+            const pinned = getPinnedRemoteIPs();
+            if (pinned.length) {
+              dbg('Pinned remote IPv4 addresses:', pinned.join(', '));
             }
           }
-          const pinned = getPinnedRemoteIPs();
-          if (pinned.length) {
-            dbg('Pinned remote IPv4 addresses:', pinned.join(', '));
-          }
-        }
-      });
-      zeroconf.on('error', err => {
-        dbg('Zeroconf error:', String(err));
-      });
-      return () => {
-        try {
-          dbg('service scanning stopped');
-          zeroconf.removeAllListeners();
-          zeroconf.stop();
-        } catch (e: any) {
-          dbg('error stopping mDNS scan', e);
-        }
-      };
-    } catch (e: any) {
-      dbg('error scanning mDNS', e);
-    }
+        });
+        zeroconf.on('error', err => {
+          dbg('Zeroconf error:', String(err));
+        });
+      } catch (e: any) {
+        dbg('error scanning mDNS', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      try {
+        dbg('service scanning stopped');
+        zeroconf.removeAllListeners();
+        zeroconf.stop();
+      } catch (e: any) {
+        dbg('error stopping mDNS scan', e);
+      }
+    };
   }, []);
   useEffect(() => {
     let subscription: EmitterSubscription | undefined;
@@ -802,6 +828,7 @@ const App = () => {
       <SafeAreaProvider>
         <ThemeProvider>
           <UserProvider key={`user-${userProviderResetKey}`}>
+            <ProviderHealthPollerHost />
             {initialRoute === null || !isAuthenticated ? (
               <LoadingScreen onRetry={handleRetryAuthentication} />
             ) : (

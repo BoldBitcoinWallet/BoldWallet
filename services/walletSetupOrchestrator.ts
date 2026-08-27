@@ -368,7 +368,7 @@ export async function persistWalletKeyshare(
   const verified = await verifyWalletKeysharePersisted();
   if (!verified) {
     throw new Error(
-      'Could not save your key share securely. Keep the app open and retry setup.',
+      'Could not save your key share securely. Retry setup without force-closing the app.',
     );
   }
   await saveKeyshareMetadata(finalized, {throwOnError: true});

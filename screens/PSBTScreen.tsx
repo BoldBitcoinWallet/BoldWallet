@@ -11,7 +11,6 @@ import {
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
 import {SafeAreaView} from 'react-native-safe-area-context';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -339,25 +338,21 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   };
   // Handle section expansion based on PSBT mode toggle state
   useEffect(() => {
-    const checkPSBTModeState = async () => {
+    const checkPSBTModeState = () => {
       try {
-        const isFirstVisit = await EncryptedStorage.getItem(
-          'psbt_mode_first_visit',
+        const isFirstVisit = appConfigRepository.get(
+          CONFIG_KEYS.PSBT_MODE_FIRST_VISIT,
         );
         if (isFirstVisit === 'true') {
-          // First visit after toggle: both sections closed
           setIsWatchWalletExpanded(false);
           setIsPSBTSectionExpanded(false);
-          // Clear the flag so subsequent visits use default behavior
-          await EncryptedStorage.removeItem('psbt_mode_first_visit');
+          appConfigRepository.remove(CONFIG_KEYS.PSBT_MODE_FIRST_VISIT);
         } else {
-          // Subsequent visits: Bold Connect closed, Sign PSBT open
           setIsWatchWalletExpanded(false);
           setIsPSBTSectionExpanded(true);
         }
       } catch (error) {
         dbg('PSBTScreen: Error checking PSBT mode state:', error);
-        // Default behavior on error: Bold Connect closed, Sign PSBT open
         setIsWatchWalletExpanded(false);
         setIsPSBTSectionExpanded(true);
       }

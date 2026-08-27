@@ -1,5 +1,19 @@
 import React, {useState, useEffect, useRef, useCallback, useMemo} from 'react';
-import {View, Animated, Easing, Linking, LayoutChangeEvent} from 'react-native';
+import {
+  View,
+  Animated,
+  Easing,
+  Linking,
+  LayoutChangeEvent,
+  StyleSheet,
+} from 'react-native';
+import Reanimated, {
+  Extrapolation,
+  interpolate,
+  useAnimatedStyle,
+  useSharedValue,
+  type SharedValue,
+} from 'react-native-reanimated';
 import Svg, {Path, Circle} from 'react-native-svg';
 import {createStyles} from './Styles';
 import {useTheme} from '../theme';
@@ -12,13 +26,14 @@ import {
   CANONICAL_TESTNET_MEMPOOL_API_BASE,
   isTestnetNetworkKey,
 } from '../services/mempoolApiBase';
+import {
+  isApiTxConfirmed,
+  phaseFromParentConfirmed,
+  type VisualizerPhase,
+} from '../services/txVisualizerPhase';
 
-export type Phase =
-  | 'idle'
-  | 'signing'
-  | 'broadcasting'
-  | 'mempool'
-  | 'confirmed';
+export type Phase = VisualizerPhase;
+export {isApiTxConfirmed, phaseFromParentConfirmed};
 
 interface Props {
   txid?: string | null;
@@ -33,12 +48,43 @@ interface Props {
   confirmedAtMs?: number | null;
   /** Wallet-signed/broadcast vs incoming from the network. Compact track only. */
   origin?: 'wallet' | 'external';
+  /** 0 = full compact height, 1 = collapsed. Driven by parent scroll. */
+  collapseProgress?: SharedValue<number>;
 }
+
+export const COMPACT_VISUALIZER_EXPANDED_MIN_H = 228;
+export const COMPACT_VISUALIZER_COLLAPSED_MIN_H = 118;
+const COMPACT_STATUS_H = 78;
 
 const TRACK_H = 64;
 const KEY_W = 38;
 const MERGE_PATH_LEN = 280;
 const STEM_PATH_LEN = 220;
+const ORIGIN_DOT_W = 22;
+const ORIGIN_DOT_R = 7;
+
+const compactTrackStyles = StyleSheet.create({
+  row: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: TRACK_H,
+  },
+  keyWrap: {
+    width: KEY_W,
+    height: TRACK_H,
+  },
+  originDotWrap: {
+    width: ORIGIN_DOT_W,
+    height: TRACK_H,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  track: {
+    flex: 1,
+    height: TRACK_H,
+  },
+});
 
 const AnimatedPath = Animated.createAnimatedComponent(Path);
 
@@ -129,33 +175,28 @@ const CompactCosignTrack: React.FC<{
   });
 
   return (
-    <View
-      style={{
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        height: TRACK_H,
-      }}>
+    <View style={compactTrackStyles.row}>
       <Animated.View
-        style={{
-          width: KEY_W,
-          height: TRACK_H,
-          opacity: keyAnim,
-          transform: [
-            {
-              scale: keyAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.82, 1],
-              }),
-            },
-          ],
-        }}>
+        style={[
+          compactTrackStyles.keyWrap,
+          {
+            opacity: keyAnim,
+            transform: [
+              {
+                scale: keyAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.82, 1],
+                }),
+              },
+            ],
+          },
+        ]}>
         <Svg width={KEY_W} height={TRACK_H} viewBox={`0 0 ${KEY_W} ${TRACK_H}`}>
           <KeyGlyph cy={y1} color={color} />
           <KeyGlyph cy={y2} color={color} />
         </Svg>
       </Animated.View>
-      <View style={{flex: 1, height: TRACK_H}} onLayout={onLayout}>
+      <View style={compactTrackStyles.track} onLayout={onLayout}>
         {trackWidth > 0 && (
           <Svg width={trackWidth} height={TRACK_H}>
             <AnimatedPath
@@ -194,9 +235,6 @@ const CompactCosignTrack: React.FC<{
     </View>
   );
 };
-
-const ORIGIN_DOT_W = 22;
-const ORIGIN_DOT_R = 7;
 
 /**
  * Incoming receive: one external origin dot, then a single stem to the block.
@@ -248,29 +286,22 @@ const CompactExternalTrack: React.FC<{
   });
 
   return (
-    <View
-      style={{
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        height: TRACK_H,
-      }}>
+    <View style={compactTrackStyles.row}>
       <Animated.View
-        style={{
-          width: ORIGIN_DOT_W,
-          height: TRACK_H,
-          justifyContent: 'center',
-          alignItems: 'center',
-          opacity: dotAnim,
-          transform: [
-            {
-              scale: dotAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.7, 1],
-              }),
-            },
-          ],
-        }}>
+        style={[
+          compactTrackStyles.originDotWrap,
+          {
+            opacity: dotAnim,
+            transform: [
+              {
+                scale: dotAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [0.7, 1],
+                }),
+              },
+            ],
+          },
+        ]}>
         <Svg
           width={ORIGIN_DOT_W}
           height={TRACK_H}
@@ -283,7 +314,7 @@ const CompactExternalTrack: React.FC<{
           />
         </Svg>
       </Animated.View>
-      <View style={{flex: 1, height: TRACK_H}} onLayout={onLayout}>
+      <View style={compactTrackStyles.track} onLayout={onLayout}>
         {trackWidth > 0 && (
           <Svg width={trackWidth} height={TRACK_H}>
             <AnimatedPath
@@ -416,7 +447,49 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
   blockHeight: blockHeightProp = null,
   confirmedAtMs = null,
   origin = 'wallet',
+  collapseProgress,
 }) => {
+  const fallbackCollapse = useSharedValue(0);
+  const progress = collapseProgress ?? fallbackCollapse;
+
+  const collapseContainerStyle = useAnimatedStyle(() => {
+    const p = compact ? progress.value : 0;
+    return {
+      minHeight: interpolate(
+        p,
+        [0, 1],
+        [COMPACT_VISUALIZER_EXPANDED_MIN_H, COMPACT_VISUALIZER_COLLAPSED_MIN_H],
+        Extrapolation.CLAMP,
+      ),
+      paddingTop: interpolate(p, [0, 1], [14, 8], Extrapolation.CLAMP),
+      paddingBottom: interpolate(p, [0, 1], [14, 6], Extrapolation.CLAMP),
+      overflow: 'hidden' as const,
+    };
+  });
+
+  const collapseTrackStyle = useAnimatedStyle(() => {
+    const p = compact ? progress.value : 0;
+    return {
+      transform: [
+        {
+          translateY: interpolate(p, [0, 1], [0, -8], Extrapolation.CLAMP),
+        },
+      ],
+      paddingTop: interpolate(p, [0, 1], [6, 2], Extrapolation.CLAMP),
+      paddingBottom: interpolate(p, [0, 1], [18, 12], Extrapolation.CLAMP),
+    };
+  });
+
+  const collapseStatusStyle = useAnimatedStyle(() => {
+    const p = compact ? progress.value : 0;
+    return {
+      opacity: interpolate(p, [0, 0.4, 1], [1, 0, 0], Extrapolation.CLAMP),
+      height: interpolate(p, [0, 1], [COMPACT_STATUS_H, 0], Extrapolation.CLAMP),
+      minHeight: interpolate(p, [0, 1], [COMPACT_STATUS_H, 0], Extrapolation.CLAMP),
+      overflow: 'hidden' as const,
+    };
+  });
+
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const [confirmations, setConfirmations] = useState(0);
   const [confirmedBlockHeight, setConfirmedBlockHeight] = useState<
@@ -591,7 +664,7 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
         const data = response.data ?? {};
         setErrorMessage(null);
 
-        const isConfirmed = !!data.confirmed;
+        const isConfirmed = isApiTxConfirmed(data);
         const blockHeight = isConfirmed ? Number(data.block_height) : null;
 
         setConfirmedBlockHeight(
@@ -599,7 +672,9 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
         );
         setConfirmations(isConfirmed ? 1 : 0);
 
-        if (isConfirmed) {
+        // Stay pending while the details sheet says pending — poll must not
+        // paint "Confirmed in block …" against a Pending chip.
+        if (isConfirmed && initialPhase === 'confirmed') {
           setPhase('confirmed');
         }
       } catch (e) {
@@ -615,7 +690,7 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
         }
       }
     },
-    [compact, mempoolApiBase, stopPolling],
+    [compact, initialPhase, mempoolApiBase, stopPolling],
   );
 
   const startPolling = useCallback(
@@ -719,8 +794,16 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
   ]);
 
   useEffect(() => {
+    setPhase(phaseFromParentConfirmed(initialPhase === 'confirmed', !!txid));
+    if (initialPhase !== 'confirmed') {
+      setConfirmedBlockHeight(null);
+      setConfirmations(0);
+    }
+  }, [txid, initialPhase]);
+
+  useEffect(() => {
     if (txid && phase === 'idle' && initialPhase !== 'confirmed') {
-      setPhase(compact ? 'mempool' : 'mempool');
+      setPhase('mempool');
     }
     return () => {
       stopPolling();
@@ -742,9 +825,13 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
   });
 
   const effectiveBlockHeight =
-    blockHeightProp != null && Number.isFinite(blockHeightProp)
+    initialPhase === 'confirmed' &&
+    blockHeightProp != null &&
+    Number.isFinite(blockHeightProp)
       ? blockHeightProp
-      : confirmedBlockHeight;
+      : initialPhase === 'confirmed'
+      ? confirmedBlockHeight
+      : null;
 
   const formatTimestamp = (ms: number | null | undefined) => {
     if (ms == null || !Number.isFinite(ms)) {
@@ -800,7 +887,12 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
       : null;
 
   return (
-    <View style={[styles.containerTransaction, compact && styles.containerCompact]}>
+    <Reanimated.View
+      style={[
+        styles.containerTransaction,
+        compact && styles.containerCompact,
+        compact && collapseContainerStyle,
+      ]}>
       <View style={styles.trackLabelRow}>
         <AppText style={[styles.trackLabel, styles.walletLabel]}>
           {origin === 'external' ? 'NETWORK' : 'WALLET'}
@@ -814,7 +906,12 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
         </AppText>
       </View>
 
-      <View style={[styles.visualTrack, compact && styles.visualTrackCompact]}>
+      <Reanimated.View
+        style={[
+          styles.visualTrack,
+          compact && styles.visualTrackCompact,
+          compact && collapseTrackStyle,
+        ]}>
         {compact ? (
           origin === 'external' ? (
             <CompactExternalTrack
@@ -958,9 +1055,14 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
             </View>
           </View>
         )}
-      </View>
+      </Reanimated.View>
 
-      <View style={[styles.statusPanel, compact && styles.statusPanelCompact]}>
+      <Reanimated.View
+        style={[
+          styles.statusPanel,
+          compact && styles.statusPanelCompact,
+          compact && collapseStatusStyle,
+        ]}>
         {errorMessage && !compact ? (
           <View style={styles.centered}>
             <AppText style={styles.errorText}>{errorMessage}</AppText>
@@ -1003,7 +1105,7 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
             </AppText>
           </AppPressable>
         )}
-      </View>
-    </View>
+      </Reanimated.View>
+    </Reanimated.View>
   );
 };

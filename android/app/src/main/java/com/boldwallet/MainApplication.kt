@@ -20,6 +20,7 @@ class MainApplication : Application(), ReactApplication {
             context = applicationContext,
             packageList = PackageList(this).packages.apply {
                 add(BBMTLibNativePackage())
+                add(MpcKeepAlivePackage())
                 add(KeyshareSharePackage())
                 add(IncomingUrlPackage())
                 add(IconChangerPackage())
@@ -35,6 +36,7 @@ class MainApplication : Application(), ReactApplication {
 
     override fun onCreate() {
         super.onCreate()
+        IconChangerModule.ensureDefaultLauncher(this)
         loadReactNative(this)
     }
 }

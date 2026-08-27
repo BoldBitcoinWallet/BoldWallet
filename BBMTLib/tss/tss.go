@@ -270,6 +270,11 @@ func (s *ServiceImpl) processKeygen(localParty tss.Party,
 
 	for {
 		select {
+		case <-s.cancelCh:
+			if stopper, ok := localParty.(interface{ Stop() }); ok {
+				stopper.Stop()
+			}
+			return "", context.Canceled
 		// Handle errors from the error channel
 		case <-errCh:
 			return "", errors.New("failed to start keygen process")

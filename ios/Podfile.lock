@@ -2560,6 +2560,34 @@ PODS:
     - React-perflogger (= 0.82.1)
     - React-utils (= 0.82.1)
     - SocketRocket
+  - ReactNativeBlur (6.0.1):
+    - boost
+    - DoubleConversion
+    - fast_float
+    - fmt
+    - glog
+    - hermes-engine
+    - RCT-Folly
+    - RCT-Folly/Fabric
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - SocketRocket
+    - Yoga
   - RNCClipboard (1.16.3):
     - boost
     - DoubleConversion
@@ -3067,6 +3095,7 @@ DEPENDENCIES:
   - ReactAppDependencyProvider (from `build/generated/ios`)
   - ReactCodegen (from `build/generated/ios`)
   - ReactCommon/turbomodule/core (from `../node_modules/react-native/ReactCommon`)
+  - "ReactNativeBlur (from `../node_modules/@sbaiahmed1/react-native-blur`)"
   - "RNCClipboard (from `../node_modules/@react-native-clipboard/clipboard`)"
   - RNDeviceInfo (from `../node_modules/react-native-device-info`)
   - RNFS (from `../node_modules/react-native-fs`)
@@ -3254,6 +3283,8 @@ EXTERNAL SOURCES:
     :path: build/generated/ios
   ReactCommon:
     :path: "../node_modules/react-native/ReactCommon"
+  ReactNativeBlur:
+    :path: "../node_modules/@sbaiahmed1/react-native-blur"
   RNCClipboard:
     :path: "../node_modules/@react-native-clipboard/clipboard"
   RNDeviceInfo:
@@ -3364,6 +3395,7 @@ SPEC CHECKSUMS:
   ReactAppDependencyProvider: cc2795efe30a023c3a505676b9c748b664b9c0a1
   ReactCodegen: 897bad2d2f722ff4dc46fc144f9cc018db0e2ce4
   ReactCommon: c5803af00bd3737dc1631749b1f1da5beba5b049
+  ReactNativeBlur: c13c09c0ab21e22368664f6f1a401a6cc9e05fcd
   RNCClipboard: 962296f7af77f6c039b683e21c2e2255af9c05df
   RNDeviceInfo: 8b6fa8379062949dd79a009cf3d6b02a9c03ca59
   RNFS: 4ac0f0ea233904cb798630b3c077808c06931688
@@ -3378,6 +3410,6 @@ SPEC CHECKSUMS:
   VisionCamera: 2230ecfd78a1f6cddd8be0fe4e6589f21a6385e1
   Yoga: 689c8e04277f3ad631e60fe2a08e41d411daf8eb
 
-PODFILE CHECKSUM: 34bd5be419f27041dc7848c93f40f1f11d627e2a
+PODFILE CHECKSUM: 817d109c639960341f72ec2edf3557aa292d04f5
 
 COCOAPODS: 1.16.2

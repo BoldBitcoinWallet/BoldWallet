@@ -27,6 +27,8 @@ export interface FeeRates {
   economyFee: number;
   minimumFee: number;
   fetchedAt: number;
+  /** True when API failed/timed out and we returned last known DB rates. */
+  fromStaleCache?: boolean;
 }
 
 export type ScriptType = 'P2TR' | 'P2WPKH' | 'P2SH' | 'P2PKH';
@@ -36,6 +38,8 @@ export interface FeeEstimate {
   feeRate: number;
   vbytes: number;
   selectedUtxos: StoredUtxo[];
+  /** True when fee rates came from stale DB cache after a network issue. */
+  fromStaleFees?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -121,28 +125,44 @@ export async function fetchFeeRates(apiBase: string): Promise<FeeRates> {
 
   const cleanApi = apiBase.replace(/\/+$/, '');
   const url = `${cleanApi}/v1/fees/recommended`;
-  const res = await mempoolClient.get<{
+  let res: Awaited<ReturnType<typeof mempoolClient.get>> | undefined;
+  try {
+    res = await mempoolClient.get<{
+      fastestFee: number;
+      halfHourFee: number;
+      hourFee: number;
+      economyFee: number;
+      minimumFee: number;
+    }>(url);
+  } catch (err) {
+    if (cached) {
+      dbg('feeUtils.fetchFeeRates: API threw, returning stale cache');
+      return {...cached, fromStaleCache: true};
+    }
+    throw err;
+  }
+
+  if (!res.ok || !res.data) {
+    if (cached) {
+      dbg('feeUtils.fetchFeeRates: API failed, returning stale cache');
+      return {...cached, fromStaleCache: true};
+    }
+    throw new Error(`Fee rate fetch failed (${res.status})`);
+  }
+
+  const data = res.data as {
     fastestFee: number;
     halfHourFee: number;
     hourFee: number;
     economyFee: number;
     minimumFee: number;
-  }>(url);
-
-  if (!res.ok || !res.data) {
-    if (cached) {
-      dbg('feeUtils.fetchFeeRates: API failed, returning stale cache');
-      return cached;
-    }
-    throw new Error(`Fee rate fetch failed (${res.status})`);
-  }
-
+  };
   const rates: FeeRates = {
-    fastestFee: res.data.fastestFee,
-    halfHourFee: res.data.halfHourFee,
-    hourFee: res.data.hourFee,
-    economyFee: res.data.economyFee,
-    minimumFee: res.data.minimumFee,
+    fastestFee: data.fastestFee,
+    halfHourFee: data.halfHourFee,
+    hourFee: data.hourFee,
+    economyFee: data.economyFee,
+    minimumFee: data.minimumFee,
     fetchedAt: Date.now(),
   };
   writeFeeRates(rates);
@@ -316,5 +336,6 @@ export async function estimateFee(params: {
     feeRate,
     vbytes: vb,
     selectedUtxos: selected,
+    fromStaleFees: !!rates.fromStaleCache,
   };
 }

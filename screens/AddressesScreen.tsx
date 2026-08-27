@@ -11,6 +11,7 @@ import {
   Image,
   Platform,
 } from 'react-native';
+import Toast from 'react-native-toast-message';
 import {useFocusEffect} from '@react-navigation/native';
 import {useTheme, type ThemeColors} from '../theme';
 import {useUser} from '../context/UserContext';
@@ -493,6 +494,7 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const onHeaderRefresh = useCallback(async () => {
     if (!apiBase || refreshing) return;
     setRefreshing(true);
+    let refreshError: unknown = null;
     try {
       for (const {address} of visibleAddressesForSync) {
         syncRepository.invalidate('balance', `${address}_${network}`);
@@ -504,6 +506,7 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
         try {
           await balanceSyncer.syncAddresses([{address, network}], apiBase);
         } catch (e) {
+          refreshError = e;
           dbg('AddressesScreen: refresh balance', address.slice(0, 8), e);
         }
       }
@@ -511,10 +514,25 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
         try {
           await utxoSyncer.syncAddresses([entry], apiBase);
         } catch (e) {
+          refreshError = e;
           dbg('AddressesScreen: refresh utxo', entry.address.slice(0, 8), e);
         }
       }
       reloadFromDb();
+      if (refreshError) {
+        const err = refreshError as {name?: string; message?: string};
+        const isTimeout =
+          err?.name === 'AbortError' ||
+          /timeout|aborted/i.test(err?.message ?? '');
+        Toast.show({
+          type: 'info',
+          text1: isTimeout
+            ? 'Request timed out — cached data'
+            : 'Sync failed — showing cached data',
+          text2: 'Tap refresh to retry.',
+          position: 'top',
+        });
+      }
     } finally {
       setRefreshing(false);
     }

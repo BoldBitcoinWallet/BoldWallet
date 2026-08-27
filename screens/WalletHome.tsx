@@ -19,11 +19,11 @@ import Animated, {
   useAnimatedStyle,
 } from 'react-native-reanimated';
 import QRScanner from '../components/QRScanner';
+import {elapsedScanSecondsSince, withElapsedScanLabel} from '../utils/scanElapsed';
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
-import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
+import {useNavigation, useRoute, useIsFocused, RouteProp} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {AppState, DeviceEventEmitter, type EmitterSubscription} from 'react-native';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
 import TransactionList from '../components/TransactionList';
@@ -45,6 +45,7 @@ import {
   formatBitcoinDisplay,
   getCurrencySymbol,
   HapticFeedback,
+  areHapticsEnabled,
   getKeyshareDisplayLabel,
   getReceivePath,
   resolveUseLegacyDerivationPaths,
@@ -86,6 +87,7 @@ import {
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
+import {isBrantaEnabled} from '../services/BrantaService';
 
 import walletRepository from '../services/repositories/WalletRepository';
 import balanceRepository from '../services/repositories/BalanceRepository';
@@ -98,6 +100,24 @@ import syncCoordinator, {
 } from '../services/sync/SyncCoordinator';
 import apiQueue from '../services/ApiQueue';
 import mempoolClient from '../services/MempoolClient';
+import {runWalletRefreshSession} from '../services/sync/walletRefreshSession';
+import {
+  cacheIndicatorHealthHint,
+  getMempoolHealth,
+  subscribeMempoolHealth,
+} from '../services/mempoolHealth';
+import {
+  decideSendAfterBalanceRecheck,
+  isBalanceRecheckTimeout,
+  type BalanceRecheckResult,
+} from '../services/sendBalanceRecheck';
+import {
+  isWalletOnline,
+  notifyWalletOnlineToggle,
+  setWalletOnline,
+  useWalletOnline,
+} from '../services/walletOnlineStore';
+import WalletOfflineSandboxModal from '../components/WalletOfflineSandboxModal';
 import {
   parsePairingCodeFromScannedData,
   computeExtensionBindResponseQr,
@@ -188,8 +208,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
   /** When true, CacheIndicator shows "Tap to retry" until next successful sync. */
   const [lastSyncFailed, setLastSyncFailed] = useState(false);
+  const [healthHint, setHealthHint] = useState<string | null>(() =>
+    cacheIndicatorHealthHint(getMempoolHealth()?.quality),
+  );
+  const walletOnline = useWalletOnline();
   /** Set when user confirms abort — hide refreshing state immediately until sync actually stops. */
   const [abortRequested, setAbortRequested] = useState(false);
+  const [offlineSandboxModalVisible, setOfflineSandboxModalVisible] =
+    useState(false);
+  const pendingOnlineActionRef = useRef<(() => void) | null>(null);
   const [isCheckingBalanceForSend, setIsCheckingBalanceForSend] =
     useState(false);
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
@@ -224,6 +251,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const sendScanSessionIdRef = useRef(0);
   const sendContinuousScanSubRef = useRef<EmitterSubscription | null>(null);
   const [isAndroidSendScanning, setIsAndroidSendScanning] = useState(false);
+  const sendScanStartedAtRef = useRef(0);
   const [sendUrProgress, setSendUrProgress] = useState<{
     total: number;
     received: number;
@@ -311,6 +339,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, []);
   // Ref to prevent multiple concurrent fetchData calls
   const isFetchInProgressRef = useRef(false);
+  const [syncEngineReady, setSyncEngineReady] = useState(false);
+  const walletIdentityRef = useRef('');
   // Ref to guard against concurrent re-initializations and refresh during network switch
   const isReinitInProgressRef = useRef(false);
   // Stable ref for fetchData to avoid circular dependencies
@@ -321,6 +351,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   >(null);
   // Navigation hook for detecting screen changes
   const nav = useNavigation();
+  const homeFocused = useIsFocused();
+  const homeFocusedRef = useRef(homeFocused);
+  useEffect(() => {
+    homeFocusedRef.current = homeFocused;
+  }, [homeFocused]);
   // Use UserContext for unified user/network/address state
   const {
     activeNetwork,
@@ -410,6 +445,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       );
     });
     return unsub;
+  }, []);
+  useEffect(() => {
+    return subscribeMempoolHealth(state => {
+      setHealthHint(cacheIndicatorHealthHint(state.quality));
+    });
   }, []);
   // DB → UI: read balance and price from SQLite and update React state.
   // This is the single source of truth for what the UI displays.
@@ -520,6 +560,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Even if APIs fail, refreshFromDB still runs and shows whatever is in the DB.
   const fetchData = useCallback(
     async (activeOnly: boolean = true) => {
+      if (!isWalletOnline()) {
+        refreshFromDBRef.current();
+        setSyncEngineReady(true);
+        return;
+      }
       if (!isInitializedRef.current) {
         dbg('[BALANCE] fetchData: SKIPPED — not initialized');
         return;
@@ -544,44 +589,27 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setLoading(false);
         setIsRefreshing(false);
         setIsBalanceLoading(false);
+        setSyncEngineReady(true);
         return;
       }
 
-      // Ensure native module has correct API URL
       const cleanBaseApi = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
       const apiUrl = `${cleanBaseApi}/api`;
       await BBMTLibNativeModule.setAPI(network, apiUrl);
 
-      // Fresh network data before balance sync (Android log showed cache hits with stale confirmed).
-      mempoolClient.invalidate(`${cleanBaseApi}/api/address/`);
+      const effectiveAddressType =
+        addressType || userAddressType || 'segwit-native';
 
       try {
-        const effectiveAddressType =
-          addressType || userAddressType || 'segwit-native';
-        syncRepository.invalidate(
-          'balance',
-          `aggregate_${network}_${effectiveAddressType}`,
-        );
-        // API → DB: getWalletBalanceAggregate writes per-address + aggregate to SQLite
-        // activeOnly: true = lightweight (active set); false = full sync (long-press only).
-        await apiQueue.enqueue('Syncing balance…', setProgress =>
-          WalletService.getInstance().getWalletBalanceAggregate(
-            network,
-            effectiveAddressType,
-            btcRate,
-            _pendingSent,
-            true,
-            setProgress,
-            activeOnly,
-          ),
-        );
-        // UI: reflect balance and tx updates immediately while progress continues
-        refreshFromDBRef.current();
-        transactionListRef.current?.refresh?.();
-        // API → DB: getBitcoinPrice writes rates to price_rates table
-        await apiQueue.enqueue('Syncing fiat rate…', () =>
-          WalletService.getInstance().getBitcoinPrice(),
-        );
+        await runWalletRefreshSession({
+          network,
+          addressType: effectiveAddressType,
+          apiBase: baseApi,
+          btcRate,
+          pendingSent: _pendingSent,
+          activeOnly,
+          includeTx: true,
+        });
         setLastSyncFailed(false);
       } catch (error) {
         dbg('[BALANCE] fetchData: API sync error (will read from DB):', error);
@@ -601,10 +629,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         });
       }
 
-      // DB → UI: always read from DB regardless of API success
       refreshFromDBRef.current();
+      transactionListRef.current?.reloadFromCache?.();
 
-      // Sync walletAddresses with the current HD index state
       try {
         const addrType = addressType || userAddressType || 'segwit-native';
         const freshAddrs =
@@ -628,6 +655,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       setIsBalanceLoading(false);
       setIsRefreshing(false);
       isFetchInProgressRef.current = false;
+      setSyncEngineReady(true);
       dbg('=== Data fetch completed');
     },
     [network, btcRate, _pendingSent, addressType, userAddressType],
@@ -699,69 +727,70 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     fetchDataRef.current = fetchData;
   }, [fetchData]);
   // Function to check balance specifically for send button
-  const checkBalanceForSend = useCallback(async (): Promise<number> => {
-    try {
-      dbg('checkBalanceForSend: Starting balance check...');
-      const addr =
-        userActiveAddress ||
-        address ||
-        appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS);
-      const baseApi = resolveStoredMempoolApiBase(network);
-      if (!addr || !baseApi) {
-        dbg('checkBalanceForSend: Missing wallet address or baseApi');
-        return 0;
+  const checkBalanceForSend =
+    useCallback(async (): Promise<BalanceRecheckResult> => {
+      try {
+        dbg('checkBalanceForSend: Starting balance check...');
+        const addr =
+          userActiveAddress ||
+          address ||
+          appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS);
+        const baseApi = resolveStoredMempoolApiBase(network);
+        if (!addr || !baseApi) {
+          dbg('checkBalanceForSend: Missing wallet address or baseApi');
+          return {ok: false};
+        }
+        // Set up API URL
+        const cleanBaseApi = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+        const apiUrl = `${cleanBaseApi}/api`;
+        // Ensure native module has correct settings
+        await BBMTLibNativeModule.setAPI(network, apiUrl);
+        // Set up timeout (5 seconds)
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error('Balance check timed out'));
+          }, 5000);
+        });
+        // Fetch aggregate balance (all HD addresses)
+        const effectiveAddressType =
+          addressType || userAddressType || 'segwit-native';
+        const balancePromise =
+          WalletService.getInstance().getWalletBalanceAggregate(
+            network,
+            effectiveAddressType,
+            btcRate,
+            _pendingSent,
+            true,
+          );
+        const balanceResult = await Promise.race([
+          balancePromise,
+          timeoutPromise,
+        ]);
+        // API wrote to DB — refresh UI from DB
+        refreshFromDBRef.current();
+        if (
+          balanceResult &&
+          typeof balanceResult === 'object' &&
+          'btc' in balanceResult
+        ) {
+          const newBalance = parseFloat((balanceResult as any).btc || '0');
+          dbg('checkBalanceForSend: Balance fetched:', newBalance);
+          return {ok: true, btc: newBalance};
+        }
+        return {ok: false};
+      } catch (error: unknown) {
+        dbg('checkBalanceForSend: Error checking balance:', error);
+        return {ok: false};
       }
-      // Set up API URL
-      const cleanBaseApi = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-      const apiUrl = `${cleanBaseApi}/api`;
-      // Ensure native module has correct settings
-      await BBMTLibNativeModule.setAPI(network, apiUrl);
-      // Set up timeout (5 seconds)
-      const timeoutPromise = new Promise<number>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error('Balance check timed out'));
-        }, 5000);
-      });
-      // Fetch aggregate balance (all HD addresses)
-      const effectiveAddressType =
-        addressType || userAddressType || 'segwit-native';
-      const balancePromise =
-        WalletService.getInstance().getWalletBalanceAggregate(
-          network,
-          effectiveAddressType,
-          btcRate,
-          _pendingSent,
-          true,
-        );
-      const balanceResult = await Promise.race([
-        balancePromise,
-        timeoutPromise,
-      ]);
-      // API wrote to DB — refresh UI from DB
-      refreshFromDBRef.current();
-      if (
-        balanceResult &&
-        typeof balanceResult === 'object' &&
-        'btc' in balanceResult
-      ) {
-        const newBalance = parseFloat((balanceResult as any).btc || '0');
-        dbg('checkBalanceForSend: Balance fetched:', newBalance);
-        return newBalance;
-      }
-      return 0;
-    } catch (error: any) {
-      dbg('checkBalanceForSend: Error checking balance:', error);
-      return 0;
-    }
-  }, [
-    userActiveAddress,
-    address,
-    network,
-    btcRate,
-    _pendingSent,
-    addressType,
-    userAddressType,
-  ]);
+    }, [
+      userActiveAddress,
+      address,
+      network,
+      btcRate,
+      _pendingSent,
+      addressType,
+      userAddressType,
+    ]);
   // Comprehensive re-initialization function
   const reinitializeWallet = useCallback(
     async (forceReinit: boolean = false) => {
@@ -832,9 +861,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           ks.chain_code_hex,
           path,
         );
-        // Store btcPub for later use in address generation
-        await EncryptedStorage.setItem('btcPub', btcPub);
-        dbg('btcPub derived and stored during re-initialization');
+        dbg('btcPub derived during re-initialization');
         // Get current network from NetworkContext
         const net =
           network || appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
@@ -888,6 +915,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         });
         appConfigRepository.set(CONFIG_KEYS.CURRENT_ADDRESS, btcAddress);
         setAddress(btcAddress);
+        walletIdentityRef.current = `${actualNet}|${addrType}|${ks.pub_key}`;
         // Preload transactions from cache (wallet-level for HD, single-addr fallback)
         try {
           const cachedTxs =
@@ -958,15 +986,23 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       if (!network) {
         return;
       }
-      dbg('[WalletHome] === Navigation focus - reinitializing wallet', {
+      dbg('[WalletHome] === Navigation focus', {
         timestamp: Date.now(),
         network,
         apiBase: resolveStoredMempoolApiBase(network),
       });
+      const ks = await getKeyshareMetadata();
+      const type = addressType || userAddressType || 'segwit-native';
+      const identity = `${network}|${type}|${ks?.pub_key ?? ''}`;
+      if (walletIdentityRef.current === identity) {
+        fetchDataRef.current?.();
+        return;
+      }
+      walletIdentityRef.current = identity;
       await reinitializeWallet(true);
     });
     return unsubscribe;
-  }, [nav, network, apiBase, reinitializeWallet]);
+  }, [nav, network, apiBase, reinitializeWallet, addressType, userAddressType]);
   // Listen for app state changes — just refresh balance/price on resume.
   // Address derivation is unnecessary here (nothing changes while backgrounded).
   // SyncCoordinator has its own AppState listener for background sync.
@@ -987,6 +1023,26 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, [network, apiBase]);
   // No periodic check needed - NetworkContext is the single source of truth
   const cacheIndicatorRef = useRef<CacheIndicatorHandle>(null);
+  const runOrPromptOnline = useCallback((action: () => void) => {
+    if (isWalletOnline()) {
+      action();
+      return;
+    }
+    pendingOnlineActionRef.current = action;
+    setOfflineSandboxModalVisible(true);
+  }, []);
+  const dismissOfflineSandboxModal = useCallback(() => {
+    pendingOnlineActionRef.current = null;
+    setOfflineSandboxModalVisible(false);
+  }, []);
+  const goOnlineFromSandboxModal = useCallback(() => {
+    const pending = pendingOnlineActionRef.current;
+    pendingOnlineActionRef.current = null;
+    setOfflineSandboxModalVisible(false);
+    setWalletOnline(true);
+    notifyWalletOnlineToggle(true);
+    pending?.();
+  }, []);
   const {theme} = useTheme();
   const isDarkMode = theme.colors.background !== '#ffffff';
   const styles = {
@@ -1173,7 +1229,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('[BALANCE] init: pre-skeleton DB seed via refreshFromDB');
         refreshFromDBRef.current();
 
-        setLoading(true);
+        if (!hasCachedData) {
+          setLoading(true);
+        }
         await refreshUserContext();
         const hasBlob = await hasWalletKeyshareInSecureStorage();
         if (!hasBlob) {
@@ -1234,8 +1292,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           ks.chain_code_hex,
           path,
         );
-        await EncryptedStorage.setItem('btcPub', btcPub);
-        dbg('btcPub stored in EncryptedStorage for address generation');
+        dbg('btcPub derived for address generation');
         // Set default network if not set
         let net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
         if (!net) {
@@ -1317,21 +1374,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setLoading(false);
         isInitializedRef.current = true;
         setIsInitialized(true);
-        // Check if this is a legacy wallet and show migration modal if needed
-        // Modal shows by default unless user checked "do not remind" (flag = "yes")
+        walletIdentityRef.current = `${networkKey}|${addrType}|${ks.pub_key}`;
         if (useLegacyPath) {
           const doNotRemind = appConfigRepository.get(
             CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
           );
           if (doNotRemind !== 'yes') {
-            // Small delay to ensure UI is ready
             setTimeout(() => {
               setIsLegacyWalletModalVisible(true);
             }, 500);
           }
         }
-        // Force initial balance fetch
-        await fetchDataRef.current?.();
+        fetchDataRef.current?.();
         dbg('Wallet initialization completed successfully');
       } catch (error) {
         dbg('Error initializing wallet:', error);
@@ -1355,12 +1409,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     showWalletTab,
     refreshUserContext,
   ]);
-  // Start background sync once the full HD address set is known.
-  // SyncCoordinator writes deltas to SQLite; the UI reads from the DB.
-  // Wait for UserContext `apiBase` (same as main) so we do not start/stop the coordinator
-  // repeatedly during init; still pass `resolveStoredMempoolApiBase` into start() for correct per-network URL.
+  // Start background sync after the first user refresh session so Home
+  // owns the initial network pass. Same network/type updates config in place.
   useEffect(() => {
-    if (!walletAddressesReady || !apiBase || !network) {
+    if (!syncEngineReady || !walletAddressesReady || !apiBase || !network) {
+      return;
+    }
+    const hasAddrs = walletAddresses.length > 0 || !!address;
+    if (!hasAddrs) {
       return;
     }
     const resolvedApi = resolveStoredMempoolApiBase(network);
@@ -1371,7 +1427,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
     const cleanApi = resolvedApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const effectiveAddrType = addressType || userAddressType || 'segwit-native';
-    syncCoordinator.start({
+    const config = {
       addresses: addrs.map(a => ({address: a, network})),
       network,
       addressType: effectiveAddrType,
@@ -1381,6 +1437,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           '[WalletHome] SyncCoordinator cycle complete — refreshing UI from DB',
         );
         refreshFromDBRef.current();
+        setLastSyncFailed(false);
       },
       onAddressesChanged: (newAddrs: string[]) => {
         dbg(
@@ -1390,16 +1447,56 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         setWalletAddresses(newAddrs);
       },
       onSyncStatus: setSyncStatus,
-    });
+      onSyncFailed: (err: unknown) => {
+        if (!homeFocusedRef.current) {
+          return;
+        }
+        const isTimeout = isBalanceRecheckTimeout(err);
+        setSyncErrorMessage(
+          isTimeout
+            ? 'Request timed out — cached data'
+            : 'Sync failed — showing cached data',
+        );
+        setLastSyncFailed(true);
+      },
+    };
+    syncCoordinator.start(config);
     return () => {
       syncCoordinator.stop();
     };
   }, [
+    syncEngineReady,
     walletAddressesReady,
-    walletAddresses,
-    address,
     network,
     apiBase,
+    addressType,
+    userAddressType,
+    walletAddresses.length > 0 || !!address,
+  ]);
+  useEffect(() => {
+    if (!syncEngineReady || !walletAddressesReady || !network) {
+      return;
+    }
+    const addrs =
+      walletAddresses.length > 0 ? walletAddresses : address ? [address] : [];
+    if (addrs.length === 0) {
+      return;
+    }
+    const resolvedApi = resolveStoredMempoolApiBase(network);
+    const cleanApi = resolvedApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
+    const effectiveAddrType = addressType || userAddressType || 'segwit-native';
+    syncCoordinator.updateConfig({
+      addresses: addrs.map(a => ({address: a, network})),
+      network,
+      addressType: effectiveAddrType,
+      apiBase: `${cleanApi}/api`,
+    });
+  }, [
+    walletAddresses,
+    address,
+    syncEngineReady,
+    walletAddressesReady,
+    network,
     addressType,
     userAddressType,
   ]);
@@ -1726,12 +1823,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }
 
       // Check if this is a Branta-enhanced BIP-21 URI (contains branta_id and branta_secret params)
-      // Treat as normal BIP-21 URI PLUS trigger merchant lookup in parallel
+      // Treat as normal BIP-21 URI PLUS trigger merchant lookup in parallel when enabled
       let initialBrantaQr: string | undefined;
       try {
         const hasBrantaParams = trimmed.includes('branta_id') &&
                                trimmed.includes('branta_secret');
-        if (hasBrantaParams) {
+        if (hasBrantaParams && isBrantaEnabled()) {
           dbg('Detected Branta ZK params in BIP-21 URI, will lookup merchant info');
           initialBrantaQr = trimmed;
         }
@@ -1890,7 +1987,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       'BarcodeZxingScanContinuous',
       (event: {data?: string; error?: string}) => {
         if (event.error) {
-          dbg('WalletHome: Android send scan error', event.error);
+          // Send BIP-21 success closes the capture activity with RESULT_CANCELED.
+          // Ignore that here only. Airgap restore uses QRScanner, which still
+          // treats Back / cancel as onClose so the HUD can dismiss.
+          if (!String(event.error).toLowerCase().includes('cancel')) {
+            dbg('WalletHome: Android send scan error', event.error);
+          }
           stopSendQrScan();
           return;
         }
@@ -1924,6 +2026,10 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const currentSessionId = sendScanSessionIdRef.current;
     isSendScanningRef.current = true;
     setIsAndroidSendScanning(true);
+    sendScanStartedAtRef.current = Date.now();
+    if (BarcodeZxingScan.setScanHud) {
+      BarcodeZxingScan.setScanHud('Scan Send Bitcoin QR', !!areHapticsEnabled());
+    }
     BarcodeZxingScan.showQrReaderContinuous((scanError: unknown, data: unknown) => {
       if (scanError) {
         dbg('WalletHome: Failed to start Android send scanner', scanError);
@@ -1937,7 +2043,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         isSendScanningRef.current = true;
         setIsAndroidSendScanning(true);
         setTimeout(() => {
-          BarcodeZxingScan.updateProgressText('Scanning send QR…');
+          BarcodeZxingScan.updateProgressText(
+            withElapsedScanLabel(
+              'Scanning send QR…',
+              elapsedScanSecondsSince(sendScanStartedAtRef.current),
+            ),
+          );
         }, 100);
       }
     });
@@ -1967,10 +2078,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     if (Platform.OS === 'android' && isAndroidSendScanning && sendUrProgress) {
       BarcodeZxingScan.updateProgressText(
-        `Send QR scanning… ${formatUrFragmentProgress(sendUrProgress)}`,
+        withElapsedScanLabel(
+          `Send QR scanning… ${formatUrFragmentProgress(sendUrProgress)}`,
+          elapsedScanSecondsSince(sendScanStartedAtRef.current),
+        ),
       );
     } else if (Platform.OS === 'android' && isAndroidSendScanning && !sendUrProgress) {
-      BarcodeZxingScan.updateProgressText('Scanning send QR…');
+      BarcodeZxingScan.updateProgressText(
+        withElapsedScanLabel(
+          'Scanning send QR…',
+          elapsedScanSecondsSince(sendScanStartedAtRef.current),
+        ),
+      );
     }
   }, [sendUrProgress, isAndroidSendScanning]);
 
@@ -2275,26 +2394,63 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 isCheckingBalanceForSend && styles.sendButtonDisabled,
               ]}
               onPress={async () => {
-                // Check if balance is 0 or empty
                 const balance = parseFloat(balanceBTC || '0');
+                if (!isWalletOnline()) {
+                  if (balance > 0) {
+                    setIsSendModalVisible(true);
+                  } else {
+                    Alert.alert(
+                      'Insufficient Balance',
+                      "You don't have any satoshis to send.",
+                    );
+                  }
+                  return;
+                }
+                // Check if balance is 0 or empty
                 if (balance <= 0) {
                   // Balance might not be loaded yet, check it
                   setIsCheckingBalanceForSend(true);
                   try {
-                    const newBalance = await checkBalanceForSend();
-                    if (newBalance > 0) {
-                      // Balance found, open modal
+                    const recheck = await checkBalanceForSend();
+                    const decision = decideSendAfterBalanceRecheck(
+                      parseFloat(balanceBTC || '0'),
+                      recheck,
+                    );
+                    if (decision.kind === 'openSend') {
                       setIsSendModalVisible(true);
-                    } else {
-                      // Still zero, show alert
+                    } else if (decision.kind === 'insufficient') {
                       Alert.alert(
                         'Insufficient Balance',
                         "You don't have any satoshis to send.",
                       );
+                    } else {
+                      Toast.show({
+                        type: 'info',
+                        text1: "Couldn't refresh balance — showing cached data",
+                        text2: 'Tap the bar to retry.',
+                        position: 'top',
+                      });
+                      if (decision.openSend) {
+                        setIsSendModalVisible(true);
+                      } else {
+                        Alert.alert(
+                          'Could not confirm balance',
+                          "Couldn't refresh spendable balance. Tap the bar to retry.",
+                        );
+                      }
                     }
                   } catch (error) {
                     dbg('Error checking balance for send:', error);
-                    // On error, just re-enable button and let user retry
+                    Toast.show({
+                      type: 'info',
+                      text1: "Couldn't refresh balance — showing cached data",
+                      text2: 'Tap the bar to retry.',
+                      position: 'top',
+                    });
+                    Alert.alert(
+                      'Could not confirm balance',
+                      "Couldn't refresh spendable balance. Tap the bar to retry.",
+                    );
                   } finally {
                     setIsCheckingBalanceForSend(false);
                   }
@@ -2439,8 +2595,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         progress={syncStatus?.progress ?? apiQueueState?.progress}
         syncErrorMessage={syncErrorMessage}
         lastSyncFailed={lastSyncFailed}
+        healthHint={syncErrorMessage ? null : healthHint}
         onRefresh={() => {
-          fetchData();
+          runOrPromptOnline(() => {
+            fetchData();
+          });
         }}
         onAbortRequested={() => {
           Alert.alert(
@@ -2460,11 +2619,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           );
         }}
         onLongPress={() => {
-          Alert.alert(
-            'Full sync',
-            'Re-scan all addresses and sync balances and transactions. Existing data is kept. Continue?',
-            [
-              {text: 'Cancel', style: 'cancel'},
+          runOrPromptOnline(() => {
+            Alert.alert(
+              'Full sync',
+              'Re-scan all addresses and sync balances and transactions. Existing data is kept. Continue?',
+              [
+                {text: 'Cancel', style: 'cancel'},
               {
                 text: 'Continue',
                 onPress: async () => {
@@ -2499,24 +2659,26 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     dbg('[WalletHome] Long-press reconstruction error', e);
                   }
                   setSyncStatus(null);
-                  await fetchData(false); // full sync after long-press rebuild
-                  transactionListRef.current?.refresh?.(true); // full address list for tx sync
+                  await fetchData(false);
+                  transactionListRef.current?.reloadFromCache?.();
                 },
               },
             ],
           );
+          });
         }}
         theme={theme}
         isRefreshing={(isRefreshing || !!syncStatus) && !abortRequested}
         usingCache={
-          !isRefreshing &&
-          !syncStatus &&
-          !abortRequested &&
-          cacheTimestamps.price > 0 &&
-          cacheTimestamps.balance > 0 &&
-          Date.now() -
-            Math.max(cacheTimestamps.price, cacheTimestamps.balance) >
-            60000
+          !walletOnline ||
+          (!isRefreshing &&
+            !syncStatus &&
+            !abortRequested &&
+            cacheTimestamps.price > 0 &&
+            cacheTimestamps.balance > 0 &&
+            Date.now() -
+              Math.max(cacheTimestamps.price, cacheTimestamps.balance) >
+              60000)
         }
       />
       <View style={styles.transactionListContainer}>
@@ -2540,7 +2702,17 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           selectedCurrency={selectedCurrency}
           btcRate={btcRate}
           getCurrencySymbol={getCurrencySymbol}
-          onPullRefresh={() => fetchDataRef.current?.()}
+          deferInitialFetch
+          onPullRefresh={async () => {
+            if (!isWalletOnline()) {
+              pendingOnlineActionRef.current = () => {
+                void fetchDataRef.current?.();
+              };
+              setOfflineSandboxModalVisible(true);
+              return;
+            }
+            await fetchDataRef.current?.();
+          }}
           isBlurred={isBlurred}
         />
       </View>
@@ -2659,6 +2831,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         chain={restoreProgress?.chain}
         index={restoreProgress?.index}
         gapIndex={restoreProgress?.gapIndex}
+      />
+      <WalletOfflineSandboxModal
+        visible={offlineSandboxModalVisible}
+        onClose={dismissOfflineSandboxModal}
+        onKeepOffline={dismissOfflineSandboxModal}
+        onGoOnline={goOnlineFromSandboxModal}
       />
       {isReceiveModalVisible && (
         <ReceiveModal

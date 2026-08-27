@@ -1,5 +1,5 @@
 import {CommonActions} from '@react-navigation/native';
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
@@ -12,13 +12,19 @@ import {
   Image,
   Linking,
   Pressable,
+  ActivityIndicator,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import GlassModalOverlay from '../components/GlassModalOverlay';
 import DocumentPicker from 'react-native-document-picker';
-import EncryptedStorage from 'react-native-encrypted-storage';
 import {useTheme} from '../theme';
 import {dbg, hasWalletKeyshareInSecureStorage} from '../utils';
+import {
+  clearShowcaseImportPrefs,
+  removeLegacyEncryptedPrefKeys,
+} from '../services/encryptedPrefsMigration';
 import KeyshareImportPasswordModal from '../components/KeyshareImportPasswordModal';
+import QRScanner, {stopAndroidContinuousScan} from '../components/QRScanner';
 import {
   assertNoExistingWallet,
   importKeyshareFromBase64,
@@ -26,6 +32,7 @@ import {
   showKeyshareImportError,
   showWalletAlreadyLoadedAlert,
   WalletAlreadyLoadedError,
+  WrongKeysharePasswordError,
 } from '../services/keyshareImport';
 import LegalModal from '../components/LegalModal';
 import EntropyInfoCard from '../components/EntropyInfoCard';
@@ -42,10 +49,32 @@ import {WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
 import LocalCache from '../services/LocalCache';
 import {useUser} from '../context/UserContext';
+import {shouldIgnoreNonUrDuringSendScan} from '../utils/sendQrScan';
+import {
+  createUrDecoder,
+  decoderMatchesPartSeqLen,
+  formatUrRecoveredProgress,
+  receiveUrBytesPartAsBase64,
+  urSeqIndexFromPart,
+  type UrBytesProgress,
+} from '../utils/urBytesQr';
 const ShowcaseScreen = ({navigation}: any) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [fileContent, setFileContent] = useState('');
   const [isImporting, setIsImporting] = useState(false);
+  const [restoreMode, setRestoreMode] = useState<'file' | 'airgap' | null>(
+    null,
+  );
+  const [airgapCipherBase64, setAirgapCipherBase64] = useState('');
+  const [isAirgapScannerVisible, setIsAirgapScannerVisible] = useState(false);
+  const [airgapUrProgress, setAirgapUrProgress] =
+    useState<UrBytesProgress | null>(null);
+  const airgapUrDecoderRef = useRef<ReturnType<typeof createUrDecoder> | null>(
+    null,
+  );
+  const airgapImportingRef = useRef(false);
+  const airgapPasswordRef = useRef('');
+  const airgapLastLoggedReceivedRef = useRef(-1);
   const [walletAlreadyLoaded, setWalletAlreadyLoaded] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [agreeToPrivacy, setAgreeToPrivacy] = useState(false);
@@ -66,10 +95,9 @@ const ShowcaseScreen = ({navigation}: any) => {
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
   const connectorAnim = useRef(new Animated.Value(0)).current;
   const connectorLoopRef = useRef(null as Animated.CompositeAnimation | null);
-  // Full reset on mount: wipe all wallet DB tables, all in-memory caches, and
-  // all user-preference EncryptedStorage entries so the import starts from a
-  // guaranteed clean slate. The keyshare itself is preserved so a user who
-  // already onboarded can land here without losing their key material.
+  // Full reset on mount: wipe wallet DB tables, in-memory caches, and
+  // import-time prefs in `app_config`. The keyshare blob and keyshare meta stay
+  // so a user who already onboarded can land here without losing key material.
   useEffect(() => {
     const clearAllCache = async () => {
       try {
@@ -87,18 +115,10 @@ const ShowcaseScreen = ({navigation}: any) => {
         mempoolClient.invalidateAll();
         dbg('In-memory caches cleared');
 
-        // 3. Clear all EncryptedStorage preference items.  btcPub will be
-        //    re-derived from the newly imported keyshare; the rest are user
-        //    preferences that should reset to defaults for a fresh wallet.
-        await Promise.allSettled([
-          EncryptedStorage.removeItem('btcPub'),
-          EncryptedStorage.removeItem('bitcoin_display_sats'),
-          EncryptedStorage.removeItem('balance_formatting_enabled'),
-          EncryptedStorage.removeItem('app_icon_preference'),
-          EncryptedStorage.removeItem('devDebugEnabled'),
-          EncryptedStorage.removeItem('psbt_mode_first_visit'),
-        ]);
-        dbg('EncryptedStorage preferences cleared');
+        // Display / PIN / debug prefs. Launcher identity + keyshare meta stay.
+        clearShowcaseImportPrefs();
+        await removeLegacyEncryptedPrefKeys();
+        dbg('Import prefs cleared');
 
         await LocalCache.clear();
         dbg('Local file cache cleared');
@@ -174,6 +194,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         type: [DocumentPicker.types.allFiles],
       });
       const content = await readKeyshareBase64FromUri(`${res.uri}`);
+      setRestoreMode('file');
       setFileContent(content);
       setModalVisible(true);
     } catch (err: any) {
@@ -189,7 +210,73 @@ const ShowcaseScreen = ({navigation}: any) => {
       }
     }
   };
+  const resetAirgapRestore = useCallback(() => {
+    airgapPasswordRef.current = '';
+    setAirgapCipherBase64('');
+    setIsAirgapScannerVisible(false);
+    setAirgapUrProgress(null);
+    airgapUrDecoderRef.current = null;
+    airgapImportingRef.current = false;
+    airgapLastLoggedReceivedRef.current = -1;
+  }, []);
+  const handleRestoreViaAirgap = async () => {
+    try {
+      await assertNoExistingWallet();
+      setRestoreMode('airgap');
+      setAirgapCipherBase64('');
+      airgapPasswordRef.current = '';
+      setModalVisible(true);
+    } catch (err: any) {
+      if (err instanceof WalletAlreadyLoadedError) {
+        showWalletAlreadyLoadedAlert();
+        return;
+      }
+      dbg('Error starting airgap restore:', err?.message || err);
+    }
+  };
+  const importAirgapCipher = useCallback(
+    async (base64Content: string, password: string) => {
+      airgapImportingRef.current = true;
+      setIsImporting(true);
+      try {
+        await importKeyshareFromBase64(base64Content, password, {
+          setActiveNetwork,
+          navigate: action => navigation.dispatch(action),
+        });
+        setModalVisible(false);
+        setRestoreMode(null);
+        resetAirgapRestore();
+      } catch (error) {
+        airgapImportingRef.current = false;
+        if (error instanceof WrongKeysharePasswordError) {
+          Alert.alert('Wrong PIN', 'That PIN does not match this QR.');
+          setIsAirgapScannerVisible(false);
+          setModalVisible(true);
+        } else {
+          showKeyshareImportError(error);
+          setModalVisible(false);
+          setRestoreMode(null);
+          resetAirgapRestore();
+        }
+      } finally {
+        setIsImporting(false);
+      }
+    },
+    [navigation, resetAirgapRestore, setActiveNetwork],
+  );
   const handlePasswordSubmit = async (password: string) => {
+    if (restoreMode === 'airgap') {
+      airgapPasswordRef.current = password;
+      if (airgapCipherBase64) {
+        await importAirgapCipher(airgapCipherBase64, password);
+        return;
+      }
+      setModalVisible(false);
+      airgapUrDecoderRef.current = null;
+      setAirgapUrProgress(null);
+      setIsAirgapScannerVisible(true);
+      return;
+    }
     try {
       setIsImporting(true);
       await importKeyshareFromBase64(fileContent, password, {
@@ -198,6 +285,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       });
       setModalVisible(false);
       setFileContent('');
+      setRestoreMode(null);
     } catch (error) {
       showKeyshareImportError(error);
     } finally {
@@ -207,7 +295,96 @@ const ShowcaseScreen = ({navigation}: any) => {
   const handleCloseModal = () => {
     setModalVisible(false);
     setFileContent('');
+    if (restoreMode === 'airgap') {
+      resetAirgapRestore();
+    }
+    setRestoreMode(null);
   };
+  const handleAirgapScannerClose = () => {
+    setIsAirgapScannerVisible(false);
+    if (airgapImportingRef.current) {
+      return;
+    }
+    setAirgapUrProgress(null);
+    airgapUrDecoderRef.current = null;
+    if (airgapCipherBase64) {
+      setModalVisible(true);
+      return;
+    }
+    airgapPasswordRef.current = '';
+    setRestoreMode(null);
+  };
+  const handleAirgapScan = useCallback((qrData: string) => {
+    if (airgapImportingRef.current) {
+      return;
+    }
+    const trimmed = qrData.trim();
+    if (
+      shouldIgnoreNonUrDuringSendScan(
+        trimmed,
+        airgapUrDecoderRef.current !== null,
+      )
+    ) {
+      return;
+    }
+    if (!trimmed.toLowerCase().startsWith('ur:')) {
+      return;
+    }
+    if (
+      airgapUrDecoderRef.current &&
+      !decoderMatchesPartSeqLen(airgapUrDecoderRef.current, trimmed)
+    ) {
+      const parsed = urSeqIndexFromPart(trimmed);
+      dbg('airgap scan: seqLen mismatch, reset decoder', parsed);
+      airgapUrDecoderRef.current = createUrDecoder();
+      setAirgapUrProgress(null);
+      airgapLastLoggedReceivedRef.current = -1;
+    }
+    if (!airgapUrDecoderRef.current) {
+      airgapUrDecoderRef.current = createUrDecoder();
+    }
+    const parsed = urSeqIndexFromPart(trimmed);
+    const urResult = receiveUrBytesPartAsBase64(
+      airgapUrDecoderRef.current,
+      trimmed,
+    );
+    if (urResult.kind === 'error') {
+      dbg('airgap scan: decoder error', parsed, trimmed.substring(0, 48));
+      return;
+    }
+    if (urResult.kind === 'progress') {
+      const rec = urResult.progress.received;
+      if (rec !== airgapLastLoggedReceivedRef.current) {
+        airgapLastLoggedReceivedRef.current = rec;
+        dbg('airgap scan progress', {
+          ...urResult.progress,
+          seq: parsed?.seq,
+          seqLen: parsed?.seqLen,
+          mix: parsed != null && parsed.seq > parsed.seqLen,
+        });
+      }
+      setAirgapUrProgress(urResult.progress);
+      return;
+    }
+    if (urResult.kind === 'complete') {
+      dbg('airgap scan complete', {
+        ...urResult.progress,
+        seq: parsed?.seq,
+        seqLen: parsed?.seqLen,
+        payloadChars: urResult.payload.length,
+      });
+      airgapImportingRef.current = true;
+      airgapUrDecoderRef.current = null;
+      setAirgapUrProgress(urResult.progress);
+      setAirgapCipherBase64(urResult.payload);
+      // Stop ZXing and import on this event. setTimeout is frozen while
+      // MainActivity is paused behind the capture activity (same as elapsed 0s).
+      stopAndroidContinuousScan();
+      setIsAirgapScannerVisible(false);
+      setIsImporting(true);
+      void importAirgapCipher(urResult.payload, airgapPasswordRef.current);
+    }
+  }, [importAirgapCipher]);
   const styles = StyleSheet.create({
     container: {
       flex: 1,
@@ -423,7 +600,6 @@ const ShowcaseScreen = ({navigation}: any) => {
     // Enhanced Modal Styles
     modalOverlay: {
       flex: 1,
-      backgroundColor: 'rgba(0,0,0,0.75)',
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -876,6 +1052,28 @@ const ShowcaseScreen = ({navigation}: any) => {
       fontSize: theme.fontSizes?.sm || 12,
       color: theme.colors.text,
     },
+    importingOverlay: {
+      ...StyleSheet.absoluteFillObject,
+      backgroundColor: theme.colors.blackOverlay50 || 'rgba(0,0,0,0.5)',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 50,
+    },
+    importingCard: {
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 16,
+      paddingVertical: 28,
+      paddingHorizontal: 32,
+      alignItems: 'center',
+      minWidth: 220,
+    },
+    importingText: {
+      marginTop: 12,
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+      textAlign: 'center',
+    },
   });
   return (
     <View style={styles.container}>
@@ -1032,6 +1230,34 @@ const ShowcaseScreen = ({navigation}: any) => {
               </Text>
             </View>
           </AppPressable>
+          <AppPressable
+            style={[
+              styles.ctaButtonSecondary,
+              ((!agreeToTerms || !agreeToPrivacy) || walletAlreadyLoaded) &&
+                styles.disabledButton,
+            ]}
+            onPress={() => {
+              if (walletAlreadyLoaded) {
+                showWalletAlreadyLoadedAlert();
+                return;
+              }
+              handleRestoreViaAirgap();
+            }}
+            disabled={!agreeToTerms || !agreeToPrivacy || walletAlreadyLoaded}>
+            <View style={styles.ctaButtonIconContainer}>
+              <Image
+                source={require('../assets/qr-icon.png')}
+                style={[
+                  styles.ctaButtonIconLeft,
+                  {tintColor: theme.colors.text},
+                ]}
+                resizeMode="contain"
+              />
+              <Text style={styles.ctaButtonSecondaryText}>
+                Restore via Airgap QR
+              </Text>
+            </View>
+          </AppPressable>
         </View>
       </View>
       <KeyshareImportPasswordModal
@@ -1039,6 +1265,39 @@ const ShowcaseScreen = ({navigation}: any) => {
         onClose={handleCloseModal}
         onSubmit={handlePasswordSubmit}
         isSubmitting={isImporting}
+        title={
+          restoreMode === 'airgap' ? 'Restore via Airgap QR' : 'Restore Keyshare'
+        }
+        description={
+          restoreMode === 'airgap'
+            ? airgapCipherBase64
+              ? 'Enter the PIN from the other phone. Eyes on these two screens only.'
+              : 'Enter the 6-digit PIN from the other phone, then scan. Eyes on these two screens only.'
+            : undefined
+        }
+        submitLabel={
+          restoreMode === 'airgap' && !airgapCipherBase64 ? 'Continue' : 'Import'
+        }
+        inputMode={restoreMode === 'airgap' ? 'pin' : 'password'}
+      />
+      <QRScanner
+        visible={isAirgapScannerVisible}
+        onClose={handleAirgapScannerClose}
+        onScan={handleAirgapScan}
+        mode="continuous"
+        title="Scanning Animated QR..."
+        subtitle={
+          airgapUrProgress && airgapUrProgress.total > 1
+            ? airgapUrProgress.percentage >= 100
+              ? 'Processing keyshare…'
+              : `${formatUrRecoveredProgress(
+                  airgapUrProgress,
+                )} — fountain can finish before ${airgapUrProgress.total}`
+            : 'Point camera at the encrypted keyshare QR'
+        }
+        showProgress={!!airgapUrProgress && airgapUrProgress.total > 1}
+        progress={airgapUrProgress || undefined}
+        closeButtonText="Cancel"
       />
       {/* Legal Modal */}
       <LegalModal
@@ -1108,7 +1367,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         visible={isModeModalVisible}
         animationType="fade"
         onRequestClose={() => setIsModeModalVisible(false)}>
-        <View style={styles.modalOverlay}>
+        <GlassModalOverlay style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>
               <Image
@@ -1402,12 +1661,20 @@ const ShowcaseScreen = ({navigation}: any) => {
               </AppPressable>
             </View>
           </View>
-        </View>
+        </GlassModalOverlay>
       </Modal>
       <EntropyInfoCard
         visible={showEntropyCard}
         onClose={() => setShowEntropyCard(false)}
       />
+      {isImporting && restoreMode === 'airgap' && !isAirgapScannerVisible ? (
+        <View style={styles.importingOverlay} pointerEvents="auto">
+          <View style={styles.importingCard}>
+            <ActivityIndicator color={theme.colors.primary} />
+            <Text style={styles.importingText}>Importing keyshare…</Text>
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 };

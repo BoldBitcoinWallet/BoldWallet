@@ -166,6 +166,8 @@ object DklsNative {
 
     fun bbmtSha256Native(msg: String): String = loaded { bbmtSha256Jni(msg) }
 
+    fun bbmtSecureRandomNative(length: Int): String = loaded { bbmtSecureRandomJni(length) }
+
     fun bbmtFetchDataNative(url: String, decKey: String, payload: String): String =
         loaded { bbmtFetchDataJni(url, decKey, payload) }
 
@@ -321,6 +323,7 @@ object DklsNative {
     private external fun helloDkgJni(): String
     private external fun bbmtGenerateKeyPairJni(): String
     private external fun bbmtSha256Jni(msg: String): String
+    private external fun bbmtSecureRandomJni(length: Int): String
     private external fun bbmtFetchDataJni(url: String, decKey: String, payload: String): String
     private external fun bbmtPublishDataJni(
         port: String,

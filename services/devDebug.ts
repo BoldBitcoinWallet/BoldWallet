@@ -1,11 +1,12 @@
-import EncryptedStorage from 'react-native-encrypted-storage';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from './repositories/AppConfigRepository';
 
 /** True when Wallet Settings developer mode is enabled (7× build number tap). */
 export async function isDevDebugEnabled(): Promise<boolean> {
-  try {
-    const raw = await EncryptedStorage.getItem('devDebugEnabled');
-    return raw === 'true';
-  } catch {
-    return false;
-  }
+  return appConfigRepository.getBool(CONFIG_KEYS.DEV_DEBUG_ENABLED, false);
+}
+
+export function setDevDebugEnabledPref(enabled: boolean): void {
+  appConfigRepository.setBool(CONFIG_KEYS.DEV_DEBUG_ENABLED, enabled);
 }

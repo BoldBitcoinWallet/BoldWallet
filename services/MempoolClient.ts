@@ -8,19 +8,18 @@
  *      identical requests within the TTL window.  Failed responses are never
  *      cached, so a transient error never poisons the cache.
  *      Cache keys are host-independent: the same endpoint path served by
- *      different public hosts shares a single entry.
+ *      different hosts shares a single entry.
  *
  *   2. DEDUP — If two callers request the same URL while the first request is
  *      still in-flight, both await the same Promise.  Only one HTTP request
  *      is made.
  *
- *   3. FAILOVER — When the request URL's host is one of the known public mempool
- *      bases (set via setPublicBases, e.g. from getMainnetAPIList), a failed
- *      request is retried on other public hosts (round-robin). Applicable to all
- *      get() calls that target a public host. We failover on 5xx/429 always; when
- *      multiple URLs are in use we also failover on 4xx (e.g. 404 — some mirrors
- *      may not support an endpoint). When the user has set a custom API (not in
- *      that list) for privacy, failover is never used — only their single host is tried.
+ *   3. FAILOVER — When enabled provider bases are registered (setPublicBases from
+ *      the checkable provider list), mainnet requests are routed through those
+ *      hosts only (reliability order). A request URL pointing at a disabled or
+ *      unknown host is rewritten onto the enabled pool — disabled providers are
+ *      never contacted. We failover on 5xx/429 always; when multiple URLs are in
+ *      use we also failover on 4xx. Testnet and an empty pool leave the URL as-is.
  *
  * TTL defaults:
  *   - /address/…           15 s  (balance, UTXOs, transactions — default)
@@ -42,6 +41,12 @@ import {
   getMempoolDefaultTtlMs,
   getTransactionDbTtlMs,
 } from './HdOptionsConfig';
+import {rankedHosts, recordMempoolAttempt} from './mempoolHealth';
+import {isWalletOnline} from './walletOnlineStore';
+import {
+  MULTI_PROVIDER_SYNC_CONCURRENCY,
+  SINGLE_PROVIDER_SYNC_CONCURRENCY,
+} from './sync/rateLimitRetry';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -106,6 +111,31 @@ function stripHost(url: string): string {
 function extractHost(url: string): string {
   const m = url.match(/^(https?:\/\/[^/]+)/);
   return m ? m[1] : '';
+}
+
+function isAbortOrTimeout(err: unknown): boolean {
+  if (!err || typeof err !== 'object') {
+    return false;
+  }
+  const name = (err as {name?: string}).name ?? '';
+  const message = (err as {message?: string}).message ?? '';
+  return name === 'AbortError' || /timeout|aborted/i.test(message);
+}
+
+/** Observe-only: never changes cache, failover, or the value returned to callers. */
+function observeAttempt(
+  startedAt: number,
+  outcome: {ok: boolean; timeout?: boolean; status: number},
+  tryUrl: string,
+): void {
+  recordMempoolAttempt({
+    ok: outcome.ok,
+    timeout: outcome.timeout ?? false,
+    status: outcome.status,
+    durationMs: Date.now() - startedAt,
+    at: Date.now(),
+    host: extractHost(tryUrl) || undefined,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -197,13 +227,11 @@ class MempoolClient {
   private readonly _inflight = new Map<string, Promise<MempoolResponse<unknown>>>();
 
   /**
-   * Known public API hosts (protocol + hostname, no trailing /api).
-   * Requests targeting one of these hosts will failover to the others on error.
+   * Enabled provider hosts (protocol + hostname, no trailing /api).
+   * Requests targeting one of these hosts will failover to the others on error,
+   * ordered by recent reliability scores.
    */
-  private _publicHosts: string[] = [];
-
-  /** Round-robin index for distributing failover attempts. */
-  private _rrIndex = 0;
+  private _enabledHosts: string[] = [];
 
   /**
    * Session AbortController. All get() requests combine this with the caller
@@ -222,18 +250,17 @@ class MempoolClient {
   }
 
   // -------------------------------------------------------------------------
-  // Public host configuration (for round-robin failover)
+  // Enabled provider configuration (for ranked failover)
   // -------------------------------------------------------------------------
 
   /**
-   * Register the known public API base URLs (e.g. from getMainnetAPIList).
+   * Register enabled API base URLs (from the checkable provider list).
    * Accepts URLs with or without a trailing `/api` — the suffix is stripped
    * to produce bare host strings for matching against request URLs.
    *
    * When a request targeting one of these hosts fails, MempoolClient will
-   * transparently retry on the other public hosts before giving up.
-   * Custom (user-set) API bases that are NOT in this list are never
-   * failed-over — the single host is used as-is.
+   * transparently retry on the other enabled hosts (best reliability first)
+   * before giving up. A single enabled host never fails over off-host.
    */
   setPublicBases(bases: string[]): void {
     const hosts = [
@@ -243,11 +270,16 @@ class MempoolClient {
           .filter(Boolean),
       ),
     ];
-    this._publicHosts = hosts;
+    this._enabledHosts = hosts;
     dbg(
-      'MempoolClient: public hosts updated —',
-      hosts.length ? hosts : '(cleared — no round-robin failover)',
+      'MempoolClient: enabled hosts updated —',
+      hosts.length ? hosts : '(cleared — no multi-host failover)',
     );
+  }
+
+  /** Enabled provider host roots currently registered for failover. */
+  getEnabledHosts(): string[] {
+    return [...this._enabledHosts];
   }
 
   /**
@@ -263,26 +295,27 @@ class MempoolClient {
   }
 
   /**
-   * When the URL targets a known public host (mainnet), returns the full list
-   * of URLs to try in round-robin order — first attempt uses the next host in
-   * the RR cycle, then the rest. When not applicable (custom host, testnet,
-   * or single public host), returns null so the caller uses [url] only.
+   * Mainnet failover candidates: **only** registered enabled hosts.
+   * If the request URL points at a disabled / unknown host, rewrite onto the
+   * enabled pool so disabled providers are never contacted.
+   * Testnet and an empty pool leave the original URL unchanged.
    */
-  private _getUrlsToTryRoundRobin(url: string): string[] | null {
-    if (this._publicHosts.length <= 1) return null;
+  private _getUrlsToTry(url: string): string[] | null {
+    if (this._enabledHosts.length === 0) return null;
     if (url.includes('/testnet/')) return null;
 
     const host = extractHost(url);
-    if (!host || !this._publicHosts.includes(host)) return null;
+    const path = host ? url.slice(host.length) : url.startsWith('/') ? url : `/${url}`;
 
-    const path = url.slice(host.length);
-    const urls: string[] = [];
-    for (let i = 0; i < this._publicHosts.length; i++) {
-      const idx = (this._rrIndex + i) % this._publicHosts.length;
-      urls.push(this._publicHosts[idx] + path);
+    if (this._enabledHosts.length === 1) {
+      const only = this._enabledHosts[0];
+      // Already targeting the sole enabled host — no rewrite needed.
+      if (host === only) return null;
+      return [only + path];
     }
-    this._rrIndex = (this._rrIndex + 1) % this._publicHosts.length;
-    return urls;
+
+    const ordered = rankedHosts(this._enabledHosts);
+    return ordered.map(h => h + path);
   }
 
   // -------------------------------------------------------------------------
@@ -315,6 +348,13 @@ class MempoolClient {
       return {ok: true, status: 200, data: cached.data as T};
     }
 
+    // Sandbox: never fetch or failover. Fresh cache (above) is still served.
+    // Do not record health — offline is not a provider failure.
+    if (!isWalletOnline()) {
+      dbg('MempoolClient: offline — skip fetch', url.slice(-80));
+      return {ok: false, status: 0, data: null as T};
+    }
+
     // 2. Attach to an in-flight request if one exists ----------------------
     const existing = this._inflight.get(key);
     if (existing) {
@@ -322,7 +362,7 @@ class MempoolClient {
       return existing as Promise<MempoolResponse<T>>;
     }
 
-    // 3. Issue a new request (with failover for public hosts) --------------
+    // 3. Issue a new request (with failover among enabled hosts) ----------
     const ttl = init?.ttl ?? ttlForUrl(url);
 
     // Strip custom fields so they are not forwarded to fetch().
@@ -330,7 +370,7 @@ class MempoolClient {
     const {ttl: _ttl, timeoutMs: timeoutOverride, signal: callerSignal, ...restInit} = (init ?? {}) as RequestInit & {ttl?: number; timeoutMs?: number};
     const fetchTimeoutMs = timeoutOverride ?? getFetchTimeoutMs();
 
-    const urls = this._getUrlsToTryRoundRobin(url) ?? [url];
+    const urls = this._getUrlsToTry(url) ?? [url];
 
     const promise = (async (): Promise<MempoolResponse<unknown>> => {
       let lastResult: MempoolResponse<unknown> | null = null;
@@ -353,6 +393,7 @@ class MempoolClient {
             this._sessionController.signal,
           );
 
+          const startedAt = Date.now();
           try {
             const res = await fetch(tryUrl, {...restInit, signal});
             clearTimeout(timeoutId);
@@ -360,6 +401,7 @@ class MempoolClient {
             if (res.ok) {
               const data = (await res.json()) as unknown;
               this._cache.set(key, {data, expiresAt: Date.now() + ttl});
+              observeAttempt(startedAt, {ok: true, status: res.status}, tryUrl);
               dbg(
                 'MempoolClient: fetched and cached',
                 tryUrl.slice(-80),
@@ -370,6 +412,7 @@ class MempoolClient {
 
             // Non-2xx: do NOT cache — transient errors must not persist.
             dbg('MempoolClient: non-ok response', res.status, tryUrl.slice(-80));
+            observeAttempt(startedAt, {ok: false, status: res.status}, tryUrl);
             await res.text().catch(() => {}); // consume body before possible failover
             const out: MempoolResponse<unknown> = {
               ok: false,
@@ -386,7 +429,7 @@ class MempoolClient {
             }
             lastResult = out;
 
-            // Failover: on 5xx/429 always try next; when round-robin (multiple URLs), also try next on 4xx (e.g. 404 — some mirrors may not support the endpoint).
+            // Failover: on 5xx/429 always try next; when multi-host, also try next on 4xx.
             if (attempt < urls.length - 1) {
               const doFailover =
                 res.status >= 500 ||
@@ -401,6 +444,15 @@ class MempoolClient {
           } catch (err) {
             clearTimeout(timeoutId);
             lastError = err;
+            observeAttempt(
+              startedAt,
+              {
+                ok: false,
+                timeout: isAbortOrTimeout(err),
+                status: 0,
+              },
+              tryUrl,
+            );
             dbg('MempoolClient: fetch error', tryUrl.slice(-80), err);
 
             // Explicit caller or session (abortAll) abort — stop immediately.
@@ -511,6 +563,18 @@ class MempoolClient {
 
   get inflightCount(): number {
     return this._inflight.size;
+  }
+
+  /**
+   * Address-sync pool size: min(3, enabledCount) when 2+ providers are enabled,
+   * otherwise 1 (single host).
+   */
+  syncPoolConcurrency(_apiBase?: string | null): number {
+    const n = this._enabledHosts.length;
+    if (n <= 1) {
+      return SINGLE_PROVIDER_SYNC_CONCURRENCY;
+    }
+    return Math.min(MULTI_PROVIDER_SYNC_CONCURRENCY, n);
   }
 }
 

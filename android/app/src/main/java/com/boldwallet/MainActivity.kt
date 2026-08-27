@@ -19,6 +19,9 @@ class MainActivity : ReactActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(null)
         if (!isTaskRoot) {
+            // Copy the stream while this instance still holds URI grants,
+            // then hand the local file to the existing BoldWallet task.
+            handleIncomingIntent(intent)
             forwardIntentToExistingTask(intent)
             finish()
             return
@@ -41,8 +44,17 @@ class MainActivity : ReactActivity() {
         forwarded.addFlags(
             Intent.FLAG_ACTIVITY_NEW_TASK or
                 Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                Intent.FLAG_ACTIVITY_CLEAR_TOP or
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
         )
+        val localShare = KeyshareShareModule.getPendingUri(this)
+        if (localShare != null) {
+            forwarded.action = Intent.ACTION_VIEW
+            forwarded.setDataAndType(
+                Uri.parse(localShare),
+                source.type ?: "application/octet-stream",
+            )
+        }
         startActivity(forwarded)
     }
 

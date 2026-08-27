@@ -177,6 +177,8 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	defer RecoverAsError("JoinKeygen", &err, &result)
 
 	parties := strings.Split(partiesCSV, ",")
+	cancelCh := getOrCreateCancelCh(session)
+	defer cleanupCancelState(session)
 
 	if len(sessionKey) > 0 && (len(encKey) > 0 || len(decKey) > 0) {
 		return "", fmt.Errorf("either a session key, either enc/dec keys")
@@ -201,6 +203,10 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	status.Info = "start joinSession"
 	setStatus(session, status)
 
+	if sessionIsCancelled(session) {
+		return "", context.Canceled
+	}
+
 	if err := joinSession(server, session, key); err != nil {
 		return "", fmt.Errorf("fail to register session: %w", err)
 	}
@@ -209,6 +215,10 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	status.Step++
 	status.Info = "waiting parties"
 	setStatus(session, status)
+
+	if sessionIsCancelled(session) {
+		return "", context.Canceled
+	}
 
 	if err := awaitJoiners(parties, server, session); err != nil {
 		Logln("BBMTLog", "fail to wait all parties", "error", err)
@@ -239,6 +249,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	if err != nil {
 		return "", fmt.Errorf("fail to create tss server: %w", err)
 	}
+	tssServerImp.cancelCh = cancelCh
 	endCh := make(chan struct{})
 	wg := &sync.WaitGroup{}
 	wg.Add(1)
@@ -267,15 +278,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	status = getStatus(session)
 	status.Step++
 	status.Info = "keygen ok"
-	setStatus(session, status)
-
-	time.Sleep(time.Second)
-	if err = endSession(server, session); err != nil {
-		close(endCh)
-		Logln("BBMTLog", "Warning: endSession", "error", err)
-	}
-	status.Step++
-	status.Info = "session ended"
+	status.Done = false
 	setStatus(session, status)
 
 	err = flagPartyComplete(server, session, key)
@@ -283,7 +286,36 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 		Logln("BBMTLog", "Warning: flagPartyComplete", "error", err)
 	}
 	status.Step++
-	status.Info = "local party complete"
+	status.Info = "waiting for other devices"
+	setStatus(session, status)
+
+	waitCtx, waitCancel := context.WithCancel(context.Background())
+	go func() {
+		select {
+		case <-cancelCh:
+			waitCancel()
+		case <-waitCtx.Done():
+		}
+	}()
+	if waitErr := awaitPartyCompletions(waitCtx, parties, server, session); waitErr != nil {
+		waitCancel()
+		if sessionIsCancelled(session) || waitCtx.Err() != nil ||
+			strings.Contains(waitErr.Error(), "unreachable") {
+			close(endCh)
+			wg.Wait()
+			return "", fmt.Errorf("keygen aborted: %w", waitErr)
+		}
+		Logln("BBMTLog", "Warning: awaitPartyCompletions", "error", waitErr)
+	}
+	waitCancel()
+
+	// All parties flagged (or wait timed out). Safe to delete the session record.
+	time.Sleep(time.Second)
+	if err = endSession(server, session); err != nil {
+		Logln("BBMTLog", "Warning: endSession", "error", err)
+	}
+	status.Step++
+	status.Info = "session ended"
 	status.Done = true
 	setStatus(session, status)
 
@@ -691,6 +723,23 @@ func lanJoinAwaitTimeout(partyCount int) time.Duration {
 	return 30 * time.Second
 }
 
+func lanCompleteAwaitTimeout(partyCount int) time.Duration {
+	if s := os.Getenv("DKLS_TEST_AWAIT_SEC"); s != "" {
+		if sec, err := strconv.Atoi(s); err == nil && sec > 0 {
+			return time.Duration(sec) * time.Second
+		}
+	}
+	if s := os.Getenv("DKLS_TEST_DKG_SEC"); s != "" {
+		if sec, err := strconv.Atoi(s); err == nil && sec > 0 {
+			return time.Duration(sec) * time.Second
+		}
+	}
+	if partyCount >= 3 {
+		return 5 * time.Minute
+	}
+	return 3 * time.Minute
+}
+
 func partiesMissing(have, need []string) []string {
 	haveSet := make(map[string]struct{}, len(have))
 	for _, h := range have {
@@ -751,6 +800,104 @@ func awaitJoiners(parties []string, server, session string) error {
 			return fmt.Errorf(
 				"timeout waiting for all parties after %v (have %v, need %v)",
 				waitFor, keys, parties,
+			)
+		case <-poll.C:
+			if done, err := check(); err != nil || done {
+				return err
+			}
+		}
+	}
+}
+
+func fetchCompletedKeygenParties(server, session string) ([]string, error) {
+	client := &http.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(strings.TrimRight(server, "/") + "/complete/keygen/" + session)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("complete/keygen status %s", resp.Status)
+	}
+	buff, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var keys []string
+	if err := json.Unmarshal(buff, &keys); err != nil {
+		return nil, err
+	}
+	return keys, nil
+}
+
+func awaitPartyCompletions(ctx context.Context, parties []string, server, session string) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	need := make([]string, 0, len(parties))
+	for _, p := range parties {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			need = append(need, p)
+		}
+	}
+	if len(need) == 0 {
+		return nil
+	}
+	waitFor := lanCompleteAwaitTimeout(len(need))
+	timeout := time.NewTimer(waitFor)
+	defer timeout.Stop()
+	poll := time.NewTicker(time.Second)
+	defer poll.Stop()
+	lastLog := time.Time{}
+	consecutiveFetchFails := 0
+	check := func() (bool, error) {
+		keys, err := fetchCompletedKeygenParties(server, session)
+		if err != nil {
+			consecutiveFetchFails++
+			if consecutiveFetchFails >= 8 {
+				return false, fmt.Errorf("relay unreachable while waiting for party completions: %w", err)
+			}
+			if time.Since(lastLog) >= 10*time.Second {
+				lastLog = time.Now()
+				Logln("BBMTLog", "awaitPartyCompletions: poll failed", err)
+			}
+			return false, nil
+		}
+		consecutiveFetchFails = 0
+		missing := partiesMissing(keys, need)
+		if len(missing) == 0 {
+			Logln("BBMTLog", "awaitPartyCompletions: all parties complete", session, keys)
+			return true, nil
+		}
+		ReportKeygenProgress(
+			session, 99,
+			fmt.Sprintf("waiting for other devices (%s)", strings.Join(missing, ", ")),
+			false,
+		)
+		if time.Since(lastLog) >= 10*time.Second {
+			lastLog = time.Now()
+			Logln(
+				"BBMTLog", "awaitPartyCompletions: waiting",
+				"session=", session,
+				"have=", keys,
+				"need=", need,
+			)
+		}
+		return false, nil
+	}
+	if done, err := check(); err != nil || done {
+		return err
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("canceled waiting for party completions: %w", ctx.Err())
+		case <-timeout.C:
+			keys, _ := fetchCompletedKeygenParties(server, session)
+			return fmt.Errorf(
+				"timeout waiting for party completions after %v (have %v, need %v)",
+				waitFor, keys, need,
 			)
 		case <-poll.C:
 			if done, err := check(); err != nil || done {

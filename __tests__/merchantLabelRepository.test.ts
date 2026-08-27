@@ -60,18 +60,22 @@ jest.mock('../services/Database', () => ({
 
       if (
         query.includes('from merchant_labels') &&
-        query.includes('where address = ?') &&
-        !query.includes(' in (')
+        query.includes('lower(address) = ?')
       ) {
-        const row = mockStore.merchantLabels.get(params[0] as string);
+        const key = String(params[0]).toLowerCase();
+        const row = [...mockStore.merchantLabels.values()].find(
+          r => String(r.address).toLowerCase() === key,
+        );
         return {rows: row ? [row] : [], rowsAffected: 0};
       }
 
       if (query.includes('from merchant_labels') && query.includes(' in (')) {
-        const addresses = params as string[];
-        const rows = addresses
-          .map(addr => mockStore.merchantLabels.get(addr))
-          .filter(Boolean) as Record<string, unknown>[];
+        const keys = new Set(
+          (params as string[]).map(addr => String(addr).toLowerCase()),
+        );
+        const rows = [...mockStore.merchantLabels.values()].filter(r =>
+          keys.has(String(r.address).toLowerCase()),
+        );
         return {rows, rowsAffected: 0};
       }
 
@@ -96,6 +100,12 @@ jest.mock('../services/Database', () => ({
       ) {
         const [txid, network] = params as [string, string];
         const row = mockStore.verifiedTxs.get(`${txid}:${network}`);
+        if (query.includes('select address')) {
+          return {
+            rows: row ? [{address: row.address ?? null}] : [],
+            rowsAffected: 0,
+          };
+        }
         return {rows: row ? [{txid}] : [], rowsAffected: 0};
       }
 
@@ -389,6 +399,33 @@ describe('MerchantLabelRepository', () => {
     expect(merchantLabelRepository.isVerifiedTx(txidLocal, 'mainnet')).toBe(
       true,
     );
+  });
+
+  test('getByAddress matches mixed-case bech32', () => {
+    merchantLabelRepository.upsert({
+      address: 'BC1QTEST123',
+      platform: 'Cafe',
+      fetchedAt: Date.now(),
+    });
+    expect(merchantLabelRepository.getByAddress('bc1qtest123')?.platform).toBe(
+      'Cafe',
+    );
+  });
+
+  test('resolveForOutboundTx uses verified payment address, not change output', () => {
+    const txid = '9'.repeat(64);
+    merchantLabelRepository.upsert({
+      address: 'bc1qmerchant',
+      platform: 'Branta Shop',
+      fetchedAt: Date.now(),
+    });
+    merchantLabelRepository.markVerifiedTx(txid, 'mainnet', 'bc1qmerchant');
+    const label = merchantLabelRepository.resolveForOutboundTx(
+      txid,
+      'mainnet',
+      ['bc1qchange', 'bc1qmerchant'],
+    );
+    expect(label?.platform).toBe('Branta Shop');
   });
 });
 

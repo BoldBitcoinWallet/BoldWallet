@@ -15,6 +15,7 @@ import {
   Platform,
   Animated,
   Easing,
+  Image,
 } from 'react-native';
 import AppPressable from './AppPressable';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
@@ -29,7 +30,7 @@ import {
   formatBitcoinDisplay,
 } from '../utils';
 import {useUser} from '../context/UserContext';
-import {themes, useTheme as useAppTheme} from '../theme';
+import {themes, useTheme as useAppTheme, lightTheme} from '../theme';
 import AppText from './AppText';
 import {COMMON_FONT_CONFIGS} from '../theme/fonts';
 import TransactionListSkeleton from './TransactionListSkeleton';
@@ -37,6 +38,7 @@ import {WalletService} from '../services/WalletService';
 import TransactionDetailsModal from './TransactionDetailsModal';
 import transactionRepository from '../services/repositories/TransactionRepository';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
+import {isBrantaEnabled} from '../services/BrantaService';
 import apiQueue from '../services/ApiQueue';
 import transactionSyncer from '../services/sync/TransactionSyncer';
 import HistoricalPriceService, {
@@ -238,11 +240,14 @@ interface TransactionListProps {
   selectedCurrency?: string;
   btcRate?: number;
   getCurrencySymbol?: (currency: string) => string;
-  onPullRefresh?: () => void;
+  onPullRefresh?: () => void | Promise<void>;
   isBlurred?: boolean;
+  /** Home owns the initial network tx sync; list still paints from SQLite. */
+  deferInitialFetch?: boolean;
 }
 export interface TransactionListHandle {
   refresh: (useFullList?: boolean) => Promise<void> | void;
+  reloadFromCache: () => Promise<void>;
 }
 const TransactionList = React.forwardRef<
   TransactionListHandle,
@@ -262,6 +267,7 @@ const TransactionList = React.forwardRef<
       getCurrencySymbol = currency => currency,
       onPullRefresh,
       isBlurred = false,
+      deferInitialFetch = false,
     },
     ref,
   ) => {
@@ -299,6 +305,31 @@ const TransactionList = React.forwardRef<
         ourAddresses ? ourAddresses.has(addr) : addr === effectiveAddress,
       [ourAddresses, effectiveAddress],
     );
+    const reloadFromCache = useCallback(async () => {
+      try {
+        const cachedTransactions =
+          isMultiAddress && network && addressType
+            ? await WalletService.getInstance().transactionsFromCacheForWallet(
+                network,
+                addressType,
+              )
+            : await WalletService.getInstance().transactionsFromCache(
+                address || '',
+              );
+        if (isMounted.current) {
+          setTransactions(cachedTransactions);
+          setHasMoreTransactions(cachedTransactions.length > 0);
+          if (cachedTransactions.length > 0) {
+            setLastSeenTxId(
+              cachedTransactions[cachedTransactions.length - 1].txid,
+            );
+          }
+          setIsRefreshing(false);
+        }
+      } catch (e) {
+        dbg('TransactionList: reloadFromCache error', e);
+      }
+    }, [isMultiAddress, network, addressType, address]);
     const [addressPathMap, setAddressPathMap] = useState<Record<
       string,
       {derivationPath: string; chain: 'receive' | 'change'; index: number}
@@ -791,22 +822,17 @@ const TransactionList = React.forwardRef<
       }
       HapticFeedback.medium();
       setIsRefreshing(true);
-      // Invalidate before parent balance sync so mempool address stats are fresh.
-      if (baseApi) {
-        const cleanBase = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
-        mempoolClient.invalidate(`${cleanBase}/api/address/`);
-      }
-      onPullRefresh?.();
       try {
-        await memoizedFetchTransactions(baseApi);
+        await onPullRefresh?.();
+        await reloadFromCache();
       } catch {
-        // Error is already handled in memoizedFetchTransactions
+        // Parent/session already mapped errors to cached UI.
       } finally {
         if (isMounted.current) {
           setIsRefreshing(false);
         }
       }
-    }, [baseApi, memoizedFetchTransactions, onPullRefresh]);
+    }, [onPullRefresh, reloadFromCache]);
     // Expose imperative refresh method so parents (e.g., WalletHome) can trigger
     // the same behavior as a user pull-to-refresh gesture.
     useImperativeHandle(
@@ -818,8 +844,9 @@ const TransactionList = React.forwardRef<
           }
           handlePullRefresh();
         },
+        reloadFromCache,
       }),
-      [handlePullRefresh],
+      [handlePullRefresh, reloadFromCache],
     );
     // Cleanup on unmount
     useEffect(() => {
@@ -894,8 +921,8 @@ const TransactionList = React.forwardRef<
           }
         }
       };
-      // Initial fetch
-      if (!isFetching.current && !isRefreshingRef.current) {
+      // Initial fetch — Home defers this to runWalletRefreshSession.
+      if (!deferInitialFetch && !isFetching.current && !isRefreshingRef.current) {
         fetchData(true);
       }
       return () => {
@@ -917,6 +944,7 @@ const TransactionList = React.forwardRef<
       addressType,
       baseApi,
       memoizedFetchTransactions,
+      deferInitialFetch,
     ]);
     // Memoized transaction status checker
     const getTransactionStatus = useCallback(
@@ -1349,8 +1377,8 @@ const TransactionList = React.forwardRef<
       },
       merchantIconWrap: {
         position: 'relative',
-        width: 24,
-        height: 24,
+        width: 20,
+        height: 20,
         marginRight: 8,
         alignItems: 'center',
         justifyContent: 'center',
@@ -1358,23 +1386,32 @@ const TransactionList = React.forwardRef<
       merchantIcon: {
         width: 20,
         height: 20,
-        borderRadius: 10,
+        borderRadius: 4,
+      },
+      merchantFallbackIcon: {
+        width: 20,
+        height: 20,
+        tintColor: appTheme.colors.text,
       },
       merchantCheckBadge: {
         position: 'absolute',
-        bottom: -2,
-        right: -2,
-        backgroundColor: appTheme.colors.success,
-        width: 10,
-        height: 10,
-        borderRadius: 5,
+        bottom: -3,
+        right: -3,
+        backgroundColor: appTheme.colors.bitcoinOrange,
+        width: 12,
+        height: 12,
+        borderRadius: 6,
         alignItems: 'center',
         justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: appTheme.colors.cardBackground,
       },
       merchantCheckText: {
-        fontSize: 6,
+        fontSize: appTheme.fontSizes?.xs || 10,
         fontFamily: appTheme.fontFamilies?.bold,
         color: appTheme.colors.textOnPrimary,
+        lineHeight: appTheme.fontSizes?.xs || 10,
+        includeFontPadding: false,
       },
       rowChevron: {
         fontSize: appTheme.fontSizes?.lg || 16,
@@ -1384,6 +1421,7 @@ const TransactionList = React.forwardRef<
         lineHeight: appTheme.fontSizes?.lg || 16,
       },
     });
+    const brantaOn = isBrantaEnabled();
     // Memoized render item with currency support
     const renderItem = useCallback(
       ({item}: any) => {
@@ -1426,11 +1464,24 @@ const TransactionList = React.forwardRef<
           relevantAddresses = [];
         }
 
-        const merchantLabel = relevantAddress
-          ? merchantLabelRepository.getByAddress(relevantAddress)
+        const merchantLabel = brantaOn
+          ? merchantLabelRepository.resolveForOutboundTx(
+              item.txid,
+              network,
+              isSending
+                ? relevantAddresses.length > 0
+                  ? relevantAddresses
+                  : relevantAddress
+                  ? [relevantAddress]
+                  : []
+                : relevantAddress
+                ? [relevantAddress]
+                : [],
+            )
           : null;
-        const merchantName = merchantLabel?.platform;
-        const isLightMode = appTheme.colors.background === '#ffffff';
+        const merchantName = merchantLabel?.platform?.trim() || '';
+        const isLightMode =
+          appTheme.colors.background === lightTheme.colors.background;
         const merchantLogoUrl = merchantLabel
           ? isLightMode && merchantLabel.logoLightUrl
             ? merchantLabel.logoLightUrl
@@ -1438,6 +1489,7 @@ const TransactionList = React.forwardRef<
           : undefined;
         const merchantLogo = merchantLogoUrl ? {uri: merchantLogoUrl} : null;
         const brantaVerified =
+          brantaOn &&
           isSending &&
           !!network &&
           merchantLabelRepository.isVerifiedTx(item.txid, network);
@@ -1469,10 +1521,11 @@ const TransactionList = React.forwardRef<
               inSats: showSats,
               formatted: balanceFormattingEnabled,
             })}`;
+        const brantaTitle = merchantName || 'merchant';
         const finalStatus = brantaVerified
           ? confirmed
-            ? `Sent to ${merchantName}`
-            : `Paying ${merchantName}`
+            ? `Sent to ${brantaTitle}`
+            : `Paying ${brantaTitle}`
           : isConsolidation
           ? confirmed
             ? 'Consolidated'
@@ -1540,18 +1593,21 @@ const TransactionList = React.forwardRef<
               <View style={styles.statusContainer}>
                 {brantaVerified ? (
                   <View style={styles.merchantIconWrap}>
-                    <Animated.Image
-                      source={merchantLogo || outIcon}
-                      style={styles.merchantIcon}
-                      resizeMode="cover"
-                    />
+                    {merchantLogo ? (
+                      <Image
+                        source={merchantLogo}
+                        style={styles.merchantIcon}
+                        resizeMode="contain"
+                      />
+                    ) : (
+                      <AnimatedStatusIcon
+                        source={outIcon}
+                        style={styles.merchantFallbackIcon}
+                        animationType={confirmed ? 'none' : 'send'}
+                      />
+                    )}
                     <View style={styles.merchantCheckBadge}>
-                      <AppText
-                        variant="caption"
-                        tone="onPrimary"
-                        style={styles.merchantCheckText}>
-                        ✓
-                      </AppText>
+                      <AppText style={styles.merchantCheckText}>✓</AppText>
                     </View>
                   </View>
                 ) : (
@@ -1657,6 +1713,7 @@ const TransactionList = React.forwardRef<
       [
         getTransactionStatus,
         getTransactionAmounts,
+        brantaOn,
         address,
         addresses,
         isMultiAddress,
@@ -1665,6 +1722,7 @@ const TransactionList = React.forwardRef<
         network,
         appTheme.colors.background,
         appTheme.colors.bitcoinOrange,
+        appTheme.fontFamilies?.medium,
         styles.transactionRow,
         styles.statusContainer,
         styles.statusIcon,
@@ -1682,6 +1740,7 @@ const TransactionList = React.forwardRef<
         styles.rowChevron,
         styles.merchantIconWrap,
         styles.merchantIcon,
+        styles.merchantFallbackIcon,
         styles.merchantCheckBadge,
         styles.merchantCheckText,
         styles.transactionItem,

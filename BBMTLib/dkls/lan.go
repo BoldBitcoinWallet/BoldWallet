@@ -196,7 +196,12 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 	if decoded, decErr := hex.DecodeString(session); decErr == nil && len(decoded) > 0 {
 		sidBytes = decoded
 	}
-	share, _, err := runDKGWithSender(context.Background(), session, selfID, sidBytes, threshold, runner, roundCh)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	RegisterCancel(session, cancel)
+	defer UnregisterCancel(session)
+
+	share, _, err := runDKGWithSender(ctx, session, selfID, sidBytes, threshold, runner, roundCh)
 	close(endCh)
 	wg.Wait()
 	if err != nil {
@@ -208,10 +213,17 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 	if err != nil {
 		return "", err
 	}
-	tss.ReportKeygenProgress(session, 99, "keygen ok", true)
-	// Do not call LANEndSession here — the first party to finish would delete the relay
-	// session while the peer is still in DKG (breaks duo LAN setup on device).
+	// Keep done=false until peers have also finished DKG so the coordinator
+	// relay is not torn down by JS while joiners still need HTTP.
+	tss.ReportKeygenProgress(session, 99, "waiting for other devices", false)
 	_ = tss.LANFlagPartyComplete(server, session, key)
+	if waitErr := tss.LANAwaitPartyCompletions(ctx, parties, server, session); waitErr != nil {
+		if ctx.Err() != nil || strings.Contains(waitErr.Error(), "unreachable") {
+			return "", fmt.Errorf("keygen aborted: %w", waitErr)
+		}
+		dklsLogf("LAN DKG: session=%s await completions: %v", dkgSessionLogPrefix(session), waitErr)
+	}
+	tss.ReportKeygenProgress(session, 99, "keygen ok", true)
 	return ksJSON, nil
 }
 
@@ -230,6 +242,29 @@ func mpcNeedsMorePeerMessages(err error) bool {
 
 func dkgNeedsMorePeerMessages(err error) bool {
 	return mpcNeedsMorePeerMessages(err)
+}
+
+func dkgMoreMatch(phase2 bool) payloadMatch {
+	if phase2 {
+		return payloadIsScalarPhase
+	}
+	return nil
+}
+
+func logInvalidScalarFragments(session string, stepNo int, batch []libtss.Message, err error) {
+	if err == nil || !strings.Contains(err.Error(), "invalid scalar fragment") {
+		return
+	}
+	for _, m := range batch {
+		dklsLogErrorf(
+			"DKG: session=%s step=%d invalid scalar from=%d to=%d len=%d",
+			dkgSessionLogPrefix(session),
+			stepNo,
+			m.From,
+			m.To,
+			len(m.Data),
+		)
+	}
 }
 
 func peerSenderCount(batch []libtss.Message, selfID libtss.Identifier) int {
@@ -297,64 +332,6 @@ func recvPeerMessageBatch(
 	return dedupeDKGBatchBySender(batch, selfID), nil
 }
 
-// recvMorePeerMessages waits for at least one additional inbound message (any sender).
-// Used after session.Next reports missing fragments; recvPeerMessageBatch would wrongly
-// require N distinct senders again and stall when the next fragment is from an existing peer.
-func recvMorePeerMessages(
-	roundCh <-chan []libtss.Message,
-	selfID libtss.Identifier,
-	deadline time.Time,
-	peerQuiesce time.Duration,
-) ([]libtss.Message, error) {
-	var batch []libtss.Message
-	add := func(part []libtss.Message) {
-		if len(part) > 0 {
-			batch = mergeDKGPeerMessages(batch, part, selfID)
-		}
-	}
-	for len(filterMessagesFor(selfID, batch)) == 0 {
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("DKLs timed out waiting for peer messages")
-		}
-		select {
-		case part := <-roundCh:
-			add(part)
-			for {
-				select {
-				case more := <-roundCh:
-					add(more)
-				default:
-					goto quiesce
-				}
-			}
-		quiesce:
-			if len(filterMessagesFor(selfID, batch)) > 0 {
-				break
-			}
-			select {
-			case more := <-roundCh:
-				add(more)
-			case <-time.After(peerQuiesce):
-			}
-		case <-time.After(200 * time.Millisecond):
-		}
-	}
-	select {
-	case part := <-roundCh:
-		add(part)
-		for {
-			select {
-			case more := <-roundCh:
-				add(more)
-			default:
-				return dedupeDKGBatchBySender(batch, selfID), nil
-			}
-		}
-	case <-time.After(peerQuiesce):
-	}
-	return dedupeDKGBatchBySender(batch, selfID), nil
-}
-
 func mergeDKGPeerMessages(batch []libtss.Message, incoming []libtss.Message, selfID libtss.Identifier) []libtss.Message {
 	batch = append(batch, filterMessagesFor(selfID, incoming)...)
 	return batch
@@ -410,7 +387,7 @@ func mpcIsDuplicateFragment(err error) bool {
 func dedupeDKGBatchBySender(batch []libtss.Message, _ libtss.Identifier) []libtss.Message {
 	// Drop exact relay retries (same from/to/payload). Do not collapse distinct
 	// fragments from the same sender (e.g. broadcast + direct); that stalls
-	// runDKGWithSender when recvMorePeerMessages merges follow-up fragments.
+	// runDKGWithSender when recvMorePayload merges follow-up fragments.
 	seen := make(map[string]struct{}, len(batch))
 	out := make([]libtss.Message, 0, len(batch))
 	for _, msg := range batch {
@@ -539,8 +516,13 @@ func runDKGWithSender(
 	}
 	missingFragmentRetries := 0
 	consumed := newMPCConsumedTracker()
+	inbox := newPayloadInbox()
+	phase2 := true
 	recvBatch := func() ([]libtss.Message, error) {
-		return recvPeerMessageBatch(ctx, roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
+		if phase2 {
+			return recvPeerPayloadRoundMatching(ctx, roundCh, inbox, selfID, needPeerMsgs, deadline, payloadIsScalarPhase)
+		}
+		return recvPeerPayloadRound(ctx, roundCh, inbox, selfID, needPeerMsgs, deadline)
 	}
 	for {
 		if ctx.Err() != nil {
@@ -603,7 +585,12 @@ func runDKGWithSender(
 					dkgSessionLogPrefix(progressSession),
 					stepNo,
 				)
-				batch = nil
+				batch = consumed.filterNew(batch, selfID)
+				more, recvErr := recvMorePayload(ctx, roundCh, inbox, selfID, deadline, peerQuiesce, senderSet(batch, selfID), dkgMoreMatch(phase2))
+				if recvErr != nil {
+					return nil, libtss.PublicKeyPackage{}, recvErr
+				}
+				batch = consumed.filterNew(mergeDKGPeerMessages(batch, more, selfID), selfID)
 				continue
 			}
 			if err != nil && dkgNeedsMorePeerMessages(err) {
@@ -618,7 +605,7 @@ func runDKGWithSender(
 					missingFragmentRetries,
 					maxMissingFragmentRetries,
 				)
-				more, recvErr := recvMorePeerMessages(roundCh, selfID, deadline, peerQuiesce)
+				more, recvErr := recvMorePayload(ctx, roundCh, inbox, selfID, deadline, peerQuiesce, senderSet(batch, selfID), dkgMoreMatch(phase2))
 				if recvErr != nil {
 					return nil, libtss.PublicKeyPackage{}, recvErr
 				}
@@ -635,23 +622,22 @@ func runDKGWithSender(
 				}
 				continue
 			}
+			if err != nil {
+				logInvalidScalarFragments(progressSession, stepNo, batch, err)
+				return nil, libtss.PublicKeyPackage{}, err
+			}
 			consumed.markConsumed(batch)
 			missingFragmentRetries = 0
+			phase2 = false
 			break
 		}
 		if step.Complete {
-			if err != nil {
-				return nil, libtss.PublicKeyPackage{}, err
-			}
 			dklsLogf(
 				"DKG: session=%s complete after step=%d",
 				dkgSessionLogPrefix(progressSession),
 				stepNo,
 			)
 			return step.KeyShare, step.PublicKeyPackage, nil
-		}
-		if err != nil {
-			return nil, libtss.PublicKeyPackage{}, err
 		}
 		tss.ReportKeygenProgress(progressSession, stepNo, "keygen round", false)
 		dklsLogf(
@@ -727,7 +713,12 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		return nil
 	}, endCh, &wg)
 
-	sig, err := runSignWithSender(context.Background(), share, hash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	RegisterCancel(session, cancel)
+	defer UnregisterCancel(session)
+
+	sig, err := runSignWithSender(ctx, share, hash, []byte(session), signSess.SelfID, signSess.SigningIDs, runner, roundCh, session)
 	close(endCh)
 	wg.Wait()
 	if err != nil {
@@ -781,8 +772,9 @@ func runSignWithSender(
 	peerQuiesce := 400 * time.Millisecond
 	missingFragmentRetries := 0
 	consumed := newMPCConsumedTracker()
+	inbox := newPayloadInbox()
 	recvBatch := func() ([]libtss.Message, error) {
-		return recvPeerMessageBatch(ctx, roundCh, selfID, needPeerMsgs, deadline, peerQuiesce)
+		return recvPeerPayloadRound(ctx, roundCh, inbox, selfID, needPeerMsgs, deadline)
 	}
 
 	stepNo := 3
@@ -849,7 +841,12 @@ func runSignWithSender(
 					dkgSessionLogPrefix(progressSession),
 					stepNo,
 				)
-				batch = nil
+				batch = consumed.filterNew(batch, selfID)
+				more, recvErr := recvMorePayload(ctx, roundCh, inbox, selfID, deadline, peerQuiesce, senderSet(batch, selfID), nil)
+				if recvErr != nil {
+					return libtss.Signature{}, recvErr
+				}
+				batch = consumed.filterNew(mergeDKGPeerMessages(batch, more, selfID), selfID)
 				continue
 			}
 			if err != nil && mpcNeedsMorePeerMessages(err) {
@@ -864,7 +861,7 @@ func runSignWithSender(
 					missingFragmentRetries,
 					maxMissingFragmentRetries,
 				)
-				more, recvErr := recvMorePeerMessages(roundCh, selfID, deadline, peerQuiesce)
+				more, recvErr := recvMorePayload(ctx, roundCh, inbox, selfID, deadline, peerQuiesce, senderSet(batch, selfID), nil)
 				if recvErr != nil {
 					return libtss.Signature{}, recvErr
 				}
@@ -881,14 +878,14 @@ func runSignWithSender(
 				}
 				continue
 			}
+			if err != nil {
+				return libtss.Signature{}, wrapNonceReuseError(err)
+			}
 			consumed.markConsumed(batch)
 			missingFragmentRetries = 0
 			break
 		}
 		if step.Complete {
-			if err != nil {
-				return libtss.Signature{}, err
-			}
 			dklsLogf(
 				"keysign: session=%s complete after step=%d",
 				dkgSessionLogPrefix(progressSession),
@@ -896,9 +893,6 @@ func runSignWithSender(
 			)
 			step.Signature.Protocol = libtss.ProtocolDKLs23
 			return step.Signature, nil
-		}
-		if err != nil {
-			return libtss.Signature{}, wrapNonceReuseError(err)
 		}
 		if progressSession != "" {
 			tss.ReportKeysignProgress(progressSession, stepNo, "DKLs keysign round", false)

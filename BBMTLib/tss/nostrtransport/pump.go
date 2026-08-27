@@ -28,6 +28,7 @@ type MessagePump struct {
 	processedMu   sync.Mutex
 	seenWrapIDs   map[string]struct{}
 	seenWrapIDsMu sync.Mutex
+	onAbort       func(reason string)
 }
 
 func NewMessagePump(cfg Config, client *Client) (result *MessagePump) {
@@ -48,6 +49,48 @@ func NewMessagePump(cfg Config, client *Client) (result *MessagePump) {
 		processed:   make(map[string]bool),
 		seenWrapIDs: make(map[string]struct{}),
 	}
+}
+
+// SetOnAbort registers a callback when a peer publishes phase=abort.
+func (p *MessagePump) SetOnAbort(fn func(reason string)) {
+	if p == nil {
+		return
+	}
+	p.onAbort = fn
+}
+
+// handleCoordinatorPhase returns true if the rumor is a session coordinator
+// phase (ready/complete/abort) and should not be passed to TSS. Abort invokes
+// onAbort so remaining parties fail fast instead of waiting out MaxTimeout.
+func (p *MessagePump) handleCoordinatorPhase(chunkMessage map[string]interface{}) bool {
+	if p == nil || chunkMessage == nil {
+		return false
+	}
+	phase, ok := chunkMessage["phase"].(string)
+	if !ok {
+		return false
+	}
+	if strings.EqualFold(phase, "abort") {
+		fmt.Fprintf(os.Stderr, "BBMTLog: MessagePump received abort phase for session %s\n", p.cfg.SessionID)
+		reason, _ := chunkMessage["content"].(string)
+		if p.onAbort != nil {
+			p.onAbort(reason)
+		}
+	}
+	return true
+}
+
+// WrapPeerAbort returns a stable peer-abort error that JS can distinguish from
+// a local user cancel (context canceled).
+func WrapPeerAbort(reason string, cause error) error {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		if cause != nil {
+			return fmt.Errorf("peer aborted the session: %w", cause)
+		}
+		return fmt.Errorf("peer aborted the session")
+	}
+	return fmt.Errorf("peer aborted the session: %s", reason)
 }
 
 func (p *MessagePump) Run(ctx context.Context, handler func([]byte) error) error {
@@ -212,9 +255,8 @@ func (p *MessagePump) runInternal(ctx context.Context, handler func([]byte) erro
 			return nil
 		}
 
-		// Check if this is a ready/complete message (handled by SessionCoordinator, not MessagePump)
-		if _, ok := chunkMessage["phase"].(string); ok {
-			// This is a ready/complete message, skip it (handled by SessionCoordinator)
+		// Check if this is a ready/complete/abort message (handled by SessionCoordinator, not TSS).
+		if p.handleCoordinatorPhase(chunkMessage) {
 			return nil
 		}
 

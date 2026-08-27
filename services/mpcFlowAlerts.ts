@@ -9,6 +9,19 @@ export type MpcFlowAlertGate = {
   flowActive?: boolean;
 };
 
+function mpcErrorMessage(err: unknown): string {
+  if (
+    err &&
+    typeof err === 'object' &&
+    err !== null &&
+    'message' in err &&
+    typeof (err as {message?: unknown}).message === 'string'
+  ) {
+    return (err as {message: string}).message;
+  }
+  return typeof err === 'string' ? err : '';
+}
+
 /** True when a late async error should still surface as an alert. */
 export function shouldShowMpcFlowAlert(gate: MpcFlowAlertGate): boolean {
   if (gate.aborted) {
@@ -36,16 +49,7 @@ export function showMpcFlowAlert(
 
 /** Native/Go errors after user abort often include these markers. */
 export function isMpcAbortedOrCanceledError(err: unknown): boolean {
-  const msg =
-    err &&
-    typeof err === 'object' &&
-    err !== null &&
-    'message' in err &&
-    typeof (err as {message?: unknown}).message === 'string'
-      ? (err as {message: string}).message
-      : typeof err === 'string'
-        ? err
-        : '';
+  const msg = mpcErrorMessage(err);
   if (
     /timeout waiting for all parties|timeout joining the session|await joiners/i.test(
       msg,
@@ -54,4 +58,29 @@ export function isMpcAbortedOrCanceledError(err: unknown): boolean {
     return false;
   }
   return /aborted|canceled|cancelled|context canceled/i.test(msg);
+}
+
+/** Peer published phase=abort (not this user tapping Abort). */
+export function isPeerAbortedSessionError(err: unknown): boolean {
+  return /peer aborted the session/i.test(mpcErrorMessage(err));
+}
+
+export function peerAbortUserMessage(
+  err: unknown,
+  kind: 'keygen' | 'sign' = 'keygen',
+): string {
+  const msg = mpcErrorMessage(err);
+  const reason = msg.replace(/^.*peer aborted the session:?\s*/i, '').trim();
+  const head =
+    kind === 'keygen'
+      ? 'Another device stopped key generation'
+      : 'Another device stopped signing';
+  if (
+    reason &&
+    !/^context canceled$/i.test(reason) &&
+    !/operation canceled: context canceled/i.test(reason)
+  ) {
+    return `${head}.\n\n${reason}`;
+  }
+  return `${head}.`;
 }

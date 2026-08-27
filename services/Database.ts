@@ -4,7 +4,7 @@
  * Replaces the file-based LocalCache (react-native-fs) with a single
  * WAL-mode SQLite database as the authoritative local store.
  *
- * EncryptedStorage (keyshare, btcPub, etc.) is NOT touched here.
+ * EncryptedStorage (`keyshare` only) is NOT touched here.
  */
 import {open, type DB, type Scalar} from '@op-engineering/op-sqlite';
 import {dbg} from '../utils';
@@ -211,6 +211,15 @@ const SCHEMA_STATEMENTS = [
     created_at INTEGER NOT NULL,
     PRIMARY KEY (txid, network)
   )`,
+
+  // ── UTXO tags (user labels; keyed by outpoint so UTXO resync cannot wipe them) ─
+  `CREATE TABLE IF NOT EXISTS utxo_tags (
+    txid       TEXT NOT NULL,
+    vout       INTEGER NOT NULL,
+    tag        TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (txid, vout)
+  )`,
 ];
 
 // ---------------------------------------------------------------------------
@@ -347,6 +356,7 @@ class DatabaseService {
         'sync_metadata',
         'merchant_labels',
         'branta_verified_txs',
+        'utxo_tags',
       ]) {
         tx.execute(`DELETE FROM ${table}`);
       }

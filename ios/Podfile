@@ -39,6 +39,7 @@ target 'BoldWallet' do
   pod 'VisionCamera', :path => '../node_modules/react-native-vision-camera'
   pod 'RNCClipboard', :path => '../node_modules/@react-native-clipboard/clipboard'
   pod 'RNScreens', :path => '../node_modules/react-native-screens'
+  pod 'ReactNativeBlur', :path => '../node_modules/@sbaiahmed1/react-native-blur'
   
   target 'BoldWalletTests' do
     inherit! :complete

@@ -1415,6 +1415,13 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 
 	// Create session coordinator
 	coordinator := nostrtransport.NewSessionCoordinator(cfg, client)
+	defer func() {
+		if err != nil && !strings.Contains(err.Error(), "peer aborted") {
+			abortCtx, abortCancel := context.WithTimeout(context.Background(), 8*time.Second)
+			_ = coordinator.PublishAbort(abortCtx, err.Error())
+			abortCancel()
+		}
+	}()
 
 	Logln("BBMTLog", "publishing readiness...")
 	status = getStatus(sessionID)
@@ -1481,6 +1488,18 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 	Logln("BBMTLog", "starting message pump...")
 	// Create message pump
 	pump := nostrtransport.NewMessagePump(cfg, client)
+	var peerAbort struct {
+		sync.Mutex
+		reason string
+		set    bool
+	}
+	pump.SetOnAbort(func(reason string) {
+		peerAbort.Lock()
+		peerAbort.reason = reason
+		peerAbort.set = true
+		peerAbort.Unlock()
+		cancel()
+	})
 	pumpCtx, pumpCancel := context.WithTimeout(ctx, cfg.MaxTimeout)
 	defer pumpCancel()
 
@@ -1538,6 +1557,12 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 	})
 	if err != nil {
 		pumpCancel()
+		peerAbort.Lock()
+		set, reason := peerAbort.set, peerAbort.reason
+		peerAbort.Unlock()
+		if set {
+			return "", nostrtransport.WrapPeerAbort(reason, err)
+		}
 		return "", fmt.Errorf("keygen failed: %w", err)
 	}
 
@@ -1701,6 +1726,18 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 
 	// Create message pump
 	pump := nostrtransport.NewMessagePump(cfg, client)
+	var peerAbort struct {
+		sync.Mutex
+		reason string
+		set    bool
+	}
+	pump.SetOnAbort(func(reason string) {
+		peerAbort.Lock()
+		peerAbort.reason = reason
+		peerAbort.set = true
+		peerAbort.Unlock()
+		cancel()
+	})
 	pumpCtx, pumpCancel := context.WithTimeout(ctx, cfg.MaxTimeout)
 	defer pumpCancel()
 
@@ -1814,10 +1851,22 @@ func runNostrKeysignInternal(cfg nostrtransport.Config, keyshare *LocalStateNost
 	case <-ctx.Done():
 		pumpCancel()
 		pumpWg.Wait()
+		peerAbort.Lock()
+		set, reason := peerAbort.set, peerAbort.reason
+		peerAbort.Unlock()
+		if set {
+			return "", nostrtransport.WrapPeerAbort(reason, ctx.Err())
+		}
 		return "", NostrMpcContextErr("keysign", ctx.Err())
 	case err := <-keysignErrCh:
 		pumpCancel()
 		pumpWg.Wait()
+		peerAbort.Lock()
+		set, reason := peerAbort.set, peerAbort.reason
+		peerAbort.Unlock()
+		if set {
+			return "", nostrtransport.WrapPeerAbort(reason, err)
+		}
 		return "", fmt.Errorf("keysign failed: %w", err)
 	case keysignResp = <-keysignRespCh:
 		// Keysign completed successfully
@@ -1960,6 +2009,18 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 
 	// Create message pump
 	pump := nostrtransport.NewMessagePump(cfg, client)
+	var peerAbort struct {
+		sync.Mutex
+		reason string
+		set    bool
+	}
+	pump.SetOnAbort(func(reason string) {
+		peerAbort.Lock()
+		peerAbort.reason = reason
+		peerAbort.set = true
+		peerAbort.Unlock()
+		cancel()
+	})
 	pumpCtx, pumpCancel := context.WithTimeout(ctx, cfg.MaxTimeout)
 	defer pumpCancel()
 
@@ -2071,10 +2132,22 @@ func runNostrKeysignInternalWithSighash(cfg nostrtransport.Config, keyshare *Loc
 	case <-ctx.Done():
 		pumpCancel()
 		pumpWg.Wait()
+		peerAbort.Lock()
+		set, reason := peerAbort.set, peerAbort.reason
+		peerAbort.Unlock()
+		if set {
+			return "", nostrtransport.WrapPeerAbort(reason, ctx.Err())
+		}
 		return "", NostrMpcContextErr("keysign", ctx.Err())
 	case err := <-keysignErrCh:
 		pumpCancel()
 		pumpWg.Wait()
+		peerAbort.Lock()
+		set, reason := peerAbort.set, peerAbort.reason
+		peerAbort.Unlock()
+		if set {
+			return "", nostrtransport.WrapPeerAbort(reason, err)
+		}
 		return "", fmt.Errorf("keysign failed: %w", err)
 	case keysignResp = <-keysignRespCh:
 		// Keysign completed successfully

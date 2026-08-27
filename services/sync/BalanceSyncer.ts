@@ -3,13 +3,13 @@
  *
  * ATOMIC: All addresses must succeed; otherwise nothing is written (no partial data).
  * On 429: retry with backoff (see rateLimitRetry); then throw if still failing.
- * Sync schedule: on app foreground + every 30 s.
- * Sequential per address to avoid mempool.space rate limits.
+ * Sync schedule: on app foreground + every 2 min (SyncCoordinator).
+ * Bounded parallel fetches (min(3, enabled providers) when 2+; else 1); atomic write.
  */
 import mempoolClient from '../MempoolClient';
 import balanceRepository from '../repositories/BalanceRepository';
 import syncRepository from '../repositories/SyncRepository';
-import {INTER_ADDRESS_DELAY_MS, sleep, with429Retry} from './rateLimitRetry';
+import {INTER_ADDRESS_DELAY_MS, mapPool, sleep, with429Retry} from './rateLimitRetry';
 import {dbg} from '../../utils';
 import type {AddressBalance} from '../repositories/BalanceRepository';
 
@@ -47,65 +47,69 @@ class BalanceSyncer {
     if (!addresses.length) return;
     const cleanApi = apiBase.replace(/\/+$/, '');
     const total = addresses.length;
-
-    const results: AddressBalance[] = [];
+    const concurrency = mempoolClient.syncPoolConcurrency(cleanApi);
     let skipped = 0;
+    let fetchedCount = 0;
 
-    for (let i = 0; i < addresses.length; i++) {
-      onProgress?.(i + 1, total);
-      const {address, network} = addresses[i];
+    const perAddress = await mapPool(
+      addresses,
+      concurrency,
+      async entry => {
+        const {address, network} = entry;
+        const entityKey = `${address}_${network}`;
+        if (syncRepository.isFresh('balance', entityKey, BALANCE_DB_TTL_MS)) {
+          skipped++;
+          return null;
+        }
 
-      // DB-level TTL: skip addresses whose data was synced recently.
-      const entityKey = `${address}_${network}`;
-      if (syncRepository.isFresh('balance', entityKey, BALANCE_DB_TTL_MS)) {
-        skipped++;
-        continue;
-      }
+        if (concurrency === 1 && fetchedCount > 0) {
+          await sleep(INTER_ADDRESS_DELAY_MS);
+        }
+        fetchedCount++;
+        try {
+          const url = `${cleanApi}/address/${encodeURIComponent(address)}`;
+          const res = await with429Retry<MempoolAddressResponse>(
+            'BalanceSyncer',
+            () => mempoolClient.get<MempoolAddressResponse>(url),
+          );
+          if (!res.ok || !res.data) {
+            throw new BalanceSyncError(
+              `Balance fetch failed for address (${res.status ?? 'error'})`,
+              address,
+            );
+          }
 
-      if (results.length > 0) {
-        await sleep(INTER_ADDRESS_DELAY_MS);
-      }
-      try {
-        const url = `${cleanApi}/address/${encodeURIComponent(address)}`;
-        const res = await with429Retry<MempoolAddressResponse>(
-          'BalanceSyncer',
-          () => mempoolClient.get<MempoolAddressResponse>(url),
-        );
-        if (!res.ok || !res.data) {
+          const {chain_stats, mempool_stats} = res.data;
+          const confirmedSats =
+            (chain_stats.funded_txo_sum ?? 0) -
+            (chain_stats.spent_txo_sum ?? 0);
+          const pendingSats =
+            (mempool_stats.funded_txo_sum ?? 0) -
+            (mempool_stats.spent_txo_sum ?? 0);
+          const balanceSats = Math.max(0, confirmedSats);
+          const now = Date.now();
+          dbg('BalanceSyncer: fetched', address.slice(0, 10), balanceSats, 'sats');
+          return {
+            address,
+            network,
+            balanceSats,
+            pendingSats,
+            hasNonzero: balanceSats > 0 || pendingSats > 0,
+            fetchedAt: now,
+          } as AddressBalance;
+        } catch (err) {
+          if (err instanceof BalanceSyncError) throw err;
+          dbg('BalanceSyncer: error for', address.slice(0, 10), err);
           throw new BalanceSyncError(
-            `Balance fetch failed for address (${res.status ?? 'error'})`,
+            err instanceof Error ? err.message : 'Balance fetch failed',
             address,
           );
         }
+      },
+      (completed, poolTotal) => onProgress?.(completed, poolTotal),
+    );
 
-        const {chain_stats, mempool_stats} = res.data;
-        const confirmedSats =
-          (chain_stats.funded_txo_sum ?? 0) -
-          (chain_stats.spent_txo_sum ?? 0);
-        const pendingSats =
-          (mempool_stats.funded_txo_sum ?? 0) -
-          (mempool_stats.spent_txo_sum ?? 0);
-        const balanceSats = Math.max(0, confirmedSats);
-        const now = Date.now();
-
-        results.push({
-          address,
-          network,
-          balanceSats,
-          pendingSats,
-          hasNonzero: balanceSats > 0 || pendingSats > 0,
-          fetchedAt: now,
-        });
-        dbg('BalanceSyncer: fetched', address.slice(0, 10), balanceSats, 'sats');
-      } catch (err) {
-        if (err instanceof BalanceSyncError) throw err;
-        dbg('BalanceSyncer: error for', address.slice(0, 10), err);
-        throw new BalanceSyncError(
-          err instanceof Error ? err.message : 'Balance fetch failed',
-          address,
-        );
-      }
-    }
+    const results = perAddress.filter((row): row is AddressBalance => row != null);
 
     if (!results.length) {
       if (skipped > 0) dbg('BalanceSyncer: all', skipped, 'addresses fresh — skipped');

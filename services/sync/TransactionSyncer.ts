@@ -17,7 +17,7 @@ import mempoolClient from '../MempoolClient';
 import transactionRepository from '../repositories/TransactionRepository';
 import syncRepository from '../repositories/SyncRepository';
 import {getTransactionDbTtlMs} from '../HdOptionsConfig';
-import {INTER_ADDRESS_DELAY_MS, sleep, with429Retry} from './rateLimitRetry';
+import {INTER_ADDRESS_DELAY_MS, mapPool, sleep, with429Retry} from './rateLimitRetry';
 import {dbg} from '../../utils';
 import type {TxRecord, TxAddressMapping} from '../repositories/TransactionRepository';
 type AddressLink = TxAddressMapping;
@@ -82,58 +82,90 @@ class TransactionSyncer {
       return;
     }
     const cleanApi = apiBase.replace(/\/+$/, '');
-    const total = addresses.length;
-    const knownTxids = transactionRepository.getKnownTxids(
+    const concurrency = mempoolClient.syncPoolConcurrency(cleanApi);
+    const knownAtStart = transactionRepository.getKnownTxids(
       addresses[0]?.network ?? 'mainnet',
     );
-    const allBatches: Array<{tx: TxRecord; addresses: TxAddressMapping[]}> = [];
-    const missingLinks: AddressLink[] = [];
-    const cursors: Array<{entityKey: string; cursor: string | null}> = [];
+    let fetchedCount = 0;
 
-    for (let addrIndex = 0; addrIndex < addresses.length; addrIndex++) {
-      onProgress?.(addrIndex + 1, total);
-      if (addrIndex > 0) {
-        await sleep(INTER_ADDRESS_DELAY_MS);
-      }
-      const {address, network} = addresses[addrIndex];
-      const entityKey = `${address}_${network}`;
-      const savedCursor = syncRepository.getCursor('transactions', entityKey);
-      let cursor: string | null = null; // Phase 1: always start fresh from top
-      let forwardDone = false;
-      let pages = 0;
+    const perAddress = await mapPool(
+      addresses,
+      concurrency,
+      async ({address, network}) => {
+        if (concurrency === 1 && fetchedCount > 0) {
+          await sleep(INTER_ADDRESS_DELAY_MS);
+        }
+        fetchedCount++;
+        const knownTxids = new Set(knownAtStart);
+        const entityKey = `${address}_${network}`;
+        const savedCursor = syncRepository.getCursor('transactions', entityKey);
+        let cursor: string | null = null;
+        let forwardDone = false;
+        let pages = 0;
+        const batches: Array<{tx: TxRecord; addresses: TxAddressMapping[]}> = [];
+        const links: AddressLink[] = [];
 
-      try {
-        while (pages < MAX_PAGES_PER_ADDRESS) {
-          const url = cursor
-            ? `${cleanApi}/address/${encodeURIComponent(address)}/txs/chain/${cursor}`
-            : `${cleanApi}/address/${encodeURIComponent(address)}/txs`;
+        try {
+          while (pages < MAX_PAGES_PER_ADDRESS) {
+            const url = cursor
+              ? `${cleanApi}/address/${encodeURIComponent(address)}/txs/chain/${cursor}`
+              : `${cleanApi}/address/${encodeURIComponent(address)}/txs`;
 
-          const res = await with429Retry<ApiTx[]>(
-            'TransactionSyncer',
-            () => mempoolClient.get<ApiTx[]>(url),
-          );
-          if (!res.ok || !Array.isArray(res.data)) {
-            throw new TxSyncError(
-              `Transaction fetch failed (${res.status ?? 'error'})`,
-              address,
+            const res = await with429Retry<ApiTx[]>(
+              'TransactionSyncer',
+              () => mempoolClient.get<ApiTx[]>(url),
             );
-          }
-
-          const page = res.data as ApiTx[];
-          if (!page.length) {
-            if (!forwardDone && savedCursor) {
-              forwardDone = true;
-              cursor = savedCursor;
-              continue;
+            if (!res.ok || !Array.isArray(res.data)) {
+              throw new TxSyncError(
+                `Transaction fetch failed (${res.status ?? 'error'})`,
+                address,
+              );
             }
-            break;
-          }
 
-          let hasNew = false;
-          for (const apiTx of page) {
-            if (!apiTx.txid) continue;
-            if (knownTxids.has(apiTx.txid)) {
-              // Full upsert so broadcast-inserted pending tx gets updated with API payload when confirmed
+            const page = res.data as ApiTx[];
+            if (!page.length) {
+              if (!forwardDone && savedCursor) {
+                forwardDone = true;
+                cursor = savedCursor;
+                continue;
+              }
+              break;
+            }
+
+            let hasNew = false;
+            for (const apiTx of page) {
+              if (!apiTx.txid) continue;
+              if (knownTxids.has(apiTx.txid)) {
+                const netSats = this._computeNetSats(apiTx, address);
+                const txRecord: TxRecord = {
+                  txid: apiTx.txid,
+                  network,
+                  blockHeight: apiTx.status?.block_height ?? null,
+                  blockHash: apiTx.status?.block_hash ?? null,
+                  blockTime: apiTx.status?.block_time ?? null,
+                  isConfirmed: apiTx.status?.confirmed ?? false,
+                  feeSats: apiTx.fee ?? null,
+                  size: apiTx.size ?? null,
+                  weight: apiTx.weight ?? null,
+                  version: apiTx.version ?? null,
+                  locktime: apiTx.locktime ?? null,
+                  rawJson: JSON.stringify(apiTx),
+                  fetchedAt: Date.now(),
+                };
+                batches.push({
+                  tx: txRecord,
+                  addresses: [{txid: apiTx.txid, network, address, netSats}],
+                });
+                links.push({
+                  txid: apiTx.txid,
+                  network,
+                  address,
+                  netSats,
+                });
+                continue;
+              }
+              hasNew = true;
+              knownTxids.add(apiTx.txid);
               const netSats = this._computeNetSats(apiTx, address);
               const txRecord: TxRecord = {
                 txid: apiTx.txid,
@@ -150,66 +182,45 @@ class TransactionSyncer {
                 rawJson: JSON.stringify(apiTx),
                 fetchedAt: Date.now(),
               };
-              allBatches.push({
+              batches.push({
                 tx: txRecord,
                 addresses: [{txid: apiTx.txid, network, address, netSats}],
               });
-              missingLinks.push({
-                txid: apiTx.txid,
-                network,
-                address,
-                netSats,
-              });
-              continue;
             }
-            hasNew = true;
-            knownTxids.add(apiTx.txid);
-            const netSats = this._computeNetSats(apiTx, address);
-            const txRecord: TxRecord = {
-              txid: apiTx.txid,
-              network,
-              blockHeight: apiTx.status?.block_height ?? null,
-              blockHash: apiTx.status?.block_hash ?? null,
-              blockTime: apiTx.status?.block_time ?? null,
-              isConfirmed: apiTx.status?.confirmed ?? false,
-              feeSats: apiTx.fee ?? null,
-              size: apiTx.size ?? null,
-              weight: apiTx.weight ?? null,
-              version: apiTx.version ?? null,
-              locktime: apiTx.locktime ?? null,
-              rawJson: JSON.stringify(apiTx),
-              fetchedAt: Date.now(),
-            };
-            allBatches.push({
-              tx: txRecord,
-              addresses: [{txid: apiTx.txid, network, address, netSats}],
-            });
+
+            const lastConfirmed = [...page]
+              .reverse()
+              .find(tx => tx.status?.confirmed);
+            if (lastConfirmed) cursor = lastConfirmed.txid;
+            pages++;
+            if (!hasNew || page.length < PAGE_SIZE) {
+              if (!forwardDone && savedCursor) {
+                forwardDone = true;
+                cursor = savedCursor;
+                continue;
+              }
+              break;
+            }
           }
 
-          const lastConfirmed = [...page]
-            .reverse()
-            .find(tx => tx.status?.confirmed);
-          if (lastConfirmed) cursor = lastConfirmed.txid;
-          pages++;
-          if (!hasNew || page.length < PAGE_SIZE) {
-            if (!forwardDone && savedCursor) {
-              forwardDone = true;
-              cursor = savedCursor;
-              continue;
-            }
-            break;
-          }
+          return {batches, links, entityKey, cursor};
+        } catch (err) {
+          dbg('TransactionSyncer: error for', address.slice(0, 10), err);
+          throw new TxSyncError(
+            err instanceof Error ? err.message : 'Transaction fetch failed',
+            address,
+          );
         }
+      },
+      (completed, poolTotal) => onProgress?.(completed, poolTotal),
+    );
 
-        cursors.push({entityKey, cursor});
-      } catch (err) {
-        dbg('TransactionSyncer: error for', address.slice(0, 10), err);
-        throw new TxSyncError(
-          err instanceof Error ? err.message : 'Transaction fetch failed',
-          address,
-        );
-      }
-    }
+    const allBatches = perAddress.flatMap(row => row.batches);
+    const missingLinks = perAddress.flatMap(row => row.links);
+    const cursors = perAddress.map(row => ({
+      entityKey: row.entityKey,
+      cursor: row.cursor,
+    }));
 
     // All succeeded — write all batches then update cursors
     for (const batch of allBatches) {

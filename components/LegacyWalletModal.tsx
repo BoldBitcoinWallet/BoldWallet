@@ -1,6 +1,7 @@
 import React, {useState} from 'react';
 import {Modal, View, Text, Image, Pressable} from 'react-native';
 import AppPressable from './AppPressable';
+import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
@@ -117,7 +118,7 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
       transparent={true}
       animationType="fade"
       onRequestClose={onCancel}>
-      <View style={styles.modalOverlay}>
+      <GlassModalOverlay>
         <View style={styles.modalContent}>
           <View style={styles.modalHeaderRow}>
             <Image
@@ -180,7 +181,7 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
             </AppPressable>
           </View>
         </View>
-      </View>
+      </GlassModalOverlay>
     </Modal>
   );
 };

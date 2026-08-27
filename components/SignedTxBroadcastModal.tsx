@@ -11,10 +11,16 @@ import Share from 'react-native-share';
 import RNFS from 'react-native-fs';
 import Clipboard from '@react-native-clipboard/clipboard';
 import AppPressable from './AppPressable';
+import GlassModalOverlay from './GlassModalOverlay';
 import {BBMTLibNativeModule} from '../native_modules';
 import {useTheme} from '../theme';
 import {safeUnlink} from '../services/rnfsSafe';
 import {dbg} from '../utils';
+import {formatBroadcastError} from '../services/broadcastErrorMessages';
+import {
+  guardOnlineAction,
+  useWalletOnline,
+} from '../services/walletOnlineStore';
 
 type BroadcastPhase = 'idle' | 'broadcasting' | 'success';
 
@@ -34,6 +40,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
   onClose,
 }) => {
   const {theme} = useTheme();
+  const walletOnline = useWalletOnline();
   const [phase, setPhase] = useState<BroadcastPhase>('idle');
   const [dotCount, setDotCount] = useState(1);
 
@@ -93,6 +100,9 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
 
   const handleBroadcast = async () => {
     if (busy || !rawTxHex) return;
+    if (!guardOnlineAction('Go online to broadcast')) {
+      return;
+    }
     setPhase('broadcasting');
     try {
       const txId = await BBMTLibNativeModule.postTx(rawTxHex);
@@ -107,10 +117,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
     } catch (e: any) {
       dbg('SignedTxBroadcastModal broadcast error', e);
       setPhase('idle');
-      Alert.alert(
-        'Broadcast failed',
-        e?.message || 'Failed to broadcast transaction',
-      );
+      Alert.alert('Broadcast failed', formatBroadcastError(e));
     }
   };
 
@@ -155,11 +162,7 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
       transparent
       animationType="fade"
       onRequestClose={busy ? undefined : onClose}>
-      <View
-        style={[
-          styles.backdrop,
-          {backgroundColor: theme.colors.modalBackdrop},
-        ]}>
+      <GlassModalOverlay style={styles.backdrop}>
         <View
           style={[
             styles.card,
@@ -190,8 +193,9 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
           </View>
 
           <Text style={[styles.hint, {color: theme.colors.textSecondary}]}>
-            Your transaction is signed but not broadcast yet. You can copy/share
-            the raw serialized transaction, or broadcast it.
+            {walletOnline
+              ? 'Your transaction is signed but not broadcast yet. You can copy/share the raw serialized transaction, or broadcast it.'
+              : 'Wallet is offline. Copy or share the signed transaction, or go online to broadcast.'}
           </Text>
 
           <View style={styles.actionsRow}>
@@ -253,7 +257,8 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
               style={[
                 styles.actionButton,
                 styles.broadcastButton,
-                busy && styles.broadcastButtonBusy,
+                (busy || !walletOnline) && styles.broadcastButtonBusy,
+                !walletOnline && styles.broadcastButtonOffline,
                 {
                   backgroundColor:
                     theme.colors.background === '#ffffff'
@@ -262,14 +267,21 @@ const SignedTxBroadcastModal: React.FC<SignedTxBroadcastModalProps> = ({
                 },
               ]}
               onPress={handleBroadcast}
-              disabled={busy}
-              accessibilityState={{busy, disabled: busy}}
-              accessibilityLabel={broadcastAccessibilityLabel}>
+              disabled={busy || !walletOnline}
+              accessibilityState={{
+                busy,
+                disabled: busy || !walletOnline,
+              }}
+              accessibilityLabel={
+                walletOnline
+                  ? broadcastAccessibilityLabel
+                  : 'Go online to broadcast'
+              }>
               {renderBroadcastContent()}
             </AppPressable>
           </View>
         </View>
-      </View>
+      </GlassModalOverlay>
     </Modal>
   );
 };
@@ -346,6 +358,9 @@ const styles = StyleSheet.create({
   },
   broadcastButtonBusy: {
     opacity: 0.92,
+  },
+  broadcastButtonOffline: {
+    opacity: 0.5,
   },
   broadcastDotsText: {
     fontSize: 28,

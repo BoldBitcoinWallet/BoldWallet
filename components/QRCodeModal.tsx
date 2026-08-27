@@ -23,6 +23,7 @@ import {
 } from 'react-native';
 import AppPressable from './AppPressable';
 import StaticQRCode from './StaticQRCode';
+import GlassModalOverlay from './GlassModalOverlay';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import {safeUnlink} from '../services/rnfsSafe';
@@ -150,16 +151,13 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
           ? () => {} /* block Android back: do not close when non-dismissible */
           : handleClose
       }>
-      <AppPressable
-        style={styles.modalOverlay}
+      <GlassModalOverlay
         onPress={nonDismissible ? undefined : handleClose}>
-        <AppPressable
-          onPress={e => e.stopPropagation()}>
-          <View
-            style={[
-              styles.qrModalContent,
-              staticStyles.contentWide,
-            ]}>
+        <View
+          style={[
+            styles.qrModalContent,
+            staticStyles.contentWide,
+          ]}>
             {topRightClose ? (
               <View style={styles.qrModalHeader}>
                 <Text style={styles.qrModalHeaderTitle}>{title}</Text>
@@ -261,8 +259,7 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
               )
             )}
           </View>
-        </AppPressable>
-      </AppPressable>
+      </GlassModalOverlay>
     </Modal>
   );
 };

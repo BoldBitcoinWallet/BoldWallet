@@ -90,6 +90,7 @@ export const lightTheme: Theme = {
     buttonText: '#ffffff',
     disabledText: '#777',
     modalBackdrop: 'rgba(0, 0, 0, 0.8)',
+    modalBackdropGlass: 'rgba(0, 0, 0, 0.4)',
     lightGray: '#777',
     mediumGray: '#666',
     white: '#fff',
@@ -178,6 +179,7 @@ export const darkTheme: Theme = {
     buttonText: '#FFFFFF', // White text
     disabledText: '#757575', // Gray disabled text
     modalBackdrop: 'rgba(0, 0, 0, 0.85)', // Darker backdrop
+    modalBackdropGlass: 'rgba(0, 0, 0, 0.5)',
     lightGray: '#757575', // Light gray in dark mode
     mediumGray: '#9E9E9E', // Medium gray
     white: '#FFFFFF', // White
@@ -268,6 +270,7 @@ export const themes = {
       buttonText: '#ffffff',
       disabledText: '#777',
       modalBackdrop: 'rgba(0, 0, 0, 0.8)',
+      modalBackdropGlass: 'rgba(0, 0, 0, 0.4)',
       lightGray: '#777',
       mediumGray: '#666',
       white: '#fff',

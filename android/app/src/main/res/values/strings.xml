@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">Bold Wallet</string>
+    <!-- Camouflage launcher labels: ASCII, ≤12 chars (Pixel/Samsung truncation). -->
+    <string name="camouflage_quickcalc">QuickCalc</string>
+    <string name="camouflage_notes">Notes</string>
+    <string name="camouflage_weather">Weather</string>
+    <string name="camouflage_files">Files</string>
 </resources>

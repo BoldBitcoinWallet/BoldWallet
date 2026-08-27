@@ -13,13 +13,15 @@ import {
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
+import GlassModalOverlay from '../components/GlassModalOverlay';
 import DocumentPicker from 'react-native-document-picker';
 import * as RNFS from 'react-native-fs';
 import QRScanner from '../components/QRScanner';
+import {elapsedScanSecondsSince, withElapsedScanLabel} from '../utils/scanElapsed';
 import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 // @ts-ignore - bc-ur types (Buffer polyfill is in polyfills.js)
 import {URDecoder} from '@ngraveio/bc-ur';
-import {dbg, formatBitcoinDisplay} from '../utils';
+import {dbg, formatBitcoinDisplay, areHapticsEnabled} from '../utils';
 import {
   formatUrFragmentProgress,
   urUniqueFragmentProgress,
@@ -71,6 +73,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   const [isScannerVisible, setIsScannerVisible] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isAndroidScanning, setIsAndroidScanning] = useState(false); // For Android continuous scanning modal
+  const scanStartedAtRef = useRef(0);
   const isCancelDisabled = disableCancelWhenEmpty && !psbtBase64;
   // UR (Uniform Resource) animated QR state - using bc-ur library
   const urDecoderRef = useRef<any>(null);
@@ -103,13 +106,19 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   useEffect(() => {
     if (Platform.OS === 'android' && isAndroidScanning && urProgress) {
       BarcodeZxingScan.updateProgressText(
-        `PSBT scanning… ${formatUrFragmentProgress(urProgress)}`,
+        withElapsedScanLabel(
+          `PSBT scanning… ${formatUrFragmentProgress(urProgress)}`,
+          elapsedScanSecondsSince(scanStartedAtRef.current),
+        ),
       );
     } else if (Platform.OS === 'android' && isAndroidScanning && !urProgress) {
-      // Show initial message when scanning starts but no progress yet
-      BarcodeZxingScan.updateProgressText('Scanning PSBT QR Code...');
+      BarcodeZxingScan.updateProgressText(
+        withElapsedScanLabel(
+          'Scanning PSBT QR Code...',
+          elapsedScanSecondsSince(scanStartedAtRef.current),
+        ),
+      );
     } else if (Platform.OS === 'android' && !isAndroidScanning) {
-      // Clear progress text when scanning stops
       BarcodeZxingScan.updateProgressText('');
     }
   }, [urProgress, isAndroidScanning]);
@@ -563,7 +572,11 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     // This ensures event listener processes events correctly
     dbg('Android: Setting isScanningRef to true BEFORE starting scanner');
     isScanningRef.current = true;
+    scanStartedAtRef.current = Date.now();
     setIsAndroidScanning(true);
+    if (BarcodeZxingScan.setScanHud) {
+      BarcodeZxingScan.setScanHud('Scan PSBT', !!areHapticsEnabled());
+    }
     dbg(
       'Android: Starting continuous scan for animated QR, sessionId:',
       currentSessionId,
@@ -622,7 +635,12 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
         // Show progress text now that scanner activity is created
         // Do this after a small delay to ensure activity is ready
         setTimeout(() => {
-          BarcodeZxingScan.updateProgressText('Scanning PSBT QR Code...');
+          BarcodeZxingScan.updateProgressText(
+            withElapsedScanLabel(
+              'Scanning PSBT QR Code...',
+              elapsedScanSecondsSince(scanStartedAtRef.current),
+            ),
+          );
         }, 100);
       }
     });
@@ -695,8 +713,9 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
     },
     [processScannedData],
   );
+  const Overlay = useOverlay ? GlassModalOverlay : View;
   return (
-    <View style={useOverlay ? styles.modalOverlay : undefined}>
+    <Overlay style={useOverlay ? styles.modalOverlay : undefined}>
       <View style={useOverlay ? styles.modalContent : styles.embeddedContent}>
         {/* Description */}
         <AppText style={styles.description} tone="muted">
@@ -864,7 +883,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
           closeButtonText="Cancel"
         />
       </View>
-    </View>
+    </Overlay>
   );
 };
 const PSBTModal: React.FC<PSBTModalProps> = ({visible, onClose, onSign}) => {
@@ -885,7 +904,6 @@ const createStyles = (theme: any) =>
   StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'center',
       alignItems: 'center',
       padding: 10,
@@ -1469,7 +1487,6 @@ const createStyles = (theme: any) =>
     // Android scanning progress modal styles
     androidScanModalOverlay: {
       flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'center',
       alignItems: 'center',
       padding: 20,

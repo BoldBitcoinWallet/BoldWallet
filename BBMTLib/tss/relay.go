@@ -166,23 +166,52 @@ func completedKeysign(w http.ResponseWriter, r *http.Request) {
 	log.Printf("BBMTLog: completedKeysign succeeded: Session %s, MessageID %s", sessionID, messageID)
 }
 
+func keygenCompletionKey(sessionID string) string {
+	return "local-party-complete-" + sessionID
+}
+
 func completedKeygen(w http.ResponseWriter, r *http.Request) {
 	sessionID := getSessionID(r)
 
-	// Read request body (local party ID)
 	var localPartyID []string
 	if err := json.NewDecoder(r.Body).Decode(&localPartyID); err != nil || len(localPartyID) == 0 {
 		http.Error(w, "invalid or missing localPartyID", http.StatusBadRequest)
 		return
 	}
 
-	// Save the completed local party ID to session data (this can be an operation to mark a local party's completion)
-	partyCompletionKey := "local-party-complete-" + sessionID
-	setData(partyCompletionKey, localPartyID)
+	mutex.Lock()
+	defer mutex.Unlock()
 
-	// Respond to client
+	partyCompletionKey := keygenCompletionKey(sessionID)
+	var existing []string
+	if data, found := getData(partyCompletionKey); found {
+		if prev, ok := data.([]string); ok {
+			existing = prev
+		}
+	}
+	merged := appendUniqueParticipants(existing, localPartyID)
+	setData(partyCompletionKey, merged)
+
 	w.WriteHeader(http.StatusCreated)
-	log.Printf("BBMTLog: completedKeygen succeeded: Session %s, LocalPartyID %s", sessionID, localPartyID[0])
+	log.Printf("BBMTLog: completedKeygen succeeded: Session %s, LocalPartyID %s (complete=%v)", sessionID, localPartyID[0], merged)
+}
+
+func getCompletedKeygen(w http.ResponseWriter, r *http.Request) {
+	sessionID := getSessionID(r)
+	partyCompletionKey := keygenCompletionKey(sessionID)
+
+	mutex.Lock()
+	data, found := getData(partyCompletionKey)
+	mutex.Unlock()
+
+	out := []string{}
+	if found {
+		if prev, ok := data.([]string); ok && prev != nil {
+			out = prev
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
 }
 
 // ---- Message Handlers ----
@@ -295,6 +324,7 @@ func listen(port string) *http.Server {
 	// Handlers for session completions
 	r.HandleFunc("/complete/keysign/{sessionID}", completedKeysign).Methods("POST")
 	r.HandleFunc("/complete/keygen/{sessionID}", completedKeygen).Methods("POST")
+	r.HandleFunc("/complete/keygen/{sessionID}", getCompletedKeygen).Methods("GET")
 
 	// Message Routes
 	r.HandleFunc("/message/{sessionID}", postMessage).Methods("POST")

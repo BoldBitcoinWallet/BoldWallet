@@ -16,8 +16,10 @@ import {
   ScrollView,
   Linking,
 } from 'react-native';
+import Toast from 'react-native-toast-message';
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
+import GlassModalOverlay from '../components/GlassModalOverlay';
 import QRScanner from '../components/QRScanner';
 import Clipboard from '@react-native-clipboard/clipboard';
 import debounce from 'lodash/debounce';
@@ -35,13 +37,28 @@ import {
   WalletService,
 } from '../services/WalletService';
 import utxoRepository from '../services/repositories/UtxoRepository';
+import utxoTagRepository from '../services/repositories/UtxoTagRepository';
 import {estimateFee, type FeeStrategy} from '../services/feeUtils';
 import {formatFeeEstimationError} from '../services/feeErrorMessages';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
-import {initializeBranta, resolveBrantaQr} from '../services/BrantaService';
+import {
+  initializeBranta,
+  isBrantaEnabled,
+  resolveBrantaQr,
+} from '../services/BrantaService';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import BrantaVerificationCard from '../components/BrantaVerificationCard';
+import UtxoCoinControlList from '../components/UtxoCoinControlList';
 import {extractBitcoinAddressFromPaymentInput, parseBitcoinUri} from '../services/incomingUrlRouter';
+import {
+  filterUtxosByOutpoints,
+  outpointKey,
+  selectionFeeKey,
+  sortCoinControlUtxos,
+  sumSelectedSats,
+  type CoinControlUtxo,
+} from '../services/utxoCoinControl';
+import type {StoredUtxo} from '../services/repositories/UtxoRepository';
 const {BBMTLibNativeModule} = NativeModules;
 
 const SEND_BITCOIN_VIDEO_GUIDE_URL =
@@ -99,11 +116,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   /** Fee estimation cache — skip redundant runs when inputs haven't changed. */
   const lastFeeInputsRef = useRef<string>('');
   const [address, setAddress] = useState<string>('');
+  const addressRef = useRef(address);
+  addressRef.current = address;
   const [btcAmount, setBtcAmount] = useState<Big>(Big(0));
   const [inBtcAmount, setInBtcAmount] = useState('');
   const [inUsdAmount, setInUsdAmount] = useState('');
   const [isScannerVisible, setIsScannerVisible] = useState<boolean>(false);
   const [estimatedFee, setEstimatedFee] = useState<Big | null>(null);
+  const [usingStaleFees, setUsingStaleFees] = useState(false);
   const [isCalculatingFee, setIsCalculatingFee] = useState(false);
   const [spendingHash, setSpendingHash] = useState<string>('');
   const [_activeInput, setActiveInput] = useState<'btc' | 'usd' | null>(null);
@@ -121,6 +141,15 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   const [brantaLoading, setBrantaLoading] = useState(false);
   const [_brantaError, setBrantaError] = useState<string | null>(null);
   const [brantaRawQrProp, setBrantaRawQrProp] = useState<string>('');
+  const [coinControlOpen, setCoinControlOpen] = useState(false);
+  const [pickerUtxos, setPickerUtxos] = useState<CoinControlUtxo[]>([]);
+  const [selectedOutpoints, setSelectedOutpoints] = useState<Set<string> | null>(
+    null,
+  );
+  const selectedOutpointsRef = useRef<Set<string> | null>(null);
+  const pickerUtxosRef = useRef<CoinControlUtxo[]>([]);
+  selectedOutpointsRef.current = selectedOutpoints;
+  pickerUtxosRef.current = pickerUtxos;
   const {theme} = useTheme();
   const {
     showSats,
@@ -128,6 +157,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     activeNetwork,
     activeAddressType,
     activeApiProvider,
+    showUtxosTab,
   } = useUser();
   const isSatsMode = showSats;
   useEffect(() => {
@@ -174,7 +204,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       flex: 1,
       justifyContent: 'center',
       alignItems: 'center',
-      backgroundColor: theme.colors.modalBackdrop,
     },
     modalContainer: {
       width: '90%',
@@ -304,14 +333,29 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       justifyContent: 'space-between',
       alignItems: 'center',
     },
+    balanceCardOpen: {
+      marginBottom: 0,
+      borderBottomLeftRadius: 0,
+      borderBottomRightRadius: 0,
+      borderBottomWidth: 0,
+    },
     balanceCardLeft: {
       flex: 1,
+    },
+    balanceCardLabelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 3,
+    },
+    balanceCardChevron: {
+      fontSize: theme.fontSizes?.sm || 12,
+      color: theme.colors.textSecondary,
+      marginLeft: 8,
     },
     balanceCardLabel: {
       fontSize: theme.fontSizes?.sm || 11,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
-      marginBottom: 3,
       textTransform: 'uppercase',
       letterSpacing: 0.5,
     },
@@ -405,6 +449,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.textSecondary, // Remove fallback for better dark mode readability
     },
+    staleFeeHint: {
+      marginTop: 8,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      opacity: 0.85,
+    },
     sendCancelButtons: {
       flexDirection: 'row',
       justifyContent: 'space-between',
@@ -459,11 +510,20 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     }).format(price);
+  const spendableBalance = useMemo(() => {
+    const selectedSats = sumSelectedSats(pickerUtxos, selectedOutpoints);
+    if (selectedSats == null) {
+      return walletBalance;
+    }
+    return Big(selectedSats).div(E8);
+  }, [pickerUtxos, selectedOutpoints, walletBalance]);
+  const selectionKey = selectionFeeKey(selectedOutpoints);
   const getFee = useCallback(
     async (addr: string, amt: string) => {
       if (!isMountedRef.current || !visibleRef.current) return;
       if (!addr || !amt || btcAmount.eq(0)) {
         setEstimatedFee(null);
+        setUsingStaleFees(false);
         lastFeeInputsRef.current = '';
         return;
       }
@@ -474,18 +534,21 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           currentNetworkForValidation,
         );
         setEstimatedFee(null);
+        setUsingStaleFees(false);
         lastFeeInputsRef.current = '';
         return;
       }
       const amount = Big(amt);
-      if (amount.gt(walletBalance) || !walletBalance) {
+      const cap = spendableBalance;
+      if (amount.gt(cap) || !cap || cap.lte(0)) {
         setEstimatedFee(null);
+        setUsingStaleFees(false);
         lastFeeInputsRef.current = '';
         return;
       }
 
       // Skip if inputs identical to last successful estimation (prevents UI flicker)
-      const inputKey = `${addr}|${amt}|${feeStrategy}`;
+      const inputKey = `${addr}|${amt}|${feeStrategy}|${selectionKey}`;
       if (inputKey === lastFeeInputsRef.current) {
         return;
       }
@@ -514,7 +577,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           dbg('SendBitcoinModal: HD address derivation failed');
         }
 
-        let dbUtxos =
+        let dbUtxos: StoredUtxo[] =
           hdAddrs.length > 0
             ? utxoRepository.getUtxosForAddresses(
                 hdAddrs.map(a => a.address),
@@ -532,9 +595,82 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           // Non-critical for fee estimation
         }
 
-        // Build spending-hash JSON from DB UTXOs + HD derivation paths
+        // Fallback: if DB had no UTXOs, do a live fetch (full wallet, then coin-control filter)
+        if (!dbUtxos.length && activeApiProvider) {
+          dbg('SendBitcoinModal: DB empty, falling back to live UTXO fetch');
+          try {
+            const utxosWithPaths = await ws.fetchUtxosWithPaths(
+              activeNetwork,
+              effectiveType,
+              activeApiProvider,
+            );
+            dbg(
+              'SendBitcoinModal: live utxosWithPaths count',
+              utxosWithPaths.length,
+            );
+            lastChangeAddressRef.current = changeAddress;
+            if (utxosWithPaths.length > 0) {
+              dbUtxos = utxosWithPaths.map(u => ({
+                txid: u.txid,
+                vout: u.vout,
+                address: u.address,
+                network: activeNetwork,
+                valueSats: u.value,
+                scriptPubkey: null,
+                derivationPath: u.derivationPath ?? null,
+                isConfirmed: u.status?.confirmed ?? true,
+                blockHeight: u.status?.block_height ?? null,
+                blockTime: u.status?.block_time ?? null,
+                fetchedAt: Date.now(),
+              }));
+            }
+          } catch (e) {
+            dbg('SendBitcoinModal: live UTXO fetch failed', e);
+            Toast.show({
+              type: 'info',
+              text1: 'Could not refresh UTXOs',
+              text2: 'Using last known coins.',
+              position: 'top',
+            });
+            if (!dbUtxos.length && lastUtxosJsonRef.current) {
+              try {
+                const prev = JSON.parse(lastUtxosJsonRef.current) as Array<{
+                  txid: string;
+                  vout: number;
+                  value: number;
+                  address?: string;
+                  derivation_path?: string;
+                }>;
+                if (Array.isArray(prev) && prev.length) {
+                  dbUtxos = prev.map(u => ({
+                    txid: u.txid,
+                    vout: u.vout,
+                    address: u.address || '',
+                    network: activeNetwork,
+                    valueSats: u.value,
+                    scriptPubkey: null,
+                    derivationPath: u.derivation_path ?? null,
+                    isConfirmed: true,
+                    blockHeight: null,
+                    blockTime: null,
+                    fetchedAt: Date.now(),
+                  }));
+                }
+              } catch {
+                // keep empty; blocking alert below if still no inputs
+              }
+            }
+          }
+        }
+
+        // Exclusive-pool coin control: only the checked outpoints leave this device.
+        dbUtxos = filterUtxosByOutpoints(
+          dbUtxos,
+          selectedOutpointsRef.current,
+        );
+
         let utxosJson: string | null = null;
-        if (dbUtxos.length > 0 && hdAddrs.length > 0) {
+        if (dbUtxos.length > 0) {
           const pathMap = new Map(
             hdAddrs.map(a => [a.address, a.derivationPath]),
           );
@@ -560,52 +696,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
           dbg(
             'SendBitcoinModal: using',
             dbUtxos.length,
-            'UTXOs from DB (no live fetch)',
+            'UTXOs for spend pool',
           );
-        }
-
-        // Fallback: if DB had no UTXOs, do a live fetch
-        if (!dbUtxos.length && activeApiProvider) {
-          dbg('SendBitcoinModal: DB empty, falling back to live UTXO fetch');
-          try {
-            const utxosWithPaths = await ws.fetchUtxosWithPaths(
-              activeNetwork,
-              effectiveType,
-              activeApiProvider,
-            );
-            dbg(
-              'SendBitcoinModal: live utxosWithPaths count',
-              utxosWithPaths.length,
-            );
-            utxosJson = JSON.stringify(utxosWithPaths);
-            lastUtxosJsonRef.current = JSON.stringify(
-              utxosWithPaths.map(u => ({
-                txid: u.txid,
-                vout: u.vout,
-                value: u.value,
-                derivation_path: u.derivationPath,
-                address: u.address,
-              })),
-            );
-            lastChangeAddressRef.current = changeAddress;
-            if (utxosWithPaths.length > 0) {
-              dbUtxos = utxosWithPaths.map(u => ({
-                txid: u.txid,
-                vout: u.vout,
-                address: u.address,
-                network: activeNetwork,
-                valueSats: u.value,
-                scriptPubkey: null,
-                derivationPath: u.derivationPath ?? null,
-                isConfirmed: u.status?.confirmed ?? true,
-                blockHeight: u.status?.block_height ?? null,
-                blockTime: u.status?.block_time ?? null,
-                fetchedAt: Date.now(),
-              }));
-            }
-          } catch (e) {
-            dbg('SendBitcoinModal: live UTXO fetch failed', e);
-          }
         }
 
         // --- Spending hash (still native — MPC-specific) ---
@@ -648,11 +740,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         dbg('got fees (TS):', result.feeSats, 'sats', result.feeRate, 'sat/vB');
         const feeAmt = Big(result.feeSats);
         setEstimatedFee(feeAmt);
+        setUsingStaleFees(!!result.fromStaleFees);
         lastFeeInputsRef.current = inputKey;
         Keyboard.dismiss();
 
-        if (btcAmount.eq(walletBalance)) {
-          const adjustedAmount = walletBalance.minus(feeAmt.div(1e8));
+        if (btcAmount.eq(spendableBalance)) {
+          const adjustedAmount = spendableBalance.minus(feeAmt.div(1e8));
           setInBtcAmount(
             isSatsMode
               ? adjustedAmount.times(1e8).toFixed(0)
@@ -665,6 +758,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         if (!isMountedRef.current || !visibleRef.current) return;
         dbg('Fee estimation failed:', e);
         setEstimatedFee(null);
+        setUsingStaleFees(false);
         if (e.message && !e.message.includes('Invalid number')) {
           Alert.alert(
             'Cannot estimate fee',
@@ -684,7 +778,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     },
     [
       btcAmount,
-      walletBalance,
+      spendableBalance,
+      selectionKey,
       walletAddress,
       btcToFiatRate,
       validateAddressForCurrentNetwork,
@@ -713,6 +808,9 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     if (!visible) {
       setAddress('');
       lastFeeInputsRef.current = '';
+      setCoinControlOpen(false);
+      setSelectedOutpoints(null);
+      setPickerUtxos([]);
       // Reset Branta state when modal closes
       setBrantaRawQr('');
       setBrantaPayment(null);
@@ -737,6 +835,79 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }
   }, [visible, initialAddress, initialAmountBtc, btcToFiatRate]);
   useEffect(() => {
+    if (!visible || !showUtxosTab) {
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const ws = WalletService.getInstance();
+        const effectiveType = activeAddressType || 'segwit-native';
+        let hdAddrs: Array<{
+          address: string;
+          derivationPath: string;
+        }> = [];
+        try {
+          hdAddrs = await ws.getHdAddressesWithPaths(
+            activeNetwork,
+            effectiveType,
+          );
+        } catch {
+          dbg('SendBitcoinModal: coin-control HD derivation failed');
+        }
+        const dbUtxos =
+          hdAddrs.length > 0
+            ? utxoRepository.getUtxosForAddresses(
+                hdAddrs.map(a => a.address),
+                activeNetwork,
+              )
+            : utxoRepository.getUtxosForNetwork(activeNetwork, effectiveType);
+        if (cancelled) {
+          return;
+        }
+        const tags = utxoTagRepository.getByOutpoints(
+          dbUtxos.map(u => outpointKey(u.txid, u.vout)),
+        );
+        const items: CoinControlUtxo[] = dbUtxos.map(u => ({
+          txid: u.txid,
+          vout: u.vout,
+          valueSats: u.valueSats,
+          address: u.address,
+          derivationPath: u.derivationPath || '',
+          tag: tags.get(outpointKey(u.txid, u.vout)) ?? null,
+          isConfirmed: u.isConfirmed,
+        }));
+        setPickerUtxos(sortCoinControlUtxos(items));
+      } catch (e) {
+        dbg('SendBitcoinModal: coin-control UTXO load failed', e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, showUtxosTab, activeNetwork, activeAddressType]);
+  useEffect(() => {
+    if (!selectedOutpoints || pickerUtxos.length === 0) {
+      return;
+    }
+    const valid = new Set(
+      pickerUtxos.map(u => outpointKey(u.txid, u.vout)),
+    );
+    let dropped = false;
+    const next = new Set<string>();
+    for (const key of selectedOutpoints) {
+      if (valid.has(key)) {
+        next.add(key);
+      } else {
+        dropped = true;
+      }
+    }
+    if (dropped) {
+      lastFeeInputsRef.current = '';
+      setSelectedOutpoints(next.size === 0 ? null : next);
+    }
+  }, [pickerUtxos, selectedOutpoints]);
+  useEffect(() => {
     if (!address) {
       setAddressError(null);
       return;
@@ -758,14 +929,29 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     } else {
       debouncedGetFee.cancel();
       setEstimatedFee(null);
+      setUsingStaleFees(false);
     }
     return () => debouncedGetFee.cancel();
     // debouncedGetFee is memoized once; do not list it or getFee — would cancel/reset the debouncer on unrelated identity changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [address, btcAmount, feeStrategy, validateAddressForCurrentNetwork]);
+  }, [
+    address,
+    btcAmount,
+    feeStrategy,
+    selectionKey,
+    validateAddressForCurrentNetwork,
+  ]);
+  const btcToFiatRateRef = useRef(btcToFiatRate);
+  btcToFiatRateRef.current = btcToFiatRate;
+  const validateAddressRef = useRef(validateAddressForCurrentNetwork);
+  validateAddressRef.current = validateAddressForCurrentNetwork;
   // Initialize Branta service and pre-load QR data if provided
   useEffect(() => {
     try {
+      if (!isBrantaEnabled()) {
+        setBrantaRawQrProp('');
+        return;
+      }
       initializeBranta(activeNetwork);
       
       // If prop-provided Branta QR, extract address+amount immediately from bitcoin: URI
@@ -780,9 +966,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
               try {
                 const amountBTC = Big(parsed.amountBtc);
                 if (amountBTC.gt(0)) {
+                  const rate = btcToFiatRateRef.current;
                   setBtcAmount(amountBTC);
                   setInBtcAmount(amountBTC.toFixed(8));
-                  setInUsdAmount(amountBTC.times(btcToFiatRate).toFixed(2));
+                  setInUsdAmount(amountBTC.times(rate).toFixed(2));
                 }
               } catch (e) {
                 // Ignore invalid amount
@@ -803,12 +990,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       dbg('Error initializing Branta', err);
       setBrantaRawQrProp('');
     }
-  }, [activeNetwork, initialBrantaRawQr, btcToFiatRate]);
+  }, [activeNetwork, initialBrantaRawQr]);
   // Resolve Branta QR when raw QR data is set (strict mode: only ZK-encoded QRs)
   useEffect(() => {
     const rawQr = brantaRawQr || brantaRawQrProp;
     
-    if (!rawQr) {
+    if (!rawQr || !isBrantaEnabled()) {
       setBrantaPayment(null);
       setBrantaVerifyUrl(undefined);
       setBrantaLoading(false);
@@ -828,10 +1015,14 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       try {
         const result = await resolveBrantaQr(rawQr, activeNetwork);
         
-        if (cancelled) return;
+        if (cancelled) {
+          dbg('resolveBrantaQr: result ignored (effect cancelled)');
+          return;
+        }
 
         if (!result) {
           // Silent fallback: no Branta data found, continue with manual entry
+          dbg('SendBitcoinModal: no Branta merchant result');
           setBrantaPayment(null);
           setBrantaVerifyUrl(undefined);
           setBrantaLoading(false);
@@ -841,27 +1032,40 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
 
         try {
           // Validate address
-          if (validateAddressForCurrentNetwork(result.address)) {
+          const persistAddresses = new Set<string>();
+          if (validateAddressRef.current(result.address)) {
             setAddress(result.address);
+            persistAddresses.add(result.address);
+          }
+          const formAddress = addressRef.current;
+          if (
+            formAddress &&
+            validateAddressRef.current(formAddress)
+          ) {
+            persistAddresses.add(formAddress);
           }
 
-          // Persist to merchant_labels repository with error handling
+          // Persist to merchant_labels for every on-chain dest we might send to
+          // (Branta destination can differ from the BIP-21 URI address).
           try {
-            merchantLabelRepository.upsert({
-              address: result.address,
-              platform: result.platform,
-              description: result.description,
-              logoUrl: result.logoUrl,
-              logoLightUrl: result.logoLightUrl,
-              verifyUrl: result.verifyUrl,
-              fetchedAt: Date.now(),
-            });
+            for (const persistAddress of persistAddresses) {
+              merchantLabelRepository.upsert({
+                address: persistAddress,
+                platform: result.platform,
+                description: result.description,
+                logoUrl: result.logoUrl,
+                logoLightUrl: result.logoLightUrl,
+                verifyUrl: result.verifyUrl,
+                fetchedAt: Date.now(),
+              });
+            }
           } catch (dbErr) {
             // Silent DB error - doesn't block UI
             dbg('Warning: Failed to persist merchant label', dbErr);
           }
 
           // Update UI state
+          dbg('SendBitcoinModal: showing Branta merchant', result.platform);
           setBrantaPayment({
             platform: result.platform,
             description: result.description,
@@ -893,7 +1097,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [brantaRawQr, brantaRawQrProp, activeNetwork, validateAddressForCurrentNetwork]);
+  }, [brantaRawQr, brantaRawQrProp, activeNetwork]);
   const pasteAddress = useCallback(async () => {
     const text = await Clipboard.getString();
     // Validate that the clipboard contains what looks like a Bitcoin address
@@ -967,13 +1171,13 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     setInUsdAmount('');
     waitMS(100).then(() => {
       // set the amount to the wallet balance
-      setBtcAmount(walletBalance);
+      setBtcAmount(spendableBalance);
       setInBtcAmount(
         isSatsMode
-          ? walletBalance.times(E8).toFixed(0)
-          : walletBalance.toFixed(8),
+          ? spendableBalance.times(E8).toFixed(0)
+          : spendableBalance.toFixed(8),
       );
-      setInUsdAmount(walletBalance.times(btcToFiatRate).toFixed(2));
+      setInUsdAmount(spendableBalance.times(btcToFiatRate).toFixed(2));
     });
   };
   // Handle QR scan - supports both regular addresses and send bitcoin QR format
@@ -987,11 +1191,16 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
         return;
       }
 
-      // Store raw QR for Branta resolution (if it contains branta_id & branta_secret, it will resolve)
-      setBrantaRawQr(qrData.trim());
+      // Store raw QR for Branta resolution only when merchant verify is on
+      if (isBrantaEnabled()) {
+        setBrantaRawQr(qrData.trim());
+      }
 
       // Detect if this is a Branta ZK QR by checking for ZK parameters
-      const hasBrantaParams = qrData.includes('branta_id') && qrData.includes('branta_secret');
+      const hasBrantaParams =
+        isBrantaEnabled() &&
+        qrData.includes('branta_id') &&
+        qrData.includes('branta_secret');
 
       // Check if it's a send bitcoin QR format (address|amount|fee|hash|addressType|derivationPath)
       const decoded = decodeSendBitcoinQR(qrData) as {
@@ -1124,10 +1333,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       // Work internally in BTC regardless of display mode
       const feeBTC = estimatedFee.div(E8);
       const totalAmountBTC = btcAmount.add(feeBTC);
-      if (totalAmountBTC.gt(walletBalance)) {
+      if (totalAmountBTC.gt(spendableBalance)) {
         Alert.alert(
           'Error',
-          'Total amount including fee exceeds wallet balance',
+          selectedOutpoints
+            ? 'Total amount including fee exceeds selected coins'
+            : 'Total amount including fee exceeds wallet balance',
         );
         return;
       }
@@ -1151,7 +1362,27 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
     }
   };
   // Check if amount exceeds balance
-  const amountExceedsBalance = btcAmount.gt(0) && btcAmount.gt(walletBalance);
+  const amountExceedsBalance =
+    btcAmount.gt(0) && btcAmount.gt(spendableBalance);
+  const toggleOutpoint = (key: string) => {
+    lastFeeInputsRef.current = '';
+    setSelectedOutpoints(prev => {
+      if (prev == null) {
+        return new Set([key]);
+      }
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+        return next.size === 0 ? null : next;
+      }
+      next.add(key);
+      return next;
+    });
+  };
+  const selectAllCoins = () => {
+    lastFeeInputsRef.current = '';
+    setSelectedOutpoints(null);
+  };
   const renderFeeSection = () => {
     if (!address || !btcAmount) {
       return null;
@@ -1209,6 +1440,11 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                 )
               </Text>
             </View>
+            {usingStaleFees ? (
+              <Text style={styles.staleFeeHint}>
+                Using last known fees — network issue
+              </Text>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -1221,7 +1457,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       visible={visible}
       onRequestClose={onClose}>
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-        <View style={styles.modalBackdrop}>
+        <GlassModalOverlay style={styles.modalBackdrop}>
           <View style={styles.modalContainer}>
             <KeyboardAvoidingView
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -1252,6 +1488,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                   </AppPressable>
                 </View>
                 <ScrollView
+                  nestedScrollEnabled
                   removeClippedSubviews
                   keyboardShouldPersistTaps="handled"
                   overScrollMode="never"
@@ -1303,13 +1540,39 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     isLoading={brantaLoading}
                   />
                   {/* Balance Card */}
-                  <View style={styles.balanceCard}>
-                    <View style={styles.balanceCardLeft}>
-                      <AppText style={styles.balanceCardLabel}>
-                        Available Balance
-                      </AppText>
+                  <View
+                    style={[
+                      styles.balanceCard,
+                      showUtxosTab && coinControlOpen && styles.balanceCardOpen,
+                    ]}>
+                    <AppPressable
+                      style={styles.balanceCardLeft}
+                      onPress={() => {
+                        if (showUtxosTab) {
+                          setCoinControlOpen(open => !open);
+                        }
+                      }}
+                      disabled={!showUtxosTab}
+                      accessibilityRole={showUtxosTab ? 'button' : undefined}
+                      accessibilityLabel={
+                        showUtxosTab
+                          ? 'Choose coins to spend'
+                          : 'Available balance'
+                      }>
+                      <View style={styles.balanceCardLabelRow}>
+                        <AppText style={styles.balanceCardLabel}>
+                          {selectedOutpoints
+                            ? `Selected · ${selectedOutpoints.size}`
+                            : 'Available Balance'}
+                        </AppText>
+                        {showUtxosTab ? (
+                          <Text style={styles.balanceCardChevron}>
+                            {coinControlOpen ? '▴' : '▾'}
+                          </Text>
+                        ) : null}
+                      </View>
                       <Text style={styles.balanceCardBtc}>
-                        {formatBitcoinDisplay(walletBalance.toNumber(), {
+                        {formatBitcoinDisplay(spendableBalance.toNumber(), {
                           inSats: showSats,
                           formatted: balanceFormattingEnabled,
                         })}
@@ -1317,10 +1580,10 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       <AppText style={styles.balanceCardFiat}>
                         ~{selectedCurrency}{' '}
                         {formatUSD(
-                          walletBalance.times(btcToFiatRate).toNumber(),
+                          spendableBalance.times(btcToFiatRate).toNumber(),
                         )}
                       </AppText>
-                    </View>
+                    </AppPressable>
                     <AppPressable
                       onPress={handleMaxClick}
                       disabled={isCalculatingFee}
@@ -1329,6 +1592,25 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                       <Text style={styles.balanceCardMaxButtonText}>Max</Text>
                     </AppPressable>
                   </View>
+                  {showUtxosTab && coinControlOpen ? (
+                    <UtxoCoinControlList
+                      utxos={pickerUtxos}
+                      selectedKeys={selectedOutpoints}
+                      onToggle={toggleOutpoint}
+                      onSelectAll={selectAllCoins}
+                      formatAmount={sats =>
+                        formatBitcoinDisplay(sats / 1e8, {
+                          inSats: showSats,
+                          formatted: balanceFormattingEnabled,
+                        })
+                      }
+                      formatFiat={sats =>
+                        `~${selectedCurrency} ${formatUSD(
+                          (sats / 1e8) * btcToFiatRate.toNumber(),
+                        )}`
+                      }
+                    />
+                  ) : null}
                   <View style={styles.inputContainer}>
                     <AppText style={styles.inputLabel}>
                       {isSatsMode ? 'Amount in sats' : 'Amount in BTC (₿)'}
@@ -1349,8 +1631,12 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
                     />
                     {amountExceedsBalance && (
                       <AppText style={styles.errorText}>
-                        Amount exceeds wallet balance (
-                        {formatBitcoinDisplay(walletBalance.toNumber(), {
+                        Amount exceeds{' '}
+                        {selectedOutpoints
+                          ? 'selected coins'
+                          : 'wallet balance'}{' '}
+                        (
+                        {formatBitcoinDisplay(spendableBalance.toNumber(), {
                           inSats: showSats,
                           formatted: balanceFormattingEnabled,
                         })}
@@ -1416,7 +1702,7 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
               </SafeAreaView>
             </KeyboardAvoidingView>
           </View>
-        </View>
+        </GlassModalOverlay>
       </TouchableWithoutFeedback>
     </Modal>
   );

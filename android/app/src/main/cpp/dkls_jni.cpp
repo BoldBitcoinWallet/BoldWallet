@@ -11,6 +11,8 @@
 #include "bbmt_jni_string.h"
 #include "dkls_exports.h"
 
+extern "C" char *BbmtSecureRandom(int length);
+
 namespace {
 
 JavaVM *g_jvm = nullptr;
@@ -117,6 +119,11 @@ Java_com_boldwallet_DklsNative_bbmtSha256Jni(JNIEnv *env, jclass, jstring msg) {
   jstring out = to_jstring(env, BbmtSha256(const_cast<char *>(m)));
   env->ReleaseStringUTFChars(msg, m);
   return out;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtSecureRandomJni(JNIEnv *env, jclass, jint length) {
+  return to_jstring(env, BbmtSecureRandom(static_cast<int>(length)));
 }
 
 extern "C" JNIEXPORT jstring JNICALL

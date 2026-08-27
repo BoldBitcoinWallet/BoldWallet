@@ -86,6 +86,11 @@ func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, 
 	tss.InitKeygenProgress(cfg.SessionID)
 
 	coordinator := nostrtransport.NewSessionCoordinator(cfg, client)
+	defer func() {
+		if err != nil && !strings.Contains(err.Error(), "peer aborted") {
+			publishNostrAbort(coordinator, err)
+		}
+	}()
 	if err := coordinator.PublishReady(ctx); err != nil {
 		return "", err
 	}
@@ -123,6 +128,18 @@ func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, 
 	roundCh := make(chan []libtss.Message, 256)
 
 	pump := nostrtransport.NewMessagePump(cfg, client)
+	var peerAbort struct {
+		sync.Mutex
+		reason string
+		set    bool
+	}
+	pump.SetOnAbort(func(reason string) {
+		peerAbort.Lock()
+		peerAbort.reason = reason
+		peerAbort.set = true
+		peerAbort.Unlock()
+		cancel()
+	})
 	pumpCtx, pumpCancel := context.WithCancel(ctx)
 	defer pumpCancel()
 
@@ -180,6 +197,12 @@ func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, 
 	pumpCancel()
 	wg.Wait()
 	if err != nil {
+		peerAbort.Lock()
+		set, reason := peerAbort.set, peerAbort.reason
+		peerAbort.Unlock()
+		if set {
+			return "", nostrtransport.WrapPeerAbort(reason, err)
+		}
 		return "", err
 	}
 	defer share.Free()
@@ -282,6 +305,19 @@ func npubToHexKey(npub string) (string, error) {
 	return "", fmt.Errorf("invalid npub %q", npub)
 }
 
+func publishNostrAbort(coordinator *nostrtransport.SessionCoordinator, cause error) {
+	if coordinator == nil {
+		return
+	}
+	reason := "aborted"
+	if cause != nil {
+		reason = cause.Error()
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	_ = coordinator.PublishAbort(ctx, reason)
+}
+
 // NostrJoinKeysign runs DKLs23 signing over Nostr.
 func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON, message string) (result string, err error) {
 	defer recoverAsError("NostrJoinKeysign", &err, &result)
@@ -341,6 +377,18 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 	messenger := nostrtransport.NewMessenger(cfg, client)
 	nm := &nostrMessenger{messenger: messenger, ctx: ctx, localNpub: localNpub}
 	pump := nostrtransport.NewMessagePump(cfg, client)
+	var peerAbort struct {
+		sync.Mutex
+		reason string
+		set    bool
+	}
+	pump.SetOnAbort(func(reason string) {
+		peerAbort.Lock()
+		peerAbort.reason = reason
+		peerAbort.set = true
+		peerAbort.Unlock()
+		cancel()
+	})
 	pumpCtx, pumpCancel := context.WithCancel(ctx)
 	defer pumpCancel()
 
@@ -393,6 +441,12 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 	pumpCancel()
 	wg.Wait()
 	if err != nil {
+		peerAbort.Lock()
+		set, reason := peerAbort.set, peerAbort.reason
+		peerAbort.Unlock()
+		if set {
+			return "", nostrtransport.WrapPeerAbort(reason, err)
+		}
 		return "", err
 	}
 

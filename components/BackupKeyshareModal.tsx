@@ -19,6 +19,11 @@ import {safeUnlink} from '../services/rnfsSafe';
 import {dbg, getKeyshareLabel, getKeyshareMetadata} from '../utils';
 import {useTheme} from '../theme';
 import {createStyles} from './Styles';
+import GlassModalOverlay from './GlassModalOverlay';
+import {
+  BACKUP_PASSWORD_MIN_STRENGTH,
+  evaluateBackupPassword,
+} from '../services/backupPassword';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -46,36 +51,10 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
 
   const validatePassword = (pass: string) => {
-    const errors: string[] = [];
-    const rules = {
-      length: pass.length >= 12,
-      uppercase: /[A-Z]/.test(pass),
-      lowercase: /[a-z]/.test(pass),
-      number: /\d/.test(pass),
-      symbol: /[!@#$%^&*(),.?":{}|<>]/.test(pass),
-    };
-
-    if (!rules.length) {
-      errors.push('12+ characters');
-    }
-    if (!rules.uppercase) {
-      errors.push('Uppercase letter (A-Z)');
-    }
-    if (!rules.lowercase) {
-      errors.push('Lowercase letter (a-z)');
-    }
-    if (!rules.number) {
-      errors.push('Number (0-9)');
-    }
-    if (!rules.symbol) {
-      errors.push('Special character (!@#$...)');
-    }
-
+    const {errors, strength, isValid} = evaluateBackupPassword(pass);
     setPasswordErrors(errors);
-    // Calculate strength (0-4)
-    const strength = Object.values(rules).filter(Boolean).length;
     setPasswordStrength(strength);
-    return errors.length === 0;
+    return isValid;
   };
 
   const getPasswordStrengthColor = () => {
@@ -386,14 +365,11 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
         style={styles.flexContainer}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
-        <AppPressable
-          style={globalStyles.modalOverlay}
+        <GlassModalOverlay
           onPress={() => {
             Keyboard.dismiss();
           }}>
-          <AppPressable
-            style={globalStyles.modalContent}
-            onPress={() => {}}>
+          <View style={globalStyles.modalContent}>
             <View style={styles.modalHeader}>
               <Image
                 source={require('../assets/backup-icon.png')}
@@ -525,7 +501,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                   (!password ||
                     !confirmPassword ||
                     password !== confirmPassword ||
-                    passwordStrength < 3) &&
+                    passwordStrength < BACKUP_PASSWORD_MIN_STRENGTH) &&
                     styles.disabledButton,
                 ]}
                 onPress={handleBackup}
@@ -533,7 +509,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                   !password ||
                   !confirmPassword ||
                   password !== confirmPassword ||
-                  passwordStrength < 3
+                  passwordStrength < BACKUP_PASSWORD_MIN_STRENGTH
                 }
                 android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <View style={styles.buttonContent}>
@@ -546,8 +522,8 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                 </View>
               </AppPressable>
             </View>
-          </AppPressable>
-        </AppPressable>
+          </View>
+        </GlassModalOverlay>
       </KeyboardAvoidingView>
     </Modal>
   );

@@ -11,9 +11,13 @@ import java.io.File
  * (Files, Telegram, WhatsApp, Signal, etc.). Provider paths often omit
  * the .share / .psbt extension, so we use DISPLAY_NAME and copy to cache
  * so JS can classify the file.
+ *
+ * Chat apps grant read permission only to the activity that received the
+ * intent — copy immediately; do not require a known extension.
  */
 object IncomingShareResolver {
     private val extensionRegex = Regex("\\.(share|psbt)(?:[?#].*)?$", RegexOption.IGNORE_CASE)
+    private val unsafeFileChars = Regex("[^A-Za-z0-9._-]")
 
     fun supportedExtension(value: String?): String? {
         if (value.isNullOrBlank()) {
@@ -54,13 +58,24 @@ object IncomingShareResolver {
         return "${raw}${sep}displayName=${Uri.encode(name)}"
     }
 
+    fun cacheFileName(displayName: String?, ext: String): String {
+        val raw = displayName?.substringAfterLast('/')?.trim().orEmpty()
+        if (raw.isNotEmpty() && supportedExtension(raw) != null) {
+            val safe = unsafeFileChars.replace(raw, "_")
+            if (safe.isNotEmpty()) {
+                return safe
+            }
+        }
+        return "incoming_shared.$ext"
+    }
+
     fun resolveToLocalUri(context: Context, uri: Uri): String? {
         val displayName = queryDisplayName(context, uri)
         val ext =
             supportedExtension(uri.toString())
                 ?: supportedExtension(displayName)
                 ?: supportedExtension(uri.lastPathSegment)
-                ?: return null
+                ?: "bin"
 
         try {
             context.contentResolver.takePersistableUriPermission(
@@ -71,7 +86,7 @@ object IncomingShareResolver {
             // Provider may only grant a one-shot read; copy still works from the activity.
         }
 
-        val dest = File(context.cacheDir, "incoming_shared.$ext")
+        val dest = File(context.cacheDir, cacheFileName(displayName, ext))
         return try {
             if (dest.exists()) {
                 dest.delete()
@@ -91,6 +106,8 @@ object IncomingShareResolver {
 
     private fun fallbackUri(uri: Uri, displayName: String?): String? {
         val decorated = decorateUriWithDisplayName(uri, displayName)
-        return if (supportedExtension(decorated) != null) decorated else null
+        // Still hand the URI to JS even without .share/.psbt so the import
+        // path can peek bytes instead of silently dropping the share.
+        return decorated.ifBlank { null }
     }
 }

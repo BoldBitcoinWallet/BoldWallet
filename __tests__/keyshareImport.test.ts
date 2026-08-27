@@ -1,3 +1,6 @@
+import {Buffer} from 'buffer';
+(global as any).Buffer = (global as any).Buffer || Buffer;
+
 jest.mock('@react-navigation/native', () => ({
   CommonActions: {
     reset: jest.fn((payload: unknown) => payload),
@@ -55,6 +58,12 @@ import {
   InvalidKeyshareError,
   WrongKeysharePasswordError,
 } from '../services/keyshareImport';
+import {
+  bufferToUr,
+  createUrDecoder,
+  receiveUrBytesPartAsBase64,
+  urAllSequentialParts,
+} from '../utils/urBytesQr';
 
 const aesDecrypt = BBMTLibNativeModule.aesDecrypt as jest.Mock;
 const sha256 = BBMTLibNativeModule.sha256 as jest.Mock;
@@ -88,5 +97,31 @@ describe('keyshareImport', () => {
       parsed: {pub_key: 'abc', local_party_key: 'KeyShare1'},
     });
     expect(sha256).toHaveBeenCalledWith('password');
+  });
+
+  it('decryptAndValidateKeyshare accepts ciphertext recovered from airgap UR frames', async () => {
+    const cipherBytes = Buffer.from('fake-aes-ciphertext-bytes-for-airgap');
+    const cipherBase64 = cipherBytes.toString('base64');
+    const ur = bufferToUr(cipherBytes);
+    expect(ur).not.toBeNull();
+    const decoder = createUrDecoder();
+    let recovered: string | null = null;
+    for (const part of urAllSequentialParts(ur!)) {
+      const result = receiveUrBytesPartAsBase64(decoder, part);
+      if (result.kind === 'complete') {
+        recovered = result.payload;
+        break;
+      }
+    }
+    expect(recovered).toBe(cipherBase64);
+
+    aesDecrypt.mockResolvedValue(
+      '{"pub_key":"abc","local_party_key":"KeyShare1"}',
+    );
+    await expect(
+      decryptAndValidateKeyshare(recovered!, 'password'),
+    ).resolves.toMatchObject({
+      parsed: {pub_key: 'abc'},
+    });
   });
 });

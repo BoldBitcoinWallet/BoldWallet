@@ -26,13 +26,27 @@ jest.mock('../services/tssBackend', () => ({
 import {encodeSendBitcoinQR, decodeSendBitcoinQR} from '../utils';
 import {
   createUrDecoder,
+  decoderMatchesPartSeqLen,
+  nextAirgapQrSpeed,
   receiveUrBytesPart,
+  receiveUrBytesPartAsBase64,
   urAllSequentialParts,
   urFountainParts,
   urFragmentCount,
   urPartAt,
+  urSeqLenFromPart,
+  urSeqIndexFromPart,
+  createUrScanFrameTracker,
+  recordUrScanFrame,
+  urScanHudFromUniqueSimple,
+  urFountainWrapAfter,
   urTypeFromPart,
   utf8ToUr,
+  bufferToUr,
+  UR_AIRGAP_DEFAULT_SPEED,
+  UR_AIRGAP_FRAGMENT_SIZE,
+  UR_AIRGAP_SPEEDS,
+  UR_BYTES_FRAGMENT_SIZE,
 } from '../utils/urBytesQr';
 
 const MAX_STATIC_QR_CHARS = 1800;
@@ -233,5 +247,182 @@ describe('urBytesQr send-bitcoin round-trip', () => {
     expect(payload).toBe(largePayload);
     const decoded = decodeSendBitcoinQR(payload!) as {utxosJson?: string};
     expect(JSON.parse(decoded.utxosJson || '[]')).toHaveLength(40);
+  });
+});
+
+describe('urBytesQr binary airgap payload', () => {
+  it('round-trips AES ciphertext bytes through UR fountain parts as base64', () => {
+    const encryptedBytes = Buffer.alloc(8192);
+    for (let i = 0; i < encryptedBytes.length; i++) {
+      encryptedBytes[i] = (i * 17 + 43) % 256;
+    }
+    const originalBase64 = encryptedBytes.toString('base64');
+    const ur = bufferToUr(Buffer.from(originalBase64, 'base64'));
+    expect(ur).not.toBeNull();
+    expect(urFragmentCount(ur!)).toBeGreaterThan(1);
+
+    const parts = urFountainParts(ur!, 4);
+    expect(urTypeFromPart(parts[0]!)).toBe('bytes');
+
+    const decoder = createUrDecoder();
+    let recovered: string | null = null;
+    for (const part of parts) {
+      const result = receiveUrBytesPartAsBase64(decoder, part);
+      if (result.kind === 'complete') {
+        recovered = result.payload;
+        break;
+      }
+      expect(['progress', 'not-ur', 'ignored']).toContain(result.kind);
+    }
+    expect(recovered).toBe(originalBase64);
+    expect(Buffer.from(recovered!, 'base64').equals(encryptedBytes)).toBe(true);
+  });
+
+  it('uses fewer frames with larger airgap fragments than the send default', () => {
+    const encryptedBytes = Buffer.alloc(140_000);
+    for (let i = 0; i < encryptedBytes.length; i++) {
+      encryptedBytes[i] = (i * 31 + 7) % 256;
+    }
+    const ur = bufferToUr(encryptedBytes);
+    expect(ur).not.toBeNull();
+    const sendFrames = urFragmentCount(ur!);
+    const defaultFrames = urFragmentCount(
+      ur!,
+      UR_AIRGAP_SPEEDS.default.fragmentSize,
+    );
+    const mediumFrames = urFragmentCount(
+      ur!,
+      UR_AIRGAP_SPEEDS.medium.fragmentSize,
+    );
+    const fastFrames = urFragmentCount(
+      ur!,
+      UR_AIRGAP_SPEEDS.fast.fragmentSize,
+    );
+    expect(sendFrames).toBeGreaterThan(600);
+    expect(defaultFrames).toBeLessThan(sendFrames);
+    expect(defaultFrames).toBeLessThan(mediumFrames);
+    expect(mediumFrames).toBeLessThan(fastFrames);
+    expect(UR_AIRGAP_FRAGMENT_SIZE).toBe(
+      UR_AIRGAP_SPEEDS.default.fragmentSize,
+    );
+    expect(UR_AIRGAP_FRAGMENT_SIZE).toBeGreaterThan(UR_BYTES_FRAGMENT_SIZE);
+    expect(UR_AIRGAP_DEFAULT_SPEED).toBe('default');
+    expect(nextAirgapQrSpeed('default')).toBe('medium');
+    expect(nextAirgapQrSpeed('medium')).toBe('fast');
+    expect(nextAirgapQrSpeed('fast')).toBe('default');
+    expect(UR_AIRGAP_SPEEDS.default.frameIntervalMs).toBe(330);
+    expect(UR_AIRGAP_SPEEDS.medium.frameIntervalMs).toBe(280);
+    expect(UR_AIRGAP_SPEEDS.fast.frameIntervalMs).toBe(200);
+
+    const parts = urFountainParts(
+      ur!,
+      8,
+      UR_AIRGAP_SPEEDS.default.fragmentSize,
+    );
+    const decoder = createUrDecoder();
+    let recovered: string | null = null;
+    for (const part of parts) {
+      const result = receiveUrBytesPartAsBase64(decoder, part);
+      if (result.kind === 'complete') {
+        recovered = result.payload;
+        expect(result.progress.percentage).toBe(100);
+        break;
+      }
+    }
+    expect(recovered).toBe(encryptedBytes.toString('base64'));
+  });
+
+  it('parses seqLen from multipart UR and detects a speed switch', () => {
+    const encryptedBytes = Buffer.alloc(12_000);
+    for (let i = 0; i < encryptedBytes.length; i++) {
+      encryptedBytes[i] = (i * 11 + 5) % 256;
+    }
+    const ur = bufferToUr(encryptedBytes);
+    expect(ur).not.toBeNull();
+    const mediumParts = urAllSequentialParts(
+      ur!,
+      UR_AIRGAP_SPEEDS.medium.fragmentSize,
+    );
+    const fastParts = urAllSequentialParts(
+      ur!,
+      UR_AIRGAP_SPEEDS.fast.fragmentSize,
+    );
+    const mediumLen = urSeqLenFromPart(mediumParts[0]!);
+    const fastLen = urSeqLenFromPart(fastParts[0]!);
+    expect(mediumLen).toBeGreaterThan(1);
+    expect(fastLen).toBeGreaterThan(1);
+    expect(mediumLen).not.toBe(fastLen);
+
+    const decoder = createUrDecoder();
+    const first = receiveUrBytesPartAsBase64(decoder, mediumParts[0]!);
+    expect(first.kind).toBe('progress');
+    expect(decoderMatchesPartSeqLen(decoder, mediumParts[1]!)).toBe(true);
+    expect(decoderMatchesPartSeqLen(decoder, fastParts[0]!)).toBe(false);
+  });
+
+  it('tracks unique UR seq frames for scanner HUD parity', () => {
+    const tracker = createUrScanFrameTracker();
+    const first = recordUrScanFrame(tracker, 'ur:bytes/1-10/lpadaaaa');
+    expect(first.novel).toBe(true);
+    expect(first.progress).toEqual({
+      total: 10,
+      received: 1,
+      percentage: 10,
+    });
+    const dup = recordUrScanFrame(tracker, 'ur:bytes/1-10/lpadaaaa');
+    expect(dup.novel).toBe(false);
+    expect(dup.progress?.received).toBe(1);
+    const second = recordUrScanFrame(tracker, 'ur:bytes/2-10/lpadbbbb');
+    expect(second.novel).toBe(true);
+    expect(second.progress?.received).toBe(2);
+    expect(urSeqIndexFromPart('ur:bytes/2-10/lpadbbbb')).toEqual({
+      seq: 2,
+      seqLen: 10,
+    });
+    const switched = recordUrScanFrame(tracker, 'ur:bytes/1-4/lpadcccc');
+    expect(switched.novel).toBe(true);
+    expect(switched.progress).toEqual({
+      total: 4,
+      received: 1,
+      percentage: 25,
+    });
+  });
+
+  it('does not treat fountain mix seq numbers as N/N recovered', () => {
+    expect(urScanHudFromUniqueSimple(470, 470)).toEqual({
+      total: 470,
+      received: 469,
+      percentage: 99,
+    });
+    const tracker = createUrScanFrameTracker();
+    for (let seq = 1; seq <= 10; seq++) {
+      recordUrScanFrame(tracker, `ur:bytes/${seq}-10/lpadxxxx`);
+    }
+    expect(tracker.seqs.size).toBe(10);
+    expect(recordUrScanFrame(tracker, 'ur:bytes/1-10/lpadxxxx').progress).toEqual(
+      {
+        total: 10,
+        received: 9,
+        percentage: 99,
+      },
+    );
+    const mixOnly = createUrScanFrameTracker();
+    for (let seq = 11; seq <= 20; seq++) {
+      recordUrScanFrame(mixOnly, `ur:bytes/${seq}-10/lpadmixx`);
+    }
+    expect(mixOnly.seqs.size).toBe(0);
+    expect(
+      recordUrScanFrame(mixOnly, 'ur:bytes/11-10/lpadmixx').progress,
+    ).toEqual({
+      total: 10,
+      received: 0,
+      percentage: 0,
+    });
+  });
+
+  it('wraps the fountain encoder after one sequential pass plus one mix pass', () => {
+    expect(urFountainWrapAfter(470)).toBe(940);
+    expect(urFountainWrapAfter(1)).toBe(2);
+    expect(urFountainWrapAfter(0)).toBe(2);
   });
 });

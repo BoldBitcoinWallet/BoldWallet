@@ -11,6 +11,7 @@ import {
   Image,
 } from 'react-native';
 import AppPressable from './AppPressable';
+import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
 import {dbg} from '../utils';
 interface LegalModalProps {
@@ -91,7 +92,6 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
   const styles = StyleSheet.create({
     modalContainer: {
       flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
       justifyContent: 'flex-end',
     },
     modalContent: {
@@ -216,7 +216,7 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
       transparent
       animationType="fade"
       onRequestClose={onClose}>
-      <View style={styles.modalContainer}>
+      <GlassModalOverlay contentPosition="bottom" style={styles.modalContainer}>
         <View style={[styles.modalContent, {maxHeight: height * 0.7}]}>
           <View style={styles.header}>
             <Text style={styles.title}>{titles[type]}</Text>
@@ -282,7 +282,7 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
             )}
           </ScrollView>
         </View>
-      </View>
+      </GlassModalOverlay>
     </Modal>
   );
 };

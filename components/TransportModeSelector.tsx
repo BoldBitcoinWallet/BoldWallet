@@ -1,17 +1,13 @@
 import React, {useEffect, useMemo, useState, Component, type ErrorInfo, type ReactNode} from 'react';
 import {View, Text, StyleSheet, Modal, Image, ScrollView} from 'react-native';
 import AppPressable from './AppPressable';
+import GlassModalOverlay from './GlassModalOverlay';
 import StaticQRCode from './StaticQRCode';
-import QRCode from 'react-native-qrcode-svg';
+import AnimatedUrQr from './AnimatedUrQr';
 import {useTheme} from '../theme';
 import {encodeSendBitcoinQR} from '../utils';
 import {dbg} from '../utils';
-import {
-  UR_FRAME_INTERVAL_MS,
-  createUrEncoder,
-  urFragmentCount,
-  utf8ToUr,
-} from '../utils/urBytesQr';
+import {utf8ToUr} from '../utils/urBytesQr';
 
 /** Static QR stays under this; larger send payloads use animated UR frames. */
 const MAX_STATIC_QR_CHARS = 1800;
@@ -69,71 +65,6 @@ function buildSendQrPayload(
   }
 }
 
-function AnimatedSendQr({
-  pipePayload,
-  size,
-  frameLabelStyle,
-  hintStyle,
-  containerStyle,
-}: {
-  pipePayload: string;
-  size: number;
-  frameLabelStyle: object;
-  hintStyle: object;
-  containerStyle: object | object[];
-}) {
-  const ur = useMemo(() => utf8ToUr(pipePayload), [pipePayload]);
-  const totalParts = useMemo(() => (ur ? urFragmentCount(ur) : 1), [ur]);
-  const encoder = useMemo(() => (ur ? createUrEncoder(ur) : null), [ur]);
-  const [qrData, setQrData] = useState<string | null>(null);
-  const [frameIndex, setFrameIndex] = useState(0);
-
-  useEffect(() => {
-    if (!encoder) {
-      setQrData(null);
-      setFrameIndex(0);
-      return;
-    }
-    setQrData(encoder.nextPart());
-    setFrameIndex(0);
-    const interval = setInterval(() => {
-      setQrData(encoder.nextPart());
-      setFrameIndex(prev => prev + 1);
-    }, UR_FRAME_INTERVAL_MS);
-    return () => clearInterval(interval);
-  }, [encoder]);
-
-  if (!qrData) {
-    return (
-      <Text style={hintStyle}>
-        Could not render animated QR. Continue with Local or Nostr.
-      </Text>
-    );
-  }
-  const displayFrame = totalParts > 0 ? (frameIndex % totalParts) + 1 : 1;
-  return (
-    <>
-      <View style={containerStyle}>
-        <QRCode
-          value={qrData}
-          size={size}
-          color="black"
-          backgroundColor="white"
-          ecl="L"
-          onError={error => {
-            dbg('TransportModeSelector: animated QR encode failed', error);
-          }}
-        />
-      </View>
-      <Text style={frameLabelStyle}>
-        Frame {displayFrame} of {totalParts}
-      </Text>
-      <Text style={hintStyle}>
-        Large UTXO set — keep scanning until the other device finishes.
-      </Text>
-    </>
-  );
-}
 interface TransportModeSelectorProps {
   visible: boolean;
   onClose: () => void;
@@ -211,7 +142,6 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   const styles = StyleSheet.create({
     modalOverlay: {
       flex: 1,
-      backgroundColor: theme.colors.modalBackdrop,
       alignItems: 'center',
       justifyContent: 'center',
     },
@@ -516,7 +446,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       visible={visible}
       animationType="fade"
       onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
+      <GlassModalOverlay style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           {/* Modal Header */}
           <View style={styles.modalHeader}>
@@ -574,7 +504,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                       </Text>
                     }>
                     {qrPayload.mode === 'animated' ? (
-                      <AnimatedSendQr
+                      <AnimatedUrQr
                         pipePayload={qrPayload.pipePayload}
                         size={260}
                         frameLabelStyle={styles.qrFrameLabel}
@@ -583,6 +513,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
                           styles.qrCodeContainer,
                           styles.noPadding,
                         ]}
+                        fallbackText="Could not render animated QR. Continue with Local or Nostr."
                       />
                     ) : (
                       <StaticQRCode
@@ -729,7 +660,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
             </AppPressable>
           </ScrollView>
         </View>
-      </View>
+      </GlassModalOverlay>
     </Modal>
   );
 };
