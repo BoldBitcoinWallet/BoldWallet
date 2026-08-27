@@ -396,6 +396,8 @@ npm start
 npm run android
 ```
 
+> **v4.0.6+:** The home-screen launcher is an `activity-alias` (camouflage icons), not `MainActivity`. React Native CLI cannot infer the entry activity from the manifest, so plain `npx react-native run-android` fails and suggests `--main-activity .MainActivity`. Use **`npm run android`** (script passes that flag) or run `npx react-native run-android --main-activity .MainActivity` yourself.
+
 ---
 
 ## 11. iOS (macOS only)
@@ -475,6 +477,7 @@ npm run lint
 | `verify:native` fails on **arm64** JNI symbol only | **x86_64** emulator builds may still work; check `npm run check:jni` for your target ABI. |
 | `build-all.sh` fails at host Go tests | Android `jniLibs` may still be built; check files under `android/app/src/main/jniLibs/`. |
 | No device for `run-android` | Start emulator(s) or connect USB device; `adb devices` must show `device`. |
+| `run-android` asks for `--main-activity .MainActivity` | Expected since v4.0.6 (launcher aliases). Use `npm run android` or add that flag; do not use a launcher alias name. |
 | Install fails: `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Uninstall old APK with different signature: `adb uninstall com.boldwallet`. |
 | iOS on Linux | Not supported — use macOS + Xcode. |
 
