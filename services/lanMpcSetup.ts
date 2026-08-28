@@ -391,8 +391,8 @@ export function resolveLanKeygenParties(opts: {
     return {partyID, partiesCSV: TRIO_PARTIES_CSV};
   }
   const partyID = opts.isMaster ? 'KeyShare1' : 'KeyShare2';
-  const peerID = partyID === 'KeyShare1' ? 'KeyShare2' : 'KeyShare1';
-  return {partyID, partiesCSV: `${partyID},${peerID}`};
+  // Always KeyShare1,KeyShare2 so both devices persist the same committee order.
+  return {partyID, partiesCSV: 'KeyShare1,KeyShare2'};
 }
 
 /** True when GET hits the MPC relay (session missing), not the publish handshake server (401). */

@@ -310,6 +310,24 @@ describe('resolveLanKeygenParties', () => {
       }),
     ).toThrow(/party role is missing/i);
   });
+
+  it('emits sorted KeyShare1,KeyShare2 CSV for duo joiner and master', () => {
+    const joiner = resolveLanKeygenParties({
+      isTrio: false,
+      isMaster: false,
+      localParty: 'KeyShare2',
+    });
+    expect(joiner.partyID).toBe('KeyShare2');
+    expect(joiner.partiesCSV).toBe('KeyShare1,KeyShare2');
+
+    const master = resolveLanKeygenParties({
+      isTrio: false,
+      isMaster: true,
+      localParty: 'KeyShare1',
+    });
+    expect(master.partyID).toBe('KeyShare1');
+    expect(master.partiesCSV).toBe('KeyShare1,KeyShare2');
+  });
 });
 
 describe('buildLanRelayServerUrl', () => {

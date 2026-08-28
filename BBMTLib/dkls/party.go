@@ -62,8 +62,10 @@ func sortedCommitteeKeys(committee []string) []string {
 	return out
 }
 
-// partyIDFromParticipatingKey maps a LAN keysign participant moniker to a libtss id
-// using keygen_committee_keys order (same rules as Nostr npub mapping and RN KeyShare labels).
+// partyIDFromParticipatingKey maps a LAN keysign participant moniker to a libtss id.
+// KeyShareN / partyN are DKG ids (the N in the moniker), not committee-array indexes:
+// duo joiners persist ["KeyShare2","KeyShare1"], but KeyShare2 is still id 2.
+// Npub committees keep lex-label mapping (KeyShareN → sorted npubs → DKG id).
 func partyIDFromParticipatingKey(key string, committee []string) (libtss.Identifier, error) {
 	key = strings.TrimSpace(key)
 	if key == "" {
@@ -71,14 +73,6 @@ func partyIDFromParticipatingKey(key string, committee []string) (libtss.Identif
 	}
 	if len(committee) < 2 {
 		return 0, fmt.Errorf("invalid committee size %d", len(committee))
-	}
-	for i, p := range committee {
-		if strings.TrimSpace(p) == key {
-			return libtss.Identifier(i + 1), nil
-		}
-	}
-	if strings.HasPrefix(key, "npub1") {
-		return partyIDFromNpub(key, committee)
 	}
 	if strings.HasPrefix(key, "KeyShare") {
 		var n int
@@ -96,6 +90,14 @@ func partyIDFromParticipatingKey(key string, committee []string) (libtss.Identif
 	}
 	if strings.HasPrefix(key, "party") {
 		return partyIDFromKeyMoniker(key)
+	}
+	for i, p := range committee {
+		if strings.TrimSpace(p) == key {
+			return libtss.Identifier(i + 1), nil
+		}
+	}
+	if strings.HasPrefix(key, "npub1") {
+		return partyIDFromNpub(key, committee)
 	}
 	return 0, fmt.Errorf("party %q not in committee", key)
 }
