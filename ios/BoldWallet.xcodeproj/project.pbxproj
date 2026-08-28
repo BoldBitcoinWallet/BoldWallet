@@ -783,7 +783,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = BoldWallet/BoldWallet.entitlements;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				ENABLE_BITCODE = NO;
@@ -807,7 +807,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/BbmtMobile",
 				);
-				MARKETING_VERSION = 4.0.6;
+				MARKETING_VERSION = 4.0.7;
 				ONLY_ACTIVE_ARCH = NO;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -833,7 +833,7 @@
 				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = BoldWallet/BoldWallet.entitlements;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				ENABLE_TESTABILITY = NO;
@@ -856,7 +856,7 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/BbmtMobile",
 				);
-				MARKETING_VERSION = 4.0.6;
+				MARKETING_VERSION = 4.0.7;
 				ONLY_ACTIVE_ARCH = YES;
 				OTHER_LDFLAGS = (
 					"$(inherited)",
@@ -1037,7 +1037,7 @@
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = BoldWalletShareExtension/BoldWalletShareExtension.entitlements;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = BoldWalletShareExtension/Info.plist;
@@ -1047,7 +1047,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.0.6;
+				MARKETING_VERSION = 4.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet.ShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1062,7 +1062,7 @@
 			buildSettings = {
 				CLANG_ENABLE_MODULES = YES;
 				CODE_SIGN_ENTITLEMENTS = BoldWalletShareExtension/BoldWalletShareExtension.entitlements;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = BoldWalletShareExtension/Info.plist;
@@ -1072,7 +1072,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.0.6;
+				MARKETING_VERSION = 4.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet.ShareExtension;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1087,7 +1087,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MpcKeepAliveWidget/Info.plist;
@@ -1097,7 +1097,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.0.6;
+				MARKETING_VERSION = 4.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet.MpcKeepAliveWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -1112,7 +1112,7 @@
 			buildSettings = {
 				APPLICATION_EXTENSION_API_ONLY = YES;
 				CLANG_ENABLE_MODULES = YES;
-				CURRENT_PROJECT_VERSION = 69;
+				CURRENT_PROJECT_VERSION = 70;
 				DEVELOPMENT_TEAM = 2G529K765N;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MpcKeepAliveWidget/Info.plist;
@@ -1122,7 +1122,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 4.0.6;
+				MARKETING_VERSION = 4.0.7;
 				PRODUCT_BUNDLE_IDENTIFIER = org.reactjs.native.boldbtc.wallet.MpcKeepAliveWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

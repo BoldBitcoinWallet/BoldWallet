@@ -27,6 +27,19 @@ func TestPartyIDFromParticipatingKey_KeyShareCommittee(t *testing.T) {
 	}
 }
 
+func TestPartyIDFromParticipatingKey_UnsortedDuoJoinerCommittee(t *testing.T) {
+	// Production joiner persists partiesCSV local-then-peer: KeyShare2,KeyShare1.
+	committee := []string{"KeyShare2", "KeyShare1"}
+	id, err := partyIDFromParticipatingKey("KeyShare2", committee)
+	if err != nil || id != 2 {
+		t.Fatalf("KeyShare2 on unsorted committee: id=%d err=%v (want 2, not array index 1)", id, err)
+	}
+	id1, err := partyIDFromParticipatingKey("KeyShare1", committee)
+	if err != nil || id1 != 1 {
+		t.Fatalf("KeyShare1 on unsorted committee: id=%d err=%v", id1, err)
+	}
+}
+
 func TestPartyIDFromParticipatingKey_NpubCommittee_KeyShareLabel(t *testing.T) {
 	_, npubAlice := generateNostrKeypair(t)
 	_, npubBob := generateNostrKeypair(t)
@@ -56,5 +69,16 @@ func TestEnsureLANRelayJoinKey_Mismatch(t *testing.T) {
 	_, err := ensureLANRelayJoinKey("KeyShare1", libtss.Identifier(2), committee)
 	if err == nil {
 		t.Fatal("expected relay key mismatch error")
+	}
+}
+
+func TestEnsureLANRelayJoinKey_UnsortedDuoJoiner(t *testing.T) {
+	committee := []string{"KeyShare2", "KeyShare1"}
+	got, err := ensureLANRelayJoinKey("KeyShare2", libtss.Identifier(2), committee)
+	if err != nil {
+		t.Fatalf("joiner KeyShare2: %v", err)
+	}
+	if got != "KeyShare2" {
+		t.Fatalf("relay key=%q want KeyShare2", got)
 	}
 }

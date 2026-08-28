@@ -77,6 +77,49 @@ func TestResolveSigningSessionLAN_RejectsDuplicateParties(t *testing.T) {
 	}
 }
 
+func TestResolveSigningSessionLAN_UnsortedDuoJoinerCommittee(t *testing.T) {
+	shares, _, err := RunDKGInProcess([]byte("sign-resolve-joiner-order"))
+	if err != nil {
+		t.Fatalf("dkg: %v", err)
+	}
+	defer shares[0].Free()
+	defer shares[1].Free()
+
+	// Joiner keyshare: committee stored as local-then-peer, share id 2.
+	committee := []string{"KeyShare2", "KeyShare1"}
+	ksJSON, err := KeyshareJSONFromHandle(shares[1], "ab", committee, "KeyShare2", "", "")
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	share, ks, err := ImportKeyshare(ksJSON)
+	if err != nil {
+		t.Fatalf("import: %v", err)
+	}
+	defer share.Free()
+
+	sess, err := ResolveSigningSessionLAN(share, ks, "KeyShare1,KeyShare2")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if sess.SelfID != 2 {
+		t.Fatalf("selfID=%d want 2", sess.SelfID)
+	}
+	if len(sess.SigningIDs) != 2 || sess.SigningIDs[0] != 1 || sess.SigningIDs[1] != 2 {
+		t.Fatalf("signingIDs=%v want [1 2] (not swapped committee indexes)", sess.SigningIDs)
+	}
+	if len(sess.LANPeerIDs) != 1 || sess.LANPeerIDs[0] != 1 {
+		t.Fatalf("LANPeerIDs=%v want [1]", sess.LANPeerIDs)
+	}
+
+	relayKey, err := ensureLANRelayJoinKey("KeyShare2", sess.SelfID, ks.KeygenCommitteeKeys)
+	if err != nil {
+		t.Fatalf("relay join: %v", err)
+	}
+	if relayKey != "KeyShare2" {
+		t.Fatalf("relayKey=%q want KeyShare2", relayKey)
+	}
+}
+
 func TestResolveSigningSessionNostr_RejectsDuplicateNpubs(t *testing.T) {
 	_, npubAlice := generateNostrKeypair(t)
 	_, npubBob := generateNostrKeypair(t)

@@ -209,7 +209,9 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 	}
 	defer share.Free()
 
-	ksJSON, err := KeyshareJSONFromHandle(share, chaincode, parties, key, "", "")
+	// Persist KeyShare1,KeyShare2,… regardless of join CSV order (joiner used to
+	// send KeyShare2,KeyShare1). Lookup still treats KeyShareN as id N.
+	ksJSON, err := KeyshareJSONFromHandle(share, chaincode, sortedCommitteeKeys(parties), key, "", "")
 	if err != nil {
 		return "", err
 	}

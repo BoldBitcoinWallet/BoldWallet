@@ -1,9 +1,24 @@
-import React, {useEffect, useMemo, useState, Component, type ErrorInfo, type ReactNode} from 'react';
-import {View, Text, StyleSheet, Modal, Image, ScrollView} from 'react-native';
+import React, {
+  useEffect,
+  useMemo,
+  useState,
+  Component,
+  type ErrorInfo,
+  type ReactNode,
+} from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  Modal,
+  Image,
+  ScrollView,
+  useWindowDimensions,
+} from 'react-native';
 import AppPressable from './AppPressable';
 import GlassModalOverlay from './GlassModalOverlay';
 import StaticQRCode from './StaticQRCode';
-import AnimatedUrQr from './AnimatedUrQr';
+import AnimatedUrQr, {UR_QR_QUIET_ZONE_PX} from './AnimatedUrQr';
 import {useTheme} from '../theme';
 import {encodeSendBitcoinQR} from '../utils';
 import {dbg} from '../utils';
@@ -11,6 +26,18 @@ import {utf8ToUr} from '../utils/urBytesQr';
 
 /** Static QR stays under this; larger send payloads use animated UR frames. */
 const MAX_STATIC_QR_CHARS = 1800;
+/** Preferred QR module size; shrinks to the dashed box on small screens. */
+const QR_DISPLAY_MAX = 260;
+/** Matches StaticQRCode inner quiet padding. */
+const STATIC_QR_INNER_PAD = 8;
+const MODAL_WIDTH_RATIO = 0.9;
+const MODAL_MAX_WIDTH = 540;
+const MODAL_BODY_PAD_H = 24;
+const QR_SECTION_PAD_H = 12;
+
+function fitQrSize(availableWidth: number, chrome: number): number {
+  return Math.max(0, Math.floor(Math.min(QR_DISPLAY_MAX, availableWidth - chrome)));
+}
 
 class QrRenderBoundary extends Component<
   {children: ReactNode; fallback: ReactNode},
@@ -21,7 +48,11 @@ class QrRenderBoundary extends Component<
     return {hasError: true};
   }
   componentDidCatch(error: Error, info: ErrorInfo) {
-    dbg('TransportModeSelector: QR render failed', error.message, info.componentStack);
+    dbg(
+      'TransportModeSelector: QR render failed',
+      error.message,
+      info.componentStack,
+    );
   }
   render() {
     if (this.state.hasError) {
@@ -104,6 +135,15 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   showQRCode = true,
 }) => {
   const {theme} = useTheme();
+  const {width: windowWidth} = useWindowDimensions();
+  const [qrFitWidth, setQrFitWidth] = useState(0);
+  const estimatedQrFitWidth =
+    Math.min(MODAL_MAX_WIDTH, windowWidth * MODAL_WIDTH_RATIO) -
+    MODAL_BODY_PAD_H * 2 -
+    QR_SECTION_PAD_H * 2;
+  const availableQrWidth = qrFitWidth > 0 ? qrFitWidth : estimatedQrFitWidth;
+  const staticQrSize = fitQrSize(availableQrWidth, STATIC_QR_INNER_PAD * 2);
+  const animatedQrSize = fitQrSize(availableQrWidth, UR_QR_QUIET_ZONE_PX * 2);
   const initialTransport = useMemo<'local' | 'nostr' | null>(() => {
     if (!nostrEnabled) {
       return 'local';
@@ -148,8 +188,8 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     modalContent: {
       backgroundColor: theme.colors.cardBackground,
       borderRadius: 16,
-      width: '85%',
-      maxWidth: 420,
+      width: '90%',
+      maxWidth: 540,
       shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 10},
       shadowOpacity: 0.3,
@@ -208,8 +248,8 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       color: theme.colors.text,
     },
     modalBody: {
-      paddingHorizontal: 24,
-      paddingVertical: 20,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
     },
     modalDescription: {
       fontSize: theme.fontSizes?.base || 13,
@@ -398,8 +438,11 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       color: theme.colors.white,
     },
     qrCodeSection: {
+      width: '100%',
       marginBottom: 12,
-      paddingTop: 6,
+      paddingHorizontal: QR_SECTION_PAD_H,
+      paddingTop: 8,
+      paddingBottom: 10,
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.white
@@ -409,17 +452,27 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
       borderColor: theme.colors.border,
       borderStyle: 'dashed',
       alignItems: 'center',
+      overflow: 'hidden',
     },
     qrCodeLabel: {
       fontSize: theme.fontSizes?.sm || 12,
       fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
       textAlign: 'center',
+      marginBottom: 6,
+    },
+    qrFitBox: {
+      width: '100%',
+      maxWidth: '100%',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     qrCodeContainer: {
       backgroundColor: 'white',
       padding: 8,
       borderRadius: 8,
+      maxWidth: '100%',
+      alignSelf: 'center',
     },
     noPadding: {
       padding: 0,
@@ -484,49 +537,60 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
             {visible && sendBitcoinData && showQRCode ? (
               !qrPayload ? (
                 <Text style={styles.transportDisabledText}>
-                  QR is too large to display. Continue with Local or Nostr
-                  on this device.
+                  QR is too large to display. Continue with Local or Nostr on
+                  this device.
                 </Text>
               ) : (
                 <View style={styles.qrCodeSection}>
                   <Text style={styles.qrCodeLabel}>
-                    Scan on another device to auto fill
+                    Scan on 2nd device to Join
                   </Text>
-                  <QrRenderBoundary
-                    key={
-                      qrPayload.mode === 'static'
-                        ? qrPayload.qrData
-                        : `animated:${qrPayload.pipePayload.length}`
-                    }
-                    fallback={
-                      <Text style={styles.transportDisabledText}>
-                        Could not render QR. Continue with Local or Nostr.
-                      </Text>
-                    }>
-                    {qrPayload.mode === 'animated' ? (
-                      <AnimatedUrQr
-                        pipePayload={qrPayload.pipePayload}
-                        size={260}
-                        frameLabelStyle={styles.qrFrameLabel}
-                        hintStyle={styles.qrAnimatedHint}
-                        containerStyle={[
-                          styles.qrCodeContainer,
-                          styles.noPadding,
-                        ]}
-                        fallbackText="Could not render animated QR. Continue with Local or Nostr."
-                      />
-                    ) : (
-                      <StaticQRCode
-                        value={qrPayload.qrData}
-                        size={260}
-                        copyContent={qrPayload.qrData}
-                        toastMessage="Send data copied to clipboard"
-                        copyDisabled={true}
-                        showLogo={qrPayload.qrData.length < 1200}
-                        style={[styles.qrCodeContainer, styles.noPadding]}
-                      />
-                    )}
-                  </QrRenderBoundary>
+                  <View
+                    style={styles.qrFitBox}
+                    onLayout={e => {
+                      const w = Math.floor(e.nativeEvent.layout.width);
+                      if (w > 0 && w !== qrFitWidth) {
+                        setQrFitWidth(w);
+                      }
+                    }}>
+                    <QrRenderBoundary
+                      key={
+                        qrPayload.mode === 'static'
+                          ? qrPayload.qrData
+                          : `animated:${qrPayload.pipePayload.length}`
+                      }
+                      fallback={
+                        <Text style={styles.transportDisabledText}>
+                          Could not render QR. Continue with Local or Nostr.
+                        </Text>
+                      }>
+                      {qrPayload.mode === 'animated'
+                        ? animatedQrSize > 0 && (
+                            <AnimatedUrQr
+                              pipePayload={qrPayload.pipePayload}
+                              size={animatedQrSize}
+                              frameLabelStyle={styles.qrFrameLabel}
+                              hintStyle={styles.qrAnimatedHint}
+                              containerStyle={[
+                                styles.qrCodeContainer,
+                                styles.noPadding,
+                              ]}
+                              fallbackText="Could not render animated QR. Continue with Local or Nostr."
+                            />
+                          )
+                        : staticQrSize > 0 && (
+                            <StaticQRCode
+                              value={qrPayload.qrData}
+                              size={staticQrSize}
+                              copyContent={qrPayload.qrData}
+                              toastMessage="Send data copied to clipboard"
+                              copyDisabled={true}
+                              showLogo={qrPayload.qrData.length < 1200}
+                              style={[styles.qrCodeContainer, styles.noPadding]}
+                            />
+                          )}
+                    </QrRenderBoundary>
+                  </View>
                 </View>
               )
             ) : null}

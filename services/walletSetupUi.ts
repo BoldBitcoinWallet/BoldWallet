@@ -64,14 +64,20 @@ export function getMpcKeepAlivePrepareModalSubtitle(
   os: KeepAliveOs,
   opts?: {notificationsGranted?: boolean},
 ): string {
-  return `${WALLET_SETUP_PREPARE_COPY.subtitle} ${getMpcKeepAliveSetupHint(os, opts)}`;
+  return `${WALLET_SETUP_PREPARE_COPY.subtitle} ${getMpcKeepAliveSetupHint(
+    os,
+    opts,
+  )}`;
 }
 
 export function getMpcKeepAliveKeygenSubtitle(
   os: KeepAliveOs,
   opts?: {notificationsGranted?: boolean},
 ): string {
-  return `Securing your wallet with advanced cryptography. ${getMpcKeepAliveSetupHint(os, opts)}`;
+  return `Securing your wallet with advanced cryptography. ${getMpcKeepAliveSetupHint(
+    os,
+    opts,
+  )}`;
 }
 
 export function getMpcKeepAliveNotificationTitle(
@@ -130,12 +136,12 @@ export function getMpcKeepAliveCompleteCopy(
   if (kind === 'sign') {
     return {
       title: 'Signing interrupted',
-      body: 'Open Bold to retry. Don’t force-close the app next time.',
+      body: 'Open Bold to retry.',
     };
   }
   return {
     title: 'Setup interrupted',
-    body: 'Open Bold to retry. Don’t force-close the app next time.',
+    body: 'Open Bold to retry.',
   };
 }
 
@@ -144,15 +150,13 @@ export const WALLET_SETUP_PREP_CARD = {
   title: 'Prepare this device',
   description: 'Wallet setup uses your local network.',
   securityLinkLabel: 'About multi-device security →',
-  securityLinkUrl:
-    'https://www.binance.com/en/square/post/17681517589057',
+  securityLinkUrl: 'https://www.binance.com/en/square/post/17681517589057',
 } as const;
 
 /** MPC keygen modal while trio/duo setup runs. */
 export const WALLET_SETUP_KEYGEN_MODAL = {
   title: 'Finalizing Your Wallet',
-  subtitle:
-    'Securing your wallet with advanced cryptography.',
+  subtitle: 'Securing your wallet with advanced cryptography.',
 } as const;
 
 /** Status lines during LAN keygen orchestration (mpcTssSetup). */

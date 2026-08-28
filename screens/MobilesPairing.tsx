@@ -70,7 +70,12 @@ import {
   parseEciesKeypairJson,
   resolveLanKeysignTransportKeys,
 } from '../services/lanMpcTransport';
-import {LAN_KEYGEN_STATUS, getMpcKeepAliveCheckboxLabel, getMpcKeepAlivePrepareModalSubtitle, getMpcKeepAliveSetupHint} from '../services/walletSetupUi';
+import {
+  LAN_KEYGEN_STATUS,
+  getMpcKeepAliveCheckboxLabel,
+  getMpcKeepAlivePrepareModalSubtitle,
+  getMpcKeepAliveSetupHint,
+} from '../services/walletSetupUi';
 import {
   startMpcKeepAlive,
   stopMpcKeepAlive,
@@ -136,7 +141,10 @@ import {
   type ConnectionQualityState,
 } from '../services/mpcConnectionQuality';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
-import {MpcKeepAliveHints, useMpcKeepAliveUi} from '../components/MpcKeepAliveHints';
+import {
+  MpcKeepAliveHints,
+  useMpcKeepAliveUi,
+} from '../components/MpcKeepAliveHints';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
 import appConfigRepository, {
@@ -383,19 +391,22 @@ const MobilesPairing = ({navigation}: any) => {
   const doingMpcRef = useRef(false);
   const keysharePersistedRef = useRef(false);
   const keepAliveOutcomeRef = useRef<MpcKeepAliveOutcome>('failure');
-  const setMpcModalActive = useCallback((active: boolean) => {
-    doingMpcRef.current = active;
-    setDoingMPC(active);
-    if (active) {
-      keepAliveOutcomeRef.current = 'failure';
-      void startMpcKeepAlive({
-        kind: isSendBitcoin || isSignPSBT ? 'sign' : 'keygen',
-        transport: 'lan',
-      });
-    } else {
-      void stopMpcKeepAlive(keepAliveOutcomeRef.current);
-    }
-  }, [isSendBitcoin, isSignPSBT]);
+  const setMpcModalActive = useCallback(
+    (active: boolean) => {
+      doingMpcRef.current = active;
+      setDoingMPC(active);
+      if (active) {
+        keepAliveOutcomeRef.current = 'failure';
+        startMpcKeepAlive({
+          kind: isSendBitcoin || isSignPSBT ? 'sign' : 'keygen',
+          transport: 'lan',
+        });
+      } else {
+        stopMpcKeepAlive(keepAliveOutcomeRef.current);
+      }
+    },
+    [isSendBitcoin, isSignPSBT],
+  );
   const {displayPercent, setCircleTarget, resetCircle} =
     useMpcCircleProgress(doingMPC);
   const broadcastSuccessPayloadRef = useRef<{
@@ -447,9 +458,7 @@ const MobilesPairing = ({navigation}: any) => {
           style: 'destructive',
           onPress: async () => {
             mpcAbortRef.current = true;
-            const aborted = progressStateAfterAbort(
-              mpcHookProgressRef.current,
-            );
+            const aborted = progressStateAfterAbort(mpcHookProgressRef.current);
             setCircleTarget(aborted.percent);
             keepAliveOutcomeRef.current = 'abort';
             setMpcModalActive(false);
@@ -1059,7 +1068,9 @@ const MobilesPairing = ({navigation}: any) => {
     }
   };
   const runKeysign = async () => {
-    if (!guardOnlineAction('Wallet is offline — co-signing needs the network')) {
+    if (
+      !guardOnlineAction('Wallet is offline — co-signing needs the network')
+    ) {
       return;
     }
     let backend = spendBackend;
@@ -4207,7 +4218,10 @@ const MobilesPairing = ({navigation}: any) => {
                         </Text>
                         <Text style={styles.requirementsDescription}>
                           {prepCardCopy.description}{' '}
-                          {getMpcKeepAliveSetupHint(keepAliveOs, keepAliveHintOpts)}
+                          {getMpcKeepAliveSetupHint(
+                            keepAliveOs,
+                            keepAliveHintOpts,
+                          )}
                         </Text>
                         <AppPressable
                           onPress={() => {
@@ -4448,7 +4462,9 @@ const MobilesPairing = ({navigation}: any) => {
                                     mpcTransportPulse || !!staleTransportHint
                                   }
                                 />
-                                <MpcConnectionQuality quality={connectionQuality} />
+                                <MpcConnectionQuality
+                                  quality={connectionQuality}
+                                />
                                 <MpcTransportSubprogress
                                   subprogress={mpcTransportSubprogress}
                                 />
@@ -4471,7 +4487,9 @@ const MobilesPairing = ({navigation}: any) => {
                                     styles.modalButton,
                                     {backgroundColor: theme.colors.secondary},
                                   ]}
-                                  onPress={() => abortActiveMpc({keygen: true})}>
+                                  onPress={() =>
+                                    abortActiveMpc({keygen: true})
+                                  }>
                                   <Text style={styles.buttonText}>Abort</Text>
                                 </AppPressable>
                               </View>
