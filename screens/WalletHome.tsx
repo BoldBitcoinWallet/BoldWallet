@@ -1406,6 +1406,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     showErrorToast,
     isInitialized,
     address,
+    hasCachedData,
     navigation,
     network,
     activeNetwork,
@@ -1478,7 +1479,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     apiBase,
     addressType,
     userAddressType,
-    walletAddresses.length > 0 || !!address,
+    address,
+    walletAddresses,
   ]);
   useEffect(() => {
     if (!syncEngineReady || !walletAddressesReady || !network) {
@@ -2742,7 +2744,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           onPullRefresh={async () => {
             if (!isWalletOnline()) {
               pendingOnlineActionRef.current = () => {
-                void fetchDataRef.current?.();
+                fetchDataRef.current?.();
               };
               setOfflineSandboxModalVisible(true);
               return;
