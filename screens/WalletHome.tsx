@@ -1067,17 +1067,24 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       },
       pendingChip: {
         alignSelf: 'center',
-        marginTop: 6,
-        paddingHorizontal: 10,
+        maxWidth: '100%',
+        flexShrink: 1,
+        marginTop: 8,
+        paddingHorizontal: 8,
         paddingVertical: 3,
-        borderRadius: 12,
-        backgroundColor: 'rgba(255,179,0,0.18)',
+        borderRadius: 999,
+        backgroundColor: theme.colors.warning + '22',
+        borderWidth: StyleSheet.hairlineWidth,
+        borderColor: theme.colors.warning + '55',
       },
       pendingChipText: {
         fontSize: 11,
-        fontWeight: '500',
-        color: '#FFB300',
-        letterSpacing: 0.2,
+        fontFamily: theme.fontFamilies?.medium,
+        color: theme.colors.warningLight,
+        letterSpacing: 0.15,
+        includeFontPadding: false,
+        textAlign: 'center',
+        maxWidth: '100%',
       },
     }),
     balanceContainer: {
@@ -2215,6 +2222,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
   }, [spendableBTC, balanceBTC]);
 
+  const pendingChipLabel = useMemo(() => {
+    if (pendingSats === 0) {
+      return '';
+    }
+    const amt = (Math.abs(pendingSats) / 1e8)
+      .toFixed(8)
+      .replace(/\.?0+$/, '');
+    return pendingSats > 0
+      ? `⏳ +${amt} BTC incoming`
+      : `⏳ −${amt} BTC outgoing`;
+  }, [pendingSats]);
+
   const sendModalRate = useMemo(() => {
     try {
       return Number.isFinite(btcRate) ? Big(btcRate) : Big(0);
@@ -2359,11 +2378,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   )}
                   {!isBlurred && pendingSats !== 0 && (
                     <View style={styles.pendingChip}>
-                      <AppText style={styles.pendingChipText}>
-                        {pendingSats > 0
-                          ? `⏳ +${(pendingSats / 1e8).toFixed(8)} BTC incoming`
-                          : `⏳ ${(pendingSats / 1e8).toFixed(8)} BTC outgoing`}
-                      </AppText>
+                      <Text
+                        style={styles.pendingChipText}
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        minimumFontScale={0.6}
+                        allowFontScaling
+                        ellipsizeMode="clip"
+                        accessibilityLabel={pendingChipLabel}>
+                        {pendingChipLabel}
+                      </Text>
                     </View>
                   )}
                 </>
@@ -2373,7 +2397,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             <View style={styles.balanceUnitToggleContainer}>
               <AppPressable
                 onPress={() => {
-                  setShowSatsGlobal(!showSats);
+                  const nextShowSats = !showSats;
+                  setShowSatsGlobal(nextShowSats);
+                  Toast.show({
+                    type: 'info',
+                    text1: nextShowSats
+                      ? 'Satoshis units'
+                      : 'Bitcoin units',
+                    text2: nextShowSats
+                      ? 'Amounts shown in sats — 1 BTC = 100,000,000 sats'
+                      : 'Amounts shown in BTC',
+                    position: 'top',
+                    visibilityTime: 2200,
+                  });
                 }}
                 style={styles.balanceUnitToggle}
                 android_ripple={{color: 'rgba(0,0,0,0.1)'}}

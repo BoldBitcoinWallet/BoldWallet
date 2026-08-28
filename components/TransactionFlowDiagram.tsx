@@ -481,7 +481,7 @@ const TransactionFlowDiagram: React.FC<TransactionFlowDiagramProps> = props => {
     sendParams.satoshiFees,
   );
 
-  const headerTitle = `Spending ${sat2btcStr(String(totalSats))} BTC`;
+  const headerTitle = `BTC Spending`;
 
   return (
     <View style={[cardStyles(theme).card, props.cardStyle]}>
@@ -489,7 +489,8 @@ const TransactionFlowDiagram: React.FC<TransactionFlowDiagramProps> = props => {
       {showCollapsedStrip && (
         <View style={cardStyles(theme).summaryStrip}>
           <Text style={cardStyles(theme).summaryLine}>
-            To {shortenAddress(toAddr)} ·{' '}
+            To: {shortenAddress(toAddr)} {'\n'}
+            Amount:
             <Text style={{fontFamily: theme.fontFamilies?.monospaceBold}}>
               {sat2btcStr(sendParams.satoshiAmount)} BTC
             </Text>
@@ -499,7 +500,7 @@ const TransactionFlowDiagram: React.FC<TransactionFlowDiagramProps> = props => {
           </Text>
           <View style={cardStyles(theme).summaryRow2}>
             <Text style={cardStyles(theme).summaryMuted}>
-              Fee {sat2btcStr(sendParams.satoshiFees)} BTC
+              Fees: {sat2btcStr(sendParams.satoshiFees)} BTC
               {sendParams.fiatFees != null && sendParams.selectedCurrency
                 ? ` · ${sendParams.selectedCurrency} ${formatFiat(sendParams.fiatFees)}`
                 : ''}
