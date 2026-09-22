@@ -141,6 +141,12 @@ import DiceEntropySheet, {
 import {DiceSetupNote} from '../components/DiceReceipt';
 import SetupFinishStepper from '../components/SetupFinishStepper';
 import type {DiceSet} from '../services/diceEntropy';
+import {
+  assertMatchingDiceChecksums,
+  diceChecksumTag,
+  diceTagsFromLanPublishResult,
+  parseDiceChecksumTags,
+} from '../services/diceEntropy';
 import {MpcConnectionQuality} from '../components/MpcConnectionQuality';
 import {
   emptyMpcTransportSubprogress,
@@ -803,6 +809,13 @@ const MobilesPairing = ({navigation}: any) => {
         const attemptId = await generateMpcAttemptId();
         const sessionSeed = await secureRandomHex(64);
         let _data = `${attemptId}:${sessionSeed}`;
+        // Dice check is a 6-hex tag. The session seed stays the legacy binder.
+        // The dice-derived master chaincode is never written into this payload.
+        const localDiceTag =
+          keygenFlow && diceOn ? await diceChecksumTag(diceSets) : '';
+        if (localDiceTag) {
+          _data += `:${localDiceTag}`;
+        }
         dbg('initSession: Generated attempt id and session seed');
         if (isSendBitcoin) {
           dbg('initSession: Preparing for Bitcoin send');
@@ -822,8 +835,8 @@ const MobilesPairing = ({navigation}: any) => {
           _data += ':' + (meta?.local_party_key || '');
           dbg('initSession: Added PSBT data to session data');
         }
-        // Spec v2.1 leak hardening: handshake carries base chaincode +
-        // dice commitments — length only, never the payload.
+        // Handshake carries the session seed plus a 6-hex dice check.
+        // Log length only. Never log the seed or the master chaincode.
         dbg('initSession: Publishing data', {
           masterHost,
           dataLen: _data.length,
@@ -892,6 +905,13 @@ const MobilesPairing = ({navigation}: any) => {
               throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
             }
           }
+          if (keygenFlow) {
+            const expectedPeers = isTrio ? 2 : 1;
+            assertMatchingDiceChecksums(
+              localDiceTag,
+              diceTagsFromLanPublishResult(published, expectedPeers),
+            );
+          }
           dbg('initSession: Session initialization completed successfully');
           return (_data || '').trim();
         } else {
@@ -923,6 +943,9 @@ const MobilesPairing = ({navigation}: any) => {
           ? `${peerEnc}/${route.params?.satoshiAmount}`
           : `${masterPubForFetch || peerEnc}/${kp.publicKey}`;
         const checksum = await BBMTLibNativeModule.sha256(payload);
+        const localDiceTag =
+          keygenFlow && diceOn ? await diceChecksumTag(diceSets) : '';
+        const fetchStamp = localDiceTag ? `${checksum}:${localDiceTag}` : checksum;
         const peerURL = `${buildLanRelayServerUrl(
           normalizeLanHost(masterHost) || masterHost || '',
           discoveryPort,
@@ -972,10 +995,14 @@ const MobilesPairing = ({navigation}: any) => {
         const rawFetched = await fetchData(
           peerURL,
           kp.privateKey,
-          checksum,
+          fetchStamp,
           acceptSessionPayload,
           keygenFlow ? 90 : timeout,
         );
+        if (keygenFlow) {
+          const announced = parseDiceChecksumTags(rawFetched || '')[0] || '';
+          assertMatchingDiceChecksums(localDiceTag, [announced]);
+        }
         if (isSignPSBT || isSendBitcoin) {
           try {
             const attemptId = isSignPSBT
@@ -4489,7 +4516,7 @@ const MobilesPairing = ({navigation}: any) => {
                             </Text>
                             <Text style={styles.warningHint}>
                               {diceOn
-                                ? 'Same sequence on every phone, or setup will fail.'
+                                ? 'Same sequence on every phone. Setup stops if the check differs.'
                                 : 'Optional. Same sequence on every phone. Stays on this phone.'}
                             </Text>
                           </View>

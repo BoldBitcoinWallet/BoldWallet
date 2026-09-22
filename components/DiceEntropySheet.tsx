@@ -629,7 +629,7 @@ export default function DiceEntropySheet({
                   <View>
                     <Text style={styles.cardTitle}>{kindTitle(kind)} · {rolls.length} rolls</Text>
                     <Text style={styles.hint}>About {Math.floor(bits)} bits.</Text>
-                    <Text style={[styles.hint, {marginTop: 14}]}>Read this aloud. It should be the same on every phone. The app does not check it.</Text>
+                    <Text style={[styles.hint, {marginTop: 14}]}>Read this aloud. Setup compares a short check of it and stops if the phones differ. The rolls and the chaincode stay on this phone.</Text>
                     <Text style={styles.spoken}>{spoken || '…'}</Text>
                     <View style={styles.callout}>
                       <Text style={styles.hint}>

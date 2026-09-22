@@ -67,6 +67,10 @@ import DiceEntropySheet, {
 import {DiceSetupNote} from '../components/DiceReceipt';
 import SetupFinishStepper from '../components/SetupFinishStepper';
 import type {DiceSet} from '../services/diceEntropy';
+import {
+  assertMatchingDiceChecksums,
+  diceChecksumTag,
+} from '../services/diceEntropy';
 import syncCoordinator from '../services/sync/SyncCoordinator';
 import {resolveDklsNostrSigningParties} from '../services/lanMpcSetup';
 import {
@@ -486,6 +490,28 @@ const MobileNostrPairing = ({navigation}: any) => {
     setDiceSets([]);
   }
   const diceOn = diceSets.length > 0 && (diceSets[0]?.rolls.length ?? 0) > 0;
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!diceOn) {
+        setLocalDiceTag('');
+        return;
+      }
+      try {
+        const tag = await diceChecksumTag(diceSets);
+        if (!cancelled) {
+          setLocalDiceTag(tag);
+        }
+      } catch {
+        if (!cancelled) {
+          setLocalDiceTag('');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [diceOn, diceSets]);
   const diceKindLabel =
     diceSets[0]?.kind === 'd20' ? 'D20' : diceSets[0]?.kind === 'coin' ? 'Coin' : 'D6';
   // Peer Connections (for duo: 1 peer, for trio: 2 peers)
@@ -494,6 +520,9 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [peerNpub1, setPeerNpub1] = useState<string>('');
   const [peerDeviceName1, setPeerDeviceName1] = useState<string>('');
   const [peerNonce1, setPeerNonce1] = useState<string>('');
+  const [peerDiceTag1, setPeerDiceTag1] = useState<string>('');
+  const [peerDiceTag2, setPeerDiceTag2] = useState<string>('');
+  const [localDiceTag, setLocalDiceTag] = useState<string>('');
   const [peerConnectionDetails2, setPeerConnectionDetails2] =
     useState<string>('');
   const [peerNpub2, setPeerNpub2] = useState<string>('');
@@ -696,7 +725,10 @@ const MobileNostrPairing = ({navigation}: any) => {
     if (!localNpub || !deviceName || !partialNonce) {
       return '';
     }
-    const plaintext = `${localNpub}:${deviceName}:${partialNonce}`;
+    // dice_ tag is a 6-hex check. The nonce stays the session binder.
+    // The dice-derived master chaincode is not part of this QR.
+    const diceSuffix = localDiceTag ? `|${localDiceTag}` : '';
+    const plaintext = `${localNpub}:${deviceName}:${partialNonce}${diceSuffix}`;
     // Convert to hex encoding
     let hex = '';
     for (let i = 0; i < plaintext.length; i++) {
@@ -704,7 +736,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       hex += charCode.toString(16).padStart(2, '0');
     }
     return hex;
-  }, [localNpub, deviceName, partialNonce]);
+  }, [localNpub, deviceName, partialNonce, localDiceTag]);
   // Load default relays on mount (from cache if available, otherwise fetch dynamically)
   useEffect(() => {
     const loadRelays = async () => {
@@ -1245,6 +1277,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     npub: string;
     deviceName: string;
     partialNonce: string;
+    diceTag: string;
   } | null> => {
     const trimmed = input.trim();
     dbg('parseConnectionDetails: input =', trimmed.substring(0, 50) + '...');
@@ -1288,7 +1321,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
     const npub = parts[0];
     const peerDeviceName = parts[1];
-    const peerPartialNonce = parts[2].split('|')[0];
+    const nonceBits = parts[2].split('|');
+    const peerPartialNonce = nonceBits[0];
+    const tagBit = nonceBits.find(bit =>
+      /^dice_[0-9a-f]{6}$/i.test(bit.trim()),
+    );
+    const diceTag = tagBit ? tagBit.trim().toLowerCase() : '';
     let trimmedNpub = npub.trim();
     const trimmedDeviceName = peerDeviceName.trim();
     const trimmedNonce = peerPartialNonce.trim();
@@ -1346,6 +1384,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       npub: trimmedNpub,
       deviceName: trimmedDeviceName,
       partialNonce: trimmedNonce,
+      diceTag,
     };
   };
   const handlePeerConnectionInput = async (input: string, peerNum: 1 | 2) => {
@@ -1364,11 +1403,13 @@ const MobileNostrPairing = ({navigation}: any) => {
         setPeerNpub1('');
         setPeerDeviceName1('');
         setPeerNonce1('');
+        setPeerDiceTag1('');
         setPeerConnectionDetails1('');
       } else {
         setPeerNpub2('');
         setPeerDeviceName2('');
         setPeerNonce2('');
+        setPeerDiceTag2('');
         setPeerConnectionDetails2('');
       }
       return;
@@ -1403,9 +1444,11 @@ const MobileNostrPairing = ({navigation}: any) => {
         if (peerNum === 1) {
           setPeerConnectionDetails1('');
           setPeerNonce1('');
+          setPeerDiceTag1('');
         } else {
           setPeerConnectionDetails2('');
           setPeerNonce2('');
+          setPeerDiceTag2('');
         }
         return;
       }
@@ -1413,12 +1456,14 @@ const MobileNostrPairing = ({navigation}: any) => {
         setPeerNpub1(parsed.npub);
         setPeerDeviceName1(parsed.deviceName);
         setPeerNonce1(parsed.partialNonce);
+        setPeerDiceTag1(parsed.diceTag);
         setPeerConnectionDetails1(input.trim());
         setPeerInputError1('');
       } else {
         setPeerNpub2(parsed.npub);
         setPeerDeviceName2(parsed.deviceName);
         setPeerNonce2(parsed.partialNonce);
+        setPeerDiceTag2(parsed.diceTag);
         setPeerConnectionDetails2(input.trim());
         setPeerInputError2('');
       }
@@ -1447,11 +1492,13 @@ const MobileNostrPairing = ({navigation}: any) => {
         setPeerNpub1('');
         setPeerDeviceName1('');
         setPeerNonce1('');
+        setPeerDiceTag1('');
         setPeerConnectionDetails1('');
       } else {
         setPeerNpub2('');
         setPeerDeviceName2('');
         setPeerNonce2('');
+        setPeerDiceTag2('');
         setPeerConnectionDetails2('');
       }
     }
@@ -1592,6 +1639,17 @@ const MobileNostrPairing = ({navigation}: any) => {
   const startKeygen = async () => {
     if (!canStartKeygen) return;
     if (!guardOnlineAction('Wallet is offline — pairing needs the network')) {
+      return;
+    }
+    const localTag = diceOn ? await diceChecksumTag(diceSets) : '';
+    const peerTags = isTrio ? [peerDiceTag1, peerDiceTag2] : [peerDiceTag1];
+    try {
+      assertMatchingDiceChecksums(localTag, peerTags);
+    } catch (e) {
+      Alert.alert(
+        'Dice rolls',
+        e instanceof Error ? e.message : 'Dice rolls do not match.',
+      );
       return;
     }
     try {
@@ -1743,6 +1801,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         setupMode: keygenSetupMode,
         backend,
         diceSets,
+        peerDiceTags: isTrio ? [peerDiceTag1, peerDiceTag2] : [peerDiceTag1],
       });
       // Validate keyshare and map keyshare positions
       let keyshare: any;
@@ -2734,12 +2793,14 @@ const MobileNostrPairing = ({navigation}: any) => {
       setPeerNpub1('');
       setPeerDeviceName1('');
       setPeerNonce1('');
+      setPeerDiceTag1('');
       setPeerConnectionDetails1('');
       setPeerInputError1('');
     } else {
       setPeerNpub2('');
       setPeerDeviceName2('');
       setPeerNonce2('');
+      setPeerDiceTag2('');
       setPeerConnectionDetails2('');
       setPeerInputError2('');
     }
@@ -5792,7 +5853,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   </Text>
                                   <Text style={styles.warningHint}>
                                     {diceOn
-                                      ? 'Same sequence on every phone, or setup will fail.'
+                                      ? 'Same sequence on every phone. Share again after dice is on. Setup stops if the check differs.'
                                       : 'Optional. Same sequence on every phone. Stays on this phone.'}
                                   </Text>
                                 </View>

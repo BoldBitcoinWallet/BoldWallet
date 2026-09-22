@@ -1,10 +1,10 @@
-// Dice-only master chaincode (Spec v2.1).
+// Dice-only master chaincode (Spec v2.2).
 // Opt-in: final = SHA256('BOLD-DICE-CHAINCODE-v1' || canonicalAllAscii).
 // canonicalAllAscii = `BOLD-DICE-v1|` + sorted(perSetCommitHex).join(`|`)
 //   where perSetCommitHex = SHA256Hex(`BOLD-DICE-COMMIT-v1||<sides>:<r1>,<r2>,...`).
 // No baseChaincode / RNG input on the opt-in path. Empty dice set returns base
-// unchanged (skip path, byte-identical). Commit-only match: canonical never
-// crosses the wire; only 64-hex commitments do.
+// unchanged (skip path, byte-identical). Commitments and the chaincode do not
+// cross the wire; the app may exchange only `dice_` + 6 hex (checksum tag).
 package tss
 
 import (

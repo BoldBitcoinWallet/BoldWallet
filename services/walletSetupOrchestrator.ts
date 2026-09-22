@@ -25,7 +25,11 @@ import {assertTrioLanKeygenReady} from './trioLanKeygenPreflight';
 import {LAN_KEYGEN_STATUS} from './walletSetupUi';
 import {parseLanKeygenSessionPayload} from './lanSession';
 import {
+  assertMatchingDiceChecksums,
   deriveLocalDiceChaincode,
+  diceChecksumMismatchMessage,
+  diceChecksumTag,
+  parseDiceChecksumTags,
   stripLanDiceField,
 } from './diceEntropy';
 import {assertCommitmentsOnlyPayload} from './logRedact';
@@ -207,6 +211,12 @@ export async function runLanWalletKeygen(
   if (!assertCommitmentsOnlyPayload(data)) {
     throw new Error('LAN handshake must not carry dice rolls.');
   }
+  // Dice mode: the handshake may carry dice_<6 hex>, never the master chaincode.
+  const localDiceTag = input.diceSets?.length
+    ? await diceChecksumTag(input.diceSets)
+    : '';
+  const announcedDiceTag = parseDiceChecksumTags(data)[0] || '';
+  assertMatchingDiceChecksums(localDiceTag, [announcedDiceTag]);
   let chaincode: string;
   try {
     chaincode = parseLanKeygenSessionPayload(data).seed;
@@ -257,9 +267,14 @@ export async function runLanWalletKeygen(
     sha256: (msg: string) => BBMTLibNativeModule.sha256(msg),
   });
 
-  // Dice stays on this phone. Same rolls on every phone produce the same
-  // chaincode; a mismatch is not checked here and fails later inside MPC.
+  // Dice stays on this phone. The wire tag is a 6-hex check, not this chaincode.
   const diceRes = await chaincodeFromLocalDice(chaincode, input.diceSets);
+  if (
+    diceRes.diceUsed &&
+    data.toLowerCase().includes(diceRes.finalChaincodeHex.toLowerCase())
+  ) {
+    throw new Error('Setup refused to send the master chaincode.');
+  }
 
   return {
     backend,
@@ -327,6 +342,11 @@ export type NostrKeygenInvokeInput = {
    * Omit/empty = skip path (base unchanged). Not sent to peers.
    */
   diceSets?: DiceSet[];
+  /**
+   * One `dice_` + 6 hex tag per other phone. Required when diceSets is set.
+   * Not the master chaincode.
+   */
+  peerDiceTags?: string[];
 };
 
 /** Dice-only Nostr chaincode: skip = base unchanged, else local dice hash. */
@@ -346,6 +366,18 @@ export async function invokeNostrWalletKeygen(
     input.setupMode,
   );
   await ensureDklsRuntimeIfNeeded(backend);
+  const localDiceTag = input.diceSets?.length
+    ? await diceChecksumTag(input.diceSets)
+    : '';
+  const peerDiceTags = input.peerDiceTags ?? [];
+  if (localDiceTag) {
+    if (peerDiceTags.length === 0) {
+      throw new Error(diceChecksumMismatchMessage());
+    }
+    assertMatchingDiceChecksums(localDiceTag, peerDiceTags);
+  } else if (peerDiceTags.some(t => (t || '').trim() !== '')) {
+    assertMatchingDiceChecksums('', peerDiceTags);
+  }
   const {finalChaincodeHex} = await mixNostrChaincodeWithDice(
     input.chaincode,
     input.diceSets,

@@ -58,7 +58,7 @@ export default function DiceReceipt({
         <Text style={styles.v}>{spokenCode || '…'}</Text>
       </View>
       <Text style={styles.hint}>
-        This code should match the other phones. The app does not check it.
+        This code should match the other phones. Setup already compared a short check of it.
       </Text>
     </View>
   );

@@ -1,3 +1,4 @@
+import {NativeModules} from 'react-native';
 import {
   canonicalAllForCommits,
   canonicalDiceString,
@@ -10,6 +11,7 @@ import {
   MIN_DICE_BITS,
   REQUIRED_ROLLS,
   validateDiceSet,
+  shannonBitsPerRoll,
 } from '../services/diceEntropy';
 
 // Deterministic PRNG fixtures (non-sequential so bias checks pass).
@@ -34,6 +36,10 @@ const D20_60 = genRolls(60, 20, 7);
 const COIN_256 = genRolls(256, 2, 99);
 
 describe('diceEntropy (Spec v2.1 dice-only)', () => {
+  afterEach(() => {
+    delete (NativeModules as any).BBMTLibNativeModule;
+  });
+
   test('canonical per-set encoding', () => {
     expect(canonicalDiceString(6, [1, 2, 3])).toBe('6:1,2,3');
   });
@@ -54,8 +60,25 @@ describe('diceEntropy (Spec v2.1 dice-only)', () => {
     expect(a).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  test('local derivation does not take a base or peer list', async () => {
-    const sets = [{kind: 'd6' as const, sides: 6, rolls: [1, 2, 3, 5]}];
+  test('JS sha256 fallback only when native sha256 is missing', async () => {
+    const sync = diceCommitmentHexSync(6, [1, 2, 3]);
+    delete (NativeModules as any).BBMTLibNativeModule;
+    expect(await diceCommitmentHex(6, [1, 2, 3])).toBe(sync);
+
+    (NativeModules as any).BBMTLibNativeModule = {
+      sha256: async () => {
+        throw new Error('native sha256 failed');
+      },
+    };
+    await expect(diceCommitmentHex(6, [1, 2, 3])).rejects.toThrow(/native sha256 failed/);
+  });
+
+  test('local derivation enforces 256-bit floor', async () => {
+    const short = [{kind: 'd6' as const, sides: 6, rolls: [1, 2, 3, 5]}];
+    await expect(deriveLocalDiceChaincode(short)).rejects.toThrow(
+      'dice: need at least 256 bits of entropy (got 10)',
+    );
+    const sets = [{kind: 'd6' as const, sides: 6, rolls: [...D6_100]}];
     const r = await deriveLocalDiceChaincode(sets);
     expect(r.chaincodeHex).toMatch(/^[0-9a-f]{64}$/);
     expect(r.localCommits).toHaveLength(1);
@@ -64,6 +87,7 @@ describe('diceEntropy (Spec v2.1 dice-only)', () => {
   });
 
   test('shared vector matches node crypto and Go DeriveDiceChaincodeHex', async () => {
+    // Below floor: low-level helpers only (not deriveLocalDiceChaincode).
     const commit = diceCommitmentHexSync(6, [1, 2, 3]);
     expect(commit).toBe('1ff5e30664dacfdf237ba1ddf5ce7e2a2ad3673cb7933e5224e31428abf7a331');
     const canonicalAll = canonicalAllForCommits([commit]);
@@ -75,6 +99,16 @@ describe('diceEntropy (Spec v2.1 dice-only)', () => {
   test('alternating faces are rejected', () => {
     const alt = Array.from({length: 12}, (_, i) => (i % 2 === 0 ? 1 : 2));
     expect(validateDiceSet(6, alt).ok).toBe(false);
+  });
+
+  test('entropy floor rejects two-face D6 at length 100; fair fixture passes', () => {
+    const twoFace = Array.from({length: 100}, (_, i) => (i % 3 === 0 ? 1 : 2));
+    expect(new Set(twoFace).size).toBe(2);
+    expect(shannonBitsPerRoll(twoFace)).toBeLessThan(1.5);
+    expect(validateDiceSet(6, twoFace).ok).toBe(false);
+    expect(validateDiceSet(6, D6_100).ok).toBe(true);
+    expect(validateDiceSet(20, D20_60).ok).toBe(true);
+    expect(validateDiceSet(2, COIN_256).ok).toBe(true);
   });
 
   test('dice-only derivation ignores base (no RNG input)', async () => {

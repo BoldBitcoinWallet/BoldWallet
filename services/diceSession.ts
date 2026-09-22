@@ -1,15 +1,13 @@
 /**
- * Local dice helpers. Setup does not put rolls or commitments on LAN or Nostr.
- * The encode/parse helpers below remain so a stray legacy field can be
- * recognized; wallet setup must not call the append helpers.
+ * Local dice helpers. Setup must not send rolls, full commitments, or the
+ * master chaincode. The live check is dice_<6 hex> from diceEntropy.
+ * Parse helpers remain so a stray legacy field can be recognized.
  */
 import {
   DiceSet,
   buildDiceCommitBundle,
   compareCommitSets,
   diceMismatchMessage,
-  encodeLanDiceField,
-  encodeNostrDiceField,
   parseLanDiceCommits,
   parseNostrDiceCommits,
   verifyAndDeriveDiceChaincode,
@@ -22,31 +20,12 @@ export function resolveDiceMode(localSets: DiceSet[] | null | undefined): DiceMo
   return localSets && localSets.length > 0 ? 'on' : 'off';
 }
 
-/** Append local commitments to an outgoing LAN handshake (backward-compat). */
-export function appendLanDiceCommits(
-  handshake: string,
-  commits: string[],
-): string {
-  if (!commits.length) return handshake;
-  return handshake + encodeLanDiceField(commits);
-}
-
-/** Extract peer commitments from an incoming LAN handshake. */
+/** Extract peer commitments from a stray legacy LAN handshake field. */
 export function extractLanPeerCommits(handshake: string): string[] {
   return parseLanDiceCommits(handshake);
 }
 
-/** Append local commitments to an outgoing Nostr fullNonce set. */
-export function appendNostrDiceCommits(
-  fullNonce: string,
-  commits: string[],
-): string {
-  if (!commits.length) return fullNonce;
-  const sep = fullNonce.endsWith('|') || fullNonce.length === 0 ? '' : '|';
-  return fullNonce + sep + encodeNostrDiceField(commits);
-}
-
-/** Extract peer commitments from a Nostr fullNonce set. */
+/** Extract peer commitments from a stray legacy Nostr fullNonce field. */
 export function extractNostrPeerCommits(fullNonce: string): string[] {
   return parseNostrDiceCommits(fullNonce);
 }
@@ -74,30 +53,17 @@ export async function verifyPeerCommitsAndDerive(
 ): Promise<{chaincodeHex: string; canonicalAll: string; localCommits: string[]}> {
   try {
     return await verifyAndDeriveDiceChaincode(localSets, peerCommits);
-  } catch {
+  } catch (e: any) {
+    const msg = String(e?.message || '');
+    if (/need at least 256 bits|no rolls|invalid rolls|Biased|Low entropy/i.test(msg)) {
+      throw e instanceof Error ? e : new Error(msg);
+    }
     const localCommits = await buildDiceCommitBundle(localSets).catch(() => [] as string[]);
-    const msg = diceMismatchMessage(localCommits, peerCommits);
-    throw new Error(msg);
+    throw new Error(diceMismatchMessage(localCommits, peerCommits));
   }
 }
 
 export type DiceCommitBundle = string[];
-
-export function appendDiceCommitsToLanPayload(
-  payload: string,
-  commits: string[],
-): string {
-  if (!commits.length) return payload;
-  return payload + encodeLanDiceField(commits);
-}
-
-export function noncesWithDiceCommits(
-  nonces: string[],
-  commits: string[],
-): string[] {
-  if (!commits.length) return nonces;
-  return [...nonces, encodeNostrDiceField(commits)];
-}
 
 export {verifyAndDeriveDiceChaincode} from './diceEntropy';
 export {buildDiceCommitBundle, parseLanDiceCommits, stripLanDiceField} from './diceEntropy';

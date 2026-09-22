@@ -2,6 +2,11 @@ import {
   parseLanDiceCommits,
   parseNostrDiceCommits,
   stripLanDiceField,
+  diceChecksumTag,
+  parseDiceChecksumTags,
+  diceTagsFromLanPublishResult,
+  assertMatchingDiceChecksums,
+  deriveLocalDiceChaincode,
   verifyAndDeriveDiceChaincode,
   buildDiceCommitBundle,
   canonicalAllForCommits,
@@ -12,8 +17,6 @@ import {
   DICE_SPEC_PREFIX,
 } from '../services/diceEntropy';
 import {
-  appendLanDiceCommits,
-  appendNostrDiceCommits,
   collectTrioCommits,
   verifyPeerCommitsAndDerive,
   localMatchesPeers,
@@ -66,33 +69,60 @@ describe('dice crosscheck (Spec v2.1)', () => {
     await expect(verifyPeerCommitsAndDerive(a, cb)).rejects.toThrow(/SAME dice sequence/i);
   });
 
-  test('setup screens do not append dice onto LAN or Nostr', () => {
+  test('setup screens share a 6-hex dice check, not rolls or the chaincode', () => {
     const fs = require('fs');
     const path = require('path');
     const root = path.join(__dirname, '..');
     const lan = fs.readFileSync(path.join(root, 'screens/MobilesPairing.tsx'), 'utf8');
     const nostr = fs.readFileSync(path.join(root, 'screens/MobileNostrPairing.tsx'), 'utf8');
+    expect(lan).toMatch(/diceChecksumTag/);
+    expect(lan).toMatch(/assertMatchingDiceChecksums/);
+    expect(nostr).toMatch(/diceChecksumTag/);
+    expect(nostr).toMatch(/assertMatchingDiceChecksums/);
     expect(lan).not.toMatch(/appendLanDiceCommits\s*\(/);
     expect(nostr).not.toMatch(/appendNostrDiceCommits\s*\(/);
     expect(nostr).not.toMatch(/noncesWithDiceCommits\s*\(/);
     expect(lan).not.toMatch(/:dice1=/);
     expect(nostr).not.toMatch(/dice1:/);
+    expect(nostr).not.toMatch(/\$\{chaincode\}/);
   });
 
-  test('legacy LAN field can still be stripped and does not contain canonical rolls', async () => {
+  test('dice checksum is 6 hex and is not the master chaincode', async () => {
+    const a = [{kind: 'd6' as const, sides: 6, rolls: [...D6_100]}];
+    const tag = await diceChecksumTag(a);
+    const derived = await deriveLocalDiceChaincode(a);
+    expect(tag).toMatch(/^dice_[0-9a-f]{6}$/);
+    expect(tag.slice(5)).not.toBe(derived.chaincodeHex.slice(0, 6));
+    const handshake = `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:${'b'.repeat(64)}:${tag}`;
+    expect(handshake.includes(derived.chaincodeHex)).toBe(false);
+    expect(parseDiceChecksumTags(handshake)).toEqual([tag]);
+    expect(stripLanDiceField(handshake)).toBe(
+      `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:${'b'.repeat(64)}`,
+    );
+    expect(() => assertMatchingDiceChecksums(tag, [tag])).not.toThrow();
+    expect(() => assertMatchingDiceChecksums(tag, ['dice_000000'])).toThrow(/do not match/);
+    expect(() => assertMatchingDiceChecksums('', [tag])).toThrow(/do not match/);
+    const echoed = diceTagsFromLanPublishResult(
+      `data=${'c'.repeat(64)}:${tag}&pubkey=pk`,
+      1,
+    );
+    expect(echoed).toEqual([tag]);
+  });
+
+  test('stripLanDiceField removes a stray legacy :dice1= field', async () => {
     const a = [{kind: 'd6' as const, sides: 6, rolls: [...D6_100]}];
     const commits = await buildDiceCommitBundle(a);
-    const hs = appendLanDiceCommits('abc123:deadbeef', commits);
+    const hs = `abc123:deadbeef:dice1=${commits[0]}`;
     expect(hs).not.toContain(DICE_SPEC_PREFIX);
     const parsed = parseLanDiceCommits(hs);
     expect(parsed.length).toBe(1);
     expect(stripLanDiceField(hs)).toBe('abc123:deadbeef');
   });
 
-  test('Nostr field round-trips commitments only', async () => {
+  test('legacy Nostr dice1: field can still be parsed (not used for setup)', async () => {
     const a = [{kind: 'd6' as const, sides: 6, rolls: [...D6_100]}];
     const commits = await buildDiceCommitBundle(a);
-    const full = appendNostrDiceCommits('n1|n2', commits);
+    const full = `n1|n2|dice1:${commits[0]}`;
     expect(full).not.toContain(DICE_SPEC_PREFIX);
     const parsed = parseNostrDiceCommits(full);
     expect(parsed.length).toBe(1);
@@ -103,11 +133,15 @@ describe('dice crosscheck (Spec v2.1)', () => {
     expect(u).toEqual(['a'.repeat(64), 'b'.repeat(64)]);
   });
 
-  test('short/biased rejected', () => {
-    expect(validateDiceSet(6, [1, 2, 3]).ok).toBe(true); // valid shape; length enforced by UI
+  test('short/biased/low-entropy rejected', () => {
+    expect(validateDiceSet(6, [1, 2, 3]).ok).toBe(true); // valid shape; length floor in derive
     expect(validateDiceSet(6, Array(100).fill(1)).ok).toBe(false);
     expect(validateDiceSet(6, Array.from({length: 24}, (_, i) => (i % 6) + 1)).ok).toBe(false);
     expect(validateDiceSet(6, [0, 7]).ok).toBe(false);
+    // Two faces only (not perfect alternation) fails entropy floor at length 100.
+    const twoFace = Array.from({length: 100}, (_, i) => (i % 3 === 0 ? 1 : 2));
+    expect(validateDiceSet(6, twoFace).ok).toBe(false);
+    expect(validateDiceSet(6, D6_100).ok).toBe(true);
   });
 
   test('localMatchesPeers true/false', async () => {
@@ -119,6 +153,7 @@ describe('dice crosscheck (Spec v2.1)', () => {
 
   test('TS<->Go vector: commit + canonical + derive match Go impl', async () => {
     // Canonical per-set: `6:1,2,3` ; commit = SHA256('BOLD-DICE-COMMIT-v1||6:1,2,3').
+    // Below 256-bit floor: use low-level hash helpers, not deriveLocalDiceChaincode.
     const commit = diceCommitmentHexSync(6, [1, 2, 3]);
     expect(commit).toMatch(/^[0-9a-f]{64}$/);
     const canonicalAll = canonicalAllForCommits([commit]);
@@ -127,5 +162,12 @@ describe('dice crosscheck (Spec v2.1)', () => {
     expect(chain).toMatch(/^[0-9a-f]{64}$/);
     // Deterministic: same input -> same output.
     expect(await deriveDiceChaincodeHex(canonicalAll)).toBe(chain);
+  });
+
+  test('deriveLocalDiceChaincode rejects short sequences', async () => {
+    const short = [{kind: 'd6' as const, sides: 6, rolls: [1, 2, 3, 5]}];
+    await expect(deriveLocalDiceChaincode(short)).rejects.toThrow(
+      /need at least 256 bits of entropy/,
+    );
   });
 });
