@@ -16,7 +16,7 @@ import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {PSBTLoader} from './PSBTModal';
 import {canonicalPsbtBase64} from '../services/psbtIdentity';
-import {dbg, generateAllOutputDescriptors, getKeyshareMetadata} from '../utils';
+import {dbg, generateAllOutputDescriptors, getKeyshare} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
 import TransportModeSelector from '../components/TransportModeSelector';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -133,13 +133,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   }, [isPSBTSectionExpanded]);
   const loadKeyshareInfo = useCallback(async () => {
     try {
-      const keyshare = await getKeyshareMetadata();
+      // Spec v2: chaincode from encrypted blob only, never SQLite metadata.
+      const keyshare = await getKeyshare();
       if (!keyshare) {
         setKeyshareInfo(null);
         return;
       }
       const pubKey = keyshare.pub_key || '';
-      const chainCode = keyshare.chain_code_hex || '';
+      const chainCode = String(keyshare.chain_code_hex || keyshare.chaincode || '').trim().toLowerCase();
       // Generate output descriptors for all address types using utility function
       const descriptors = await generateAllOutputDescriptors(
         BBMTLibNativeModule,

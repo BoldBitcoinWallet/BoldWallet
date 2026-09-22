@@ -816,8 +816,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         return;
       }
       const pubKey = keyshareInfo?.pubKey;
-      const chainCode = keyshareInfo?.chainCode;
-      if (!pubKey || !chainCode) {
+      if (!pubKey) {
         Alert.alert('Error', 'Keyshare info is not available.');
         setIsExtensionBindScannerVisible(false);
         return;
@@ -825,10 +824,10 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
       extensionBindHandledRef.current = true;
       setIsExtensionBindScannerVisible(false);
       try {
+        // Spec v2: pubkey only — master chaincode never leaves the device.
         const qrData = await computeExtensionBindResponseQr(
           pairingCode,
           pubKey,
-          chainCode,
         );
         setExtensionResponseQrData(qrData);
         setIsExtensionResponseQrVisible(true);
@@ -838,7 +837,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         Alert.alert('Error', 'Failed to generate response QR.');
       }
     },
-    [keyshareInfo?.pubKey, keyshareInfo?.chainCode],
+    [keyshareInfo?.pubKey],
   );
 
   const handleToggleWalletInfo = useCallback(() => {

@@ -42,6 +42,7 @@ import {assertNoExistingWallet} from '../services/walletGuard';
 import {saveKeyshareMetadata} from '../utils';
 import {
   finalizeKeyshareForStorage,
+  mixNostrChaincodeWithDice,
   nsecFieldForKeyshareJson,
   persistWalletKeyshare,
   resolveWalletSetupBackend,
@@ -123,5 +124,18 @@ describe('walletSetupOrchestrator', () => {
   it('verifyWalletKeysharePersisted returns false for empty storage', async () => {
     (EncryptedStorage.getItem as jest.Mock).mockResolvedValue('  ');
     await expect(verifyWalletKeysharePersisted()).resolves.toBe(false);
+  });
+
+  it('skip keeps the base chaincode and dice replaces it locally', async () => {
+    const base = 'ab'.repeat(32);
+    const skip = await mixNostrChaincodeWithDice(base, []);
+    expect(skip.diceUsed).toBe(false);
+    expect(skip.finalChaincodeHex).toBe(base);
+    const dice = await mixNostrChaincodeWithDice(base, [
+      {kind: 'd6', sides: 6, rolls: [1, 3, 5, 2]},
+    ]);
+    expect(dice.diceUsed).toBe(true);
+    expect(dice.finalChaincodeHex).not.toBe(base);
+    expect(dice.finalChaincodeHex).toMatch(/^[0-9a-f]{64}$/);
   });
 });

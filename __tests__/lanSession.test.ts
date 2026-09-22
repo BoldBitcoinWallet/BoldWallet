@@ -46,10 +46,20 @@ describe('lanSession', () => {
       expect(parseLanKeygenSessionPayload(`${attempt}:${seed}`)).toEqual({
         attemptId: attempt,
         seed,
+        diceCommits: [],
       });
       expect(() => parseLanKeygenSessionPayload('not-a-payload')).toThrow(
         'Invalid LAN keygen session payload',
       );
+    });
+
+    it('parseLanKeygenSessionPayload extracts dice commitments (backward-compat)', () => {
+      const commit = 'c'.repeat(64);
+      expect(
+        parseLanKeygenSessionPayload(`${attempt}:${seed}:dice1=${commit}`),
+      ).toEqual({attemptId: attempt, seed, diceCommits: [commit]});
+      // legacy two-part payload still parses with empty commits
+      expect(parseLanKeygenSessionPayload(`${attempt}:${seed}`).diceCommits).toEqual([]);
     });
   });
 

@@ -18,7 +18,13 @@ import AppPressable from '../components/AppPressable';
 import GlassModalOverlay from '../components/GlassModalOverlay';
 import DocumentPicker from 'react-native-document-picker';
 import {useTheme} from '../theme';
-import {dbg, hasWalletKeyshareInSecureStorage} from '../utils';
+import EncryptedStorage from 'react-native-encrypted-storage';
+import {
+  dbg,
+  hasWalletKeyshareInSecureStorage,
+  clearKeyshareMetadata,
+  KEYSHARE_STORAGE_KEY,
+} from '../utils';
 import {
   clearShowcaseImportPrefs,
   removeLegacyEncryptedPrefKeys,
@@ -35,7 +41,6 @@ import {
   WrongKeysharePasswordError,
 } from '../services/keyshareImport';
 import LegalModal from '../components/LegalModal';
-import EntropyInfoCard from '../components/EntropyInfoCard';
 import TransportModeSelector from '../components/TransportModeSelector';
 import TssBackendSelector from '../components/TssBackendSelector';
 import {
@@ -89,7 +94,6 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [legalModalType, setLegalModalType] = useState<'terms' | 'privacy'>(
     'terms',
   );
-  const [showEntropyCard, setShowEntropyCard] = useState(false);
   const {theme} = useTheme();
   const {setActiveNetwork} = useUser();
   const fadeAnim = useRef(new Animated.Value(0.6)).current;
@@ -187,6 +191,36 @@ const ShowcaseScreen = ({navigation}: any) => {
       .then(setWalletAlreadyLoaded)
       .catch(() => setWalletAlreadyLoaded(false));
   }, []);
+  const openLoadedWallet = () => {
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{name: 'MainTabs'}],
+      }),
+    );
+  };
+  const removeLoadedKeyshare = () => {
+    Alert.alert(
+      'Remove keyshare?',
+      'This deletes the wallet on this phone. It does not delete a backup file you already saved.',
+      [
+        {text: 'Cancel', style: 'cancel'},
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await EncryptedStorage.removeItem(KEYSHARE_STORAGE_KEY);
+            } catch (e) {
+              dbg('Showcase: keyshare remove failed', e);
+            }
+            await clearKeyshareMetadata();
+            setWalletAlreadyLoaded(false);
+          },
+        },
+      ],
+    );
+  };
   const handleRestoreWallet = async () => {
     try {
       await assertNoExistingWallet();
@@ -471,6 +505,23 @@ const ShowcaseScreen = ({navigation}: any) => {
       color: theme.colors.textSecondary,
       textAlign: 'center',
       lineHeight: 20,
+    },
+    walletLoadedActions: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 12,
+    },
+    walletLoadedAction: {
+      flex: 1,
+      borderRadius: 10,
+      paddingVertical: 10,
+      alignItems: 'center',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    walletLoadedActionPrimary: {
+      backgroundColor: theme.colors.bitcoinOrange,
+      borderColor: theme.colors.bitcoinOrange,
     },
     ctaButtonPrimary: {
       backgroundColor:
@@ -1023,35 +1074,6 @@ const ShowcaseScreen = ({navigation}: any) => {
           ? theme.colors.primary + '80'
           : theme.colors.bitcoinOrange + '80',
     },
-    entropyBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      alignSelf: 'center',
-      backgroundColor: theme.colors.warningBg,
-      paddingVertical: 4,
-      paddingHorizontal: 12,
-      borderRadius: 12,
-      marginTop: 8,
-      borderWidth: 1,
-      borderColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.border
-          : theme.colors.warning + '50',
-    },
-    entropyBadgeIcon: {
-      width: 16,
-      height: 16,
-      marginRight: 6,
-      tintColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.primary
-          : theme.colors.bitcoinOrange,
-    },
-    entropyBadgeText: {
-      fontFamily: theme.fontFamilies?.bold,
-      fontSize: theme.fontSizes?.sm || 12,
-      color: theme.colors.text,
-    },
     importingOverlay: {
       ...StyleSheet.absoluteFillObject,
       backgroundColor: theme.colors.blackOverlay50 || 'rgba(0,0,0,0.5)',
@@ -1152,25 +1174,27 @@ const ShowcaseScreen = ({navigation}: any) => {
               </Text>
             </Text>
           </View>
-          <AppPressable
-            style={styles.entropyBadge}
-            onPress={() => setShowEntropyCard(true)}>
-            <Image
-              source={require('../assets/dice-icon.png')}
-              style={styles.entropyBadgeIcon}
-              resizeMode="contain"
-            />
-            <Text style={styles.entropyBadgeText}>
-              Device Entropy
-            </Text>
-          </AppPressable>
         </View>
         {walletAlreadyLoaded ? (
           <View style={styles.walletLoadedBanner}>
             <Text style={styles.walletLoadedBannerText}>
-              A wallet keyshare is already loaded. Delete it from Settings before
-              setting up or restoring a different wallet.
+              A keyshare is already on this phone. Open it, or remove it to set
+              up or restore a different wallet.
             </Text>
+            <View style={styles.walletLoadedActions}>
+              <AppPressable
+                style={styles.walletLoadedAction}
+                onPress={removeLoadedKeyshare}>
+                <Text style={{color: theme.colors.text, fontWeight: '600'}}>
+                  Remove
+                </Text>
+              </AppPressable>
+              <AppPressable
+                style={[styles.walletLoadedAction, styles.walletLoadedActionPrimary]}
+                onPress={openLoadedWallet}>
+                <Text style={{color: '#FFFFFF', fontWeight: '700'}}>Open wallet</Text>
+              </AppPressable>
+            </View>
           </View>
         ) : null}
         <View style={styles.ctaButtons}>
@@ -1663,10 +1687,6 @@ const ShowcaseScreen = ({navigation}: any) => {
           </View>
         </GlassModalOverlay>
       </Modal>
-      <EntropyInfoCard
-        visible={showEntropyCard}
-        onClose={() => setShowEntropyCard(false)}
-      />
       {isImporting && restoreMode === 'airgap' && !isAirgapScannerVisible ? (
         <View style={styles.importingOverlay} pointerEvents="auto">
           <View style={styles.importingCard}>

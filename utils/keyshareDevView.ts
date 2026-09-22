@@ -38,13 +38,19 @@ export function parseKeyshareJsonForDevView(
 }
 
 export function prettyPrintKeyshareJson(data: Record<string, unknown>): string {
+  // Spec v2: dev full-JSON copy strips chain_code_hex. The master chaincode
+  // must not leave the phone via copy-paste; derive from the encrypted blob.
+  const {chain_code_hex: _stripped, ...rest} = data;
   // JSON doesn't support Infinity/NaN/BigInt. If they exist in-memory (or come
   // from native decoding), default JSON.stringify either turns them into null
   // (Infinity/NaN) or throws (BigInt). For dev inspection/copy we preserve them
   // as readable strings.
   return JSON.stringify(
-    data,
+    rest,
     (_key, value: unknown) => {
+      if (_key === 'chain_code_hex') {
+        return '[redacted:chaincode]';
+      }
       if (typeof value === 'number') {
         if (Number.isNaN(value)) return 'NaN';
         if (value === Infinity) return 'Infinity';

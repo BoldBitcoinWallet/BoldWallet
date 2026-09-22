@@ -231,6 +231,48 @@ BoldWallet's architecture is consistent with the published posture of leading MP
 - BWL-002: PSBT-hash comparison UX on both devices.
 - 2-of-2 user guidance and device-replacement/recovery tooling for 2-of-3.
 
+---
+
+## 7. Addendum — Opt-in dice-only chaincode (Spec v2.2, local only)
+
+**Status:** opt-in. Skip path is the audited flow (empty dice → base chaincode
+unchanged). Chaincode for addresses is read from the encrypted keyshare blob
+(`services/chaincodeReader.ts`). Plaintext metadata `chain_code_hex` stays
+blank. Dev full-JSON copy strips it. Extension-bind QR stays pubkey-only.
+Go `psbt.go` log filter redacts xpub/chaincode.
+
+**What it is:** at wallet generation (LAN or Nostr, duo or trio) each phone may
+hash a dice sequence into the master chaincode. Minimum 256 bits: 100× D6,
+60× D20, or 256 coin flips. Order is part of the sequence. Short, out-of-range,
+all-same, sequential, and alternating inputs are rejected on that phone.
+
+**Isolation:** rolls, commitments, and the chaincode are not sent on the LAN
+handshake, the Nostr connection QR, or `fullNonce`. Same-room copy is type,
+paste, or an optical QR. The app does not compare peers and does not block
+Start. The sheet tells the user that a different sequence makes MPC setup fail
+later. Same sequence → same chaincode → setup can finish. LAN seed and Nostr
+nonce stay session binders and are not mixed into the dice chaincode.
+
+**Derivation:** `SHA256('BOLD-DICE-CHAINCODE-v1' || 'BOLD-DICE-v1|' || sorted
+per-set commits)`. Commits are `SHA256('BOLD-DICE-COMMIT-v1' || '<sides>:<rolls>')`.
+Device hash is native `sha256`. Spec: `docs/DICE_CHAINCODE_SPEC.md`. UI:
+`components/DiceEntropySheet.tsx` (choose, enter, confirm).
+
+**Leak-path notes:**
+- Pairing QR, LAN handshake, and Nostr events carry no dice material.
+- Account descriptors still contain the account chaincode, not the master.
+- Encrypted keyshare blob and encrypted `.share` backup keep the chaincode;
+  recovery depends on it.
+
+**Scope:** closes an all-phones RNG-predictable chaincode when every phone
+enters the same long sequence. Does not cover encrypted-backup theft, live
+extraction, keylogged entry, or a user who types different rolls. There is no
+pre-keygen mismatch abort. GG18/DKLs are unchanged; the chaincode is the only
+injection point.
+
+**User guidance:** real dice; 5 dice × 20 throws for D6; read the 8-character
+code aloud; paper-backup the rolls. Skip leaves setup unchanged.
+
 **Scores:** Mass-compromise/supply-chain risk (Score A): **1.5 / 10**. Targeted attack with at most one device compromised (Score B): **2.5 / 10**. Both scores reflect a codebase with no exploitable in-tree RNG, protocol, or storage defect; the residual is dominated by behavioural and supply-chain factors common to — and in the RNG dimension strictly better than — the industry.
 
 ---

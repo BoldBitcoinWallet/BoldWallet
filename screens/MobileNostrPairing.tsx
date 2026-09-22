@@ -49,6 +49,8 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {
   dbg,
   getKeyshareMetadata,
+  clearKeyshareMetadata,
+  KEYSHARE_STORAGE_KEY,
   HapticFeedback,
   getResetToMainTabsWallet,
   resolveUseLegacyDerivationPaths,
@@ -57,7 +59,14 @@ import {
 } from '../utils';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
+import EncryptedStorage from 'react-native-encrypted-storage';
 import {guardOnlineAction} from '../services/walletOnlineStore';
+import DiceEntropySheet, {
+  type DiceEntropyResult,
+} from '../components/DiceEntropySheet';
+import {DiceSetupNote} from '../components/DiceReceipt';
+import SetupFinishStepper from '../components/SetupFinishStepper';
+import type {DiceSet} from '../services/diceEntropy';
 import syncCoordinator from '../services/sync/SyncCoordinator';
 import {resolveDklsNostrSigningParties} from '../services/lanMpcSetup';
 import {
@@ -99,7 +108,6 @@ import {
 } from '../services/mpcConnectionQuality';
 import {getPrepareModalCopy} from '../services/tssKeygenPrepare';
 import {
-  getMpcKeepAliveKeygenSubtitle,
   getMpcKeepAlivePrepareModalSubtitle,
   getMpcKeepAliveSetupHint,
   LAN_KEYGEN_STATUS,
@@ -134,12 +142,14 @@ import {
 import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
 import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
+import {KeygenFinalizePanel} from '../components/KeygenFinalizePanel';
 import {MpcKeepAliveHints, useMpcKeepAliveUi} from '../components/MpcKeepAliveHints';
 import {MpcConnectionQuality} from '../components/MpcConnectionQuality';
 import NostrRelaysEditor from '../components/NostrRelaysEditor';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
 import EntropyInfoCard from '../components/EntropyInfoCard';
+import DeviceEntropyPill from '../components/DeviceEntropyPill';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import appConfigRepository, {
@@ -459,6 +469,19 @@ const MobileNostrPairing = ({navigation}: any) => {
   const [relayEntries, setRelayEntries] = useState<NostrRelayEntry[]>([]);
   // Partial nonce (random UUID/number generated on each device)
   const [partialNonce, setPartialNonce] = useState<string>('');
+  const [diceSheetVisible, setDiceSheetVisible] = useState(false);
+  const [diceSets, setDiceSets] = useState<DiceSet[]>([]);
+
+  function handleDiceChosen(result: DiceEntropyResult) {
+    setDiceSets(result.sets);
+    setDiceSheetVisible(false);
+  }
+  function clearDiceRolls() {
+    setDiceSets([]);
+  }
+  const diceOn = diceSets.length > 0 && (diceSets[0]?.rolls.length ?? 0) > 0;
+  const diceKindLabel =
+    diceSets[0]?.kind === 'd20' ? 'D20' : diceSets[0]?.kind === 'coin' ? 'Coin' : 'D6';
   // Peer Connections (for duo: 1 peer, for trio: 2 peers)
   const [peerConnectionDetails1, setPeerConnectionDetails1] =
     useState<string>('');
@@ -491,6 +514,11 @@ const MobileNostrPairing = ({navigation}: any) => {
   const activeMpcSessionIdRef = useRef<string | null>(null);
   const isPairingRef = useRef(false);
   const keysharePersistedRef = useRef(false);
+  const pendingKeyshareRef = useRef<{
+    json: string;
+    partyNsec?: string;
+    nostrNpub?: string;
+  } | null>(null);
   const keepAliveOutcomeRef = useRef<MpcKeepAliveOutcome>('failure');
   const lastMpcPercentBumpAtRef = useRef(Date.now());
   const lastMpcKeygenStepRef = useRef(0);
@@ -717,7 +745,8 @@ const MobileNostrPairing = ({navigation}: any) => {
         // Cryptographically random partial nonce (feeds sessionID / sessionKey / chaincode)
         const randomNonce = await generateSecureHex64();
         setPartialNonce(randomNonce);
-        dbg('Generated partialNonce:', randomNonce);
+        // Spec v2.1 leak hardening: nonce feeds session keys — never log it.
+        dbg('Generated partialNonce: <redacted:hex64>');
         // Only generate new keypair if not in send/sign mode (send/sign mode loads from keyshare)
         if (!isSendBitcoin && !isSignPSBT) {
           await generateLocalKeypair();
@@ -730,6 +759,9 @@ const MobileNostrPairing = ({navigation}: any) => {
     initialize();
   }, [isSendBitcoin, isSignPSBT]);
   // Generate session params when peer connections are ready
+  // Dice: commitments must be exchanged BEFORE this fires (commit phase), so
+  // the dice toggle/sheet lives upstream of peer exchange; reveals are
+  // pasted after sessionID exists and verified in startKeygen.
   useEffect(() => {
     if (localNpub && deviceName && partialNonce) {
       if (isSendBitcoin || isSignPSBT) {
@@ -954,7 +986,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         setMpcTransportSubprogress(result.transportSubprogress);
       }
       if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
-        if (keysharePersistedRef.current) {
+        if (keysharePersistedRef.current || pendingKeyshareRef.current) {
           setMpcDone(true);
         } else {
           setStatus(KEYGEN_FINALIZING_STORAGE_STATUS);
@@ -1241,14 +1273,16 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
     const parts = decoded.split(':');
     dbg('parseConnectionDetails: split parts count =', parts.length);
-    if (parts.length !== 3) {
+    if (parts.length < 3) {
       dbg(
-        'parseConnectionDetails: invalid format - expected 3 parts (npub:deviceName:partialNonce), got',
+        'parseConnectionDetails: invalid format - expected npub:deviceName:partialNonce, got',
         parts.length,
       );
       return null;
     }
-    let [npub, peerDeviceName, peerPartialNonce] = parts;
+    const npub = parts[0];
+    const peerDeviceName = parts[1];
+    const peerPartialNonce = parts[2].split('|')[0];
     let trimmedNpub = npub.trim();
     const trimmedDeviceName = peerDeviceName.trim();
     const trimmedNonce = peerPartialNonce.trim();
@@ -1500,7 +1534,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (isTrio && peerNonce2) {
         allPartialNonces.push(peerNonce2);
       }
-      // Sort nonces and join as CSV
       const fullNonce = [...allPartialNonces].sort().join(',');
       // Log the exact inputs for session ID calculation (for debugging)
       dbg('=== SESSION ID CALCULATION ===');
@@ -1576,6 +1609,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     setMpcSessionShort(mpcSessionShortLabel(sessionID));
     setPairingActive(true);
     keysharePersistedRef.current = false;
+    pendingKeyshareRef.current = null;
     setMpcDone(false);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
@@ -1692,7 +1726,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         'peers to publish "ready" events',
       );
       dbg('=== END GO BACKEND INPUT ===');
-      // Call native module
       let keyshareJSON = await invokeNostrWalletKeygen({
         relaysCSV,
         partyNsec: localNsec,
@@ -1703,6 +1736,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         ppmPath: ppmFile,
         setupMode: keygenSetupMode,
         backend,
+        diceSets,
       });
       // Validate keyshare and map keyshare positions
       let keyshare: any;
@@ -1750,32 +1784,13 @@ const MobileNostrPairing = ({navigation}: any) => {
       });
       setKeyshareMapping(mapping);
       dbg('Keyshare mapping:', mapping);
-      // Save keyshare (embed nsec if native export omitted it)
-      keyshareJSON = await persistWalletKeyshare(keyshareJSON, {
+      pendingKeyshareRef.current = {
+        json: keyshareJSON,
         partyNsec: localNsec,
         nostrNpub: localNpub,
-      });
-      keysharePersistedRef.current = true;
+      };
+      keysharePersistedRef.current = false;
       keepAliveOutcomeRef.current = 'success';
-      try {
-        const ksParsed = JSON.parse(keyshareJSON);
-        const useLegacyPath = resolveUseLegacyDerivationPaths({
-          created_at: ksParsed.created_at,
-          tss_backend: detectKeyshareTssBackend(ksParsed),
-          local_party_key: ksParsed.local_party_key ?? '',
-          keygen_committee_keys: ksParsed.keygen_committee_keys ?? [],
-          pub_key: ksParsed.pub_key ?? '',
-          chain_code_hex: ksParsed.chain_code_hex ?? '',
-          nostr_npub: ksParsed.nostr_npub ?? null,
-        });
-        appConfigRepository.set(
-          CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
-          useLegacyPath ? 'no' : 'yes',
-        );
-      } catch (_e) {
-        dbg('Error parsing keyshare:', _e ?? 'unknown error');
-        appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, 'yes');
-      }
       setMpcDone(true);
       setStatus('Key generation complete!');
       // Don't navigate away, let the backup UI handle it
@@ -2534,6 +2549,94 @@ const MobileNostrPairing = ({navigation}: any) => {
     : backupChecks.deviceOne && backupChecks.deviceTwo;
   const toggleBackedup = (key: keyof typeof backupChecks) => {
     setBackupChecks(prev => ({...prev, [key]: !prev[key]}));
+  };
+  const rememberNostrLegacyFlag = (keyshareJson: string) => {
+    try {
+      const ksParsed = JSON.parse(keyshareJson);
+      const useLegacyPath = resolveUseLegacyDerivationPaths({
+        created_at: ksParsed.created_at,
+        tss_backend: detectKeyshareTssBackend(ksParsed),
+        local_party_key: ksParsed.local_party_key ?? '',
+        keygen_committee_keys: ksParsed.keygen_committee_keys ?? [],
+        pub_key: ksParsed.pub_key ?? '',
+        chain_code_hex: ksParsed.chain_code_hex ?? '',
+        nostr_npub: ksParsed.nostr_npub ?? null,
+      });
+      appConfigRepository.set(
+        CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
+        useLegacyPath ? 'no' : 'yes',
+      );
+    } catch {
+      appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, 'yes');
+    }
+  };
+  const ensureNostrKeyshareStored = async (): Promise<boolean> => {
+    if (keysharePersistedRef.current) {
+      return true;
+    }
+    const pending = pendingKeyshareRef.current;
+    if (!pending?.json) {
+      Alert.alert('Nothing to save', 'Run wallet setup again.');
+      return false;
+    }
+    try {
+      const persisted = await persistWalletKeyshare(pending.json, {
+        partyNsec: pending.partyNsec,
+        nostrNpub: pending.nostrNpub,
+      });
+      pendingKeyshareRef.current = {
+        ...pending,
+        json: persisted,
+      };
+      keysharePersistedRef.current = true;
+      rememberNostrLegacyFlag(persisted);
+      return true;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      Alert.alert('Could not save wallet', message);
+      return false;
+    }
+  };
+  const commitNostrWalletSetup = async () => {
+    const saved = await ensureNostrKeyshareStored();
+    if (!saved) {
+      return;
+    }
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{name: 'User Preferences'}],
+      }),
+    );
+  };
+  const abortFinishedNostrSetup = () => {
+    Alert.alert(
+      'Abort wallet setup?',
+      'The new keyshare on this phone will be deleted. You can run setup again.',
+      [
+        {text: 'Keep going', style: 'cancel'},
+        {
+          text: 'Abort',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await EncryptedStorage.removeItem(KEYSHARE_STORAGE_KEY);
+            } catch {
+              /* already empty */
+            }
+            await clearKeyshareMetadata();
+            keysharePersistedRef.current = false;
+            pendingKeyshareRef.current = null;
+            setMpcDone(false);
+            setBackupChecks({
+              deviceOne: false,
+              deviceTwo: false,
+              deviceThree: false,
+            });
+          },
+        },
+      ],
+    );
   };
   const formatFiat = (price?: string) =>
     new Intl.NumberFormat('en-US', {
@@ -3333,42 +3436,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     keygenTopBadgesRow: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      marginBottom: 8,
+      gap: 10,
+      marginBottom: 12,
+      width: '100%',
     },
     keygenBackendBadgeWrap: {
-      alignSelf: 'center',
-    },
-    entropyBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
       justifyContent: 'center',
-      alignSelf: 'center',
-      minHeight: 28,
-      backgroundColor: theme.colors.warningBg,
-      paddingVertical: 6,
-      paddingHorizontal: 10,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.border
-          : theme.colors.warning + '50',
-    },
-    entropyBadgeIcon: {
-      width: 14,
-      height: 14,
-      marginRight: 6,
-      tintColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.primary
-          : theme.colors.bitcoinOrange,
-    },
-    entropyBadgeText: {
-      fontFamily: theme.fontFamilies?.bold,
-      fontSize: theme.fontSizes?.sm || 12,
-      color: theme.colors.text,
     },
     stepRow: {
       flexDirection: 'row',
@@ -4861,18 +4934,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           <TssBackendBadge backend={keygenBackend} />
                         </View>
                       ) : null}
-                      <AppPressable
-                        style={styles.entropyBadge}
-                        onPress={() => setShowEntropyCard(true)}>
-                        <Image
-                          source={require('../assets/dice-icon.png')}
-                          style={styles.entropyBadgeIcon}
-                          resizeMode="contain"
-                        />
-                        <Text style={styles.entropyBadgeText}>
-                          Device Entropy
-                        </Text>
-                      </AppPressable>
+                      <DeviceEntropyPill onPress={() => setShowEntropyCard(true)} />
                     </View>
                   ) : null}
                   {/* Step Indicator */}
@@ -5705,6 +5767,36 @@ const MobileNostrPairing = ({navigation}: any) => {
                         {/* All devices ready checkbox and Start button - outside Final Step card */}
                         {!isPairing && !mpcDone && isPrepared && (
                           <>
+                            <View style={styles.enhancedCheckboxContainer}>
+                              <AppPressable
+                                style={{flexDirection: 'row', alignItems: 'center', flex: 1}}
+                                onPress={() => setDiceSheetVisible(true)}>
+                                <View
+                                  style={[
+                                    styles.enhancedCheckbox,
+                                    diceOn && styles.enhancedCheckboxChecked,
+                                  ]}>
+                                  {diceOn && <Text style={styles.checkmark}>✓</Text>}
+                                </View>
+                                <View style={styles.checkboxTextContainer}>
+                                  <Text style={styles.enhancedCheckboxLabel}>
+                                    {diceOn
+                                      ? `Dice on · ${diceKindLabel} · ${diceSets[0]?.rolls.length ?? 0} rolls`
+                                      : 'Use dice rolls'}
+                                  </Text>
+                                  <Text style={styles.warningHint}>
+                                    {diceOn
+                                      ? 'Same sequence on every phone, or setup will fail.'
+                                      : 'Optional. Same sequence on every phone. Stays on this phone.'}
+                                  </Text>
+                                </View>
+                              </AppPressable>
+                              {diceOn && (
+                                <AppPressable onPress={clearDiceRolls}>
+                                  <Text style={styles.warningHint}>Clear</Text>
+                                </AppPressable>
+                              )}
+                            </View>
                             <AppPressable
                               style={[styles.enhancedCheckboxContainer]}
                               onPress={() => {
@@ -5781,70 +5873,24 @@ const MobileNostrPairing = ({navigation}: any) => {
               }>
               <GlassModalOverlay style={styles.modalOverlay}>
                 <View style={styles.modalContent}>
-                  <MpcProgressModalHeader
-                    icon={require('../assets/security-icon.png')}
+                  <KeygenFinalizePanel
                     title="Finalizing Your Wallet"
-                    subtitle={getMpcKeepAliveKeygenSubtitle(
+                    hint={getMpcKeepAliveSetupHint(
                       keepAliveOs,
                       keepAliveHintOpts,
                     )}
+                    percent={displayPercent}
+                    status={status}
+                    sessionShort={mpcSessionShort}
+                    pulseIndicator={
+                      mpcTransportPulse || !!staleTransportHint
+                    }
+                    quality={connectionQuality}
+                    subprogress={mpcTransportSubprogress}
+                    staleHint={staleTransportHint}
+                    elapsedSeconds={prepCounter}
+                    onAbort={() => abortActiveNostrMpc({keygen: true})}
                   />
-                  <MpcKeepAliveHints />
-                  {/* Progress Container */}
-                  <View style={styles.progressContainer}>
-                    {/* Circular Progress */}
-                    <Progress.Circle
-                      size={80}
-                      progress={displayPercent / 100}
-                      thickness={6}
-                      borderWidth={0}
-                      showsText={false}
-                      color={theme.colors.primary}
-                      style={styles.progressCircle}
-                    />
-                    {/* Progress Percentage */}
-                    <View style={styles.progressTextWrapper}>
-                      <Text style={styles.progressPercentage}>
-                        {displayPercent}%
-                      </Text>
-                    </View>
-                  </View>
-                  {/* Status and Countdown */}
-                  <View style={styles.statusContainer}>
-                    <MpcModalStatusRow
-                      status={status}
-                      sessionShort={mpcSessionShort}
-                      pulseIndicator={
-                        mpcTransportPulse || !!staleTransportHint
-                      }
-                    />
-                    <MpcConnectionQuality quality={connectionQuality} />
-                    <MpcTransportSubprogress
-                      subprogress={mpcTransportSubprogress}
-                    />
-                    {staleTransportHint ? (
-                      <Text
-                        style={[
-                          styles.finalizingCountdownText,
-                          {marginBottom: 4},
-                        ]}>
-                        {staleTransportHint}
-                      </Text>
-                    ) : null}
-                    <Text style={styles.finalizingCountdownText}>
-                      Time elapsed: {prepCounter} seconds
-                    </Text>
-                  </View>
-                  <View style={styles.modalActions}>
-                    <AppPressable
-                      style={[
-                        styles.modalButton,
-                        {backgroundColor: theme.colors.secondary},
-                      ]}
-                      onPress={() => abortActiveNostrMpc({keygen: true})}>
-                      <Text style={styles.buttonText}>Abort</Text>
-                    </AppPressable>
-                  </View>
                 </View>
               </GlassModalOverlay>
             </Modal>
@@ -5932,10 +5978,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           )}
           {/* Success and Backup UI - Only show for keygen, not for send BTC or sign PSBT */}
           {mpcDone && !isSendBitcoin && !isSignPSBT && (
-            <>
-              {/* Keyshare Created Success */}
-              <View style={styles.section}>
-                <View style={styles.informationCard}>
+            <SetupFinishStepper
+              save={
+                <>
                   <View
                     style={{
                       flexDirection: 'row',
@@ -5971,14 +6016,17 @@ const MobileNostrPairing = ({navigation}: any) => {
                         color: theme.colors.textSecondary,
                       },
                     ]}>
-                    Create secure backups of your keyshares. Store each device's
-                    backup in different locations to prevent single points of
-                    failure.
+                    Save this phone’s keyshare, then confirm the other phones
+                    on the next step.
                   </Text>
+                  {diceOn && <DiceSetupNote sets={diceSets} />}
                   <AppPressable
                     style={styles.backupButton}
-                    onPress={() => {
-                      setIsBackupModalVisible(true);
+                    onPress={async () => {
+                      const saved = await ensureNostrKeyshareStored();
+                      if (saved) {
+                        setIsBackupModalVisible(true);
+                      }
                     }}>
                     <View style={styles.buttonContent}>
                       <Image
@@ -5998,31 +6046,23 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </Text>
                     </View>
                   </AppPressable>
-                </View>
-              </View>
-              {/* Backup Confirmation */}
-              <View style={styles.section}>
-                <View style={styles.informationCard}>
-                  <View style={styles.backupConfirmationHeader}>
-                    <View style={styles.backupConfirmationIcon}>
-                      <Text style={styles.backupConfirmationIconText}>✓</Text>
-                    </View>
-                    <Text style={styles.backupConfirmationTitle}>
-                      Confirm Backups
-                    </Text>
-                  </View>
+                </>
+              }
+              confirm={
+                <>
+                  <Text style={styles.backupConfirmationTitle}>
+                    Confirm backups
+                  </Text>
                   <Text style={styles.backupConfirmationDescription}>
-                    Verify that {isTrio ? 'all devices' : 'both devices'} have
-                    successfully backed up their keyshares.
+                    Check each phone after its keyshare is saved.
                   </Text>
                   <View style={styles.backupConfirmationContainer}>
                     {(() => {
-                      // Build device list based on keyshare mapping (sorted order)
                       const devices = [];
                       if (keyshareMapping.keyshare1) {
                         devices.push({
                           key: 'deviceOne',
-                          label: `KeyShare1 (${keyshareMapping.keyshare1.deviceName}) backed up`,
+                          label: `KeyShare1 (${keyshareMapping.keyshare1.deviceName})`,
                           device: keyshareMapping.keyshare1.deviceName,
                           keyshareLabel: 'KeyShare1',
                         });
@@ -6030,7 +6070,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       if (keyshareMapping.keyshare2) {
                         devices.push({
                           key: 'deviceTwo',
-                          label: `KeyShare2 (${keyshareMapping.keyshare2.deviceName}) backed up`,
+                          label: `KeyShare2 (${keyshareMapping.keyshare2.deviceName})`,
                           device: keyshareMapping.keyshare2.deviceName,
                           keyshareLabel: 'KeyShare2',
                         });
@@ -6038,7 +6078,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       if (keyshareMapping.keyshare3) {
                         devices.push({
                           key: 'deviceThree',
-                          label: `KeyShare3 (${keyshareMapping.keyshare3.deviceName}) backed up`,
+                          label: `KeyShare3 (${keyshareMapping.keyshare3.deviceName})`,
                           device: keyshareMapping.keyshare3.deviceName,
                           keyshareLabel: 'KeyShare3',
                         });
@@ -6071,57 +6111,18 @@ const MobileNostrPairing = ({navigation}: any) => {
                             {item.label}
                           </Text>
                           <Text style={styles.backupCheckboxHint}>
-                            {item.keyshareLabel} ({item.device}) secured
+                            {item.keyshareLabel} saved
                           </Text>
                         </View>
-                        <Image
-                          source={require('../assets/check-icon.png')}
-                          style={[
-                            styles.backupCheckIcon,
-                            backupChecks[
-                              item.key as keyof typeof backupChecks
-                            ] && {tintColor: theme.colors.secondary},
-                            !backupChecks[
-                              item.key as keyof typeof backupChecks
-                            ] && {tintColor: theme.colors.textSecondary + '40'},
-                          ]}
-                          resizeMode="contain"
-                        />
                       </AppPressable>
                     ))}
                   </View>
-                  <AppPressable
-                    style={
-                      allBackupChecked
-                        ? styles.proceedButtonOn
-                        : styles.proceedButtonOff
-                    }
-                    onPress={() => {
-                      navigation.dispatch(
-                        CommonActions.reset({
-                          index: 0,
-                          routes: [{name: 'User Preferences'}],
-                        }),
-                      );
-                    }}
-                    disabled={!allBackupChecked}>
-                    <View style={styles.buttonContent}>
-                      <Image
-                        source={require('../assets/prepare-icon.png')}
-                        style={{
-                          width: 20,
-                          height: 20,
-                          marginRight: 8,
-                          tintColor: theme.colors.white,
-                        }}
-                        resizeMode="contain"
-                      />
-                      <Text style={styles.pairButtonText}>Continue</Text>
-                    </View>
-                  </AppPressable>
-                </View>
-              </View>
-            </>
+                </>
+              }
+              onAbort={abortFinishedNostrSetup}
+              onContinue={commitNostrWalletSetup}
+              continueDisabled={!allBackupChecked}
+            />
           )}
         </ScrollView>
         {showSpendStickyFooter && nostrSpendSummary ? (
@@ -6370,6 +6371,17 @@ const MobileNostrPairing = ({navigation}: any) => {
       <EntropyInfoCard
         visible={showEntropyCard}
         onClose={() => setShowEntropyCard(false)}
+      />
+      <DiceEntropySheet
+        visible={diceSheetVisible}
+        modeLabel={isTrio ? 'Nostr trio' : 'Nostr duo'}
+        initialSets={diceSets}
+        onUseDice={handleDiceChosen}
+        onSkip={() => {
+          clearDiceRolls();
+          setDiceSheetVisible(false);
+        }}
+        onClose={() => setDiceSheetVisible(false)}
       />
     </SafeAreaView>
   );

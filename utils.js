@@ -1180,7 +1180,9 @@ export const decodeSendBitcoinQR = qrData => {
 /**
  * @typedef {Object} KeyshareMetadata
  * @property {string} pub_key
- * @property {string} chain_code_hex
+ * @property {string} chain_code_hex — LEGACY plaintext field. Spec v2: MUST be ''
+ *   in plaintext DB metadata. Address screens read chaincode from the encrypted
+ *   keychain share blob. Writers must strip it before persist.
  * @property {number|null} created_at
  * @property {string} local_party_key
  * @property {string[]} keygen_committee_keys
@@ -1197,7 +1199,8 @@ function normalizeKeyshareMetaObject(parsed) {
     rawCreated != null ? normalizeCreatedAtMs(rawCreated) : null;
   return {
     pub_key: parsed.pub_key ?? '',
-    chain_code_hex: parsed.chain_code_hex ?? '',
+    // Spec v2 leak hardening: never persist master chaincode in plaintext metadata.
+    chain_code_hex: '',
     created_at,
     local_party_key: parsed.local_party_key ?? '',
     keygen_committee_keys: parsed.keygen_committee_keys ?? [],
