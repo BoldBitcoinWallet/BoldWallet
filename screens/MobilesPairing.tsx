@@ -3433,6 +3433,8 @@ const MobilesPairing = ({navigation}: any) => {
           : theme.colors.white,
     },
     keygenBackendBadgeWrap: {
+      flex: 1,
+      minWidth: 0,
       justifyContent: 'center',
       alignSelf: 'stretch',
     },
@@ -3443,6 +3445,11 @@ const MobilesPairing = ({navigation}: any) => {
       marginTop: 4,
       marginBottom: 12,
       width: '100%',
+    },
+    keygenEntropyPillWrap: {
+      flex: 1,
+      minWidth: 0,
+      alignSelf: 'stretch',
     },
     hidden: {
       display: 'none',
@@ -3918,9 +3925,11 @@ const MobilesPairing = ({navigation}: any) => {
                           />
                         </View>
                       ) : null}
-                      <DeviceEntropyPill
-                        onPress={() => setShowEntropyCard(true)}
-                      />
+                      <View style={styles.keygenEntropyPillWrap}>
+                        <DeviceEntropyPill
+                          onPress={() => setShowEntropyCard(true)}
+                        />
+                      </View>
                     </View>
                     <PairingFlowButton
                       variant="quiet"

@@ -27,7 +27,6 @@ import {parseLanKeygenSessionPayload} from './lanSession';
 import {
   assertMatchingDiceChecksums,
   deriveLocalDiceChaincode,
-  diceChecksumMismatchMessage,
   diceChecksumTag,
   parseDiceChecksumTags,
   stripLanDiceField,
@@ -340,13 +339,10 @@ export type NostrKeygenInvokeInput = {
   /**
    * Opt-in dice-only chaincode. Local sets on THIS phone only.
    * Omit/empty = skip path (base unchanged). Not sent to peers.
+   * Nostr binds a short local dice check into the session id instead of
+   * requiring peer tags from the connection QR.
    */
   diceSets?: DiceSet[];
-  /**
-   * One `dice_` + 6 hex tag per other phone. Required when diceSets is set.
-   * Not the master chaincode.
-   */
-  peerDiceTags?: string[];
 };
 
 /** Dice-only Nostr chaincode: skip = base unchanged, else local dice hash. */
@@ -366,18 +362,6 @@ export async function invokeNostrWalletKeygen(
     input.setupMode,
   );
   await ensureDklsRuntimeIfNeeded(backend);
-  const localDiceTag = input.diceSets?.length
-    ? await diceChecksumTag(input.diceSets)
-    : '';
-  const peerDiceTags = input.peerDiceTags ?? [];
-  if (localDiceTag) {
-    if (peerDiceTags.length === 0) {
-      throw new Error(diceChecksumMismatchMessage());
-    }
-    assertMatchingDiceChecksums(localDiceTag, peerDiceTags);
-  } else if (peerDiceTags.some(t => (t || '').trim() !== '')) {
-    assertMatchingDiceChecksums('', peerDiceTags);
-  }
   const {finalChaincodeHex} = await mixNostrChaincodeWithDice(
     input.chaincode,
     input.diceSets,

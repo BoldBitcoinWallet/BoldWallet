@@ -78,7 +78,8 @@ describe('dice crosscheck (Spec v2.1)', () => {
     expect(lan).toMatch(/diceChecksumTag/);
     expect(lan).toMatch(/assertMatchingDiceChecksums/);
     expect(nostr).toMatch(/diceChecksumTag/);
-    expect(nostr).toMatch(/assertMatchingDiceChecksums/);
+    // Nostr binds the local tag into the session id (peers often scan before dice).
+    expect(nostr).toMatch(/sessionMaterial/);
     expect(lan).not.toMatch(/appendLanDiceCommits\s*\(/);
     expect(nostr).not.toMatch(/appendNostrDiceCommits\s*\(/);
     expect(nostr).not.toMatch(/noncesWithDiceCommits\s*\(/);
@@ -100,8 +101,12 @@ describe('dice crosscheck (Spec v2.1)', () => {
       `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:${'b'.repeat(64)}`,
     );
     expect(() => assertMatchingDiceChecksums(tag, [tag])).not.toThrow();
-    expect(() => assertMatchingDiceChecksums(tag, ['dice_000000'])).toThrow(/do not match/);
-    expect(() => assertMatchingDiceChecksums('', [tag])).toThrow(/do not match/);
+    expect(() => assertMatchingDiceChecksums(tag, ['dice_000000'])).toThrow(
+      /Dice check differs/,
+    );
+    expect(() => assertMatchingDiceChecksums('', [tag])).toThrow(
+      /Dice check differs/,
+    );
     const echoed = diceTagsFromLanPublishResult(
       `data=${'c'.repeat(64)}:${tag}&pubkey=pk`,
       1,

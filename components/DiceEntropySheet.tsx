@@ -16,9 +16,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import QRCode from 'react-native-qrcode-svg';
 import GlassModalOverlay from './GlassModalOverlay';
 import QRScanner from './QRScanner';
+import StaticQRCode from './StaticQRCode';
 import {useTheme} from '../theme';
 import AppPressable from './AppPressable';
 import {
@@ -410,18 +410,21 @@ export default function DiceEntropySheet({
       marginBottom: 8,
     },
     qrCard: {
-      backgroundColor: '#FFFFFF',
-      borderRadius: 16,
-      paddingTop: 22,
-      paddingBottom: 14,
-      paddingHorizontal: 22,
       alignItems: 'center',
+      marginTop: 4,
+      paddingVertical: 8,
+      paddingHorizontal: 8,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: tokens.border,
+      backgroundColor: tokens.cardBackground,
     },
-    qrFrame: {
-      backgroundColor: '#FFFFFF',
-      padding: 18,
+    qrCaption: {
+      color: tokens.textSecondary,
+      fontSize: 12,
+      marginTop: 8,
+      textAlign: 'center',
     },
-    qrCaption: {color: '#111111', fontSize: 12, marginTop: 14, textAlign: 'center', lineHeight: 17},
     callout: {
       borderWidth: 1,
       borderColor: (tokens as any).warningBorder ?? tokens.border,
@@ -622,21 +625,17 @@ export default function DiceEntropySheet({
 
                     {method === 'airgap' && showQr && !!qrValue && (
                       <View style={styles.qrCard}>
-                        <View style={styles.qrFrame}>
-                          <QRCode
-                            value={qrValue}
-                            size={220}
-                            quietZone={20}
-                            ecl="M"
-                            backgroundColor="#FFFFFF"
-                            color="#000000"
-                          />
-                        </View>
-                        <Text style={styles.qrCaption}>
-                          Same room only. Scanning this copies the rolls. It is not sent over the network.
-                        </Text>
+                        <StaticQRCode
+                          value={qrValue}
+                          size={200}
+                          showLogo
+                          ecl="M"
+                          copyDisabled
+                          contentStyle={{padding: 6}}
+                        />
+                        <Text style={styles.qrCaption}>Optical only</Text>
                         <AppPressable onPress={() => setShowQr(false)}>
-                          <Text style={[styles.link, {color: '#111'}]}>Hide QR</Text>
+                          <Text style={styles.link}>Hide QR</Text>
                         </AppPressable>
                       </View>
                     )}

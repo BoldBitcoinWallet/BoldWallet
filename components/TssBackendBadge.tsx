@@ -41,12 +41,16 @@ const badgeStyles = {
   },
   pairing: {
     alignSelf: 'stretch' as const,
+    width: '100%' as const,
+    flex: 1,
     height: 40,
     minHeight: 40,
+    maxHeight: 40,
     borderRadius: 20,
     paddingHorizontal: 14,
     paddingVertical: 0,
     justifyContent: 'center' as const,
+    alignItems: 'center' as const,
   },
   label: {
     flex: 0,

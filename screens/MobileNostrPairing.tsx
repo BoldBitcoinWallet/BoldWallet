@@ -70,6 +70,7 @@ import type {DiceSet} from '../services/diceEntropy';
 import {
   assertMatchingDiceChecksums,
   diceChecksumTag,
+  formatDiceCheckCode,
 } from '../services/diceEntropy';
 import syncCoordinator from '../services/sync/SyncCoordinator';
 import {resolveDklsNostrSigningParties} from '../services/lanMpcSetup';
@@ -797,9 +798,9 @@ const MobileNostrPairing = ({navigation}: any) => {
     initialize();
   }, [isSendBitcoin, isSignPSBT]);
   // Generate session params when peer connections are ready
-  // Dice: commitments must be exchanged BEFORE this fires (commit phase), so
-  // the dice toggle/sheet lives upstream of peer exchange; reveals are
-  // pasted after sessionID exists and verified in startKeygen.
+  // Dice: session id is regenerated when diceSets change (local check bound in).
+  // Connection QR may still carry an optional dice_ tag; peers often scan before
+  // dice is entered, so that tag is not required to start.
   useEffect(() => {
     if (localNpub && deviceName && partialNonce) {
       if (isSendBitcoin || isSignPSBT) {
@@ -839,6 +840,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     isTrio,
     isSendBitcoin,
     isSignPSBT,
+    diceSets,
   ]);
   // Parse PSBT details when PSBT is available
   useEffect(() => {
@@ -1588,6 +1590,18 @@ const MobileNostrPairing = ({navigation}: any) => {
         allPartialNonces.push(peerNonce2);
       }
       const fullNonce = [...allPartialNonces].sort().join(',');
+      // Dice on: fold the local 6-hex check into the session id. Matching rolls
+      // produce the same session on every phone without re-scanning the
+      // connection QR (peers usually scan before dice is entered). Mismatch
+      // yields different session ids so keygen cannot finish together.
+      // This tag is not the master chaincode.
+      let sessionMaterial = `${npubsSorted},${deviceNamesSorted},${fullNonce}`;
+      if (diceSets.length > 0 && (diceSets[0]?.rolls.length ?? 0) > 0) {
+        const diceTag = await diceChecksumTag(diceSets);
+        if (diceTag) {
+          sessionMaterial = `${sessionMaterial},${diceTag}`;
+        }
+      }
       // Log the exact inputs for session ID calculation (for debugging)
       dbg('=== SESSION ID CALCULATION ===');
       dbg('Mode:', isTrio ? 'TRIO' : 'DUO');
@@ -1604,14 +1618,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('deviceNamesSorted:', deviceNamesSorted);
       dbg('All partial nonces (before sort):', allPartialNonces);
       dbg('fullNonce (sorted, CSV):', fullNonce);
-      dbg(
-        'Session ID input string:',
-        `${npubsSorted},${deviceNamesSorted},${fullNonce}`,
-      );
+      dbg('Session ID input string:', sessionMaterial);
       // Generate session ID
-      const sessionIDHash = await BBMTLibNativeModule.sha256(
-        `${npubsSorted},${deviceNamesSorted},${fullNonce}`,
-      );
+      const sessionIDHash = await BBMTLibNativeModule.sha256(sessionMaterial);
       setSessionID(sessionIDHash);
       // Generate session key
       const sessionKeyHash = await BBMTLibNativeModule.sha256(
@@ -1642,15 +1651,25 @@ const MobileNostrPairing = ({navigation}: any) => {
       return;
     }
     const localTag = diceOn ? await diceChecksumTag(diceSets) : '';
+    // Connection QR is often scanned before dice is entered, so peer tags may
+    // be empty even when rolls match. Session id already binds the local tag.
+    // Only compare peer tags when every peer actually sent one (re-scan).
     const peerTags = isTrio ? [peerDiceTag1, peerDiceTag2] : [peerDiceTag1];
-    try {
-      assertMatchingDiceChecksums(localTag, peerTags);
-    } catch (e) {
-      Alert.alert(
-        'Dice rolls',
-        e instanceof Error ? e.message : 'Dice rolls do not match.',
-      );
-      return;
+    const peersAnnounced = peerTags.every(t => (t || '').trim() !== '');
+    if (peersAnnounced || peerTags.some(t => (t || '').trim() !== '')) {
+      try {
+        if (peersAnnounced) {
+          assertMatchingDiceChecksums(localTag, peerTags);
+        } else if (!localTag) {
+          assertMatchingDiceChecksums('', peerTags);
+        }
+      } catch (e) {
+        Alert.alert(
+          'Dice check',
+          e instanceof Error ? e.message : 'Dice check differs.',
+        );
+        return;
+      }
     }
     try {
       assertCanStartNostrMpc();
@@ -1801,7 +1820,6 @@ const MobileNostrPairing = ({navigation}: any) => {
         setupMode: keygenSetupMode,
         backend,
         diceSets,
-        peerDiceTags: isTrio ? [peerDiceTag1, peerDiceTag2] : [peerDiceTag1],
       });
       // Validate keyshare and map keyshare positions
       let keyshare: any;
@@ -3508,7 +3526,14 @@ const MobileNostrPairing = ({navigation}: any) => {
       width: '100%',
     },
     keygenBackendBadgeWrap: {
+      flex: 1,
+      minWidth: 0,
       justifyContent: 'center',
+      alignSelf: 'stretch',
+    },
+    keygenEntropyPillWrap: {
+      flex: 1,
+      minWidth: 0,
       alignSelf: 'stretch',
     },
     stepRow: {
@@ -4006,6 +4031,51 @@ const MobileNostrPairing = ({navigation}: any) => {
       color: theme.colors.textSecondary,
       marginTop: 2,
       fontStyle: 'italic',
+    },
+    diceCheckPanel: {
+      marginTop: 8,
+      marginBottom: 4,
+      paddingVertical: 10,
+      paddingHorizontal: 12,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.cardBackground,
+    },
+    diceCheckRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      marginBottom: 6,
+    },
+    diceCheckLabel: {
+      flex: 1,
+      marginRight: 8,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+    },
+    diceCheckCode: {
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.monospaceBold || theme.fontFamilies?.bold,
+      letterSpacing: 1.5,
+      color: theme.colors.text,
+    },
+    diceCheckMatch: {
+      color: theme.colors.success,
+    },
+    diceCheckMismatch: {
+      color: theme.colors.danger,
+    },
+    diceCheckPending: {
+      color: theme.colors.textSecondary,
+    },
+    diceCheckHint: {
+      marginTop: 4,
+      fontSize: theme.fontSizes?.sm || 12,
+      lineHeight: 16,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
     },
     warningIcon: {
       fontSize: theme.fontSizes?.xl || 18,
@@ -5012,7 +5082,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                           <TssBackendBadge backend={keygenBackend} size="pairing" />
                         </View>
                       ) : null}
-                      <DeviceEntropyPill onPress={() => setShowEntropyCard(true)} />
+                      <View style={styles.keygenEntropyPillWrap}>
+                        <DeviceEntropyPill onPress={() => setShowEntropyCard(true)} />
+                      </View>
                     </View>
                   ) : null}
                   {/* Step Indicator */}
@@ -5864,7 +5936,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                   </Text>
                                   <Text style={styles.warningHint}>
                                     {diceOn
-                                      ? 'Same sequence on every phone. Share again after dice is on. Setup stops if the check differs.'
+                                      ? 'Same sequence on every phone. Setup stops if the check differs.'
                                       : 'Optional. Same sequence on every phone. Stays on this phone.'}
                                   </Text>
                                 </View>
@@ -5875,6 +5947,71 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 </AppPressable>
                               )}
                             </View>
+                            {diceOn && !!localDiceTag && (
+                              <View style={styles.diceCheckPanel}>
+                                <View style={styles.diceCheckRow}>
+                                  <Text style={styles.diceCheckLabel}>
+                                    This phone
+                                  </Text>
+                                  <Text style={styles.diceCheckCode}>
+                                    {formatDiceCheckCode(localDiceTag)}
+                                  </Text>
+                                </View>
+                                {peerNpub1 ? (
+                                  <View style={styles.diceCheckRow}>
+                                    <Text style={styles.diceCheckLabel}>
+                                      {peerDeviceName1 || 'Other phone'}
+                                    </Text>
+                                    <Text
+                                      style={[
+                                        styles.diceCheckCode,
+                                        peerDiceTag1
+                                          ? peerDiceTag1 === localDiceTag
+                                            ? styles.diceCheckMatch
+                                            : styles.diceCheckMismatch
+                                          : styles.diceCheckPending,
+                                      ]}>
+                                      {peerDiceTag1
+                                        ? `${formatDiceCheckCode(peerDiceTag1)}${
+                                            peerDiceTag1 === localDiceTag
+                                              ? '  ✓'
+                                              : '  ≠'
+                                          }`
+                                        : '—'}
+                                    </Text>
+                                  </View>
+                                ) : null}
+                                {isTrio && peerNpub2 ? (
+                                  <View style={styles.diceCheckRow}>
+                                    <Text style={styles.diceCheckLabel}>
+                                      {peerDeviceName2 || 'Third phone'}
+                                    </Text>
+                                    <Text
+                                      style={[
+                                        styles.diceCheckCode,
+                                        peerDiceTag2
+                                          ? peerDiceTag2 === localDiceTag
+                                            ? styles.diceCheckMatch
+                                            : styles.diceCheckMismatch
+                                          : styles.diceCheckPending,
+                                      ]}>
+                                      {peerDiceTag2
+                                        ? `${formatDiceCheckCode(peerDiceTag2)}${
+                                            peerDiceTag2 === localDiceTag
+                                              ? '  ✓'
+                                              : '  ≠'
+                                          }`
+                                        : '—'}
+                                    </Text>
+                                  </View>
+                                ) : null}
+                                <Text style={styles.diceCheckHint}>
+                                  {peerDiceTag1 || peerDiceTag2
+                                    ? 'Codes must match. Re-scan their QR after dice is on to refresh.'
+                                    : 'Read this code aloud. Every phone should show the same six characters.'}
+                                </Text>
+                              </View>
+                            )}
                             <AppPressable
                               style={[styles.enhancedCheckboxContainer]}
                               onPress={() => {

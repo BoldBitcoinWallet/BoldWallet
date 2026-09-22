@@ -12,13 +12,16 @@ export default function DeviceEntropyPill({onPress}: {onPress: () => void}) {
   const styles = StyleSheet.create({
     pill: {
       flex: 1,
+      width: '100%',
+      height: 40,
       minHeight: 40,
+      maxHeight: 40,
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
       paddingLeft: 6,
       paddingRight: 10,
-      paddingVertical: 4,
+      paddingVertical: 0,
       borderRadius: 20,
       borderWidth: 1,
       borderColor: tokens.border,

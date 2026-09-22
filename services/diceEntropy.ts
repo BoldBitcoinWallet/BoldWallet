@@ -389,8 +389,33 @@ export function diceTagsFromLanPublishResult(
   return tags.slice(0, expectedPeers);
 }
 
-export function diceChecksumMismatchMessage(): string {
-  return 'Dice rolls do not match. Every phone must enter the same sequence with dice on, then try again. Setup stopped.';
+export function formatDiceCheckCode(tag: string): string {
+  const t = (tag || '').trim().toLowerCase();
+  if (!t) {
+    return '';
+  }
+  const m = /^dice_([0-9a-f]{6})$/.exec(t);
+  return (m ? m[1] : t.replace(/^dice_/, '')).toUpperCase();
+}
+
+export function diceChecksumMismatchMessage(
+  localTag?: string,
+  peerTags?: string[],
+): string {
+  const local = formatDiceCheckCode(localTag || '') || 'none';
+  const peers = (peerTags || [])
+    .map(t => formatDiceCheckCode(t) || 'none')
+    .join(', ');
+  if (peers) {
+    return (
+      `Dice check differs.\n\nThis phone: ${local}\nOther phone(s): ${peers}\n\n` +
+      'Enter the same sequence on every phone, then try again.'
+    );
+  }
+  return (
+    `Dice check differs (this phone: ${local}). ` +
+    'Enter the same sequence on every phone, then try again.'
+  );
 }
 
 /**
@@ -406,7 +431,7 @@ export function assertMatchingDiceChecksums(
   if (peers.every(t => t === local)) {
     return;
   }
-  throw new Error(diceChecksumMismatchMessage());
+  throw new Error(diceChecksumMismatchMessage(local, peers));
 }
 
 /** Parse a stray legacy `dice1:` fullNonce field. Not used for setup. */

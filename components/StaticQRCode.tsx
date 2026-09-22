@@ -30,6 +30,8 @@ export interface StaticQRCodeProps {
   contentStyle?: StyleProp<ViewStyle>;
   /** Show Bold icon in center. Default true. */
   showLogo?: boolean;
+  /** Error correction. Default L (matches other app QRs). Use M/H when a logo sits on dense payloads. */
+  ecl?: 'L' | 'M' | 'Q' | 'H';
   /** Disable press-to-copy (e.g. when only displaying). Default false. */
   copyDisabled?: boolean;
 }
@@ -47,6 +49,7 @@ const StaticQRCode: React.FC<StaticQRCodeProps> = ({
   style,
   contentStyle,
   showLogo = true,
+  ecl = 'L',
   copyDisabled = false,
 }) => {
   const {theme} = useTheme();
@@ -91,7 +94,7 @@ const StaticQRCode: React.FC<StaticQRCodeProps> = ({
               logoSize={showLogo ? logoSize : undefined}
               logoMargin={showLogo ? LOGO_MARGIN : undefined}
               logoBorderRadius={showLogo ? LOGO_BORDER_RADIUS : undefined}
-              ecl="L"
+              ecl={ecl}
               onError={error => {
                 dbg('StaticQRCode: QR encode failed', error);
               }}
