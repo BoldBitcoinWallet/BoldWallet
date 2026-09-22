@@ -2867,14 +2867,24 @@ const MobilesPairing = ({navigation}: any) => {
     enhancedBackupCheckbox: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: 8,
+      minHeight: 48,
+      paddingVertical: 10,
       paddingHorizontal: 12,
-      marginVertical: 3,
+      marginVertical: 4,
       borderRadius: 12,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
       backgroundColor: 'transparent',
     },
     enhancedBackupCheckboxChecked: {
-      backgroundColor: theme.colors.secondary + '15',
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '14'
+          : theme.colors.bitcoinOrange + '24',
     },
     backupCheckboxContent: {
       flex: 1,
@@ -3384,7 +3394,7 @@ const MobilesPairing = ({navigation}: any) => {
       tintColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.white
-          : theme.colors.text,
+          : '#1A1208',
     },
     disabledButton: {
       backgroundColor: theme.colors.disabled,
@@ -3490,8 +3500,9 @@ const MobilesPairing = ({navigation}: any) => {
           ? theme.colors.subPrimary
           : theme.colors.bitcoinOrange,
       width: '100%',
+      minHeight: 48,
       borderRadius: 12,
-      paddingVertical: 14,
+      paddingVertical: 12,
       paddingHorizontal: 16,
       alignItems: 'center',
       justifyContent: 'center',
@@ -3506,7 +3517,7 @@ const MobilesPairing = ({navigation}: any) => {
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.background
-          : theme.colors.text,
+          : '#1A1208',
       fontSize: theme.fontSizes?.lg || 16,
       fontFamily: theme.fontFamilies?.bold,
       textAlign: 'center',

@@ -1384,12 +1384,11 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                     boldExtensionContentOpacityStyle,
                   ]}>
                   <Text style={styles.watchWalletDescription}>
-                    This is a pubkey that should never be shared with anyone for
-                    privacy. It is only used to bind Bold Bitcoin Browser
-                    extension.
+                    This public key binds the Bold browser extension. Share it
+                    only with that extension.
                   </Text>
-                  <Text style={styles.watchWalletWarning}>
-                    ⚠️ This does NOT hold any private keyshare data.
+                  <Text style={styles.watchWalletNote}>
+                    It does not include your keyshare.
                   </Text>
                   <AppPressable
                     onPress={() =>
@@ -1484,9 +1483,8 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                     Import the output descriptor into Sparrow or another
                     PSBT-capable wallet to create a watch-only wallet.
                   </Text>
-                  <Text style={styles.watchWalletWarning}>
-                    ⚠️ Note: Taproot is not supported. Only Legacy, SegWit
-                    Native, and Nested SegWit address types are supported.
+                  <Text style={styles.watchWalletNote}>
+                    Legacy, native SegWit, and nested SegWit.
                   </Text>
                   <View>
                     {/* Output Descriptors - One row per address type */}

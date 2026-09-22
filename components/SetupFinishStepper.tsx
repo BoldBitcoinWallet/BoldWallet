@@ -25,6 +25,9 @@ export default function SetupFinishStepper({
   const {theme} = useTheme();
   const tokens = theme.colors;
   const [step, setStep] = useState<Step>(1);
+  // Bitcoin orange is the same in both themes. White on it is about 2.3:1.
+  // Near-black ink stays readable in light and dark.
+  const onOrange = '#1A1208';
   const styles = StyleSheet.create({
     card: {
       backgroundColor: tokens.cardBackground,
@@ -49,30 +52,54 @@ export default function SetupFinishStepper({
     labelOn: {color: tokens.text},
     next: {
       marginTop: 12,
+      minHeight: 48,
       borderRadius: 12,
       paddingVertical: 12,
+      paddingHorizontal: 16,
+      flexDirection: 'row',
       alignItems: 'center',
+      justifyContent: 'center',
       backgroundColor: tokens.bitcoinOrange,
     },
-    nextText: {color: '#FFFFFF', fontWeight: '700'},
+    nextText: {
+      color: onOrange,
+      fontSize: 16,
+      fontWeight: '700',
+    },
+    nextIcon: {
+      color: onOrange,
+      fontSize: 22,
+      fontWeight: '700',
+      lineHeight: 22,
+      marginLeft: 6,
+      marginTop: -1,
+    },
     actionRow: {flexDirection: 'row', gap: 10, marginTop: 14},
     abortBtn: {
       flex: 1,
+      minHeight: 48,
       borderRadius: 12,
       paddingVertical: 12,
+      paddingHorizontal: 12,
       alignItems: 'center',
-      borderWidth: 1,
-      borderColor: tokens.danger ?? '#c0392b',
+      justifyContent: 'center',
+      borderWidth: 1.5,
+      borderColor: tokens.danger,
+      backgroundColor: tokens.dangerOverlay15,
     },
-    abortText: {color: tokens.danger ?? '#c0392b', fontWeight: '700'},
+    abortText: {color: tokens.danger, fontSize: 16, fontWeight: '700'},
     continueBtn: {
       flex: 1.4,
+      minHeight: 48,
       borderRadius: 12,
       paddingVertical: 12,
+      paddingHorizontal: 16,
       alignItems: 'center',
+      justifyContent: 'center',
       backgroundColor: tokens.bitcoinOrange,
     },
-    continueOff: {opacity: 0.4},
+    continueOff: {backgroundColor: tokens.disabled},
+    continueOffText: {color: tokens.disabledText},
   });
 
   return (
@@ -92,8 +119,9 @@ export default function SetupFinishStepper({
       {step === 1 ? (
         <>
           {save}
-          <AppPressable style={styles.next} onPress={() => setStep(2)}>
+          <AppPressable style={styles.next} onPress={() => setStep(2)} accessibilityRole="button">
             <Text style={styles.nextText}>Next</Text>
+            <Text style={styles.nextIcon}>›</Text>
           </AppPressable>
         </>
       ) : (
@@ -107,7 +135,10 @@ export default function SetupFinishStepper({
               style={[styles.continueBtn, continueDisabled && styles.continueOff]}
               disabled={!!continueDisabled}
               onPress={onContinue}>
-              <Text style={styles.nextText}>Continue</Text>
+              <Text style={[styles.nextText, continueDisabled && styles.continueOffText]}>
+                Continue
+              </Text>
+              <Text style={[styles.nextIcon, continueDisabled && styles.continueOffText]}>›</Text>
             </AppPressable>
           </View>
         </>

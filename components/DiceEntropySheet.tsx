@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
@@ -94,6 +95,11 @@ export default function DiceEntropySheet({
   const tokens = theme.colors;
   const {fontFamilies} = theme;
   const successColor = (tokens as any).success ?? '#2ecc71';
+  const {height: windowHeight} = useWindowDimensions();
+  // Header, stepper, and footer stay outside the scroller. The body uses
+  // whatever is left, and shrinks when the step is shorter than that.
+  const bodyMax = Math.max(220, Math.round(windowHeight * 0.9) - 210);
+  const [bodyHeight, setBodyHeight] = useState(0);
   const [step, setStep] = useState<Step>(1);
   const [kind, setKind] = useState<DiceKind>('d6');
   const [rolls, setRolls] = useState<number[]>([]);
@@ -350,7 +356,8 @@ export default function DiceEntropySheet({
     cardDetail: {color: tokens.textSecondary, fontSize: 12, marginTop: 2},
     hint: {color: tokens.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 6},
     disclosure: {color: tokens.bitcoinOrange, fontSize: 13, fontWeight: '600', marginTop: 10},
-    body: {maxHeight: 360},
+    body: {flexGrow: 0},
+    bodyContent: {flexGrow: 0},
     seg: {flexDirection: 'row', gap: 6, marginBottom: 10},
     segBtn: {
       flex: 1,
@@ -482,7 +489,18 @@ export default function DiceEntropySheet({
                 })}
               </View>
 
-              <ScrollView style={styles.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+              <ScrollView
+                style={[
+                  styles.body,
+                  {maxHeight: bodyMax},
+                  bodyHeight > 0 ? {height: Math.min(bodyHeight, bodyMax)} : null,
+                ]}
+                contentContainerStyle={styles.bodyContent}
+                onContentSizeChange={(_, h) => {
+                  setBodyHeight(prev => (Math.abs(prev - h) > 1 ? h : prev));
+                }}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}>
                 {step === 1 && (
                   <View>
                     {KIND_CARDS.map(card => (
