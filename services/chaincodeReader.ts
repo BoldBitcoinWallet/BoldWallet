@@ -50,6 +50,18 @@ export async function getChaincodeFromBlob(): Promise<string> {
   return chaincodeHexFromBlob(blob);
 }
 
+/**
+ * Master chaincode for BIP32 derivation.
+ * The encrypted keyshare blob is the source. Metadata chain_code_hex is blank.
+ */
+export async function resolveChaincodeHex(): Promise<string> {
+  const hex = (await getChaincodeFromBlob()).trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(hex)) {
+    throw new Error('Chain code missing from keyshare');
+  }
+  return hex;
+}
+
 export function getBlankedMetadataChaincode(): string {
   return '';
 }

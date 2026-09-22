@@ -112,6 +112,7 @@ import {
   runWalletSetupPrepare,
   type WalletSetupRouteParams,
 } from '../services/walletSetupOrchestrator';
+import {resolveChaincodeHex} from '../services/chaincodeReader';
 import {
   getPrepareModalCopy,
   getWalletSetupKeygenModalCopy,
@@ -346,7 +347,11 @@ const MobilesPairing = ({navigation}: any) => {
   }
   const diceOn = diceSets.length > 0 && (diceSets[0]?.rolls.length ?? 0) > 0;
   const diceKindLabel =
-    diceSets[0]?.kind === 'd20' ? 'D20' : diceSets[0]?.kind === 'coin' ? 'Coin' : 'D6';
+    diceSets[0]?.kind === 'd20'
+      ? 'D20'
+      : diceSets[0]?.kind === 'coin'
+      ? 'Coin'
+      : 'D6';
   const isSpendFlow = isSendBitcoin || isSignPSBT;
   const setupMode = route.params?.mode;
   /** Trio = 3-device LAN wallet setup (keygen) only. Spend/sign co-signing is always duo. */
@@ -790,9 +795,7 @@ const MobilesPairing = ({navigation}: any) => {
       // Spec v2.1 leak hardening: public key prefix only in logs.
       dbg('initSession: Parsed keypair', {
         publicKeyPrefix:
-          kp.publicKey.length > 16
-            ? kp.publicKey.slice(0, 16) + '…'
-            : '…',
+          kp.publicKey.length > 16 ? kp.publicKey.slice(0, 16) + '…' : '…',
       });
       setStatus(sessionWaitMessage(isMaster, keygenFlow));
       if (isMaster) {
@@ -1481,7 +1484,7 @@ const MobilesPairing = ({navigation}: any) => {
         satoshiFees = sendSession.satoshiFees;
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           _ksMeta?.pub_key || '',
-          _ksMeta?.chain_code_hex || '',
+          await resolveChaincodeHex(),
           path,
         );
         const senderAddress = await BBMTLibNativeModule.btcAddress(
@@ -2604,13 +2607,12 @@ const MobilesPairing = ({navigation}: any) => {
       color: theme.colors.textSecondary,
       textAlign: 'center',
       lineHeight: 18,
-      marginTop: 10,
-      minHeight: 36, // Ensure minimum 2-line height (18 * 2)
+      marginTop: 8,
     },
     enhancedRequirementsContainer: {
-      marginVertical: 8,
-      padding: 12,
-      backgroundColor: theme.colors.background,
+      marginVertical: 4,
+      padding: 0,
+      backgroundColor: 'transparent',
       borderRadius: 12,
     },
     requirementsHeader: {
@@ -2629,6 +2631,7 @@ const MobilesPairing = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 8,
+      marginTop: 16,
     },
     requirementsIconText: {
       color: theme.colors.background,
@@ -2638,6 +2641,7 @@ const MobilesPairing = ({navigation}: any) => {
     requirementsTitle: {
       fontSize: theme.fontSizes?.lg || 16,
       fontFamily: theme.fontFamilies?.bold,
+      marginTop: 16,
       color: theme.colors.text,
     },
     requirementsDescription: {
@@ -2759,9 +2763,10 @@ const MobilesPairing = ({navigation}: any) => {
     finalStepHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginBottom: 12,
-      padding: 12,
-      backgroundColor: theme.colors.background,
+      marginBottom: 8,
+      paddingVertical: 4,
+      paddingHorizontal: 0,
+      backgroundColor: 'transparent',
       borderRadius: 12,
     },
     finalStepIconContainer: {
@@ -2959,8 +2964,8 @@ const MobilesPairing = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
-      marginBottom: 20,
-      marginTop: 20,
+      marginBottom: 8,
+      marginTop: 8,
       paddingHorizontal: 8,
     },
     deviceWrapper: {
@@ -3108,9 +3113,9 @@ const MobilesPairing = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
       shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 4},
-      shadowOpacity: 0.15,
-      shadowRadius: 8,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.08,
+      shadowRadius: 4,
       elevation: 4,
       width: '100%',
       alignSelf: 'center',
@@ -3363,13 +3368,13 @@ const MobilesPairing = ({navigation}: any) => {
           ? theme.colors.white
           : theme.colors.cardBackground,
       borderRadius: 12,
-      padding: 10,
+      padding: 14,
       marginVertical: 8,
-      elevation: 3,
+      elevation: 1,
       shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 4},
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
       width: '100%',
       alignItems: 'stretch',
       borderWidth: 1,
@@ -3812,8 +3817,7 @@ const MobilesPairing = ({navigation}: any) => {
                   <View style={styles.vpnWarningTextContainer}>
                     <Text style={styles.vpnWarningTitle}>VPN Detected</Text>
                     <Text style={styles.vpnWarningMessage}>
-                      Please turn off your VPN to ensure a secure local network
-                      connection for device pairing.
+                      Turn off VPN for local pairing.
                     </Text>
                   </View>
                 </View>
@@ -3870,10 +3874,15 @@ const MobilesPairing = ({navigation}: any) => {
                     <View style={styles.keygenTopBadgesRow}>
                       {keygenBackend ? (
                         <View style={styles.keygenBackendBadgeWrap}>
-                          <TssBackendBadge backend={keygenBackend} size="pairing" />
+                          <TssBackendBadge
+                            backend={keygenBackend}
+                            size="pairing"
+                          />
                         </View>
                       ) : null}
-                      <DeviceEntropyPill onPress={() => setShowEntropyCard(true)} />
+                      <DeviceEntropyPill
+                        onPress={() => setShowEntropyCard(true)}
+                      />
                     </View>
                     <PairingFlowButton
                       variant="quiet"
@@ -4024,9 +4033,8 @@ const MobilesPairing = ({navigation}: any) => {
                   ))}
                 </View>
                 <Text style={styles.pairingHint}>
-                  ⚠️ Tip: for ultimate privacy and reliability, put one device
-                  in Hotspot mode, and connect the{' '}
-                  {isTrio ? 'other devices' : 'other device'} to it.
+                  For a private link, put one phone on hotspot and join the{' '}
+                  {isTrio ? 'others' : 'other'} to it.
                 </Text>
                 {/* Pairing Button */}
                 {!isPairing && !peerIP && (
@@ -4194,12 +4202,12 @@ const MobilesPairing = ({navigation}: any) => {
                     numberOfLines={2}
                     adjustsFontSizeToFit={true}
                     minimumFontScale={0.8}>
-                    ⚠️ All devices' security code 🏷 should match.
+                    Security codes should match on every phone.
                   </Text>
                 )}
                 {/* Show Countdown Timer During Pairing */}
                 {isPairing && !peerIP && (
-                  <View style={{marginTop: 16}}>
+                  <View style={{marginTop: 8}}>
                     <Text style={styles.statusText}>{status}</Text>
                     <Text style={styles.countdownText}>
                       {countdown}s left to connect
@@ -4247,7 +4255,11 @@ const MobilesPairing = ({navigation}: any) => {
                 {/* Preparation Panel */}
                 {peerIP &&
                   ((isPreParamsReady && !mpcDone && (
-                    <View style={styles.informationCard}>
+                    <View
+                      style={[
+                        styles.informationCard,
+                        {opacity: 0.72, paddingVertical: 8, marginVertical: 4},
+                      ]}>
                       <View
                         style={{
                           flexDirection: 'row',
@@ -4279,7 +4291,13 @@ const MobilesPairing = ({navigation}: any) => {
                           {prepCardCopy.title}
                         </Text>
                         <Text style={styles.requirementsDescription}>
-                          {prepCardCopy.description}{' '}
+                          {prepCardCopy.description}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.requirementsDescription,
+                            {marginTop: 4, fontSize: 12, lineHeight: 16},
+                          ]}>
                           {getMpcKeepAliveSetupHint(
                             keepAliveOs,
                             keepAliveHintOpts,
@@ -4448,7 +4466,11 @@ const MobilesPairing = ({navigation}: any) => {
                       </View>
                       <View style={styles.enhancedCheckboxContainer}>
                         <AppPressable
-                          style={{flexDirection: 'row', alignItems: 'center', flex: 1}}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            flex: 1,
+                          }}
                           onPress={() => setDiceSheetVisible(true)}>
                           <View
                             style={[
@@ -4460,7 +4482,9 @@ const MobilesPairing = ({navigation}: any) => {
                           <View style={styles.checkboxTextContainer}>
                             <Text style={styles.enhancedCheckboxLabel}>
                               {diceOn
-                                ? `Dice on · ${diceKindLabel} · ${diceSets[0]?.rolls.length ?? 0} rolls`
+                                ? `Dice on · ${diceKindLabel} · ${
+                                    diceSets[0]?.rolls.length ?? 0
+                                  } rolls`
                                 : 'Use dice rolls'}
                             </Text>
                             <Text style={styles.warningHint}>

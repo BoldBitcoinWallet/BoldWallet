@@ -166,6 +166,20 @@ export const generateAllOutputDescriptors = async (
       ? createdAt
       : {created_at: createdAt, tss_backend: 'gg18'},
   );
+  const chain = String(chainCode || '')
+    .trim()
+    .toLowerCase();
+  // Native GetOutputDescriptor returns the text "empty chain code" as a
+  // resolved string when chaincode is blank. Metadata always blanks it;
+  // callers must pass the encrypted blob's 64-hex chain code.
+  if (!/^[0-9a-f]{64}$/.test(chain)) {
+    return {
+      legacy: '',
+      segwitNative: '',
+      segwitCompatible: '',
+      primary: '',
+    };
+  }
   const outputDescriptors = {
     legacy: '',
     segwitNative: '',
@@ -177,7 +191,7 @@ export const generateAllOutputDescriptors = async (
       // Old wallets: generate legacy descriptor once, then construct others
       const legacyDesc =
         (await nativeModule
-          .getOutputDescriptor(pubKey, chainCode, network, 'legacy')
+          .getOutputDescriptor(pubKey, chain, network, 'legacy')
           .catch(() => '')) || '';
 
       outputDescriptors.legacy = legacyDesc;
@@ -199,15 +213,15 @@ export const generateAllOutputDescriptors = async (
       const [legacyDesc, segwitNativeDesc, segwitCompatibleDesc] =
         await Promise.all([
           nativeModule
-            .getOutputDescriptor(pubKey, chainCode, network, 'legacy')
+            .getOutputDescriptor(pubKey, chain, network, 'legacy')
             .catch(() => ''),
           nativeModule
-            .getOutputDescriptor(pubKey, chainCode, network, 'segwit-native')
+            .getOutputDescriptor(pubKey, chain, network, 'segwit-native')
             .catch(() => ''),
           nativeModule
             .getOutputDescriptor(
               pubKey,
-              chainCode,
+              chain,
               network,
               'segwit-compatible',
             )
@@ -1503,6 +1517,25 @@ export const getKeyshareMetadata = async () => {
     return null;
   }
 };
+
+/**
+ * Full MPC keyshare blob from secure storage.
+ * Includes chain_code_hex. Plaintext metadata (getKeyshareMetadata) blanks it.
+ * @returns {Promise<Record<string, any>|null>}
+ */
+export async function getKeyshare() {
+  try {
+    const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
+    if (!raw || String(raw).trim() === '') {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (e) {
+    dbg('getKeyshare: failed', e);
+    return null;
+  }
+}
 
 /**
  * Remove the cached keyshare metadata (SQLite, plus leftover EncryptedStorage).

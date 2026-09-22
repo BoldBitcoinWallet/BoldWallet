@@ -56,7 +56,7 @@ import {
   hasWalletKeyshareInSecureStorage,
   KEYSHARE_STORAGE_KEY,
 } from '../utils';
-import {chaincodeHexFromBlob} from '../services/chaincodeReader';
+import {chaincodeHexFromBlob, resolveChaincodeHex} from '../services/chaincodeReader';
 import {
   createUrDecoder,
   formatUrFragmentProgress,
@@ -1592,7 +1592,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           // Derive the public key using the computed derivation path (current receive address)
           const publicKey = await BBMTLibNativeModule.derivePubkey(
             keyshare.pub_key,
-            keyshare.chain_code_hex,
+            await resolveChaincodeHex(),
             derivationPath,
           );
           // Compute from address using native network format (requires 'testnet3' not 'testnet')

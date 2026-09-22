@@ -148,6 +148,7 @@ import {MpcConnectionQuality} from '../components/MpcConnectionQuality';
 import NostrRelaysEditor from '../components/NostrRelaysEditor';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
+import {resolveChaincodeHex} from '../services/chaincodeReader';
 import EntropyInfoCard from '../components/EntropyInfoCard';
 import DeviceEntropyPill from '../components/DeviceEntropyPill';
 import PairingFlowButton from '../components/PairingFlowButton';
@@ -329,8 +330,12 @@ async function loadNostrKeysharePrepForSession(): Promise<NostrKeysharePrep> {
   if (!pubKey && meta?.pub_key) {
     pubKey = meta.pub_key;
   }
-  if (!chainHex && meta?.chain_code_hex) {
-    chainHex = meta.chain_code_hex;
+  if (!/^[0-9a-f]{64}$/i.test(chainHex)) {
+    try {
+      chainHex = await resolveChaincodeHex();
+    } catch {
+      chainHex = '';
+    }
   }
 
   dbgNostrKeysharePrep('after_meta_merge', {
@@ -2843,7 +2848,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       flex: 1,
     },
     content: {
-      padding: 20,
+      padding: 12,
     },
     section: {
       marginTop: 8,
@@ -3452,9 +3457,9 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginBottom: 8,
     },
     stepCircle: {
-      width: 32,
-      height: 32,
-      borderRadius: 16,
+      width: 28,
+      height: 28,
+      borderRadius: 14,
       backgroundColor: theme.colors.border + '40',
       alignItems: 'center',
       justifyContent: 'center',
@@ -3498,8 +3503,8 @@ const MobileNostrPairing = ({navigation}: any) => {
       flex: 1,
     },
     collapsibleHeader: {
-      paddingVertical: 12,
-      paddingHorizontal: 16,
+      paddingVertical: 8,
+      paddingHorizontal: 12,
       backgroundColor: theme.colors.cardBackground,
       borderRadius: 8,
       borderWidth: 1,
@@ -3765,12 +3770,12 @@ const MobileNostrPairing = ({navigation}: any) => {
     informationCard: {
       backgroundColor: theme.colors.cardBackground,
       borderRadius: 12,
-      padding: 10,
-      marginBottom: 16,
+      padding: 14,
+      marginBottom: 12,
       shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 2},
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
       elevation: Platform.OS === 'android' ? 2 : 3, // Reduce elevation on Android
       borderWidth: Platform.OS === 'android' ? 0.5 : 1, // Thinner border on Android to prevent distortion
       borderColor: theme.colors.border,
@@ -4533,7 +4538,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         <PairingFlowButton
                           variant="quiet"
                           label={isSendBitcoin || isSignPSBT ? 'Cancel' : 'Abort'}
-                          style={{marginLeft: 12}}
+                          style={{marginLeft: 8, paddingHorizontal: 10, minHeight: 36}}
                           onPress={() => {
                             if (isSendBitcoin || isSignPSBT) {
                               navigation.goBack();
@@ -5049,7 +5054,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             color: theme.colors.text,
                             marginBottom: 12,
                           }}>
-                          {'-->'} This Device (Copy or Share QR)
+                          This phone
                         </Text>
                         <View
                           style={[
@@ -5128,9 +5133,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                           color: theme.colors.text,
                           marginBottom: 12,
                         }}>
-                        {isTrio
-                          ? 'Next: Scan Second Device'
-                          : '--> Scan Other Device (Paste or Scan QR)'}
+                        {isTrio ? 'Second phone' : 'Other phone'}
                       </Text>
                       <View>
                         <View style={styles.inputWithIcons}>
@@ -5260,7 +5263,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                             color: theme.colors.text,
                             marginBottom: 12,
                           }}>
-                          Step 3: Third Device
+                          Third phone
                         </Text>
                         <View>
                           <View style={styles.inputWithIcons}>
@@ -5398,7 +5401,16 @@ const MobileNostrPairing = ({navigation}: any) => {
                             color: theme.colors.text,
                             marginBottom: 12,
                           }}>
-                          {'-->'} {getMpcKeepAliveSetupHint(keepAliveOs, keepAliveHintOpts)}
+                          Prepare this phone
+                        </Text>
+                        <Text
+                          style={{
+                            fontSize: 12,
+                            lineHeight: 16,
+                            color: theme.colors.textSecondary,
+                            marginBottom: 8,
+                          }}>
+                          {getMpcKeepAliveSetupHint(keepAliveOs, keepAliveHintOpts)}
                         </Text>
                         <AppPressable
                           style={[
@@ -5520,9 +5532,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               </Text>
                             </View>
                             <Text style={styles.helpText}>
-                              This device generates a unique ID. Share this with
-                              other devices by showing the QR code or copying
-                              the connection details.
+                              Share this phone’s QR or copied details.
                             </Text>
                           </View>
                           <View style={styles.helpSection}>
@@ -5550,9 +5560,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               </Text>
                             </View>
                             <Text style={styles.helpText}>
-                              On each peer device, scan your QR code or paste
-                              your connection details. Then share their
-                              connection details back to you.
+                              Scan or paste each other phone, then share back.
                             </Text>
                           </View>
                           <View style={styles.helpSection}>
@@ -5580,9 +5588,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               </Text>
                             </View>
                             <Text style={styles.helpText}>
-                              Once all devices are prepared, tap proceed to Key
-                              Generation to begin the secure wallet setup
-                              process.
+                              When every phone is prepared, start key generation.
                             </Text>
                           </View>
                           <View style={styles.helpSection}>
@@ -5608,10 +5614,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                               <Text style={styles.helpTitle}>Tips</Text>
                             </View>
                             <Text style={styles.helpText}>
-                              • Make sure all devices are ready{'\n'}• Your
-                              internet connection must be stable{'\n'}• The
-                              could take up 1-2 minutes
-                              {'\n'}• {getMpcKeepAliveSetupHint(keepAliveOs, keepAliveHintOpts)}
+                              Keep every phone ready. Use a stable connection.
+                              Setup can take 1–2 minutes.{'\n'}
+                              {getMpcKeepAliveSetupHint(keepAliveOs, keepAliveHintOpts)}
                             </Text>
                           </View>
                         </ScrollView>
@@ -5634,11 +5639,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                       <>
                         <View style={styles.section}>
                           <Text style={styles.finalStepTitle}>
-                            {'-->'} Final Step
+                            Final step
                           </Text>
                           {/* Participants Device Information */}
                           {Object.keys(keyshareMapping).length > 0 && (
-                            <View style={styles.participantsList}>
+                            <View style={[styles.participantsList, {opacity: 0.55, marginBottom: 4}]}>
                               {keyshareMapping.keyshare1 && (
                                 <View style={styles.participantItem}>
                                   <Text style={styles.bulletPoint}>•</Text>
