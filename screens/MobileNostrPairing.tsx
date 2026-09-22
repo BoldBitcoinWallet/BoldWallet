@@ -150,6 +150,7 @@ import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
 import TssBackendBadge from '../components/TssBackendBadge';
 import EntropyInfoCard from '../components/EntropyInfoCard';
 import DeviceEntropyPill from '../components/DeviceEntropyPill';
+import PairingFlowButton from '../components/PairingFlowButton';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import appConfigRepository, {
@@ -3435,13 +3436,14 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     keygenTopBadgesRow: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'stretch',
       gap: 10,
       marginBottom: 12,
       width: '100%',
     },
     keygenBackendBadgeWrap: {
       justifyContent: 'center',
+      alignSelf: 'stretch',
     },
     stepRow: {
       flexDirection: 'row',
@@ -4528,8 +4530,10 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                       {/* Abort Setup button on the right */}
                       {!mpcDone && !isPairing ? (
-                        <AppPressable
-                          style={[styles.cancelSetupButton, {marginLeft: 12}]}
+                        <PairingFlowButton
+                          variant="quiet"
+                          label={isSendBitcoin || isSignPSBT ? 'Cancel' : 'Abort'}
+                          style={{marginLeft: 12}}
                           onPress={() => {
                             if (isSendBitcoin || isSignPSBT) {
                               navigation.goBack();
@@ -4542,11 +4546,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                               );
                             }
                           }}
-                          android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                          <Text style={styles.cancelLink}>
-                            {isSendBitcoin || isSignPSBT ? 'Cancel' : 'Abort'}
-                          </Text>
-                        </AppPressable>
+                        />
                       ) : (
                         <View style={{width: 36}} />
                       )}
@@ -4895,11 +4895,12 @@ const MobileNostrPairing = ({navigation}: any) => {
                             {status}
                           </Text>
                         ) : null}
-                        <AppPressable
-                          style={styles.backupButton}
-                          onPress={() => startSignPSBT()}>
-                          <Text style={styles.backupButtonText}>Try again</Text>
-                        </AppPressable>
+                        <PairingFlowButton
+                          variant="retry"
+                          label="Try again"
+                          style={{marginTop: 12}}
+                          onPress={() => startSignPSBT()}
+                        />
                       </View>
                     </View>
                   )}
@@ -4931,7 +4932,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                     <View style={styles.keygenTopBadgesRow}>
                       {keygenBackend ? (
                         <View style={styles.keygenBackendBadgeWrap}>
-                          <TssBackendBadge backend={keygenBackend} />
+                          <TssBackendBadge backend={keygenBackend} size="pairing" />
                         </View>
                       ) : null}
                       <DeviceEntropyPill onPress={() => setShowEntropyCard(true)} />

@@ -133,6 +133,7 @@ import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
 import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
 import EntropyInfoCard from '../components/EntropyInfoCard';
 import DeviceEntropyPill from '../components/DeviceEntropyPill';
+import PairingFlowButton from '../components/PairingFlowButton';
 import DiceEntropySheet, {
   type DiceEntropyResult,
 } from '../components/DiceEntropySheet';
@@ -3391,10 +3392,11 @@ const MobilesPairing = ({navigation}: any) => {
     },
     keygenBackendBadgeWrap: {
       justifyContent: 'center',
+      alignSelf: 'stretch',
     },
     keygenTopBadgesRow: {
       flexDirection: 'row',
-      alignItems: 'center',
+      alignItems: 'stretch',
       gap: 10,
       marginTop: 4,
       marginBottom: 12,
@@ -3830,7 +3832,9 @@ const MobilesPairing = ({navigation}: any) => {
                   ]}>
                   {title}
                 </Text>
-                <AppPressable
+                <PairingFlowButton
+                  variant="quiet"
+                  label="Exit Pairing"
                   onPress={() => {
                     mpcAbortRef.current = true;
                     isFocusedRef.current = false;
@@ -3844,10 +3848,8 @@ const MobilesPairing = ({navigation}: any) => {
                       }),
                     );
                   }}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                  style={styles.exitButton}>
-                  <Text style={styles.exitButtonText}>Exit Pairing</Text>
-                </AppPressable>
+                  style={{marginTop: 12}}
+                />
               </View>
             )}
             {/* Checklist Section */}
@@ -3868,12 +3870,14 @@ const MobilesPairing = ({navigation}: any) => {
                     <View style={styles.keygenTopBadgesRow}>
                       {keygenBackend ? (
                         <View style={styles.keygenBackendBadgeWrap}>
-                          <TssBackendBadge backend={keygenBackend} />
+                          <TssBackendBadge backend={keygenBackend} size="pairing" />
                         </View>
                       ) : null}
                       <DeviceEntropyPill onPress={() => setShowEntropyCard(true)} />
                     </View>
-                    <AppPressable
+                    <PairingFlowButton
+                      variant="quiet"
+                      label="Exit Pairing"
                       onPress={() => {
                         navigation.dispatch(
                           CommonActions.reset({
@@ -3882,10 +3886,8 @@ const MobilesPairing = ({navigation}: any) => {
                           }),
                         );
                       }}
-                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                      style={styles.exitButton}>
-                      <Text style={styles.exitButtonText}>Exit Pairing</Text>
-                    </AppPressable>
+                      style={{marginTop: 4}}
+                    />
                   </>
                 )}
                 <View style={styles.enhancedRequirementsContainer}>
@@ -4207,31 +4209,22 @@ const MobilesPairing = ({navigation}: any) => {
                 {peerIP && (
                   <View style={styles.buttonRow}>
                     {/* Retry button (left) */}
-                    <AppPressable
-                      style={[styles.retryButton, styles.buttonFlex]}
+                    <PairingFlowButton
+                      variant="retry"
+                      label="Retry"
+                      style={styles.buttonFlex}
                       onPress={() => {
                         navigation.dispatch(
                           StackActions.replace('Devices Pairing', route.params),
                         );
-                      }}>
-                      <Image
-                        source={require('../assets/refresh-icon.png')}
-                        style={{
-                          width: 18,
-                          height: 18,
-                          tintColor:
-                            theme.colors.background === '#ffffff'
-                              ? theme.colors.white
-                              : theme.colors.text,
-                        }}
-                        resizeMode="contain"
-                      />
-                      <Text style={styles.retryLink}>Retry</Text>
-                    </AppPressable>
+                      }}
+                    />
                     {/* Cancel button for setup modes (duo/trio) - right */}
                     {!isSendBitcoin && !isSignPSBT && (
-                      <AppPressable
-                        style={[styles.cancelSetupButton, styles.buttonFlex]}
+                      <PairingFlowButton
+                        variant="quiet"
+                        label="Cancel"
+                        style={styles.buttonFlex}
                         onPress={() => {
                           mpcAbortRef.current = true;
                           isFocusedRef.current = false;
@@ -4242,9 +4235,8 @@ const MobilesPairing = ({navigation}: any) => {
                               routes: [{name: 'Welcome'}],
                             }),
                           );
-                        }}>
-                        <Text style={styles.cancelLink}>Cancel</Text>
-                      </AppPressable>
+                        }}
+                      />
                     )}
                   </View>
                 )}
