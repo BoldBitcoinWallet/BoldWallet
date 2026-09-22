@@ -3391,10 +3391,7 @@ const MobilesPairing = ({navigation}: any) => {
       width: 18,
       height: 18,
       marginRight: 6,
-      tintColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.white
-          : '#1A1208',
+      tintColor: theme.colors.white,
     },
     disabledButton: {
       backgroundColor: theme.colors.disabled,
@@ -3505,7 +3502,7 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.subPrimary
-          : theme.colors.bitcoinOrange,
+          : theme.colors.secondary,
       width: '100%',
       minHeight: 48,
       borderRadius: 12,
@@ -3521,10 +3518,7 @@ const MobilesPairing = ({navigation}: any) => {
       elevation: 4,
     },
     backupButtonText: {
-      color:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.background
-          : '#1A1208',
+      color: theme.colors.white,
       fontSize: theme.fontSizes?.lg || 16,
       fontFamily: theme.fontFamilies?.bold,
       textAlign: 'center',

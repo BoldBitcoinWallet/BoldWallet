@@ -25,9 +25,10 @@ export default function SetupFinishStepper({
   const {theme} = useTheme();
   const tokens = theme.colors;
   const [step, setStep] = useState<Step>(1);
-  // Bitcoin orange is the same in both themes. White on it is about 2.3:1.
-  // Near-black ink stays readable in light and dark.
-  const onOrange = '#1A1208';
+  // Backup (in pairing screens) stays a separate fill from Next/Continue.
+  // Next/Continue use Bitcoin orange with white labels in both themes.
+  const nextFill = tokens.bitcoinOrange;
+  const onAccent = '#FFFFFF';
   const styles = StyleSheet.create({
     card: {
       backgroundColor: tokens.cardBackground,
@@ -59,20 +60,27 @@ export default function SetupFinishStepper({
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: tokens.bitcoinOrange,
+      backgroundColor: nextFill,
+    },
+    nextLabelRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
     },
     nextText: {
-      color: onOrange,
+      color: onAccent,
       fontSize: 16,
+      lineHeight: 20,
       fontWeight: '700',
     },
     nextIcon: {
-      color: onOrange,
-      fontSize: 22,
+      color: onAccent,
+      fontSize: 18,
+      lineHeight: 20,
       fontWeight: '700',
-      lineHeight: 22,
-      marginLeft: 6,
-      marginTop: -1,
+      marginLeft: 4,
+      includeFontPadding: false,
+      textAlignVertical: 'center',
     },
     actionRow: {flexDirection: 'row', gap: 10, marginTop: 14},
     abortBtn: {
@@ -94,13 +102,23 @@ export default function SetupFinishStepper({
       borderRadius: 12,
       paddingVertical: 12,
       paddingHorizontal: 16,
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      backgroundColor: tokens.bitcoinOrange,
+      backgroundColor: nextFill,
     },
     continueOff: {backgroundColor: tokens.disabled},
     continueOffText: {color: tokens.disabledText},
   });
+
+  const nextLabel = (title: string, disabled?: boolean) => (
+    <View style={styles.nextLabelRow}>
+      <Text style={[styles.nextText, disabled && styles.continueOffText]}>
+        {title}
+      </Text>
+      <Text style={[styles.nextIcon, disabled && styles.continueOffText]}>›</Text>
+    </View>
+  );
 
   return (
     <View style={styles.card}>
@@ -120,8 +138,7 @@ export default function SetupFinishStepper({
         <>
           {save}
           <AppPressable style={styles.next} onPress={() => setStep(2)} accessibilityRole="button">
-            <Text style={styles.nextText}>Next</Text>
-            <Text style={styles.nextIcon}>›</Text>
+            {nextLabel('Next')}
           </AppPressable>
         </>
       ) : (
@@ -135,10 +152,7 @@ export default function SetupFinishStepper({
               style={[styles.continueBtn, continueDisabled && styles.continueOff]}
               disabled={!!continueDisabled}
               onPress={onContinue}>
-              <Text style={[styles.nextText, continueDisabled && styles.continueOffText]}>
-                Continue
-              </Text>
-              <Text style={[styles.nextIcon, continueDisabled && styles.continueOffText]}>›</Text>
+              {nextLabel('Continue', !!continueDisabled)}
             </AppPressable>
           </View>
         </>
