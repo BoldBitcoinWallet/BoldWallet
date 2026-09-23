@@ -24,6 +24,15 @@ import {
 import {assertTrioLanKeygenReady} from './trioLanKeygenPreflight';
 import {LAN_KEYGEN_STATUS} from './walletSetupUi';
 import {parseLanKeygenSessionPayload} from './lanSession';
+import {
+  assertMatchingDiceChecksums,
+  deriveLocalDiceChaincode,
+  diceChecksumTag,
+  parseDiceChecksumTags,
+  stripLanDiceField,
+} from './diceEntropy';
+import {assertCommitmentsOnlyPayload} from './logRedact';
+import type {DiceSet} from './diceEntropy';
 import {TssProvider} from './TssProvider';
 import type {SetupMode, TssBackend} from './tssBackend';
 import {resolveTssBackendForKeygen} from './tssBackend';
@@ -117,6 +126,11 @@ export type LanKeygenOrchestrationInput = {
   peerPubkey: string;
   relayWaitMs?: number;
   postRelayWaitMs?: number;
+  /**
+   * Opt-in dice-only chaincode. Rolls stay on this phone and are not sent.
+   * Omit/empty = skip path (base chaincode unchanged).
+   */
+  diceSets?: DiceSet[];
 };
 
 export type LanKeygenOrchestrationResult = {
@@ -128,7 +142,28 @@ export type LanKeygenOrchestrationResult = {
   transport: LanMpcTransportKeys;
   chaincode: string;
   statusLines: typeof LAN_KEYGEN_STATUS;
+  /** Local commitment hex when dice was used (empty when skipped). Never sent. */
+  diceCommitments: string[];
+  diceDigests: string[];
+  diceUsed: boolean;
 };
+
+/** Skip keeps base. Dice replaces it with a hash of this phone's rolls only. */
+async function chaincodeFromLocalDice(
+  baseChaincodeHex: string,
+  sets?: DiceSet[],
+): Promise<{finalChaincodeHex: string; diceUsed: boolean; localCommits: string[]}> {
+  const local = sets ?? [];
+  if (!local.length) {
+    return {finalChaincodeHex: baseChaincodeHex, diceUsed: false, localCommits: []};
+  }
+  const derived = await deriveLocalDiceChaincode(local);
+  return {
+    finalChaincodeHex: derived.chaincodeHex,
+    diceUsed: true,
+    localCommits: derived.localCommits,
+  };
+}
 
 /**
  * LAN keygen orchestration aligned with main-branch GG18:
@@ -172,6 +207,15 @@ export async function runLanWalletKeygen(
   await ensureDklsRuntimeIfNeeded(backend);
 
   const data = (await input.initSession()).trim();
+  if (!assertCommitmentsOnlyPayload(data)) {
+    throw new Error('LAN handshake must not carry dice rolls.');
+  }
+  // Dice mode: the handshake may carry dice_<6 hex>, never the master chaincode.
+  const localDiceTag = input.diceSets?.length
+    ? await diceChecksumTag(input.diceSets)
+    : '';
+  const announcedDiceTag = parseDiceChecksumTags(data)[0] || '';
+  assertMatchingDiceChecksums(localDiceTag, [announcedDiceTag]);
   let chaincode: string;
   try {
     chaincode = parseLanKeygenSessionPayload(data).seed;
@@ -208,7 +252,9 @@ export async function runLanWalletKeygen(
   });
 
   const sessionID = (
-    await BBMTLibNativeModule.sha256(`${data}/${server}`)
+    await BBMTLibNativeModule.sha256(
+      `${stripLanDiceField(data)}/${server}`,
+    )
   ).trim();
 
   const transport = await resolveLanKeygenTransportKeys({
@@ -220,6 +266,15 @@ export async function runLanWalletKeygen(
     sha256: (msg: string) => BBMTLibNativeModule.sha256(msg),
   });
 
+  // Dice stays on this phone. The wire tag is a 6-hex check, not this chaincode.
+  const diceRes = await chaincodeFromLocalDice(chaincode, input.diceSets);
+  if (
+    diceRes.diceUsed &&
+    data.toLowerCase().includes(diceRes.finalChaincodeHex.toLowerCase())
+  ) {
+    throw new Error('Setup refused to send the master chaincode.');
+  }
+
   return {
     backend,
     server,
@@ -227,8 +282,11 @@ export async function runLanWalletKeygen(
     partiesCSV,
     sessionID,
     transport,
-    chaincode,
+    chaincode: diceRes.finalChaincodeHex,
     statusLines: LAN_KEYGEN_STATUS,
+    diceCommitments: diceRes.localCommits,
+    diceDigests: [],
+    diceUsed: diceRes.diceUsed,
   };
 }
 
@@ -278,7 +336,23 @@ export type NostrKeygenInvokeInput = {
   ppmPath: string;
   setupMode?: SetupMode;
   backend?: TssBackend | null;
+  /**
+   * Opt-in dice-only chaincode. Local sets on THIS phone only.
+   * Omit/empty = skip path (base unchanged). Not sent to peers.
+   * Nostr binds a short local dice check into the session id instead of
+   * requiring peer tags from the connection QR.
+   */
+  diceSets?: DiceSet[];
 };
+
+/** Dice-only Nostr chaincode: skip = base unchanged, else local dice hash. */
+export async function mixNostrChaincodeWithDice(
+  baseChaincodeHex: string,
+  sets?: DiceSet[],
+): Promise<{finalChaincodeHex: string; diceUsed: boolean}> {
+  const res = await chaincodeFromLocalDice(baseChaincodeHex, sets);
+  return {finalChaincodeHex: res.finalChaincodeHex, diceUsed: res.diceUsed};
+}
 
 export async function invokeNostrWalletKeygen(
   input: NostrKeygenInvokeInput,
@@ -288,13 +362,17 @@ export async function invokeNostrWalletKeygen(
     input.setupMode,
   );
   await ensureDklsRuntimeIfNeeded(backend);
+  const {finalChaincodeHex} = await mixNostrChaincodeWithDice(
+    input.chaincode,
+    input.diceSets,
+  );
   return TssProvider.nostrMpcTssSetup(
     input.relaysCSV,
     input.partyNsec,
     input.partiesNpubsCSV,
     input.sessionID,
     input.sessionKey,
-    input.chaincode,
+    finalChaincodeHex,
     input.ppmPath,
     input.setupMode,
     backend,

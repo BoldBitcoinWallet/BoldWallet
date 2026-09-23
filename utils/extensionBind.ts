@@ -2,12 +2,9 @@
  * Unified Bold extension binding logic (swimlanes.io spec).
  * Used by: Devices tab (KeyshareInfoContent "Bind Extension") and WalletHome (scan auto-detect).
  *
- * Response generation:
- * - payload = pub_key + chain_code (hex, 130 chars = 65 bytes)
- * - hash = sha256(payload + pairing_code), checksum = hash[0:4]
- * - pairing_key = sha256(pairing_code) -> 32 bytes
- * - cipher = payload XOR pairing_key (key repeated to 65 bytes)
- * - response = cipher + checksum (67 bytes), base64
+ * Spec v2 leak hardening: master chaincode MUST NOT leave the device via the
+ * extension-bind QR. This module no longer accepts or transmits chain_code.
+ * Binding proves possession of the account pubkey only.
  */
 import {BBMTLibNativeModule} from '../native_modules';
 
@@ -38,21 +35,29 @@ function xorBytes(data: Buffer, key: Buffer): Buffer {
 /**
  * Compute the response QR payload (base64) for Bold extension binding.
  * Pairing code is not shared back; payload is XOR'd with sha256(pairing_code).
- * Extension validates integrity with checksum = sha256(pub_key+chain_code+pairing_code)[0:4].
+ * Extension validates integrity with checksum = sha256(pub_key+pairing_code)[0:4].
+ *
+ * Spec v2: payload = pub_key ONLY (66 hex = 33 bytes). Master chaincode is
+ * never exported here. Legacy 65-byte payloads are rejected on parse.
  */
 export async function computeExtensionBindResponseQr(
   pairingCode: string,
   pubKey: string,
-  chainCode: string,
+  _chainCode?: string,
 ): Promise<string> {
-  const payloadHex = `${pubKey}${chainCode}`;
-  if (payloadHex.length !== 130) {
-    throw new Error('pub_key (66 hex) + chain_code (64 hex) must be 130 chars');
+  if (_chainCode !== undefined) {
+    throw new Error(
+      'computeExtensionBindResponseQr: chaincode export removed (Spec v2 leak hardening)',
+    );
+  }
+  const payloadHex = `${pubKey}`;
+  if (payloadHex.length !== 66) {
+    throw new Error('pub_key (66 hex) must be 66 chars');
   }
 
-  // Integrity checksum (extension validates: sha256(pub_key+chain_code+pairing_code), sig = hash[0:4])
+  // Integrity checksum (extension validates: sha256(pub_key+pairing_code), sig = hash[0:4])
   const integrityHash = await BBMTLibNativeModule.sha256(
-    `${pubKey}${chainCode}${pairingCode}`,
+    `${pubKey}${pairingCode}`,
   );
   const checksumHex = integrityHash.substring(0, 4);
   const checksumBytes = Buffer.from(checksumHex, 'hex');
@@ -74,16 +79,17 @@ export type ParseExtensionResponseResult = {
 };
 
 /**
- * Extension-side: decipher response QR, extract pub_key/chain_code, validate checksum.
- * Use this in the Bold extension (or tests) with your sha256 (e.g. Web Crypto / Node crypto).
- * If sha256Fn is omitted, uses BBMTLibNativeModule.sha256 (React Native app only).
+ * Extension-side: decipher response QR, extract pub_key, validate checksum.
+ * Spec v2: payload = pub_key only (33 bytes). chainCode is always '' —
+ * master chaincode never crosses the extension bind. Legacy 67-byte
+ * (pub+chain) responses are rejected.
  *
- * Steps (swimlanes.io):
- * - cipher = response[0:65], checksum = response[65:67]
+ * Steps:
+ * - cipher = response[0:33], checksum = response[33:35]
  * - pairing_key = sha256(pairing_code)
  * - payload = cipher XOR pairing_key
- * - pub_key = payload_hex[0:66], chain_code = payload_hex[66:130]
- * - valid = (sha256(pub_key+chain_code+pairing_code)[0:4] === checksum)
+ * - pub_key = payload_hex[0:66]
+ * - valid = (sha256(pub_key+pairing_code)[0:4] === checksum)
  */
 export async function parseExtensionResponse(
   responseBase64: string,
@@ -94,23 +100,28 @@ export async function parseExtensionResponse(
     sha256Fn ?? ((data: string) => BBMTLibNativeModule.sha256(data) as Promise<string>);
 
   const responseBytes = Buffer.from(responseBase64, 'base64');
-  if (responseBytes.length !== 67) {
-    throw new Error(`Invalid response length: expected 67 bytes, got ${responseBytes.length}`);
+  if (responseBytes.length === 67) {
+    throw new Error(
+      'Legacy extension response (pub+chaincode) rejected: chaincode export removed (Spec v2)',
+    );
   }
-  const cipherBytes = responseBytes.subarray(0, 65);
-  const checksumBytes = responseBytes.subarray(65, 67);
+  if (responseBytes.length !== 35) {
+    throw new Error(`Invalid response length: expected 35 bytes, got ${responseBytes.length}`);
+  }
+  const cipherBytes = responseBytes.subarray(0, 33);
+  const checksumBytes = responseBytes.subarray(33, 35);
 
   const pairingKeyHex = await sha256Async(pairingCode);
   const pairingKeyBytes = Buffer.from(pairingKeyHex, 'hex');
   const payloadBytes = xorBytes(cipherBytes, pairingKeyBytes);
   const payloadHex = payloadBytes.toString('hex');
-  if (payloadHex.length !== 130) {
-    throw new Error(`Invalid payload hex length: expected 130, got ${payloadHex.length}`);
+  if (payloadHex.length !== 66) {
+    throw new Error(`Invalid payload hex length: expected 66, got ${payloadHex.length}`);
   }
   const pubKey = payloadHex.slice(0, 66);
-  const chainCode = payloadHex.slice(66, 130);
+  const chainCode = '';
 
-  const integrityHash = await sha256Async(`${pubKey}${chainCode}${pairingCode}`);
+  const integrityHash = await sha256Async(`${pubKey}${pairingCode}`);
   const expectedChecksumHex = integrityHash.slice(0, 4);
   const expectedChecksumBytes = Buffer.from(expectedChecksumHex, 'hex');
   const valid =

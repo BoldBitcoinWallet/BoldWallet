@@ -49,6 +49,8 @@ import {
   getResetToMainTabsWallet,
   getKeyshareDisplayLabel,
   getKeyshareMetadata,
+  clearKeyshareMetadata,
+  KEYSHARE_STORAGE_KEY,
   resolveUseLegacyDerivationPaths,
   detectKeyshareTssBackend,
   shortenAddress,
@@ -58,6 +60,7 @@ import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
 import {guardOnlineAction} from '../services/walletOnlineStore';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
+import EncryptedStorage from 'react-native-encrypted-storage';
 import {waitMS, WalletService} from '../services/WalletService';
 import {
   resolveTssBackend,
@@ -109,6 +112,7 @@ import {
   runWalletSetupPrepare,
   type WalletSetupRouteParams,
 } from '../services/walletSetupOrchestrator';
+import {resolveChaincodeHex} from '../services/chaincodeReader';
 import {
   getPrepareModalCopy,
   getWalletSetupKeygenModalCopy,
@@ -129,6 +133,21 @@ import {
 import {MpcModalStatusRow} from '../components/MpcModalStatusRow';
 import MpcTransportSubprogress from '../components/MpcTransportSubprogress';
 import EntropyInfoCard from '../components/EntropyInfoCard';
+import DeviceEntropyPill from '../components/DeviceEntropyPill';
+import PairingFlowButton from '../components/PairingFlowButton';
+import DiceEntropySheet, {
+  type DiceEntropyResult,
+} from '../components/DiceEntropySheet';
+import {DiceSetupNote} from '../components/DiceReceipt';
+import SetupFinishStepper from '../components/SetupFinishStepper';
+import type {DiceSet} from '../services/diceEntropy';
+import {
+  assertMatchingDiceChecksums,
+  diceChecksumTag,
+  diceTagsFromLanPublishResult,
+  formatDiceCheckCode,
+  parseDiceChecksumTags,
+} from '../services/diceEntropy';
 import {MpcConnectionQuality} from '../components/MpcConnectionQuality';
 import {
   emptyMpcTransportSubprogress,
@@ -141,6 +160,7 @@ import {
   type ConnectionQualityState,
 } from '../services/mpcConnectionQuality';
 import {MpcProgressModalHeader} from '../components/MpcProgressModalHeader';
+import {KeygenFinalizePanel} from '../components/KeygenFinalizePanel';
 import {
   MpcKeepAliveHints,
   useMpcKeepAliveUi,
@@ -322,6 +342,46 @@ const MobilesPairing = ({navigation}: any) => {
   const isSendBitcoin = route.params?.mode === 'send_btc';
   const isSignPSBT = route.params?.mode === 'sign_psbt';
   const [showEntropyCard, setShowEntropyCard] = useState(false);
+  const [diceSheetVisible, setDiceSheetVisible] = useState(false);
+  const [diceSets, setDiceSets] = useState<DiceSet[]>([]);
+
+  function handleDiceChosen(result: DiceEntropyResult) {
+    setDiceSets(result.sets);
+    setDiceSheetVisible(false);
+  }
+  function clearDiceRolls() {
+    setDiceSets([]);
+  }
+  const diceOn = diceSets.length > 0 && (diceSets[0]?.rolls.length ?? 0) > 0;
+  const [localDiceTag, setLocalDiceTag] = useState<string>('');
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!diceOn) {
+        setLocalDiceTag('');
+        return;
+      }
+      try {
+        const tag = await diceChecksumTag(diceSets);
+        if (!cancelled) {
+          setLocalDiceTag(tag);
+        }
+      } catch {
+        if (!cancelled) {
+          setLocalDiceTag('');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [diceOn, diceSets]);
+  const diceKindLabel =
+    diceSets[0]?.kind === 'd20'
+      ? 'D20'
+      : diceSets[0]?.kind === 'coin'
+      ? 'Coin'
+      : 'D6';
   const isSpendFlow = isSendBitcoin || isSignPSBT;
   const setupMode = route.params?.mode;
   /** Trio = 3-device LAN wallet setup (keygen) only. Spend/sign co-signing is always duo. */
@@ -390,6 +450,7 @@ const MobilesPairing = ({navigation}: any) => {
   const activeMpcSessionIdRef = useRef<string | null>(null);
   const doingMpcRef = useRef(false);
   const keysharePersistedRef = useRef(false);
+  const pendingKeyshareRef = useRef<string | null>(null);
   const keepAliveOutcomeRef = useRef<MpcKeepAliveOutcome>('failure');
   const setMpcModalActive = useCallback(
     (active: boolean) => {
@@ -502,6 +563,88 @@ const MobilesPairing = ({navigation}: any) => {
   };
   const toggleKeygenReady = () => {
     setIsKeygenReady(!isKeygenReady);
+  };
+  const rememberLegacyWalletFlag = (keyshareJson: string) => {
+    try {
+      const ksParsed = JSON.parse(keyshareJson);
+      const useLegacyPath = resolveUseLegacyDerivationPaths({
+        created_at: ksParsed.created_at,
+        tss_backend: detectKeyshareTssBackend(ksParsed),
+        local_party_key: ksParsed.local_party_key ?? '',
+        keygen_committee_keys: ksParsed.keygen_committee_keys ?? [],
+        pub_key: ksParsed.pub_key ?? '',
+        chain_code_hex: ksParsed.chain_code_hex ?? '',
+        nostr_npub: ksParsed.nostr_npub ?? null,
+      });
+      appConfigRepository.set(
+        CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
+        useLegacyPath ? 'no' : 'yes',
+      );
+    } catch {
+      appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, 'yes');
+    }
+  };
+  const ensureLanKeyshareStored = async (): Promise<boolean> => {
+    if (keysharePersistedRef.current) {
+      return true;
+    }
+    const raw = pendingKeyshareRef.current;
+    if (!raw) {
+      Alert.alert('Nothing to save', 'Run wallet setup again.');
+      return false;
+    }
+    try {
+      const persisted = await persistWalletKeyshare(raw);
+      pendingKeyshareRef.current = persisted;
+      keysharePersistedRef.current = true;
+      rememberLegacyWalletFlag(persisted);
+      return true;
+    } catch (error: unknown) {
+      Alert.alert('Could not save wallet', formatMpcError(error));
+      return false;
+    }
+  };
+  const commitLanWalletSetup = async () => {
+    const saved = await ensureLanKeyshareStored();
+    if (!saved) {
+      return;
+    }
+    navigation.dispatch(
+      CommonActions.reset({
+        index: 0,
+        routes: [{name: 'User Preferences'}],
+      }),
+    );
+  };
+  const abortFinishedLanSetup = () => {
+    Alert.alert(
+      'Abort wallet setup?',
+      'The new keyshare on this phone will be deleted. You can run setup again.',
+      [
+        {text: 'Keep going', style: 'cancel'},
+        {
+          text: 'Abort',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await EncryptedStorage.removeItem(KEYSHARE_STORAGE_KEY);
+            } catch {
+              /* already empty */
+            }
+            await clearKeyshareMetadata();
+            keysharePersistedRef.current = false;
+            pendingKeyshareRef.current = null;
+            setKeyshare('');
+            setMpcDone(false);
+            setBackupChecks({
+              deviceOne: false,
+              deviceTwo: false,
+              deviceThree: false,
+            });
+          },
+        },
+      ],
+    );
   };
   // Clear all cache when entering wallet setup mode (not signing mode)
   useEffect(() => {
@@ -679,13 +822,24 @@ const MobilesPairing = ({navigation}: any) => {
         );
       }
       const kp = parseEciesKeypairJson(keypairJson);
-      dbg('initSession: Parsed keypair', {publicKey: kp.publicKey});
+      // Spec v2.1 leak hardening: public key prefix only in logs.
+      dbg('initSession: Parsed keypair', {
+        publicKeyPrefix:
+          kp.publicKey.length > 16 ? kp.publicKey.slice(0, 16) + '…' : '…',
+      });
       setStatus(sessionWaitMessage(isMaster, keygenFlow));
       if (isMaster) {
         dbg('initSession: Running as master device');
         const attemptId = await generateMpcAttemptId();
         const sessionSeed = await secureRandomHex(64);
         let _data = `${attemptId}:${sessionSeed}`;
+        // Dice check is a 6-hex tag. The session seed stays the legacy binder.
+        // The dice-derived master chaincode is never written into this payload.
+        const localDiceTag =
+          keygenFlow && diceOn ? await diceChecksumTag(diceSets) : '';
+        if (localDiceTag) {
+          _data += `:${localDiceTag}`;
+        }
         dbg('initSession: Generated attempt id and session seed');
         if (isSendBitcoin) {
           dbg('initSession: Preparing for Bitcoin send');
@@ -705,6 +859,8 @@ const MobilesPairing = ({navigation}: any) => {
           _data += ':' + (meta?.local_party_key || '');
           dbg('initSession: Added PSBT data to session data');
         }
+        // Handshake carries the session seed plus a 6-hex dice check.
+        // Log length only. Never log the seed or the master chaincode.
         dbg('initSession: Publishing data', {
           masterHost,
           dataLen: _data.length,
@@ -745,7 +901,13 @@ const MobilesPairing = ({navigation}: any) => {
           }
         }
         if (published) {
-          dbg('initSession: Data published successfully', {published});
+          // Spec v2.1 leak hardening: handshake carries base chaincode + dice
+          // commitments — log length/prefix only, never the payload.
+          dbg('initSession: Data published successfully', {
+            publishedLen: published.length,
+            publishedPrefix:
+              published.length > 16 ? published.slice(0, 16) + '…' : '…',
+          });
           // Send-BTC (always duo): validate peer echoed the same amount checksum.
           if (isSendBitcoin) {
             const firstQuery = (published.split('|')[0] || published) as string;
@@ -766,6 +928,13 @@ const MobilesPairing = ({navigation}: any) => {
               dbg('initSession: Checksum validation failed');
               throw 'Make sure you\'re sending the "Same Bitcoin" amount from Both Devices';
             }
+          }
+          if (keygenFlow) {
+            const expectedPeers = isTrio ? 2 : 1;
+            assertMatchingDiceChecksums(
+              localDiceTag,
+              diceTagsFromLanPublishResult(published, expectedPeers),
+            );
           }
           dbg('initSession: Session initialization completed successfully');
           return (_data || '').trim();
@@ -798,6 +967,9 @@ const MobilesPairing = ({navigation}: any) => {
           ? `${peerEnc}/${route.params?.satoshiAmount}`
           : `${masterPubForFetch || peerEnc}/${kp.publicKey}`;
         const checksum = await BBMTLibNativeModule.sha256(payload);
+        const localDiceTag =
+          keygenFlow && diceOn ? await diceChecksumTag(diceSets) : '';
+        const fetchStamp = localDiceTag ? `${checksum}:${localDiceTag}` : checksum;
         const peerURL = `${buildLanRelayServerUrl(
           normalizeLanHost(masterHost) || masterHost || '',
           discoveryPort,
@@ -847,10 +1019,14 @@ const MobilesPairing = ({navigation}: any) => {
         const rawFetched = await fetchData(
           peerURL,
           kp.privateKey,
-          checksum,
+          fetchStamp,
           acceptSessionPayload,
           keygenFlow ? 90 : timeout,
         );
+        if (keygenFlow) {
+          const announced = parseDiceChecksumTags(rawFetched || '')[0] || '';
+          assertMatchingDiceChecksums(localDiceTag, [announced]);
+        }
         if (isSignPSBT || isSendBitcoin) {
           try {
             const attemptId = isSignPSBT
@@ -900,6 +1076,7 @@ const MobilesPairing = ({navigation}: any) => {
       }
       setMpcDone(false);
       keysharePersistedRef.current = false;
+      pendingKeyshareRef.current = null;
       setPrepCounter(0);
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
       setMpcSessionShort(null);
@@ -944,6 +1121,7 @@ const MobilesPairing = ({navigation}: any) => {
         initSession,
         keypairJson,
         peerPubkey: peerPub,
+        diceSets,
         trioPreflight: isTrio
           ? {
               peerIP,
@@ -992,28 +1170,15 @@ const MobilesPairing = ({navigation}: any) => {
           dbg('Error parsing keyshare:', error);
           throw 'Error: Invalid keyshare';
         }
-        const persisted = await persistWalletKeyshare(result);
-        keysharePersistedRef.current = true;
+        pendingKeyshareRef.current = result;
+        keysharePersistedRef.current = false;
         keepAliveOutcomeRef.current = 'success';
         try {
-          const ksParsed = JSON.parse(persisted);
+          const ksParsed = JSON.parse(result);
           const display = getKeyshareDisplayLabel(ksParsed);
           if (display) {
             setShareName(display);
           }
-          const useLegacyPath = resolveUseLegacyDerivationPaths({
-            created_at: ksParsed.created_at,
-            tss_backend: detectKeyshareTssBackend(ksParsed),
-            local_party_key: ksParsed.local_party_key ?? '',
-            keygen_committee_keys: ksParsed.keygen_committee_keys ?? [],
-            pub_key: ksParsed.pub_key ?? '',
-            chain_code_hex: ksParsed.chain_code_hex ?? '',
-            nostr_npub: ksParsed.nostr_npub ?? null,
-          });
-          appConfigRepository.set(
-            CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND,
-            useLegacyPath ? 'no' : 'yes',
-          );
         } catch {
           /* keep protocol party id in shareName */
         }
@@ -1370,7 +1535,7 @@ const MobilesPairing = ({navigation}: any) => {
         satoshiFees = sendSession.satoshiFees;
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           _ksMeta?.pub_key || '',
-          _ksMeta?.chain_code_hex || '',
+          await resolveChaincodeHex(),
           path,
         );
         const senderAddress = await BBMTLibNativeModule.btcAddress(
@@ -1630,7 +1795,7 @@ const MobilesPairing = ({navigation}: any) => {
         setMpcSessionShort(result.sessionShort);
       }
       if (result.mpcDone && !isSendBitcoin && !isSignPSBT) {
-        if (keysharePersistedRef.current) {
+        if (keysharePersistedRef.current || pendingKeyshareRef.current) {
           setMpcDone(true);
         } else {
           setStatus(KEYGEN_FINALIZING_STORAGE_STATUS);
@@ -2493,13 +2658,12 @@ const MobilesPairing = ({navigation}: any) => {
       color: theme.colors.textSecondary,
       textAlign: 'center',
       lineHeight: 18,
-      marginTop: 10,
-      minHeight: 36, // Ensure minimum 2-line height (18 * 2)
+      marginTop: 8,
     },
     enhancedRequirementsContainer: {
-      marginVertical: 8,
-      padding: 12,
-      backgroundColor: theme.colors.background,
+      marginVertical: 4,
+      padding: 0,
+      backgroundColor: 'transparent',
       borderRadius: 12,
     },
     requirementsHeader: {
@@ -2518,6 +2682,7 @@ const MobilesPairing = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
       marginRight: 8,
+      marginTop: 16,
     },
     requirementsIconText: {
       color: theme.colors.background,
@@ -2527,6 +2692,7 @@ const MobilesPairing = ({navigation}: any) => {
     requirementsTitle: {
       fontSize: theme.fontSizes?.lg || 16,
       fontFamily: theme.fontFamilies?.bold,
+      marginTop: 16,
       color: theme.colors.text,
     },
     requirementsDescription: {
@@ -2648,9 +2814,10 @@ const MobilesPairing = ({navigation}: any) => {
     finalStepHeader: {
       flexDirection: 'row',
       alignItems: 'center',
-      marginBottom: 12,
-      padding: 12,
-      backgroundColor: theme.colors.background,
+      marginBottom: 8,
+      paddingVertical: 4,
+      paddingHorizontal: 0,
+      backgroundColor: 'transparent',
       borderRadius: 12,
     },
     finalStepIconContainer: {
@@ -2683,6 +2850,35 @@ const MobilesPairing = ({navigation}: any) => {
       color: theme.colors.textSecondary,
       marginTop: 2,
       fontStyle: 'italic',
+    },
+    diceClearBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      marginLeft: 4,
+      gap: 4,
+    },
+    diceClearIcon: {
+      width: 12,
+      height: 12,
+      tintColor: theme.colors.textSecondary,
+    },
+    diceClearLabel: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+    },
+    diceCheckCodeInline: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.monospaceBold || theme.fontFamilies?.bold,
+      letterSpacing: 1,
+      color: theme.colors.text,
+      marginTop: 2,
     },
     warningIcon: {
       fontSize: theme.fontSizes?.xl || 18,
@@ -2724,14 +2920,24 @@ const MobilesPairing = ({navigation}: any) => {
     enhancedBackupCheckbox: {
       flexDirection: 'row',
       alignItems: 'center',
-      paddingVertical: 8,
+      minHeight: 48,
+      paddingVertical: 10,
       paddingHorizontal: 12,
-      marginVertical: 3,
+      marginVertical: 4,
       borderRadius: 12,
+      borderWidth: 1.5,
+      borderColor: theme.colors.border,
       backgroundColor: 'transparent',
     },
     enhancedBackupCheckboxChecked: {
-      backgroundColor: theme.colors.secondary + '15',
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary + '14'
+          : theme.colors.bitcoinOrange + '24',
     },
     backupCheckboxContent: {
       flex: 1,
@@ -2848,8 +3054,8 @@ const MobilesPairing = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
       position: 'relative',
-      marginBottom: 20,
-      marginTop: 20,
+      marginBottom: 8,
+      marginTop: 8,
       paddingHorizontal: 8,
     },
     deviceWrapper: {
@@ -2997,9 +3203,9 @@ const MobilesPairing = ({navigation}: any) => {
       alignItems: 'center',
       justifyContent: 'center',
       shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 4},
-      shadowOpacity: 0.15,
-      shadowRadius: 8,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.08,
+      shadowRadius: 4,
       elevation: 4,
       width: '100%',
       alignSelf: 'center',
@@ -3238,10 +3444,7 @@ const MobilesPairing = ({navigation}: any) => {
       width: 18,
       height: 18,
       marginRight: 6,
-      tintColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.white
-          : theme.colors.text,
+      tintColor: theme.colors.white,
     },
     disabledButton: {
       backgroundColor: theme.colors.disabled,
@@ -3252,13 +3455,13 @@ const MobilesPairing = ({navigation}: any) => {
           ? theme.colors.white
           : theme.colors.cardBackground,
       borderRadius: 12,
-      padding: 10,
+      padding: 14,
       marginVertical: 8,
-      elevation: 3,
+      elevation: 1,
       shadowColor: theme.colors.shadowColor,
-      shadowOffset: {width: 0, height: 4},
-      shadowOpacity: 0.1,
-      shadowRadius: 8,
+      shadowOffset: {width: 0, height: 2},
+      shadowOpacity: 0.06,
+      shadowRadius: 4,
       width: '100%',
       alignItems: 'stretch',
       borderWidth: 1,
@@ -3280,44 +3483,23 @@ const MobilesPairing = ({navigation}: any) => {
           : theme.colors.white,
     },
     keygenBackendBadgeWrap: {
-      alignSelf: 'center',
+      flex: 1,
+      minWidth: 0,
+      justifyContent: 'center',
+      alignSelf: 'stretch',
     },
     keygenTopBadgesRow: {
       flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      gap: 8,
-      marginBottom: 8,
+      alignItems: 'stretch',
+      gap: 10,
+      marginTop: 4,
+      marginBottom: 12,
+      width: '100%',
     },
-    entropyBadge: {
-      flexDirection: 'row',
-      alignItems: 'center',
-      justifyContent: 'center',
-      alignSelf: 'center',
-      minHeight: 28,
-      backgroundColor: theme.colors.warningBg,
-      paddingVertical: 6,
-      paddingHorizontal: 10,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.border
-          : theme.colors.warning + '50',
-    },
-    entropyBadgeIcon: {
-      width: 14,
-      height: 14,
-      marginRight: 6,
-      tintColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.primary
-          : theme.colors.bitcoinOrange,
-    },
-    entropyBadgeText: {
-      fontFamily: theme.fontFamilies?.bold,
-      fontSize: theme.fontSizes?.sm || 12,
-      color: theme.colors.text,
+    keygenEntropyPillWrap: {
+      flex: 1,
+      minWidth: 0,
+      alignSelf: 'stretch',
     },
     hidden: {
       display: 'none',
@@ -3373,10 +3555,11 @@ const MobilesPairing = ({navigation}: any) => {
       backgroundColor:
         theme.colors.background === '#ffffff'
           ? theme.colors.subPrimary
-          : theme.colors.bitcoinOrange,
+          : theme.colors.secondary,
       width: '100%',
+      minHeight: 48,
       borderRadius: 12,
-      paddingVertical: 14,
+      paddingVertical: 12,
       paddingHorizontal: 16,
       alignItems: 'center',
       justifyContent: 'center',
@@ -3388,10 +3571,7 @@ const MobilesPairing = ({navigation}: any) => {
       elevation: 4,
     },
     backupButtonText: {
-      color:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.background
-          : theme.colors.text,
+      color: theme.colors.white,
       fontSize: theme.fontSizes?.lg || 16,
       fontFamily: theme.fontFamilies?.bold,
       textAlign: 'center',
@@ -3729,8 +3909,7 @@ const MobilesPairing = ({navigation}: any) => {
                   <View style={styles.vpnWarningTextContainer}>
                     <Text style={styles.vpnWarningTitle}>VPN Detected</Text>
                     <Text style={styles.vpnWarningMessage}>
-                      Please turn off your VPN to ensure a secure local network
-                      connection for device pairing.
+                      Turn off VPN for local pairing.
                     </Text>
                   </View>
                 </View>
@@ -3749,7 +3928,9 @@ const MobilesPairing = ({navigation}: any) => {
                   ]}>
                   {title}
                 </Text>
-                <AppPressable
+                <PairingFlowButton
+                  variant="quiet"
+                  label="Exit Pairing"
                   onPress={() => {
                     mpcAbortRef.current = true;
                     isFocusedRef.current = false;
@@ -3763,10 +3944,8 @@ const MobilesPairing = ({navigation}: any) => {
                       }),
                     );
                   }}
-                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                  style={styles.exitButton}>
-                  <Text style={styles.exitButtonText}>Exit Pairing</Text>
-                </AppPressable>
+                  style={{marginTop: 12}}
+                />
               </View>
             )}
             {/* Checklist Section */}
@@ -3787,23 +3966,21 @@ const MobilesPairing = ({navigation}: any) => {
                     <View style={styles.keygenTopBadgesRow}>
                       {keygenBackend ? (
                         <View style={styles.keygenBackendBadgeWrap}>
-                          <TssBackendBadge backend={keygenBackend} />
+                          <TssBackendBadge
+                            backend={keygenBackend}
+                            size="pairing"
+                          />
                         </View>
                       ) : null}
-                      <AppPressable
-                        style={styles.entropyBadge}
-                        onPress={() => setShowEntropyCard(true)}>
-                        <Image
-                          source={require('../assets/dice-icon.png')}
-                          style={styles.entropyBadgeIcon}
-                          resizeMode="contain"
+                      <View style={styles.keygenEntropyPillWrap}>
+                        <DeviceEntropyPill
+                          onPress={() => setShowEntropyCard(true)}
                         />
-                        <Text style={styles.entropyBadgeText}>
-                          Device Entropy
-                        </Text>
-                      </AppPressable>
+                      </View>
                     </View>
-                    <AppPressable
+                    <PairingFlowButton
+                      variant="quiet"
+                      label="Exit Pairing"
                       onPress={() => {
                         navigation.dispatch(
                           CommonActions.reset({
@@ -3812,10 +3989,8 @@ const MobilesPairing = ({navigation}: any) => {
                           }),
                         );
                       }}
-                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}
-                      style={styles.exitButton}>
-                      <Text style={styles.exitButtonText}>Exit Pairing</Text>
-                    </AppPressable>
+                      style={{marginTop: 4}}
+                    />
                   </>
                 )}
                 <View style={styles.enhancedRequirementsContainer}>
@@ -3952,9 +4127,8 @@ const MobilesPairing = ({navigation}: any) => {
                   ))}
                 </View>
                 <Text style={styles.pairingHint}>
-                  ⚠️ Tip: for ultimate privacy and reliability, put one device
-                  in Hotspot mode, and connect the{' '}
-                  {isTrio ? 'other devices' : 'other device'} to it.
+                  For a private link, put one phone on hotspot and join the{' '}
+                  {isTrio ? 'others' : 'other'} to it.
                 </Text>
                 {/* Pairing Button */}
                 {!isPairing && !peerIP && (
@@ -4122,12 +4296,12 @@ const MobilesPairing = ({navigation}: any) => {
                     numberOfLines={2}
                     adjustsFontSizeToFit={true}
                     minimumFontScale={0.8}>
-                    ⚠️ All devices' security code 🏷 should match.
+                    Security codes should match on every phone.
                   </Text>
                 )}
                 {/* Show Countdown Timer During Pairing */}
                 {isPairing && !peerIP && (
-                  <View style={{marginTop: 16}}>
+                  <View style={{marginTop: 8}}>
                     <Text style={styles.statusText}>{status}</Text>
                     <Text style={styles.countdownText}>
                       {countdown}s left to connect
@@ -4137,31 +4311,22 @@ const MobilesPairing = ({navigation}: any) => {
                 {peerIP && (
                   <View style={styles.buttonRow}>
                     {/* Retry button (left) */}
-                    <AppPressable
-                      style={[styles.retryButton, styles.buttonFlex]}
+                    <PairingFlowButton
+                      variant="retry"
+                      label="Retry"
+                      style={styles.buttonFlex}
                       onPress={() => {
                         navigation.dispatch(
                           StackActions.replace('Devices Pairing', route.params),
                         );
-                      }}>
-                      <Image
-                        source={require('../assets/refresh-icon.png')}
-                        style={{
-                          width: 18,
-                          height: 18,
-                          tintColor:
-                            theme.colors.background === '#ffffff'
-                              ? theme.colors.white
-                              : theme.colors.text,
-                        }}
-                        resizeMode="contain"
-                      />
-                      <Text style={styles.retryLink}>Retry</Text>
-                    </AppPressable>
+                      }}
+                    />
                     {/* Cancel button for setup modes (duo/trio) - right */}
                     {!isSendBitcoin && !isSignPSBT && (
-                      <AppPressable
-                        style={[styles.cancelSetupButton, styles.buttonFlex]}
+                      <PairingFlowButton
+                        variant="quiet"
+                        label="Cancel"
+                        style={styles.buttonFlex}
                         onPress={() => {
                           mpcAbortRef.current = true;
                           isFocusedRef.current = false;
@@ -4172,9 +4337,8 @@ const MobilesPairing = ({navigation}: any) => {
                               routes: [{name: 'Welcome'}],
                             }),
                           );
-                        }}>
-                        <Text style={styles.cancelLink}>Cancel</Text>
-                      </AppPressable>
+                        }}
+                      />
                     )}
                   </View>
                 )}
@@ -4185,7 +4349,11 @@ const MobilesPairing = ({navigation}: any) => {
                 {/* Preparation Panel */}
                 {peerIP &&
                   ((isPreParamsReady && !mpcDone && (
-                    <View style={styles.informationCard}>
+                    <View
+                      style={[
+                        styles.informationCard,
+                        {opacity: 0.72, paddingVertical: 8, marginVertical: 4},
+                      ]}>
                       <View
                         style={{
                           flexDirection: 'row',
@@ -4217,7 +4385,13 @@ const MobilesPairing = ({navigation}: any) => {
                           {prepCardCopy.title}
                         </Text>
                         <Text style={styles.requirementsDescription}>
-                          {prepCardCopy.description}{' '}
+                          {prepCardCopy.description}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.requirementsDescription,
+                            {marginTop: 4, fontSize: 12, lineHeight: 16},
+                          ]}>
                           {getMpcKeepAliveSetupHint(
                             keepAliveOs,
                             keepAliveHintOpts,
@@ -4384,6 +4558,59 @@ const MobilesPairing = ({navigation}: any) => {
                           </Text>
                         </View>
                       </View>
+                      <View style={styles.enhancedCheckboxContainer}>
+                        <AppPressable
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            flex: 1,
+                          }}
+                          onPress={() => setDiceSheetVisible(true)}>
+                          <View
+                            style={[
+                              styles.enhancedCheckbox,
+                              diceOn && styles.enhancedCheckboxChecked,
+                            ]}>
+                            {diceOn && <Text style={styles.checkmark}>✓</Text>}
+                          </View>
+                          <View style={styles.checkboxTextContainer}>
+                            <Text style={styles.enhancedCheckboxLabel}>
+                              {diceOn
+                                ? `Dice on · ${diceKindLabel} · ${
+                                    diceSets[0]?.rolls.length ?? 0
+                                  } rolls`
+                                : 'Use dice rolls'}
+                            </Text>
+                            {diceOn && !!localDiceTag ? (
+                              <>
+                                <Text style={styles.diceCheckCodeInline}>
+                                  {formatDiceCheckCode(localDiceTag)}
+                                </Text>
+                                <Text style={styles.warningHint}>
+                                  Same sequence on every phone.
+                                </Text>
+                              </>
+                            ) : (
+                              <Text style={styles.warningHint}>
+                                Optional. Same sequence on every phone. Stays on
+                                this phone.
+                              </Text>
+                            )}
+                          </View>
+                        </AppPressable>
+                        {diceOn && (
+                          <AppPressable
+                            style={styles.diceClearBtn}
+                            onPress={clearDiceRolls}>
+                            <Image
+                              source={require('../assets/delete-icon.png')}
+                              style={styles.diceClearIcon}
+                              resizeMode="contain"
+                            />
+                            <Text style={styles.diceClearLabel}>Clear</Text>
+                          </AppPressable>
+                        )}
+                      </View>
                       <AppPressable
                         style={[
                           styles.enhancedCheckboxContainer,
@@ -4424,75 +4651,24 @@ const MobilesPairing = ({navigation}: any) => {
                           }>
                           <GlassModalOverlay style={styles.modalOverlay}>
                             <View style={styles.modalContent}>
-                              <MpcProgressModalHeader
-                                icon={require('../assets/security-icon.png')}
+                              <KeygenFinalizePanel
                                 title={keygenModalCopy.title}
-                                subtitle={keygenModalCopy.subtitle}
+                                hint={getMpcKeepAliveSetupHint(
+                                  keepAliveOs,
+                                  keepAliveHintOpts,
+                                )}
+                                percent={displayPercent}
+                                status={status}
+                                sessionShort={mpcSessionShort}
+                                pulseIndicator={
+                                  mpcTransportPulse || !!staleTransportHint
+                                }
+                                quality={connectionQuality}
+                                subprogress={mpcTransportSubprogress}
+                                staleHint={staleTransportHint}
+                                elapsedSeconds={prepCounter}
+                                onAbort={() => abortActiveMpc({keygen: true})}
                               />
-                              <MpcKeepAliveHints />
-                              {/* Progress Container */}
-                              <View style={styles.progressContainer}>
-                                {/* Circular Progress */}
-                                <Progress.Circle
-                                  size={80}
-                                  progress={displayPercent / 100}
-                                  thickness={6}
-                                  borderWidth={0}
-                                  showsText={false}
-                                  color={
-                                    theme.colors.background === '#ffffff'
-                                      ? theme.colors.primary
-                                      : theme.colors.accent
-                                  }
-                                  style={styles.progressCircle}
-                                />
-                                {/* Progress Percentage */}
-                                <View style={styles.progressTextWrapper}>
-                                  <Text style={styles.progressPercentage}>
-                                    {displayPercent}%
-                                  </Text>
-                                </View>
-                              </View>
-                              {/* Status and Countdown */}
-                              <View style={styles.statusContainer}>
-                                <MpcModalStatusRow
-                                  status={status}
-                                  sessionShort={mpcSessionShort}
-                                  pulseIndicator={
-                                    mpcTransportPulse || !!staleTransportHint
-                                  }
-                                />
-                                <MpcConnectionQuality
-                                  quality={connectionQuality}
-                                />
-                                <MpcTransportSubprogress
-                                  subprogress={mpcTransportSubprogress}
-                                />
-                                {staleTransportHint ? (
-                                  <Text
-                                    style={[
-                                      styles.finalizingCountdownText,
-                                      {marginBottom: 4},
-                                    ]}>
-                                    {staleTransportHint}
-                                  </Text>
-                                ) : null}
-                                <Text style={styles.finalizingCountdownText}>
-                                  Time elapsed: {prepCounter} seconds
-                                </Text>
-                              </View>
-                              <View style={styles.modalActions}>
-                                <AppPressable
-                                  style={[
-                                    styles.modalButton,
-                                    {backgroundColor: theme.colors.secondary},
-                                  ]}
-                                  onPress={() =>
-                                    abortActiveMpc({keygen: true})
-                                  }>
-                                  <Text style={styles.buttonText}>Abort</Text>
-                                </AppPressable>
-                              </View>
                             </View>
                           </GlassModalOverlay>
                         </Modal>
@@ -4530,183 +4706,145 @@ const MobilesPairing = ({navigation}: any) => {
                     </View>
                   </>
                 )}
-                {/* Device Keyshare Info and Backup */}
                 {mpcDone && (
-                  <>
-                    <View style={styles.informationCard}>
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          marginBottom: 8,
-                        }}>
-                        <Image
-                          source={require('../assets/success-icon.png')}
+                  <SetupFinishStepper
+                    save={
+                      <>
+                        <View
                           style={{
-                            width: 28,
-                            height: 28,
-                            marginRight: 10,
-                            tintColor:
-                              theme.colors.background === '#ffffff'
-                                ? theme.colors.secondary
-                                : theme.colors.bitcoinOrange,
-                          }}
-                          resizeMode="contain"
-                        />
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            marginBottom: 8,
+                          }}>
+                          <Image
+                            source={require('../assets/success-icon.png')}
+                            style={{
+                              width: 28,
+                              height: 28,
+                              marginRight: 10,
+                              tintColor:
+                                theme.colors.background === '#ffffff'
+                                  ? theme.colors.secondary
+                                  : theme.colors.bitcoinOrange,
+                            }}
+                            resizeMode="contain"
+                          />
+                          <Text
+                            style={[
+                              styles.statusText,
+                              {
+                                fontFamily: theme.fontFamilies.bold,
+                                fontSize: theme.fontSizes?.['2xl'] || 20,
+                              },
+                            ]}>
+                            Keyshare Created!
+                          </Text>
+                        </View>
                         <Text
                           style={[
                             styles.statusText,
                             {
-                              fontFamily: theme.fontFamilies.bold,
-                              fontSize: theme.fontSizes?.['2xl'] || 20,
+                              fontFamily: theme.fontFamilies.regular,
+                              fontSize: theme.fontSizes?.md || 15,
+                              color: theme.colors.textSecondary,
                             },
                           ]}>
-                          Keyshare Created!
+                          Save this phone’s keyshare, then confirm the other
+                          phones on the next step.
                         </Text>
-                      </View>
-                      <Text
-                        style={[
-                          styles.statusText,
-                          {
-                            fontFamily: theme.fontFamilies.regular,
-                            fontSize: theme.fontSizes?.md || 15,
-                            color: theme.colors.textSecondary,
-                          },
-                        ]}>
-                        Create secure backups of your keyshares. Store each
-                        device's backup in different locations to prevent single
-                        points of failure.
-                      </Text>
-                      <AppPressable
-                        style={styles.backupButton}
-                        onPress={() => {
-                          setIsBackupModalVisible(true);
-                        }}>
-                        <View style={styles.buttonContent}>
-                          <Image
-                            source={require('../assets/upload-icon.png')}
-                            style={styles.buttonIcon}
-                            resizeMode="contain"
-                          />
-                          <Text style={styles.backupButtonText}>
-                            Backup {shareName}
-                          </Text>
-                        </View>
-                      </AppPressable>
-                    </View>
-                  </>
-                )}
-                {/* Keyshare Next Wallet */}
-                {mpcDone && (
-                  <>
-                    <View style={styles.informationCard}>
-                      <View style={styles.backupConfirmationHeader}>
-                        <View style={styles.backupConfirmationIcon}>
-                          <Text style={styles.backupConfirmationIconText}>
-                            ✓
-                          </Text>
-                        </View>
-                        <Text style={styles.backupConfirmationTitle}>
-                          Confirm Backups
-                        </Text>
-                      </View>
-                      <Text style={styles.backupConfirmationDescription}>
-                        Verify that {isTrio ? 'all devices' : 'both devices'}{' '}
-                        have successfully backed up their keyshares.
-                      </Text>
-                      <View style={styles.backupConfirmationContainer}>
-                        {[
-                          {
-                            key: 'deviceOne',
-                            label: `${localDevice} backed up`,
-                            device: localDevice,
-                          },
-                          {
-                            key: 'deviceTwo',
-                            label: `${peerDevice} backed up`,
-                            device: peerDevice,
-                          },
-                          ...(isTrio
-                            ? [
-                                {
-                                  key: 'deviceThree',
-                                  label: `${peerDevice2} backed up`,
-                                  device: peerDevice2,
-                                },
-                              ]
-                            : []),
-                        ].map(item => (
-                          <AppPressable
-                            key={item.key}
-                            style={[
-                              styles.enhancedBackupCheckbox,
-                              backupChecks[
-                                item.key as keyof typeof backupChecks
-                              ] && styles.enhancedBackupCheckboxChecked,
-                            ]}
-                            onPress={() => {
-                              toggleBackedup(
-                                item.key as keyof typeof backupChecks,
-                              );
-                            }}>
-                            <View
-                              style={[
-                                styles.enhancedCheckbox,
-                                backupChecks[
-                                  item.key as keyof typeof backupChecks
-                                ] && styles.enhancedCheckboxChecked,
-                              ]}>
-                              {backupChecks[
-                                item.key as keyof typeof backupChecks
-                              ] && <Text style={styles.checkmark}>✓</Text>}
-                            </View>
-                            <View style={styles.backupCheckboxContent}>
-                              <Text style={styles.backupCheckboxLabel}>
-                                {item.label}
-                              </Text>
-                              <Text style={styles.backupCheckboxHint}>
-                                {item.device} keyshare secured
-                              </Text>
-                            </View>
+                        {diceOn && <DiceSetupNote sets={diceSets} />}
+                        <AppPressable
+                          style={styles.backupButton}
+                          onPress={async () => {
+                            const saved = await ensureLanKeyshareStored();
+                            if (saved) {
+                              setIsBackupModalVisible(true);
+                            }
+                          }}>
+                          <View style={styles.buttonContent}>
                             <Image
-                              source={require('../assets/check-icon.png')}
-                              style={styles.backupCheckIcon}
+                              source={require('../assets/upload-icon.png')}
+                              style={styles.buttonIcon}
                               resizeMode="contain"
                             />
-                          </AppPressable>
-                        ))}
-                      </View>
-                      <AppPressable
-                        style={
-                          allBackupChecked
-                            ? styles.proceedButtonOn
-                            : styles.proceedButtonOff
-                        }
-                        onPress={() => {
-                          navigation.dispatch(
-                            CommonActions.reset({
-                              index: 0,
-                              routes: [{name: 'User Preferences'}],
-                            }),
-                          );
-                        }}
-                        disabled={!allBackupChecked}>
-                        <View style={styles.buttonContent}>
-                          <Image
-                            source={require('../assets/prepare-icon.png')}
-                            style={{
-                              width: 20,
-                              height: 20,
-                              marginRight: 8,
-                              tintColor: theme.colors.white,
-                            }}
-                            resizeMode="contain"
-                          />
-                          <Text style={styles.pairButtonText}>Continue</Text>
+                            <Text style={styles.backupButtonText}>
+                              Backup {shareName}
+                            </Text>
+                          </View>
+                        </AppPressable>
+                      </>
+                    }
+                    confirm={
+                      <>
+                        <Text style={styles.backupConfirmationTitle}>
+                          Confirm backups
+                        </Text>
+                        <Text style={styles.backupConfirmationDescription}>
+                          Check each phone after its keyshare is saved.
+                        </Text>
+                        <View style={styles.backupConfirmationContainer}>
+                          {[
+                            {
+                              key: 'deviceOne',
+                              label: `${localDevice} backed up`,
+                              device: localDevice,
+                            },
+                            {
+                              key: 'deviceTwo',
+                              label: `${peerDevice} backed up`,
+                              device: peerDevice,
+                            },
+                            ...(isTrio
+                              ? [
+                                  {
+                                    key: 'deviceThree',
+                                    label: `${peerDevice2} backed up`,
+                                    device: peerDevice2,
+                                  },
+                                ]
+                              : []),
+                          ].map(item => (
+                            <AppPressable
+                              key={item.key}
+                              style={[
+                                styles.enhancedBackupCheckbox,
+                                backupChecks[
+                                  item.key as keyof typeof backupChecks
+                                ] && styles.enhancedBackupCheckboxChecked,
+                              ]}
+                              onPress={() => {
+                                toggleBackedup(
+                                  item.key as keyof typeof backupChecks,
+                                );
+                              }}>
+                              <View
+                                style={[
+                                  styles.enhancedCheckbox,
+                                  backupChecks[
+                                    item.key as keyof typeof backupChecks
+                                  ] && styles.enhancedCheckboxChecked,
+                                ]}>
+                                {backupChecks[
+                                  item.key as keyof typeof backupChecks
+                                ] && <Text style={styles.checkmark}>✓</Text>}
+                              </View>
+                              <View style={styles.backupCheckboxContent}>
+                                <Text style={styles.backupCheckboxLabel}>
+                                  {item.label}
+                                </Text>
+                                <Text style={styles.backupCheckboxHint}>
+                                  {item.device} keyshare secured
+                                </Text>
+                              </View>
+                            </AppPressable>
+                          ))}
                         </View>
-                      </AppPressable>
-                    </View>
-                  </>
+                      </>
+                    }
+                    onAbort={abortFinishedLanSetup}
+                    onContinue={commitLanWalletSetup}
+                    continueDisabled={!allBackupChecked}
+                  />
                 )}
               </>
             )}
@@ -4969,6 +5107,17 @@ const MobilesPairing = ({navigation}: any) => {
       <EntropyInfoCard
         visible={showEntropyCard}
         onClose={() => setShowEntropyCard(false)}
+      />
+      <DiceEntropySheet
+        visible={diceSheetVisible}
+        modeLabel={isTrio ? 'LAN trio' : 'LAN duo'}
+        initialSets={diceSets}
+        onUseDice={handleDiceChosen}
+        onSkip={() => {
+          clearDiceRolls();
+          setDiceSheetVisible(false);
+        }}
+        onClose={() => setDiceSheetVisible(false)}
       />
     </SafeAreaView>
   );

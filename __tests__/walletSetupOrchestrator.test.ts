@@ -42,6 +42,7 @@ import {assertNoExistingWallet} from '../services/walletGuard';
 import {saveKeyshareMetadata} from '../utils';
 import {
   finalizeKeyshareForStorage,
+  mixNostrChaincodeWithDice,
   nsecFieldForKeyshareJson,
   persistWalletKeyshare,
   resolveWalletSetupBackend,
@@ -123,5 +124,28 @@ describe('walletSetupOrchestrator', () => {
   it('verifyWalletKeysharePersisted returns false for empty storage', async () => {
     (EncryptedStorage.getItem as jest.Mock).mockResolvedValue('  ');
     await expect(verifyWalletKeysharePersisted()).resolves.toBe(false);
+  });
+
+  it('skip keeps the base chaincode and dice replaces it locally', async () => {
+    const base = 'ab'.repeat(32);
+    const skip = await mixNostrChaincodeWithDice(base, []);
+    expect(skip.diceUsed).toBe(false);
+    expect(skip.finalChaincodeHex).toBe(base);
+    // Deterministic non-sequential D6×100 (meets 256-bit floor).
+    let a = 42 >>> 0;
+    const rnd = () => {
+      a |= 0;
+      a = (a + 0x6d2b79f5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const rolls = Array.from({length: 100}, () => 1 + Math.floor(rnd() * 6));
+    const dice = await mixNostrChaincodeWithDice(base, [
+      {kind: 'd6', sides: 6, rolls},
+    ]);
+    expect(dice.diceUsed).toBe(true);
+    expect(dice.finalChaincodeHex).not.toBe(base);
+    expect(dice.finalChaincodeHex).toMatch(/^[0-9a-f]{64}$/);
   });
 });

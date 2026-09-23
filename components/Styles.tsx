@@ -89,6 +89,11 @@ export interface Theme {
     monospaceMedium: string;
     monospaceBold: string;
   };
+  borderRadius?: {
+    small: number;
+    medium: number;
+    large: number;
+  };
 }
 export interface Styles {
   actionButton: ViewStyle;
@@ -300,7 +305,7 @@ export interface Styles {
   keyshareInfoHeader: TextStyle;
   watchWalletTitle: TextStyle;
   watchWalletDescription: TextStyle;
-  watchWalletWarning: TextStyle;
+  watchWalletNote: TextStyle;
   watchWalletItem: ViewStyle;
   watchWalletItemLast: ViewStyle;
   watchWalletItemLabel: TextStyle;
@@ -1996,11 +2001,12 @@ export const createStyles = (theme: Theme): Styles => ({
     marginTop: 4,
     marginBottom: 12,
   },
-  watchWalletWarning: {
-    fontSize: theme.fontSizes?.sm || 11,
+  watchWalletNote: {
+    fontSize: theme.fontSizes?.sm || 12,
     lineHeight: 16,
     color: theme.colors.textSecondary,
-    fontStyle: 'italic' as const,
+    marginTop: -6,
+    marginBottom: 4,
   },
   watchWalletItem: {
     marginTop: 12,
