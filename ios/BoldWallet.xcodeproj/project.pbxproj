@@ -37,12 +37,12 @@
 		KS004A1B2C3D4E5F60718293 /* KeyshareShareAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = KS008A1B2C3D4E5F60718293 /* KeyshareShareAppDelegate.swift */; };
 		KS009A1B2C3D4E5F60718293 /* ShareViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = KS010A1B2C3D4E5F60718293 /* ShareViewController.swift */; };
 		KS011A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = KS012A1B2C3D4E5F60718293 /* KeyshareShareStorage.swift */; };
-		KS021A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = KS016A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		KS021A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = KS016A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		LA001A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA002A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift */; };
 		LA007A1B2C3D4E5F60718293 /* MpcKeepAliveWidgetBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA003A1B2C3D4E5F60718293 /* MpcKeepAliveWidgetBundle.swift */; };
 		LA008A1B2C3D4E5F60718293 /* MpcKeepAliveLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA004A1B2C3D4E5F60718293 /* MpcKeepAliveLiveActivity.swift */; };
 		LA009A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = LA002A1B2C3D4E5F60718293 /* MpcKeepAliveAttributes.swift */; };
-		LA010A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = LA006A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		LA010A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = LA006A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		LA022A1B2C3D4E5F60718293 /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LA021A1B2C3D4E5F60718293 /* ActivityKit.framework */; settings = {ATTRIBUTES = (Weak, ); }; };
 		LA024A1B2C3D4E5F60718293 /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LA023A1B2C3D4E5F60718293 /* WidgetKit.framework */; };
 		LA026A1B2C3D4E5F60718293 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = LA025A1B2C3D4E5F60718293 /* SwiftUI.framework */; };
@@ -76,16 +76,16 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
-		KS022A1B2C3D4E5F60718293 /* Embed App Extensions */ = {
+		KS022A1B2C3D4E5F60718293 /* Embed Foundation Extensions */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
 			dstPath = "";
 			dstSubfolderSpec = 13;
 			files = (
-				KS021A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex in Embed App Extensions */,
-				LA010A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex in Embed App Extensions */,
+				KS021A1B2C3D4E5F60718293 /* BoldWalletShareExtension.appex in Embed Foundation Extensions */,
+				LA010A1B2C3D4E5F60718293 /* MpcKeepAliveWidget.appex in Embed Foundation Extensions */,
 			);
-			name = "Embed App Extensions";
+			name = "Embed Foundation Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -377,7 +377,7 @@
 				F2A8B9C12D4E5F6A7B8C9D0E /* Generate Framework dSYMs */,
 				E8D6F183D6CC6CC44ACC99AE /* [CP] Embed Pods Frameworks */,
 				A4868003626827247A694241 /* [CP] Copy Pods Resources */,
-				KS022A1B2C3D4E5F60718293 /* Embed App Extensions */,
+				KS022A1B2C3D4E5F60718293 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
@@ -431,7 +431,7 @@
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
-				LastUpgradeCheck = 2640;
+				LastUpgradeCheck = 2700;
 				TargetAttributes = {
 					00E356ED1AD99517003FC87E = {
 						CreatedOnToolsVersion = 6.2;
@@ -531,9 +531,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -592,9 +596,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -609,9 +617,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-frameworks-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Embed Pods Frameworks";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet/Pods-BoldWallet-frameworks-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -626,9 +638,13 @@
 			inputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-resources-${CONFIGURATION}-input-files.xcfilelist",
 			);
+			inputPaths = (
+			);
 			name = "[CP] Copy Pods Resources";
 			outputFileListPaths = (
 				"${PODS_ROOT}/Target Support Files/Pods-BoldWallet-BoldWalletTests/Pods-BoldWallet-BoldWalletTests-resources-${CONFIGURATION}-output-files.xcfilelist",
+			);
+			outputPaths = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
@@ -734,7 +750,7 @@
 					"$(inherited)",
 				);
 				INFOPLIST_FILE = BoldWalletTests/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -758,7 +774,7 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				COPY_PHASE_STRIP = NO;
 				INFOPLIST_FILE = BoldWalletTests/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -797,7 +813,7 @@
 				INFOPLIST_FILE = BoldWallet/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Bold Bitcoin Wallet";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -846,7 +862,7 @@
 				INFOPLIST_FILE = BoldWallet/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = "Bold Bitcoin Wallet";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.finance";
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -877,6 +893,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
 				CLANG_CXX_LIBRARY = "libc++";
@@ -944,10 +961,7 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					" ",
-				);
+				OTHER_LDFLAGS = "$(inherited)  ";
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -960,6 +974,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
 				CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED = YES;
 				CLANG_CXX_LANGUAGE_STANDARD = "c++20";
 				CLANG_CXX_LIBRARY = "libc++";
@@ -1019,10 +1034,7 @@
 					"-DFOLLY_CFG_NO_COROUTINES=1",
 					"-DFOLLY_HAVE_CLOCK_GETTIME=1",
 				);
-				OTHER_LDFLAGS = (
-					"$(inherited)",
-					" ",
-				);
+				OTHER_LDFLAGS = "$(inherited)  ";
 				REACT_NATIVE_PATH = "${PODS_ROOT}/../../node_modules/react-native";
 				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -1041,7 +1053,7 @@
 				DEVELOPMENT_TEAM = 2G529K765N;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = BoldWalletShareExtension/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1066,7 +1078,7 @@
 				DEVELOPMENT_TEAM = 2G529K765N;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = BoldWalletShareExtension/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1091,7 +1103,7 @@
 				DEVELOPMENT_TEAM = 2G529K765N;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MpcKeepAliveWidget/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -1116,7 +1128,7 @@
 				DEVELOPMENT_TEAM = 2G529K765N;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = MpcKeepAliveWidget/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				IPHONEOS_DEPLOYMENT_TARGET = "$(RECOMMENDED_IPHONEOS_DEPLOYMENT_TARGET)";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

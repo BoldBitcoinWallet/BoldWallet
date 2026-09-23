@@ -152,7 +152,6 @@ import {MpcKeepAliveHints, useMpcKeepAliveUi} from '../components/MpcKeepAliveHi
 import {MpcConnectionQuality} from '../components/MpcConnectionQuality';
 import NostrRelaysEditor from '../components/NostrRelaysEditor';
 import {useMpcCircleProgress} from '../services/useMpcCircleProgress';
-import TssBackendBadge from '../components/TssBackendBadge';
 import {resolveChaincodeHex} from '../services/chaincodeReader';
 import EntropyInfoCard from '../components/EntropyInfoCard';
 import DeviceEntropyPill from '../components/DeviceEntropyPill';
@@ -3588,26 +3587,74 @@ const MobileNostrPairing = ({navigation}: any) => {
       textAlign: 'center',
       flex: 1,
     },
-    collapsibleHeader: {
-      paddingVertical: 8,
-      paddingHorizontal: 12,
-      backgroundColor: theme.colors.cardBackground,
-      borderRadius: 8,
+    relayPill: {
+      flex: 1,
+      width: '100%',
+      height: 40,
+      minHeight: 40,
+      maxHeight: 40,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      paddingLeft: 6,
+      paddingRight: 10,
+      borderRadius: 20,
       borderWidth: 1,
-      borderColor: theme.colors.border + '40',
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.cardBackground,
     },
-    collapsibleHeaderText: {
-      fontSize: theme.fontSizes?.base || 13,
+    relayPillIconWell: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor:
+        (theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange) + '22',
+    },
+    relayPillIcon: {
+      width: 15,
+      height: 15,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    relayPillCopy: {flex: 1, minWidth: 0},
+    relayPillTitle: {
+      fontSize: 13,
       fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+    },
+    relayPillMeta: {
+      fontSize: 11,
+      fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
     },
-    collapsibleContent: {
-      marginTop: 8,
-      padding: 16,
-      backgroundColor: theme.colors.cardBackground,
-      borderRadius: 8,
-      borderWidth: 1,
-      borderColor: theme.colors.border + '40',
+    relayPillChevron: {
+      fontSize: 18,
+      lineHeight: 20,
+      fontFamily: theme.fontFamilies?.bold,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+      marginTop: -1,
+    },
+    relayModalBody: {
+      maxHeight: 460,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 20,
+    },
+    relayModalHint: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.textSecondary,
+      marginBottom: 10,
+      lineHeight: 17,
     },
     sectionHeaderRow: {
       flexDirection: 'row',
@@ -4029,50 +4076,34 @@ const MobileNostrPairing = ({navigation}: any) => {
       marginTop: 2,
       fontStyle: 'italic',
     },
-    diceCheckPanel: {
-      marginTop: 8,
-      marginBottom: 4,
-      paddingVertical: 10,
-      paddingHorizontal: 12,
-      borderRadius: 12,
-      borderWidth: 1,
-      borderColor: theme.colors.border,
-      backgroundColor: theme.colors.cardBackground,
-    },
-    diceCheckRow: {
+    diceClearBtn: {
       flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'space-between',
-      marginBottom: 6,
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      marginLeft: 4,
+      gap: 4,
     },
-    diceCheckLabel: {
-      flex: 1,
-      marginRight: 8,
+    diceClearIcon: {
+      width: 12,
+      height: 12,
+      tintColor: theme.colors.textSecondary,
+    },
+    diceClearLabel: {
       fontSize: theme.fontSizes?.sm || 12,
       fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
     },
-    diceCheckCode: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.monospaceBold || theme.fontFamilies?.bold,
-      letterSpacing: 1.5,
-      color: theme.colors.text,
-    },
-    diceCheckMatch: {
-      color: theme.colors.success,
-    },
-    diceCheckMismatch: {
-      color: theme.colors.danger,
-    },
-    diceCheckPending: {
-      color: theme.colors.textSecondary,
-    },
-    diceCheckHint: {
-      marginTop: 4,
+    diceCheckCodeInline: {
       fontSize: theme.fontSizes?.sm || 12,
-      lineHeight: 16,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
+      fontFamily: theme.fontFamilies?.monospaceBold || theme.fontFamilies?.bold,
+      letterSpacing: 1,
+      color: theme.colors.text,
+      marginTop: 2,
     },
     warningIcon: {
       fontSize: theme.fontSizes?.xl || 18,
@@ -4211,6 +4242,12 @@ const MobileNostrPairing = ({navigation}: any) => {
       fontSize: theme.fontSizes?.base || 13,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
+    },
+    participantDeviceKeyshare: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      marginTop: 1,
     },
     participantDeviceNpub: {
       fontSize: theme.fontSizes?.sm || 12,
@@ -4667,8 +4704,12 @@ const MobileNostrPairing = ({navigation}: any) => {
                           </View>
                         ) : (
                           <Text
-                            style={[styles.sectionTitle, {marginBottom: 0}]}>
+                            style={[styles.sectionTitle, {marginBottom: 0}]}
+                            numberOfLines={1}>
                             Setup Wallet
+                            {keygenBackend
+                              ? ` · ${keygenBackend === 'dkls23' ? 'DKLs23' : 'GG18'}`
+                              : ''}
                           </Text>
                         )}
                       </View>
@@ -4696,54 +4737,29 @@ const MobileNostrPairing = ({navigation}: any) => {
                       )}
                     </View>
                   </View>
-                  {/* Relay Configuration - Show in setup and send/PSBT mode, right after title */}
-                  {!showFinalStep && (
+                  {(isSendBitcoin || isSignPSBT) && (
                     <View style={styles.section}>
                       <AppPressable
-                        style={styles.collapsibleHeader}
-                        onPress={() => {
-                          setShowRelayConfig(!showRelayConfig);
-                        }}
-                        android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                        <Text style={styles.collapsibleHeaderText}>
-                          {showRelayConfig ? '▼' : '▶'} Advanced: Nostr Relays
-                          {' · '}
-                          {relayListSummary(relayEntries)}
-                        </Text>
-                      </AppPressable>
-                      {showRelayConfig && (
-                        <View style={styles.collapsibleContent}>
-                          <Text
-                            style={{
-                              fontSize: theme.fontSizes?.sm || 12,
-                              fontFamily: theme.fontFamilies.regular,
-                              color: theme.colors.textSecondary,
-                              marginBottom: 8,
-                            }}>
-                            Defaults work for most users. Toggle a relay off to
-                            skip it for this session. At least one must stay on.
-                          </Text>
-                          <NostrRelaysEditor
-                            entries={relayEntries}
-                            onChange={setRelayEntries}
-                            showSave
-                            onSave={async () => {
-                              if (!activeRelaysCSV(relayEntries)) {
-                                Alert.alert(
-                                  'Error',
-                                  'Please keep at least one relay enabled',
-                                );
-                                return;
-                              }
-                              await saveNostrRelayEntries(relayEntries);
-                              Alert.alert(
-                                'Saved',
-                                'Nostr relays saved for this device.',
-                              );
-                            }}
+                        style={styles.relayPill}
+                        onPress={() => setShowRelayConfig(true)}
+                        accessibilityLabel="Nostr relays">
+                        <View style={styles.relayPillIconWell}>
+                          <Image
+                            source={require('../assets/nostr-icon.png')}
+                            style={styles.relayPillIcon}
+                            resizeMode="contain"
                           />
                         </View>
-                      )}
+                        <View style={styles.relayPillCopy}>
+                          <Text style={styles.relayPillTitle} numberOfLines={1}>
+                            Relays
+                          </Text>
+                          <Text style={styles.relayPillMeta} numberOfLines={1}>
+                            {relayListSummary(relayEntries)}
+                          </Text>
+                        </View>
+                        <Text style={styles.relayPillChevron}>›</Text>
+                      </AppPressable>
                     </View>
                   )}
                   {/* Send Mode: Device Selection - Show current device and allow selecting one other */}
@@ -5074,11 +5090,29 @@ const MobileNostrPairing = ({navigation}: any) => {
                   )}
                   {!isSendBitcoin && !isSignPSBT ? (
                     <View style={styles.keygenTopBadgesRow}>
-                      {keygenBackend ? (
-                        <View style={styles.keygenBackendBadgeWrap}>
-                          <TssBackendBadge backend={keygenBackend} size="pairing" />
-                        </View>
-                      ) : null}
+                      <View style={styles.keygenBackendBadgeWrap}>
+                        <AppPressable
+                          style={styles.relayPill}
+                          onPress={() => setShowRelayConfig(true)}
+                          accessibilityLabel="Nostr relays">
+                          <View style={styles.relayPillIconWell}>
+                            <Image
+                              source={require('../assets/nostr-icon.png')}
+                              style={styles.relayPillIcon}
+                              resizeMode="contain"
+                            />
+                          </View>
+                          <View style={styles.relayPillCopy}>
+                            <Text style={styles.relayPillTitle} numberOfLines={1}>
+                              Relays
+                            </Text>
+                            <Text style={styles.relayPillMeta} numberOfLines={1}>
+                              {relayListSummary(relayEntries)}
+                            </Text>
+                          </View>
+                          <Text style={styles.relayPillChevron}>›</Text>
+                        </AppPressable>
+                      </View>
                       <View style={styles.keygenEntropyPillWrap}>
                         <DeviceEntropyPill onPress={() => setShowEntropyCard(true)} />
                       </View>
@@ -5623,6 +5657,59 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </GlassModalOverlay>
                     </Modal>
                   )}
+                  <Modal
+                    visible={showRelayConfig}
+                    transparent
+                    animationType="fade"
+                    onRequestClose={() => setShowRelayConfig(false)}>
+                    <KeyboardAvoidingView
+                      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                      style={{flex: 1}}>
+                      <GlassModalOverlay
+                        style={styles.modalOverlay}
+                        onPress={() => setShowRelayConfig(false)}>
+                        <View style={styles.qrModalContent}>
+                          <View style={styles.qrModalHeader}>
+                            <Text style={styles.qrModalTitle}>Nostr Relays</Text>
+                            <AppPressable
+                              style={styles.qrModalCloseButton}
+                              onPress={() => setShowRelayConfig(false)}
+                              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                              <Text style={styles.qrModalCloseText}>✕</Text>
+                            </AppPressable>
+                          </View>
+                          <ScrollView
+                            style={styles.relayModalBody}
+                            keyboardShouldPersistTaps="handled"
+                            showsVerticalScrollIndicator={false}>
+                            <Text style={styles.relayModalHint}>
+                              Defaults work for most users. Toggle a relay off
+                              to skip it. At least one must stay on.
+                            </Text>
+                            <NostrRelaysEditor
+                              entries={relayEntries}
+                              onChange={setRelayEntries}
+                              showSave
+                              onSave={async () => {
+                                if (!activeRelaysCSV(relayEntries)) {
+                                  Alert.alert(
+                                    'Error',
+                                    'Please keep at least one relay enabled',
+                                  );
+                                  return;
+                                }
+                                await saveNostrRelayEntries(relayEntries);
+                                Alert.alert(
+                                  'Saved',
+                                  'Nostr relays saved for this device.',
+                                );
+                              }}
+                            />
+                          </ScrollView>
+                        </View>
+                      </GlassModalOverlay>
+                    </KeyboardAvoidingView>
+                  </Modal>
                   {/* Help Modal */}
                   <Modal
                     visible={showHelpModal}
@@ -5782,83 +5869,6 @@ const MobileNostrPairing = ({navigation}: any) => {
                           <Text style={styles.finalStepTitle}>
                             Final step
                           </Text>
-                          {/* Participants Device Information */}
-                          {Object.keys(keyshareMapping).length > 0 && (
-                            <View style={[styles.participantsList, {opacity: 0.55, marginBottom: 4}]}>
-                              {keyshareMapping.keyshare1 && (
-                                <View style={styles.participantItem}>
-                                  <Text style={styles.bulletPoint}>•</Text>
-                                  <Text style={styles.participantText}>
-                                    <Text style={styles.participantLabel}>
-                                      KeyShare1
-                                    </Text>
-                                    {keyshareMapping.keyshare1.isLocal && (
-                                      <Text style={styles.localDeviceBadge}>
-                                        {' '}
-                                        (This device)
-                                      </Text>
-                                    )}
-                                    {'\n'}
-                                    <Text style={styles.participantNpub}>
-                                      {shortenNpub(
-                                        keyshareMapping.keyshare1.npub,
-                                        8,
-                                        6,
-                                      )}
-                                    </Text>
-                                  </Text>
-                                </View>
-                              )}
-                              {keyshareMapping.keyshare2 && (
-                                <View style={styles.participantItem}>
-                                  <Text style={styles.bulletPoint}>•</Text>
-                                  <Text style={styles.participantText}>
-                                    <Text style={styles.participantLabel}>
-                                      KeyShare2
-                                    </Text>
-                                    {keyshareMapping.keyshare2.isLocal && (
-                                      <Text style={styles.localDeviceBadge}>
-                                        {' '}
-                                        (This device)
-                                      </Text>
-                                    )}
-                                    {'\n'}
-                                    <Text style={styles.participantNpub}>
-                                      {shortenNpub(
-                                        keyshareMapping.keyshare2.npub,
-                                        8,
-                                        6,
-                                      )}
-                                    </Text>
-                                  </Text>
-                                </View>
-                              )}
-                              {keyshareMapping.keyshare3 && (
-                                <View style={styles.participantItem}>
-                                  <Text style={styles.bulletPoint}>•</Text>
-                                  <Text style={styles.participantText}>
-                                    <Text style={styles.participantLabel}>
-                                      KeyShare3
-                                    </Text>
-                                    {keyshareMapping.keyshare3.isLocal && (
-                                      <Text style={styles.localDeviceBadge}>
-                                        {' '}
-                                        (This device)
-                                      </Text>
-                                    )}
-                                    {'\n'}
-                                    <Text style={styles.participantNpub}>
-                                      {shortenNpub(
-                                        keyshareMapping.keyshare3.npub,
-                                        8,
-                                        6,
-                                      )}
-                                    </Text>
-                                  </Text>
-                                </View>
-                              )}
-                            </View>
-                          )}
                           {/* Participant Devices Info - without container */}
                           {(() => {
                             // Collect all participants
@@ -5884,7 +5894,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                                 deviceName: peerDeviceName2,
                               });
                             }
-                            // Sort by npub
+                            // Sort by npub — same order as KeyShare1/2/3.
                             participants.sort((a, b) =>
                               a.npub.localeCompare(b.npub),
                             );
@@ -5898,11 +5908,16 @@ const MobileNostrPairing = ({navigation}: any) => {
                                     style={styles.participantDeviceIcon}
                                     resizeMode="contain"
                                   />
-                                  <Text style={styles.participantDeviceLabel}>
-                                    {participant.npub === localNpub
-                                      ? 'This device'
-                                      : participant.deviceName}
-                                  </Text>
+                                  <View>
+                                    <Text style={styles.participantDeviceLabel}>
+                                      {participant.npub === localNpub
+                                        ? 'This device'
+                                        : participant.deviceName}
+                                    </Text>
+                                    <Text style={styles.participantDeviceKeyshare}>
+                                      {`KeyShare${index + 1}`}
+                                    </Text>
+                                  </View>
                                 </View>
                                 <Text style={styles.participantDeviceNpub}>
                                   {shortenNpub(participant.npub, 8, 6)}
@@ -5931,84 +5946,35 @@ const MobileNostrPairing = ({navigation}: any) => {
                                       ? `Dice on · ${diceKindLabel} · ${diceSets[0]?.rolls.length ?? 0} rolls`
                                       : 'Use dice rolls'}
                                   </Text>
-                                  <Text style={styles.warningHint}>
-                                    {diceOn
-                                      ? 'Same sequence on every phone. Setup stops if the check differs.'
-                                      : 'Optional. Same sequence on every phone. Stays on this phone.'}
-                                  </Text>
+                                  {diceOn && !!localDiceTag ? (
+                                    <>
+                                      <Text style={styles.diceCheckCodeInline}>
+                                        {formatDiceCheckCode(localDiceTag)}
+                                      </Text>
+                                      <Text style={styles.warningHint}>
+                                        Same sequence on every phone.
+                                      </Text>
+                                    </>
+                                  ) : (
+                                    <Text style={styles.warningHint}>
+                                      Optional. Same sequence on every phone. Stays on this phone.
+                                    </Text>
+                                  )}
                                 </View>
                               </AppPressable>
                               {diceOn && (
-                                <AppPressable onPress={clearDiceRolls}>
-                                  <Text style={styles.warningHint}>Clear</Text>
+                                <AppPressable
+                                  style={styles.diceClearBtn}
+                                  onPress={clearDiceRolls}>
+                                  <Image
+                                    source={require('../assets/delete-icon.png')}
+                                    style={styles.diceClearIcon}
+                                    resizeMode="contain"
+                                  />
+                                  <Text style={styles.diceClearLabel}>Clear</Text>
                                 </AppPressable>
                               )}
                             </View>
-                            {diceOn && !!localDiceTag && (
-                              <View style={styles.diceCheckPanel}>
-                                <View style={styles.diceCheckRow}>
-                                  <Text style={styles.diceCheckLabel}>
-                                    This phone
-                                  </Text>
-                                  <Text style={styles.diceCheckCode}>
-                                    {formatDiceCheckCode(localDiceTag)}
-                                  </Text>
-                                </View>
-                                {peerNpub1 ? (
-                                  <View style={styles.diceCheckRow}>
-                                    <Text style={styles.diceCheckLabel}>
-                                      {peerDeviceName1 || 'Other phone'}
-                                    </Text>
-                                    <Text
-                                      style={[
-                                        styles.diceCheckCode,
-                                        peerDiceTag1
-                                          ? peerDiceTag1 === localDiceTag
-                                            ? styles.diceCheckMatch
-                                            : styles.diceCheckMismatch
-                                          : styles.diceCheckPending,
-                                      ]}>
-                                      {peerDiceTag1
-                                        ? `${formatDiceCheckCode(peerDiceTag1)}${
-                                            peerDiceTag1 === localDiceTag
-                                              ? '  ✓'
-                                              : '  ≠'
-                                          }`
-                                        : '—'}
-                                    </Text>
-                                  </View>
-                                ) : null}
-                                {isTrio && peerNpub2 ? (
-                                  <View style={styles.diceCheckRow}>
-                                    <Text style={styles.diceCheckLabel}>
-                                      {peerDeviceName2 || 'Third phone'}
-                                    </Text>
-                                    <Text
-                                      style={[
-                                        styles.diceCheckCode,
-                                        peerDiceTag2
-                                          ? peerDiceTag2 === localDiceTag
-                                            ? styles.diceCheckMatch
-                                            : styles.diceCheckMismatch
-                                          : styles.diceCheckPending,
-                                      ]}>
-                                      {peerDiceTag2
-                                        ? `${formatDiceCheckCode(peerDiceTag2)}${
-                                            peerDiceTag2 === localDiceTag
-                                              ? '  ✓'
-                                              : '  ≠'
-                                          }`
-                                        : '—'}
-                                    </Text>
-                                  </View>
-                                ) : null}
-                                <Text style={styles.diceCheckHint}>
-                                  {peerDiceTag1 || peerDiceTag2
-                                    ? 'Codes must match. Re-scan their QR after dice is on to refresh.'
-                                    : 'Read this code aloud. Every phone should show the same six characters.'}
-                                </Text>
-                              </View>
-                            )}
                             <AppPressable
                               style={[styles.enhancedCheckboxContainer]}
                               onPress={() => {

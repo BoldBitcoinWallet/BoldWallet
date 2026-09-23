@@ -145,6 +145,7 @@ import {
   assertMatchingDiceChecksums,
   diceChecksumTag,
   diceTagsFromLanPublishResult,
+  formatDiceCheckCode,
   parseDiceChecksumTags,
 } from '../services/diceEntropy';
 import {MpcConnectionQuality} from '../components/MpcConnectionQuality';
@@ -352,6 +353,29 @@ const MobilesPairing = ({navigation}: any) => {
     setDiceSets([]);
   }
   const diceOn = diceSets.length > 0 && (diceSets[0]?.rolls.length ?? 0) > 0;
+  const [localDiceTag, setLocalDiceTag] = useState<string>('');
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!diceOn) {
+        setLocalDiceTag('');
+        return;
+      }
+      try {
+        const tag = await diceChecksumTag(diceSets);
+        if (!cancelled) {
+          setLocalDiceTag(tag);
+        }
+      } catch {
+        if (!cancelled) {
+          setLocalDiceTag('');
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [diceOn, diceSets]);
   const diceKindLabel =
     diceSets[0]?.kind === 'd20'
       ? 'D20'
@@ -2827,6 +2851,35 @@ const MobilesPairing = ({navigation}: any) => {
       marginTop: 2,
       fontStyle: 'italic',
     },
+    diceClearBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 8,
+      paddingVertical: 6,
+      paddingHorizontal: 10,
+      marginLeft: 4,
+      gap: 4,
+    },
+    diceClearIcon: {
+      width: 12,
+      height: 12,
+      tintColor: theme.colors.textSecondary,
+    },
+    diceClearLabel: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+    },
+    diceCheckCodeInline: {
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.monospaceBold || theme.fontFamilies?.bold,
+      letterSpacing: 1,
+      color: theme.colors.text,
+      marginTop: 2,
+    },
     warningIcon: {
       fontSize: theme.fontSizes?.xl || 18,
       marginLeft: 8,
@@ -4528,16 +4581,33 @@ const MobilesPairing = ({navigation}: any) => {
                                   } rolls`
                                 : 'Use dice rolls'}
                             </Text>
-                            <Text style={styles.warningHint}>
-                              {diceOn
-                                ? 'Same sequence on every phone. Setup stops if the check differs.'
-                                : 'Optional. Same sequence on every phone. Stays on this phone.'}
-                            </Text>
+                            {diceOn && !!localDiceTag ? (
+                              <>
+                                <Text style={styles.diceCheckCodeInline}>
+                                  {formatDiceCheckCode(localDiceTag)}
+                                </Text>
+                                <Text style={styles.warningHint}>
+                                  Same sequence on every phone.
+                                </Text>
+                              </>
+                            ) : (
+                              <Text style={styles.warningHint}>
+                                Optional. Same sequence on every phone. Stays on
+                                this phone.
+                              </Text>
+                            )}
                           </View>
                         </AppPressable>
                         {diceOn && (
-                          <AppPressable onPress={clearDiceRolls}>
-                            <Text style={styles.warningHint}>Clear</Text>
+                          <AppPressable
+                            style={styles.diceClearBtn}
+                            onPress={clearDiceRolls}>
+                            <Image
+                              source={require('../assets/delete-icon.png')}
+                              style={styles.diceClearIcon}
+                              resizeMode="contain"
+                            />
+                            <Text style={styles.diceClearLabel}>Clear</Text>
                           </AppPressable>
                         )}
                       </View>

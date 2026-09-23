@@ -6,16 +6,19 @@
 import React, {useEffect, useMemo, useState} from 'react';
 import {
   Alert,
+  Animated,
+  Image,
   KeyboardAvoidingView,
   Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
+import Clipboard from '@react-native-clipboard/clipboard';
+import Toast from 'react-native-toast-message';
 import GlassModalOverlay from './GlassModalOverlay';
 import QRScanner from './QRScanner';
 import StaticQRCode from './StaticQRCode';
@@ -46,7 +49,6 @@ export interface DiceEntropyResult {
 }
 
 type Step = 1 | 2 | 3;
-type EntryMethod = 'paste' | 'tap' | 'airgap';
 
 const QR_PREFIX = 'BOLD-DICE-QR-v1';
 
@@ -77,10 +79,271 @@ function faceLabel(kind: DiceKind, v: number): string {
   return String(v);
 }
 
+/** 3×3 pip indexes. 6 is two columns of three. */
+const D6_PIPS: Record<number, number[]> = {
+  1: [4],
+  2: [0, 8],
+  3: [0, 4, 8],
+  4: [0, 2, 6, 8],
+  5: [0, 2, 4, 6, 8],
+  6: [0, 2, 3, 5, 6, 8],
+};
+
+function DiePips({value, color, hot}: {value: number; color: string; hot: boolean}) {
+  const on = D6_PIPS[value] ?? [];
+  return (
+    <View style={pipStyles.grid}>
+      {Array.from({length: 9}, (_, i) => (
+        <View key={i} style={pipStyles.cell}>
+          {on.includes(i) ? (
+            <View
+              style={[
+                pipStyles.dot,
+                {backgroundColor: color, transform: [{scale: hot ? 1.15 : 1}]},
+              ]}
+            />
+          ) : null}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+const pipStyles = StyleSheet.create({
+  grid: {width: 42, height: 42, flexDirection: 'row', flexWrap: 'wrap'},
+  cell: {width: 14, height: 14, alignItems: 'center', justifyContent: 'center'},
+  dot: {width: 8, height: 8, borderRadius: 4},
+});
+
+function FaceButton({
+  label,
+  value,
+  showPips,
+  size,
+  radius,
+  textColor,
+  borderColor,
+  fill,
+  accent,
+  onPress,
+}: {
+  label: string;
+  value: number;
+  showPips: boolean;
+  size: number;
+  radius: number;
+  textColor: string;
+  borderColor: string;
+  fill: string;
+  accent: string;
+  onPress: () => void;
+}) {
+  const scale = React.useRef(new Animated.Value(1)).current;
+  const pop = React.useRef(new Animated.Value(0)).current;
+  const [hot, setHot] = React.useState(false);
+  const hotTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  React.useEffect(() => {
+    return () => {
+      if (hotTimer.current) clearTimeout(hotTimer.current);
+    };
+  }, []);
+
+  const fire = () => {
+    onPress();
+    setHot(true);
+    if (hotTimer.current) clearTimeout(hotTimer.current);
+    hotTimer.current = setTimeout(() => setHot(false), 280);
+    scale.setValue(1);
+    Animated.sequence([
+      Animated.spring(scale, {
+        toValue: 0.84,
+        speed: 60,
+        bounciness: 0,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scale, {
+        toValue: 1.14,
+        speed: 22,
+        bounciness: 14,
+        useNativeDriver: true,
+      }),
+      Animated.spring(scale, {
+        toValue: 1,
+        speed: 16,
+        bounciness: 8,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    pop.setValue(0);
+    Animated.timing(pop, {
+      toValue: 1,
+      duration: 460,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const popStyle = {
+    opacity: pop.interpolate({
+      inputRange: [0, 0.12, 1],
+      outputRange: [0, 1, 0],
+    }),
+    transform: [
+      {
+        translateY: pop.interpolate({
+          inputRange: [0, 1],
+          outputRange: [8, -26],
+        }),
+      },
+      {
+        scale: pop.interpolate({
+          inputRange: [0, 0.2, 1],
+          outputRange: [0.7, 1.2, 0.95],
+        }),
+      },
+    ],
+  };
+
+  return (
+    <AppPressable
+      variant="none"
+      onPress={fire}
+      accessibilityLabel={`Face ${label}`}
+      style={{width: size, height: size, overflow: 'visible'}}>
+      <Animated.View
+        style={{
+          width: size,
+          height: size,
+          borderRadius: radius,
+          borderWidth: hot ? 2 : 1.5,
+          borderColor: hot ? accent : borderColor,
+          backgroundColor: hot ? accent + '33' : fill,
+          alignItems: 'center',
+          justifyContent: 'center',
+          transform: [{scale}],
+          overflow: 'visible',
+        }}>
+        {showPips ? (
+          <DiePips value={value} color={hot ? accent : textColor} hot={hot} />
+        ) : (
+          <Text
+            style={{
+              color: hot ? accent : textColor,
+              fontSize: size > 70 ? 28 : 16,
+              fontWeight: '800',
+            }}>
+            {label}
+          </Text>
+        )}
+        <Animated.Text
+          pointerEvents="none"
+          style={[
+            {
+              position: 'absolute',
+              top: -4,
+              color: accent,
+              fontSize: 18,
+              fontWeight: '800',
+            },
+            popStyle,
+          ]}>
+          {label}
+        </Animated.Text>
+      </Animated.View>
+    </AppPressable>
+  );
+}
+
+function RollChip({
+  label,
+  fresh,
+  textColor,
+  fill,
+  borderColor,
+  accent,
+}: {
+  label: string;
+  fresh: boolean;
+  textColor: string;
+  fill: string;
+  borderColor: string;
+  accent: string;
+}) {
+  const scale = React.useRef(new Animated.Value(fresh ? 0.3 : 1)).current;
+  React.useEffect(() => {
+    if (!fresh) return;
+    Animated.spring(scale, {
+      toValue: 1,
+      friction: 4,
+      tension: 180,
+      useNativeDriver: true,
+    }).start();
+  }, [fresh, scale]);
+  return (
+    <Animated.View
+      style={{
+        minWidth: 28,
+        height: 28,
+        paddingHorizontal: 6,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: fresh ? accent : borderColor,
+        backgroundColor: fresh ? accent + '33' : fill,
+        alignItems: 'center',
+        justifyContent: 'center',
+        transform: [{scale}],
+      }}>
+      <Text style={{color: fresh ? accent : textColor, fontSize: 12, fontWeight: '800'}}>
+        {label}
+      </Text>
+    </Animated.View>
+  );
+}
+
 function kindTitle(kind: DiceKind): string {
   if (kind === 'd6') return 'D6';
   if (kind === 'd20') return 'D20';
   return 'Coin';
+}
+
+function requiredForKind(k: DiceKind): number {
+  return k === 'd6' ? REQUIRED_ROLLS.d6 : k === 'd20' ? REQUIRED_ROLLS.d20 : REQUIRED_ROLLS.coin;
+}
+
+function parseBulkRolls(
+  text: string,
+  parseKind: DiceKind,
+  parseSides: number,
+): {ok: true; rolls: number[]} | {ok: false; reason: string} {
+  const parts = text.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean);
+  const nums: number[] = [];
+  for (const p of parts) {
+    const n =
+      parseKind === 'coin'
+        ? p.toLowerCase() === 'h' || p === '1'
+          ? 1
+          : p.toLowerCase() === 't' || p === '0' || p === '2'
+            ? 2
+            : NaN
+        : parseInt(p, 10);
+    if (!Number.isInteger(n) || n < 1 || n > parseSides) {
+      return {
+        ok: false,
+        reason: `“${p}” is not a valid ${parseKind === 'coin' ? 'H or T' : `face 1–${parseSides}`}.`,
+      };
+    }
+    nums.push(n);
+  }
+  if (!nums.length) {
+    return {
+      ok: false,
+      reason:
+        parseKind === 'coin'
+          ? 'Paste flips first (H T H …).'
+          : 'Paste rolls first (3 5 1 6 …).',
+    };
+  }
+  return {ok: true, rolls: nums};
 }
 
 export default function DiceEntropySheet({
@@ -103,20 +366,18 @@ export default function DiceEntropySheet({
   const [step, setStep] = useState<Step>(1);
   const [kind, setKind] = useState<DiceKind>('d6');
   const [rolls, setRolls] = useState<number[]>([]);
-  const [bulk, setBulk] = useState('');
   const [error, setError] = useState('');
-  const [method, setMethod] = useState<EntryMethod>('paste');
   const [shuffleFaces, setShuffleFaces] = useState(false);
   const [shuffleSalt, setShuffleSalt] = useState(0);
-  const [showQr, setShowQr] = useState(false);
+  const boardFlash = React.useRef(new Animated.Value(0)).current;
+  const gridWobble = React.useRef(new Animated.Value(0)).current;
   const [scanVisible, setScanVisible] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [whyOpen, setWhyOpen] = useState(false);
   const [spoken, setSpoken] = useState('');
 
   const sides = sidesForKind(kind);
-  const required =
-    kind === 'd6' ? REQUIRED_ROLLS.d6 : kind === 'd20' ? REQUIRED_ROLLS.d20 : REQUIRED_ROLLS.coin;
+  const required = requiredForKind(kind);
   const sets: DiceSet[] = useMemo(
     () => (rolls.length ? [{kind, sides, rolls}] : []),
     [kind, sides, rolls],
@@ -129,18 +390,14 @@ export default function DiceEntropySheet({
     if (!visible) return;
     const first = initialSets?.[0];
     setError('');
-    setBulk('');
-    setShowQr(false);
     setShowAll(false);
     setWhyOpen(false);
-    setMethod('paste');
     setShuffleFaces(false);
     if (first && first.rolls.length) {
       setKind(first.kind);
       setRolls([...first.rolls]);
       const enough =
-        first.rolls.length >=
-        (first.kind === 'd6' ? REQUIRED_ROLLS.d6 : first.kind === 'd20' ? REQUIRED_ROLLS.d20 : REQUIRED_ROLLS.coin);
+        first.rolls.length >= requiredForKind(first.kind);
       setStep(enough ? 3 : 2);
     } else {
       setKind('d6');
@@ -181,10 +438,8 @@ export default function DiceEntropySheet({
     const apply = () => {
       setKind(next);
       setRolls([]);
-      setBulk('');
       setError('');
       setShuffleFaces(false);
-      setShowQr(false);
     };
     if (rolls.length) {
       Alert.alert('Change dice?', 'This clears the rolls you entered.', [
@@ -199,6 +454,21 @@ export default function DiceEntropySheet({
   const addRoll = (v: number) => {
     setError('');
     setRolls(prev => [...prev, v]);
+    boardFlash.setValue(0);
+    Animated.sequence([
+      Animated.timing(boardFlash, {toValue: 1, duration: 70, useNativeDriver: true}),
+      Animated.timing(boardFlash, {toValue: 0, duration: 320, useNativeDriver: true}),
+    ]).start();
+  };
+
+  const shuffleBoard = () => {
+    setShuffleFaces(on => !on);
+    setShuffleSalt(s => s + 1);
+    gridWobble.setValue(0);
+    Animated.sequence([
+      Animated.timing(gridWobble, {toValue: 1, duration: 140, useNativeDriver: true}),
+      Animated.spring(gridWobble, {toValue: 0, speed: 14, bounciness: 10, useNativeDriver: true}),
+    ]).start();
   };
 
   const undoLast = () => {
@@ -206,51 +476,51 @@ export default function DiceEntropySheet({
     setRolls(prev => prev.slice(0, -1));
   };
 
-  const applyBulk = () => {
+  /** Validate a complete set and jump to Confirm, or report the error on the current step. */
+  const landOnConfirm = (
+    nextKind: DiceKind,
+    nextRolls: number[],
+  ): boolean => {
+    const nextSides = sidesForKind(nextKind);
+    const nextRequired = requiredForKind(nextKind);
+    const v = validateDiceSet(nextSides, nextRolls);
+    if (!v.ok) {
+      setError(v.reason || 'Invalid rolls.');
+      return false;
+    }
+    const nextBits = bitsForSets([{kind: nextKind, sides: nextSides, rolls: nextRolls}]);
+    if (nextBits < MIN_DICE_BITS || nextRolls.length < nextRequired) {
+      setError(`Need ${nextRequired} rolls (${nextRolls.length}/${nextRequired}).`);
+      return false;
+    }
+    setKind(nextKind);
+    setRolls(nextRolls);
     setError('');
-    const parts = bulk.split(/[\s,;]+/).map(s => s.trim()).filter(Boolean);
-    const nums: number[] = [];
-    for (const p of parts) {
-      const n =
-        kind === 'coin'
-          ? p.toLowerCase() === 'h' || p === '1'
-            ? 1
-            : p.toLowerCase() === 't' || p === '0' || p === '2'
-              ? 2
-              : NaN
-          : parseInt(p, 10);
-      if (!Number.isInteger(n) || n < 1 || n > sides) {
-        setError(`“${p}” is not a valid ${kind === 'coin' ? 'H or T' : `face 1–${sides}`}.`);
-        return;
-      }
-      nums.push(n);
-    }
-    if (!nums.length) {
-      setError(kind === 'coin' ? 'Paste flips first (H T H …).' : 'Paste rolls first (3 5 1 6 …).');
-      return;
-    }
-    setRolls(prev => [...prev, ...nums]);
-    setBulk('');
+    setStep(3);
+    return true;
   };
 
-  const handleScanned = (data: string) => {
+  const applyQrPayload = (
+    data: string,
+    opts: {jumpConfirm: boolean; stayOnStep1OnFail?: boolean},
+  ): boolean => {
     const text = String(data || '').trim();
     if (!text.startsWith(QR_PREFIX)) {
       setError('That QR is not a Bold dice-rolls code.');
-      setScanVisible(false);
-      return;
+      if (opts.stayOnStep1OnFail) setStep(1);
+      return false;
     }
     const parts = text.split('|');
     if (parts.length !== 4) {
       setError('Unrecognized dice QR.');
-      setScanVisible(false);
-      return;
+      if (opts.stayOnStep1OnFail) setStep(1);
+      return false;
     }
     const [, scannedKind, scannedSides, scannedRolls] = parts;
     if (scannedKind !== 'd6' && scannedKind !== 'd20' && scannedKind !== 'coin') {
       setError('Dice QR has an unknown dice type.');
-      setScanVisible(false);
-      return;
+      if (opts.stayOnStep1OnFail) setStep(1);
+      return false;
     }
     const sSides = parseInt(scannedSides, 10);
     const nums = scannedRolls
@@ -260,16 +530,54 @@ export default function DiceEntropySheet({
       .map(s => parseInt(s, 10));
     if (!nums.length || nums.some(n => !Number.isInteger(n) || n < 1 || n > sSides)) {
       setError('Dice QR contains a roll this die cannot show.');
-      setScanVisible(false);
-      return;
+      if (opts.stayOnStep1OnFail) setStep(1);
+      return false;
+    }
+    if (opts.jumpConfirm) {
+      if (!landOnConfirm(scannedKind as DiceKind, nums)) {
+        if (opts.stayOnStep1OnFail) setStep(1);
+        return false;
+      }
+      return true;
     }
     setKind(scannedKind as DiceKind);
     setRolls(nums);
-    setBulk('');
     setError('');
-    setShowQr(false);
+    return true;
+  };
+
+  const applyClipboardPaste = async () => {
+    setError('');
+    try {
+      const text = String((await Clipboard.getString()) || '').trim();
+      if (!text) {
+        setError('Clipboard is empty.');
+        return;
+      }
+      if (text.startsWith(QR_PREFIX)) {
+        const applied = applyQrPayload(text, {jumpConfirm: true, stayOnStep1OnFail: true});
+        if (!applied) setStep(1);
+        return;
+      }
+      const parsed = parseBulkRolls(text, kind, sides);
+      if (!parsed.ok) {
+        setError(parsed.reason);
+        setStep(1);
+        return;
+      }
+      if (!landOnConfirm(kind, parsed.rolls)) {
+        setStep(1);
+      }
+    } catch {
+      setError('Could not read clipboard.');
+      setStep(1);
+    }
+  };
+
+  const handleScanned = (data: string) => {
     setScanVisible(false);
-    setStep(2);
+    const ok = applyQrPayload(data, {jumpConfirm: true, stayOnStep1OnFail: true});
+    if (!ok) setStep(1);
   };
 
   const goEnter = () => {
@@ -278,17 +586,7 @@ export default function DiceEntropySheet({
   };
 
   const goConfirm = () => {
-    const v = validateDiceSet(sides, rolls);
-    if (!v.ok) {
-      setError(v.reason || 'Invalid rolls.');
-      return;
-    }
-    if (!ready) {
-      setError(`Need ${required} rolls (${rolls.length}/${required}).`);
-      return;
-    }
-    setError('');
-    setStep(3);
+    if (!landOnConfirm(kind, rolls)) return;
   };
 
   const confirm = () => {
@@ -299,6 +597,16 @@ export default function DiceEntropySheet({
       return;
     }
     onUseDice({sets});
+  };
+
+  const copyQrPayload = () => {
+    if (!qrValue) return;
+    Clipboard.setString(qrValue);
+    Toast.show({
+      type: 'success',
+      text1: 'Copied',
+      text2: 'Dice rolls copied — paste on the other phone.',
+    });
   };
 
   const styles = StyleSheet.create({
@@ -354,20 +662,25 @@ export default function DiceEntropySheet({
     cardOn: {borderColor: tokens.bitcoinOrange},
     cardTitle: {color: tokens.text, fontSize: 15, fontWeight: '700'},
     cardDetail: {color: tokens.textSecondary, fontSize: 12, marginTop: 2},
+    transferRow: {flexDirection: 'row', gap: 8, marginTop: 4, marginBottom: 4},
+    transferBtn: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+      borderWidth: 1,
+      borderColor: tokens.border,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 8,
+    },
+    transferIcon: {width: 16, height: 16, tintColor: tokens.text},
+    transferLabel: {color: tokens.text, fontSize: 12, fontWeight: '700', flexShrink: 1},
     hint: {color: tokens.textSecondary, fontSize: 13, lineHeight: 18, marginTop: 6},
     disclosure: {color: tokens.bitcoinOrange, fontSize: 13, fontWeight: '600', marginTop: 10},
     body: {flexGrow: 0},
     bodyContent: {flexGrow: 0},
-    seg: {flexDirection: 'row', gap: 6, marginBottom: 10},
-    segBtn: {
-      flex: 1,
-      borderWidth: 1,
-      borderColor: tokens.border,
-      borderRadius: 8,
-      paddingVertical: 8,
-      alignItems: 'center',
-    },
-    segOn: {borderColor: tokens.bitcoinOrange},
     barTrack: {height: 8, borderRadius: 4, backgroundColor: tokens.border, overflow: 'hidden', marginTop: 4},
     barFill: {
       height: 8,
@@ -378,40 +691,55 @@ export default function DiceEntropySheet({
     barLabel: {color: tokens.textSecondary, fontSize: 12, marginTop: 4, fontFamily: fontFamilies.monospace},
     chips: {color: tokens.text, fontSize: 13, fontFamily: fontFamilies.monospace, lineHeight: 18, marginTop: 8},
     link: {color: tokens.textSecondary, fontSize: 12, marginTop: 6},
-    input: {
-      borderWidth: 1,
-      borderColor: tokens.border,
-      borderRadius: 10,
-      color: tokens.text,
-      backgroundColor: tokens.cardBackground,
-      fontFamily: fontFamilies.monospace,
-      paddingHorizontal: 12,
-      paddingVertical: 10,
-      fontSize: 14,
-      marginBottom: 8,
-    },
-    grid: {flexDirection: 'row', flexWrap: 'wrap', gap: 8},
-    face: {
-      width: 44,
-      height: 44,
-      borderRadius: 10,
-      borderWidth: 1,
-      borderColor: tokens.border,
+    shuffleWrap: {alignItems: 'center', marginBottom: 10, marginTop: 4},
+    shuffleBtn: {
+      flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
+      gap: 6,
+      borderWidth: 1.5,
+      borderColor: tokens.bitcoinOrange,
+      backgroundColor: tokens.bitcoinOrange + '18',
+      borderRadius: 20,
+      paddingVertical: 8,
+      paddingHorizontal: 14,
     },
-    faceText: {color: tokens.text, fontSize: 16, fontWeight: '700', fontFamily: fontFamilies.monospace},
-    airBtn: {
+    shuffleIcon: {width: 14, height: 14, tintColor: tokens.bitcoinOrange},
+    shuffleText: {color: tokens.text, fontSize: 13, fontWeight: '700'},
+    faceBoard: {
+      alignSelf: 'stretch',
+      alignItems: 'center',
+      borderRadius: 18,
       borderWidth: 1,
       borderColor: tokens.border,
-      borderRadius: 12,
-      paddingVertical: 14,
-      paddingHorizontal: 12,
-      marginBottom: 8,
+      backgroundColor: tokens.background,
+      paddingTop: 36,
+      paddingBottom: 16,
+      paddingHorizontal: 10,
+      overflow: 'visible',
+    },
+    faceFlash: {
+      ...StyleSheet.absoluteFillObject,
+      borderRadius: 18,
+      backgroundColor: tokens.bitcoinOrange,
+    },
+    grid: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: kind === 'coin' ? 16 : 8,
+      justifyContent: 'center',
+      maxWidth: kind === 'coin' ? 220 : kind === 'd20' ? 280 : 240,
+      overflow: 'visible',
+    },
+    chipRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 6,
+      justifyContent: 'center',
+      marginTop: 10,
     },
     qrCard: {
       alignItems: 'center',
-      marginTop: 4,
+      marginTop: 10,
       paddingVertical: 8,
       paddingHorizontal: 8,
       borderRadius: 12,
@@ -425,15 +753,29 @@ export default function DiceEntropySheet({
       marginTop: 8,
       textAlign: 'center',
     },
-    callout: {
+    copyBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginTop: 10,
       borderWidth: 1,
-      borderColor: (tokens as any).warningBorder ?? tokens.border,
-      backgroundColor: (tokens as any).warningBg ?? tokens.cardBackground,
-      borderRadius: 10,
-      padding: 10,
-      marginTop: 12,
+      borderColor: tokens.border,
+      borderRadius: 12,
+      paddingVertical: 12,
+      paddingHorizontal: 14,
+      alignSelf: 'stretch',
     },
-    spoken: {color: tokens.text, fontSize: 22, fontFamily: fontFamilies.monospace, fontWeight: '700', letterSpacing: 1, marginTop: 4},
+    copyIcon: {width: 16, height: 16, tintColor: tokens.text},
+    copyLabel: {color: tokens.text, fontSize: 14, fontWeight: '700'},
+    spoken: {
+      color: tokens.text,
+      fontSize: 22,
+      fontFamily: fontFamilies.monospace,
+      fontWeight: '700',
+      letterSpacing: 1,
+      marginTop: 4,
+    },
     errorText: {color: tokens.danger, fontSize: 12, marginTop: 8},
     footer: {flexDirection: 'row', gap: 10, marginTop: 14},
     footerBtn: {
@@ -450,11 +792,6 @@ export default function DiceEntropySheet({
 
   const stepDone = (n: Step) => (n === 1 ? true : n === 2 ? rolls.length > 0 : ready);
   const canOpenStep = (n: Step) => n === 1 || (n === 2 && true) || (n === 3 && ready);
-
-  const chipSource = showAll ? rolls : rolls.slice(-24);
-  const chipText = chipSource
-    .map(v => faceLabel(kind, v))
-    .join(' ');
 
   return (
     <>
@@ -515,15 +852,38 @@ export default function DiceEntropySheet({
                         <Text style={styles.cardDetail}>{card.detail}</Text>
                       </AppPressable>
                     ))}
+                    <View style={styles.transferRow}>
+                      <AppPressable style={styles.transferBtn} onPress={applyClipboardPaste}>
+                        <Image
+                          source={require('../assets/paste-icon.png')}
+                          style={styles.transferIcon}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.transferLabel}>Paste From Clipboard</Text>
+                      </AppPressable>
+                      <AppPressable
+                        style={styles.transferBtn}
+                        onPress={() => {
+                          setError('');
+                          setScanVisible(true);
+                        }}>
+                        <Image
+                          source={require('../assets/scan-icon.png')}
+                          style={styles.transferIcon}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.transferLabel}>Scan via QR</Text>
+                      </AppPressable>
+                    </View>
                     <Text style={styles.hint}>
-                      Enter this same sequence on every phone. These rolls stay on this phone and are not sent over Wi-Fi or Nostr.
+                      Same sequence on every phone. Rolls stay on this phone.
                     </Text>
                     <AppPressable onPress={() => setWhyOpen(v => !v)}>
                       <Text style={styles.disclosure}>{whyOpen ? 'Hide why dice' : 'Why dice?'}</Text>
                     </AppPressable>
                     {whyOpen && (
                       <Text style={styles.hint}>
-                        The chaincode is hashed from these rolls instead of the phone’s random generator. Write the sequence down. The encrypted backup still holds the chaincode if you lose the paper.
+                        Dice brings external, verifiable randomness so the wallet does not rely on device entropy alone.
                       </Text>
                     )}
                   </View>
@@ -531,16 +891,90 @@ export default function DiceEntropySheet({
 
                 {step === 2 && (
                   <View>
+                    <View style={styles.shuffleWrap}>
+                      <AppPressable style={styles.shuffleBtn} onPress={shuffleBoard}>
+                        <Image
+                          source={require('../assets/dice-icon.png')}
+                          style={styles.shuffleIcon}
+                          resizeMode="contain"
+                        />
+                        <Text style={styles.shuffleText}>
+                          {shuffleFaces ? 'Restore order' : 'Shuffle'}
+                        </Text>
+                      </AppPressable>
+                    </View>
+                    <View style={styles.faceBoard}>
+                      <Animated.View
+                        pointerEvents="none"
+                        style={[styles.faceFlash, {opacity: boardFlash.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, 0.22],
+                        })}]}
+                      />
+                      <Animated.View
+                        style={[
+                          styles.grid,
+                          {
+                            transform: [
+                              {
+                                rotate: gridWobble.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: ['0deg', '6deg'],
+                                }),
+                              },
+                              {
+                                scale: gridWobble.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: [1, 0.94],
+                                }),
+                              },
+                            ],
+                          },
+                        ]}>
+                        {faces.map(v => (
+                          <FaceButton
+                            key={`${shuffleSalt}-${v}`}
+                            label={faceLabel(kind, v)}
+                            value={v}
+                            showPips={kind === 'd6'}
+                            size={kind === 'coin' ? 92 : kind === 'd6' ? 68 : 44}
+                            radius={kind === 'coin' ? 46 : kind === 'd6' ? 16 : 12}
+                            textColor={tokens.text}
+                            borderColor={tokens.border}
+                            fill={tokens.cardBackground}
+                            accent={tokens.bitcoinOrange}
+                            onPress={() => addRoll(v)}
+                          />
+                        ))}
+                      </Animated.View>
+                    </View>
                     <Text style={styles.barLabel}>
                       {rolls.length}/{required} · {Math.floor(bits)} / {MIN_DICE_BITS} bits
                     </Text>
                     <View style={styles.barTrack}>
                       <View style={styles.barFill} />
                     </View>
-                    <Text style={styles.chips}>
-                      {rolls.length ? chipText : 'No rolls yet.'}
-                    </Text>
-                    <View style={{flexDirection: 'row', gap: 16}}>
+                    {rolls.length ? (
+                      <View style={styles.chipRow}>
+                        {(showAll ? rolls : rolls.slice(-12)).map((v, i, arr) => {
+                          const absolute = showAll ? i : rolls.length - arr.length + i;
+                          return (
+                            <RollChip
+                              key={`${absolute}-${v}`}
+                              label={faceLabel(kind, v)}
+                              fresh={absolute === rolls.length - 1}
+                              textColor={tokens.text}
+                              fill={tokens.cardBackground}
+                              borderColor={tokens.border}
+                              accent={tokens.bitcoinOrange}
+                            />
+                          );
+                        })}
+                      </View>
+                    ) : (
+                      <Text style={styles.chips}>No rolls yet.</Text>
+                    )}
+                    <View style={{flexDirection: 'row', gap: 16, justifyContent: 'center'}}>
                       <AppPressable onPress={undoLast} disabled={!rolls.length}>
                         <Text style={styles.link}>Undo</Text>
                       </AppPressable>
@@ -555,104 +989,43 @@ export default function DiceEntropySheet({
                         </AppPressable>
                       )}
                     </View>
-                    <View style={[styles.seg, {marginTop: 12}]}>
-                      {(['paste', 'tap', 'airgap'] as EntryMethod[]).map(m => (
-                        <AppPressable
-                          key={m}
-                          onPress={() => { setMethod(m); setShowQr(false); setError(''); }}
-                          style={[styles.segBtn, method === m && styles.segOn]}>
-                          <Text style={[styles.stepText, method === m && styles.stepTextOn]}>
-                            {m === 'paste' ? 'Paste' : m === 'tap' ? 'Tap' : 'Air-gap'}
-                          </Text>
-                        </AppPressable>
-                      ))}
-                    </View>
-
-                    {method === 'paste' && (
-                      <View>
-                        <TextInput
-                          style={styles.input}
-                          value={bulk}
-                          onChangeText={setBulk}
-                          placeholder={kind === 'coin' ? 'H T H T …' : '3 5 1 6 …'}
-                          placeholderTextColor={tokens.textSecondary}
-                          autoCorrect={false}
-                          autoCapitalize="none"
-                          keyboardType={kind === 'coin' ? 'default' : 'numbers-and-punctuation'}
-                        />
-                        <AppPressable style={styles.airBtn} onPress={applyBulk}>
-                          <Text style={{color: tokens.text, textAlign: 'center', fontWeight: '700'}}>Add</Text>
-                        </AppPressable>
-                      </View>
-                    )}
-
-                    {method === 'tap' && (
-                      <View>
-                        <View style={styles.grid}>
-                          {faces.map(v => (
-                            <AppPressable key={`${shuffleSalt}-${v}`} style={styles.face} onPress={() => addRoll(v)}>
-                              <Text style={styles.faceText}>{faceLabel(kind, v)}</Text>
-                            </AppPressable>
-                          ))}
-                        </View>
-                        <AppPressable
-                          onPress={() => {
-                            setShuffleFaces(on => !on);
-                            setShuffleSalt(s => s + 1);
-                          }}>
-                          <Text style={styles.link}>{shuffleFaces ? 'Faces shuffled · tap to restore order' : 'Shuffle faces'}</Text>
-                        </AppPressable>
-                      </View>
-                    )}
-
-                    {method === 'airgap' && !showQr && (
-                      <View>
-                        <AppPressable
-                          style={styles.airBtn}
-                          disabled={!rolls.length}
-                          onPress={() => setShowQr(true)}>
-                          <Text style={{color: rolls.length ? tokens.text : tokens.textSecondary, textAlign: 'center', fontWeight: '700'}}>
-                            Show QR for the other phone
-                          </Text>
-                        </AppPressable>
-                        <AppPressable style={styles.airBtn} onPress={() => setScanVisible(true)}>
-                          <Text style={{color: tokens.text, textAlign: 'center', fontWeight: '700'}}>
-                            Scan the other phone
-                          </Text>
-                        </AppPressable>
-                      </View>
-                    )}
-
-                    {method === 'airgap' && showQr && !!qrValue && (
-                      <View style={styles.qrCard}>
-                        <StaticQRCode
-                          value={qrValue}
-                          size={200}
-                          showLogo
-                          ecl="M"
-                          copyDisabled
-                          contentStyle={{padding: 6}}
-                        />
-                        <Text style={styles.qrCaption}>Optical only</Text>
-                        <AppPressable onPress={() => setShowQr(false)}>
-                          <Text style={styles.link}>Hide QR</Text>
-                        </AppPressable>
-                      </View>
-                    )}
                   </View>
                 )}
 
                 {step === 3 && (
                   <View>
                     <Text style={styles.cardTitle}>{kindTitle(kind)} · {rolls.length} rolls</Text>
-                    <Text style={styles.hint}>About {Math.floor(bits)} bits.</Text>
-                    <Text style={[styles.hint, {marginTop: 14}]}>Read this aloud. Setup compares a short check of it and stops if the phones differ. The rolls and the chaincode stay on this phone.</Text>
+                    <Text style={[styles.hint, {marginTop: 10}]}>Read aloud:</Text>
                     <Text style={styles.spoken}>{spoken || '…'}</Text>
-                    <View style={styles.callout}>
+                    {!!qrValue && (
+                      <View style={styles.qrCard}>
+                        <StaticQRCode
+                          value={qrValue}
+                          size={180}
+                          showLogo
+                          ecl="M"
+                          copyDisabled
+                          contentStyle={{padding: 6}}
+                        />
+                        <Text style={styles.qrCaption}>Optical only · BOLD-DICE-QR-v1</Text>
+                        <AppPressable style={styles.copyBtn} onPress={copyQrPayload}>
+                          <Image
+                            source={require('../assets/copy-icon.png')}
+                            style={styles.copyIcon}
+                            resizeMode="contain"
+                          />
+                          <Text style={styles.copyLabel}>Copy to clipboard</Text>
+                        </AppPressable>
+                      </View>
+                    )}
+                    <AppPressable onPress={() => setWhyOpen(v => !v)}>
+                      <Text style={styles.disclosure}>{whyOpen ? 'Hide why dice' : 'Why dice?'}</Text>
+                    </AppPressable>
+                    {whyOpen && (
                       <Text style={styles.hint}>
-                        If another phone has a different sequence, or skips dice, wallet setup will fail during the secure computation.
+                        Dice brings external, verifiable randomness so the wallet does not rely on device entropy alone.
                       </Text>
-                    </View>
+                    )}
                   </View>
                 )}
                 {!!error && <Text style={styles.errorText}>{error}</Text>}

@@ -77,7 +77,12 @@ describe('dice crosscheck (Spec v2.1)', () => {
     const nostr = fs.readFileSync(path.join(root, 'screens/MobileNostrPairing.tsx'), 'utf8');
     expect(lan).toMatch(/diceChecksumTag/);
     expect(lan).toMatch(/assertMatchingDiceChecksums/);
+    expect(lan).toMatch(/formatDiceCheckCode/);
     expect(nostr).toMatch(/diceChecksumTag/);
+    expect(nostr).toMatch(/formatDiceCheckCode/);
+    // Check code lives on the selected dice row (not a tall peer-code panel).
+    expect(nostr).not.toMatch(/Read this code aloud\. Every phone should show the same six/);
+    expect(nostr).not.toMatch(/diceCheckPanel/);
     // Nostr binds the local tag into the session id (peers often scan before dice).
     expect(nostr).toMatch(/sessionMaterial/);
     expect(lan).not.toMatch(/appendLanDiceCommits\s*\(/);
