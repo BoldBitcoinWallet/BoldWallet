@@ -32,14 +32,27 @@ export function isValidLanKeygenSessionPayload(data: string): boolean {
 export function parseLanKeygenSessionPayload(data: string): {
   attemptId: string;
   seed: string;
+  diceCommits: string[];
 } {
   if (!isValidLanKeygenSessionPayload(data)) {
     throw new Error('Invalid LAN keygen session payload');
   }
   const parts = data.trim().split(':');
+  const diceCommits: string[] = [];
+  for (const part of parts.slice(2)) {
+    const p = part.trim();
+    if (!p.startsWith('dice1=')) {
+      continue;
+    }
+    const commit = p.slice('dice1='.length).trim().toLowerCase();
+    if (/^[0-9a-f]{64}$/i.test(commit)) {
+      diceCommits.push(commit);
+    }
+  }
   return {
     attemptId: parts[0],
     seed: parts[1],
+    diceCommits,
   };
 }
 

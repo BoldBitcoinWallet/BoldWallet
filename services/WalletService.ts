@@ -9,6 +9,7 @@ import {
   getKeyshareMetadata,
   hasWalletKeyshareInSecureStorage,
 } from '../utils';
+import {resolveChaincodeHex} from './chaincodeReader';
 import {
   getGapLimit,
   getApiTimeoutMs,
@@ -473,7 +474,7 @@ export class WalletService {
     const path = getChangePath(network, addressType, useLegacyPath, changeIdx);
     const btcPub = await BBMTLibNativeModule.derivePubkey(
       ks.pub_key,
-      ks.chain_code_hex,
+      await resolveChaincodeHex(),
       path,
     );
     const address = await BBMTLibNativeModule.btcAddress(
@@ -562,7 +563,7 @@ export class WalletService {
     const path = getReceivePath(network, addressType, useLegacyPath, nextIndex);
     const btcPub = await BBMTLibNativeModule.derivePubkey(
       ks.pub_key,
-      ks.chain_code_hex,
+      await resolveChaincodeHex(),
       path,
     );
     const newAddress = await BBMTLibNativeModule.btcAddress(
@@ -628,7 +629,7 @@ export class WalletService {
     }
     const pub = await BBMTLibNativeModule.derivePubkey(
       ks.pub_key,
-      ks.chain_code_hex,
+      await resolveChaincodeHex(),
       derivationPath,
     );
     const address = await BBMTLibNativeModule.btcAddress(
@@ -798,7 +799,7 @@ export class WalletService {
             : getChangePath(network, addressType, useLegacyPath, idx);
         const pub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
-          ks.chain_code_hex,
+          await resolveChaincodeHex(),
           path,
         );
         const address = await BBMTLibNativeModule.btcAddress(
@@ -882,7 +883,7 @@ export class WalletService {
       const path = getReceivePath(network, addressType, useLegacyPath, i);
       const pub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
-        ks.chain_code_hex,
+        await resolveChaincodeHex(),
         path,
       );
       const address = await BBMTLibNativeModule.btcAddress(
@@ -896,7 +897,7 @@ export class WalletService {
       const path = getChangePath(network, addressType, useLegacyPath, i);
       const pub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
-        ks.chain_code_hex,
+        await resolveChaincodeHex(),
         path,
       );
       const address = await BBMTLibNativeModule.btcAddress(
@@ -1001,7 +1002,7 @@ export class WalletService {
     const path = getReceivePath(network, addressType, useLegacyPath, index);
     const pub = await BBMTLibNativeModule.derivePubkey(
       ks.pub_key,
-      ks.chain_code_hex,
+      await resolveChaincodeHex(),
       path,
     );
     const address = await BBMTLibNativeModule.btcAddress(
@@ -1045,7 +1046,7 @@ export class WalletService {
       );
       const pub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
-        ks.chain_code_hex,
+        await resolveChaincodeHex(),
         path,
       );
       const addr = await BBMTLibNativeModule.btcAddress(
@@ -1201,7 +1202,7 @@ export class WalletService {
         const path = getReceivePath(network, addressType, useLegacyPath, i);
         const pub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
-          ks.chain_code_hex,
+          await resolveChaincodeHex(),
           path,
         );
         const addr = await BBMTLibNativeModule.btcAddress(
@@ -1298,7 +1299,7 @@ export class WalletService {
           const path = getChangePath(network, addressType, useLegacyPath, i);
           const pub = await BBMTLibNativeModule.derivePubkey(
             ks.pub_key,
-            ks.chain_code_hex,
+            await resolveChaincodeHex(),
             path,
           );
           const addr = await BBMTLibNativeModule.btcAddress(
@@ -1651,7 +1652,7 @@ export class WalletService {
         );
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
-          ks.chain_code_hex,
+          await resolveChaincodeHex(),
           path,
         );
         // Generate new address for current network and type
@@ -1705,7 +1706,7 @@ export class WalletService {
       );
       const btcPub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
-        ks.chain_code_hex,
+        await resolveChaincodeHex(),
         path,
       );
       const newAddress = await BBMTLibNativeModule.btcAddress(

@@ -6,6 +6,33 @@
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
 	<string>Bold Wallet</string>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>BoldWallet Keyshare</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.reactjs.native.boldbtc.wallet.keyshare</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>BoldWallet PSBT</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.reactjs.native.boldbtc.wallet.psbt</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -20,11 +47,25 @@
 	<string>$(MARKETING_VERSION)</string>
 	<key>CFBundleSignature</key>
 	<string>????</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>org.reactjs.native.boldbtc.wallet</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>boldwallet</string>
+				<string>bitcoin</string>
+			</array>
+		</dict>
+	</array>
 	<key>CFBundleVersion</key>
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>LSRequiresIPhoneOS</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>
 	<dict>
@@ -47,20 +88,10 @@
 	<string>BoldWallet uses location and local network access to securely link your nearby devices during wallet setup. All data stays private and only on your devices, never reaching the internet.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Access Photos to scan a QR Address.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>RCTNewArchEnabled</key>
 	<true/>
-	<key>UILaunchStoryboardName</key>
-	<string>LaunchScreen</string>
-	<key>UIRequiredDeviceCapabilities</key>
-	<array>
-		<string>arm64</string>
-	</array>
-	<key>UIStatusBarStyle</key>
-	<string/>
-	<key>UISupportedInterfaceOrientations</key>
-	<array>
-		<string>UIInterfaceOrientationPortrait</string>
-	</array>
 	<key>UIAppFonts</key>
 	<array>
 		<string>Inter-Regular.ttf</string>
@@ -70,54 +101,31 @@
 		<string>JetBrainsMono-Medium.ttf</string>
 		<string>JetBrainsMono-Bold.ttf</string>
 	</array>
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+	<key>UIRequiredDeviceCapabilities</key>
+	<array>
+		<string>arm64</string>
+	</array>
+	<key>UIStatusBarStyle</key>
+	<string></string>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>
-	<key>CFBundleURLTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleURLName</key>
-			<string>org.reactjs.native.boldbtc.wallet</string>
-			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>boldwallet</string>
-				<string>bitcoin</string>
-			</array>
-		</dict>
-	</array>
-	<key>CFBundleDocumentTypes</key>
-	<array>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>BoldWallet Keyshare</string>
-			<key>LSHandlerRank</key>
-			<string>Alternate</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>org.reactjs.native.boldbtc.wallet.keyshare</string>
-			</array>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-		</dict>
-		<dict>
-			<key>CFBundleTypeName</key>
-			<string>BoldWallet PSBT</string>
-			<key>LSHandlerRank</key>
-			<string>Alternate</string>
-			<key>LSItemContentTypes</key>
-			<array>
-				<string>org.reactjs.native.boldbtc.wallet.psbt</string>
-			</array>
-			<key>CFBundleTypeRole</key>
-			<string>Viewer</string>
-		</dict>
-	</array>
 	<key>UTImportedTypeDeclarations</key>
 	<array>
 		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>org.reactjs.native.boldbtc.wallet.psbt</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
 			<key>UTTypeDescription</key>
 			<string>BoldWallet PSBT File</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.reactjs.native.boldbtc.wallet.psbt</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -127,16 +135,16 @@
 				<key>public.mime-type</key>
 				<string>application/octet-stream</string>
 			</dict>
+		</dict>
+		<dict>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
 			</array>
-		</dict>
-		<dict>
-			<key>UTTypeIdentifier</key>
-			<string>org.reactjs.native.boldbtc.wallet.keyshare</string>
 			<key>UTTypeDescription</key>
 			<string>BoldWallet Keyshare Backup</string>
+			<key>UTTypeIdentifier</key>
+			<string>org.reactjs.native.boldbtc.wallet.keyshare</string>
 			<key>UTTypeTagSpecification</key>
 			<dict>
 				<key>public.filename-extension</key>
@@ -146,15 +154,7 @@
 				<key>public.mime-type</key>
 				<string>application/octet-stream</string>
 			</dict>
-			<key>UTTypeConformsTo</key>
-			<array>
-				<string>public.data</string>
-			</array>
 		</dict>
 	</array>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
-	<key>NSSupportsLiveActivities</key>
-	<true/>
 </dict>
 </plist>

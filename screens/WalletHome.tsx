@@ -24,6 +24,7 @@ import BarcodeZxingScan from 'rn-barcode-zxing-scan';
 import {useNavigation, useRoute, useIsFocused, RouteProp} from '@react-navigation/native';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {AppState, DeviceEventEmitter, type EmitterSubscription} from 'react-native';
+import EncryptedStorage from 'react-native-encrypted-storage';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
 import TransactionList from '../components/TransactionList';
@@ -53,7 +54,9 @@ import {
   clearKeyshareMetadata,
   getKeyshareMetadata,
   hasWalletKeyshareInSecureStorage,
+  KEYSHARE_STORAGE_KEY,
 } from '../utils';
+import {chaincodeHexFromBlob, resolveChaincodeHex} from '../services/chaincodeReader';
 import {
   createUrDecoder,
   formatUrFragmentProgress,
@@ -267,16 +270,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         return;
       }
       const pubKey = keyshare.pub_key || '';
-      const chainCode = keyshare.chain_code_hex || '';
-      if (!pubKey || !chainCode) {
+      if (!pubKey) {
         extensionBindAlertShownRef.current = false;
         Alert.alert('Error', 'Keyshare info is not available.');
         return;
       }
+      // Spec v2: pubkey only — master chaincode never leaves the device.
       const qrDataBase64 = await computeExtensionBindResponseQr(
         pairingCode,
         pubKey,
-        chainCode,
       );
       setExtensionResponseQrData(qrDataBase64);
       setIsExtensionResponseQrVisible(true);
@@ -825,6 +827,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           setIsInitialized(true);
           return;
         }
+        let reinitChain = String(ks.chain_code_hex || '').trim().toLowerCase();
+        if (!reinitChain) {
+          try {
+            const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
+            reinitChain = chaincodeHexFromBlob(raw ? JSON.parse(raw) : null);
+          } catch {
+            reinitChain = '';
+          }
+        }
         // Reset address slots so stale receive addresses are not shown while
         // the new ones are being derived.  Do NOT clear balance/price — show
         // the last-known DB value instead so the user never sees 0 on unlock.
@@ -858,7 +869,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Always derive btcPub fresh to ensure it's current (HD: at current external index)
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
-          ks.chain_code_hex,
+          reinitChain,
           path,
         );
         dbg('btcPub derived during re-initialization');
@@ -1257,8 +1268,26 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           return;
         }
         const ks = await getKeyshareMetadata();
-        if (!ks) {
-          dbg('WalletHome: No keyshare metadata during initialization');
+        let blob: any = null;
+        try {
+          const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
+          blob = raw ? JSON.parse(raw) : null;
+        } catch {
+          blob = null;
+        }
+        const chainCode =
+          chaincodeHexFromBlob(blob) ||
+          String(ks?.chain_code_hex || '').trim().toLowerCase();
+        if (!ks?.pub_key || !chainCode) {
+          dbg(
+            'WalletHome: unfinished keyshare (reload before confirm) — clearing blob',
+          );
+          try {
+            await EncryptedStorage.removeItem(KEYSHARE_STORAGE_KEY);
+            await clearKeyshareMetadata();
+          } catch (e) {
+            dbg('WalletHome: clear unfinished keyshare failed', e);
+          }
           setLoading(false);
           isInitializedRef.current = true;
           setIsInitialized(true);
@@ -1268,19 +1297,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Initialize WalletService only after confirming we have a keyshare
         const walletService = WalletService.getInstance();
         await walletService.initialize();
-        if (!ks.pub_key || !ks.chain_code_hex) {
-          dbg('Error: keyshare metadata missing required fields');
-          try {
-            await clearKeyshareMetadata();
-          } catch (e) {
-            dbg('WalletHome: clear incomplete metadata failed', e);
-          }
-          setLoading(false);
-          isInitializedRef.current = true;
-          setIsInitialized(true);
-          navigation.reset({index: 0, routes: [{name: 'Welcome'}]});
-          return;
-        }
         const currentAddressType =
           appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'segwit-native';
         const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
@@ -1296,7 +1312,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         );
         const btcPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
-          ks.chain_code_hex,
+          chainCode,
           path,
         );
         dbg('btcPub derived for address generation');
@@ -1576,7 +1592,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           // Derive the public key using the computed derivation path (current receive address)
           const publicKey = await BBMTLibNativeModule.derivePubkey(
             keyshare.pub_key,
-            keyshare.chain_code_hex,
+            await resolveChaincodeHex(),
             derivationPath,
           );
           // Compute from address using native network format (requires 'testnet3' not 'testnet')

@@ -7,7 +7,7 @@ import {
   getTssBackendDisplayLabel,
   type TssBackend,
 } from '../services/tssBackend';
-import {dbg, getKeyshareDisplayLabel, getKeyshareMetadata} from '../utils';
+import {dbg, getKeyshareDisplayLabel, getKeyshare, getKeyshareMetadata} from '../utils';
 import {generateAllOutputDescriptors} from '../utils';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -37,13 +37,29 @@ const DeviceScreen: React.FC = () => {
 
   const loadKeyshareInfo = useCallback(async () => {
     try {
-      const keyshare = await getKeyshareMetadata();
+      const blob: any = await (async () => {
+        try {
+          const full = await getKeyshare();
+          if (full) {
+            return full;
+          }
+        } catch {}
+        return null;
+      })();
+      const keyshare = (blob as any) ?? (await getKeyshareMetadata());
       if (!keyshare) {
         setKeyshareInfo(null);
         return;
       }
       const pubKey = keyshare.pub_key || '';
-      const chainCode = keyshare.chain_code_hex || '';
+      // Spec v2.1: chaincode from encrypted blob only, never SQLite metadata.
+      // Metadata chain_code_hex is blanked (leak hardening); dice + skip wallets
+      // both derive via the encrypted keyshare blob.
+      const chainCode = String(
+        (blob as any)?.chain_code_hex || (blob as any)?.chaincode || '',
+      )
+        .trim()
+        .toLowerCase();
       const nostrNpub = keyshare.nostr_npub || null;
       const supportsNostr = !!(nostrNpub && nostrNpub.trim() !== '');
       const supportsLocal = true;

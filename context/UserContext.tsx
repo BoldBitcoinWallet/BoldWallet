@@ -14,8 +14,10 @@ import {
   getReceivePath,
   resolveUseLegacyDerivationPaths,
   dbg,
+  getKeyshare,
   getKeyshareMetadata,
 } from '../utils';
+import {chaincodeHexFromBlob} from '../services/chaincodeReader';
 import {getExternalIndex} from '../services/HdIndexService';
 type AddressType = 'legacy' | 'segwit-native' | 'segwit-compatible';
 interface UserContextType {
@@ -276,7 +278,11 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       // Always derive btcPub fresh to ensure it matches the current address type
       // This prevents issues where stored btcPub was derived with a different address type
       let pub = '';
-      const ks = await getKeyshareMetadata();
+      // Spec v2: chaincode from encrypted blob only, never SQLite metadata.
+      const ksMeta = await getKeyshareMetadata();
+      const ksBlob: any = await getKeyshare().catch(() => null);
+      const ks = ksBlob ?? ksMeta;
+      const chaincodeHex = chaincodeHexFromBlob(ksBlob);
       if (ks) {
         // Check if this is a legacy wallet (created before migration timestamp)
         const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
@@ -298,7 +304,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         });
         pub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
-          ks.chain_code_hex,
+          chaincodeHex,
           path,
         );
         // Store it for future use (though we'll always derive fresh to ensure consistency)
@@ -335,7 +341,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         );
         const otherPub = await BBMTLibNativeModule.derivePubkey(
           ks.pub_key,
-          ks.chain_code_hex,
+          chaincodeHex,
           otherPath,
         );
         dbg(`[UserContext] refresh() - Derived btcPub for other network:`, {

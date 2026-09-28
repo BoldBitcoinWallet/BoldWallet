@@ -5,9 +5,11 @@ import {
   getReceivePath,
   resolveUseLegacyDerivationPaths,
   clearKeyshareMetadata,
+  getKeyshare,
   getKeyshareMetadata,
   hasWalletKeyshareInSecureStorage,
 } from '../utils';
+import {chaincodeHexFromBlob} from '../services/chaincodeReader';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {getExternalIndex} from '../services/HdIndexService';
@@ -42,7 +44,10 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
   const refreshWallet = async () => {
     try {
       dbg('WalletContext: Starting wallet refresh');
-      const ks = await getKeyshareMetadata();
+      // Spec v2: chaincode from encrypted blob only, never SQLite metadata.
+      const ksMeta = await getKeyshareMetadata();
+      const ksBlob: any = await getKeyshare().catch(() => null);
+      const ks = ksBlob ?? ksMeta;
       if (!ks) {
         dbg('WalletContext: No keyshare found, skipping wallet refresh');
         return;
@@ -67,9 +72,11 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       setAddressType(currentAddressType);
       dbg('WalletContext: Current address type:', currentAddressType);
       // Derive public key
+      // Spec v2: chaincode from encrypted blob only, never SQLite metadata.
+      const blobChaincode = chaincodeHexFromBlob(ksBlob);
       const btcPub = await BBMTLibNativeModule.derivePubkey(
         ks.pub_key,
-        ks.chain_code_hex,
+        blobChaincode,
         path,
       );
       dbg('WalletContext: Derived public key');

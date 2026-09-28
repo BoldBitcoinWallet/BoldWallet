@@ -35,11 +35,15 @@ const GlassModalOverlay: React.FC<GlassModalOverlayProps> = ({
         style,
       ]}>
       <BlurView
-        pointerEvents="none"
         style={StyleSheet.absoluteFill}
         blurType="dark"
         blurAmount={20}
-        overlayColor={theme.colors.modalBackdropGlass}
+        overlayColor={
+          typeof theme.colors.modalBackdropGlass === 'string' &&
+          (theme.colors.modalBackdropGlass as string).startsWith('#')
+            ? theme.colors.modalBackdropGlass
+            : '#000000CC'
+        }
         reducedTransparencyFallbackColor={theme.colors.modalBackdrop}
       />
       {onPress ? (

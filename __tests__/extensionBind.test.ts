@@ -1,5 +1,6 @@
 /**
  * Unit tests for extension binding: mobile encode + extension-side decode/validate.
+ * Spec v2: payload = pub_key ONLY (33 bytes). Master chaincode never leaves the device.
  */
 const crypto = require('crypto');
 
@@ -29,7 +30,6 @@ import {
 
 describe('extensionBind', () => {
   const validPubKey = '02'.padEnd(66, 'a'); // 66 hex chars (02 + 64 more)
-  const validChainCode = 'b'.repeat(64);
   const pairingCode = '12345';
 
   describe('parsePairingCodeFromScannedData', () => {
@@ -51,43 +51,54 @@ describe('extensionBind', () => {
   });
 
   describe('round-trip: computeExtensionBindResponseQr + parseExtensionResponse', () => {
-    it('deciphers response, extracts pubKey and chainCode, and validates checksum', async () => {
+    it('deciphers response, extracts pubKey only, and validates checksum', async () => {
       const responseBase64 = await computeExtensionBindResponseQr(
         pairingCode,
         validPubKey,
-        validChainCode,
       );
       expect(typeof responseBase64).toBe('string');
       expect(responseBase64.length).toBeGreaterThan(0);
+      expect(Buffer.from(responseBase64, 'base64').length).toBe(35);
 
       const result = await parseExtensionResponse(responseBase64, pairingCode);
       expect(result.pubKey).toBe(validPubKey);
-      expect(result.chainCode).toBe(validChainCode);
+      expect(result.chainCode).toBe('');
       expect(result.valid).toBe(true);
+    });
+
+    it('rejects chaincode export attempts', async () => {
+      await expect(
+        computeExtensionBindResponseQr(pairingCode, validPubKey, 'b'.repeat(64)),
+      ).rejects.toThrow(/chaincode export removed/);
+    });
+
+    it('rejects legacy 67-byte responses carrying chaincode', async () => {
+      const legacy = Buffer.alloc(67).toString('base64');
+      await expect(
+        parseExtensionResponse(legacy, pairingCode, nodeSha256),
+      ).rejects.toThrow(/Legacy extension response/);
     });
 
     it('returns valid: false when checksum is tampered', async () => {
       const responseBase64 = await computeExtensionBindResponseQr(
         pairingCode,
         validPubKey,
-        validChainCode,
       );
       const buf = Buffer.from(responseBase64, 'base64');
       // eslint-disable-next-line no-bitwise
-      buf[66] ^= 0xff; // flip last checksum byte
+      buf[34] ^= 0xff; // flip last checksum byte
       const tamperedBase64 = buf.toString('base64');
 
       const result = await parseExtensionResponse(tamperedBase64, pairingCode);
       expect(result.valid).toBe(false);
       expect(result.pubKey).toBe(validPubKey);
-      expect(result.chainCode).toBe(validChainCode);
+      expect(result.chainCode).toBe('');
     });
 
     it('deciphers to different payload and valid: false when pairing code is wrong', async () => {
       const responseBase64 = await computeExtensionBindResponseQr(
         pairingCode,
         validPubKey,
-        validChainCode,
       );
       const wrongPairingCode = '99999';
       const result = await parseExtensionResponse(
@@ -96,7 +107,6 @@ describe('extensionBind', () => {
       );
       expect(result.valid).toBe(false);
       expect(result.pubKey).not.toBe(validPubKey);
-      expect(result.chainCode).not.toBe(validChainCode);
     });
   });
 
@@ -105,7 +115,6 @@ describe('extensionBind', () => {
       const responseBase64 = await computeExtensionBindResponseQr(
         pairingCode,
         validPubKey,
-        validChainCode,
       );
       const result = await parseExtensionResponse(
         responseBase64,
@@ -113,7 +122,7 @@ describe('extensionBind', () => {
         nodeSha256,
       );
       expect(result.pubKey).toBe(validPubKey);
-      expect(result.chainCode).toBe(validChainCode);
+      expect(result.chainCode).toBe('');
       expect(result.valid).toBe(true);
     });
 
@@ -121,7 +130,7 @@ describe('extensionBind', () => {
       const shortBase64 = Buffer.alloc(10).toString('base64');
       await expect(
         parseExtensionResponse(shortBase64, pairingCode, nodeSha256),
-      ).rejects.toThrow(/expected 67 bytes/);
+      ).rejects.toThrow(/expected 35 bytes/);
     });
   });
 });

@@ -816,8 +816,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         return;
       }
       const pubKey = keyshareInfo?.pubKey;
-      const chainCode = keyshareInfo?.chainCode;
-      if (!pubKey || !chainCode) {
+      if (!pubKey) {
         Alert.alert('Error', 'Keyshare info is not available.');
         setIsExtensionBindScannerVisible(false);
         return;
@@ -825,10 +824,10 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
       extensionBindHandledRef.current = true;
       setIsExtensionBindScannerVisible(false);
       try {
+        // Spec v2: pubkey only — master chaincode never leaves the device.
         const qrData = await computeExtensionBindResponseQr(
           pairingCode,
           pubKey,
-          chainCode,
         );
         setExtensionResponseQrData(qrData);
         setIsExtensionResponseQrVisible(true);
@@ -838,7 +837,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         Alert.alert('Error', 'Failed to generate response QR.');
       }
     },
-    [keyshareInfo?.pubKey, keyshareInfo?.chainCode],
+    [keyshareInfo?.pubKey],
   );
 
   const handleToggleWalletInfo = useCallback(() => {
@@ -1385,12 +1384,11 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                     boldExtensionContentOpacityStyle,
                   ]}>
                   <Text style={styles.watchWalletDescription}>
-                    This is a pubkey that should never be shared with anyone for
-                    privacy. It is only used to bind Bold Bitcoin Browser
-                    extension.
+                    This public key binds the Bold browser extension. Share it
+                    only with that extension.
                   </Text>
-                  <Text style={styles.watchWalletWarning}>
-                    ⚠️ This does NOT hold any private keyshare data.
+                  <Text style={styles.watchWalletNote}>
+                    It does not include your keyshare.
                   </Text>
                   <AppPressable
                     onPress={() =>
@@ -1485,9 +1483,8 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                     Import the output descriptor into Sparrow or another
                     PSBT-capable wallet to create a watch-only wallet.
                   </Text>
-                  <Text style={styles.watchWalletWarning}>
-                    ⚠️ Note: Taproot is not supported. Only Legacy, SegWit
-                    Native, and Nested SegWit address types are supported.
+                  <Text style={styles.watchWalletNote}>
+                    Legacy, native SegWit, and nested SegWit.
                   </Text>
                   <View>
                     {/* Output Descriptors - One row per address type */}

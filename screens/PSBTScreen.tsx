@@ -16,7 +16,7 @@ import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {PSBTLoader} from './PSBTModal';
 import {canonicalPsbtBase64} from '../services/psbtIdentity';
-import {dbg, generateAllOutputDescriptors, getKeyshareMetadata} from '../utils';
+import {dbg, generateAllOutputDescriptors, getKeyshare, getKeyshareMetadata} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
 import TransportModeSelector from '../components/TransportModeSelector';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -133,13 +133,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   }, [isPSBTSectionExpanded]);
   const loadKeyshareInfo = useCallback(async () => {
     try {
-      const keyshare = await getKeyshareMetadata();
+      // Spec v2: chaincode from encrypted blob only, never SQLite metadata.
+      const keyshare = await getKeyshare();
       if (!keyshare) {
         setKeyshareInfo(null);
         return;
       }
       const pubKey = keyshare.pub_key || '';
-      const chainCode = keyshare.chain_code_hex || '';
+      const chainCode = String(keyshare.chain_code_hex || keyshare.chaincode || '').trim().toLowerCase();
       // Generate output descriptors for all address types using utility function
       const descriptors = await generateAllOutputDescriptors(
         BBMTLibNativeModule,
@@ -419,9 +420,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   transactions in a watch-only compatible wallet like Sparrow or
                   Electrum and sign them securely via PSBT.
                 </AppText>
-                <AppText style={styles.watchWalletWarning}>
-                  ⚠️ Note: Taproot is not supported. Only Legacy, Native SegWit,
-                  and Nested SegWit address types are supported.
+                <AppText style={styles.watchWalletNote}>
+                  Legacy, native SegWit, and nested SegWit.
                 </AppText>
                 {/* Output Descriptors - One row per address type */}
                 {keyshareInfo.outputDescriptors.legacy && (
@@ -773,11 +773,11 @@ const createStyles = (theme: any) =>
       color: theme.colors.textSecondary,
       marginBottom: 8,
     },
-    watchWalletWarning: {
+    watchWalletNote: {
       fontSize: theme.fontSizes?.sm || 12,
       lineHeight: 16,
       color: theme.colors.textSecondary,
-      fontStyle: 'italic',
+      marginBottom: 8,
     },
     watchWalletHint: {
       fontSize: theme.fontSizes?.sm || 12,

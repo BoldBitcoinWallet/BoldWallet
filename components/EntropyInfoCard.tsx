@@ -204,6 +204,18 @@ export default function EntropyInfoCard({visible, onClose}: EntropyInfoCardProps
                   </Text>
                 </View>
 
+                {/* Dice (Spec v2, opt-in): dice-only chaincode */}
+                <View style={styles.insightBox}>
+                  <Text style={styles.insightTitle}>🎲 Optional dice chaincode</Text>
+                  <Text style={styles.insightText}>
+                    At setup you can enter the same dice sequence on every
+                    phone (100× D6, 60× D20, or 256 coin flips). The rolls stay
+                    on that phone and are not sent over Wi-Fi or Nostr. Skip
+                    leaves setup unchanged. If the sequences differ, wallet
+                    setup fails during the secure computation.
+                  </Text>
+                </View>
+
                 {/* Entropy stats tiles */}
                 <View style={styles.entropyStatsRow}>
                   <View style={styles.entropyStatTile}>

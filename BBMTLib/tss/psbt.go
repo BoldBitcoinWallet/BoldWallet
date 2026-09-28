@@ -76,32 +76,30 @@ func MpcSignPSBT(
 	if len(packet.XPubs) > 0 {
 		for i, xpub := range packet.XPubs {
 			xpubPath := formatBip32Path(xpub.Bip32Path)
-			Logf("PSBT XPubs[%d]: ExtendedKey (base58/xpub)=%s, path=%s", i, xpub.ExtendedKey, xpubPath)
+			Logf("PSBT XPubs[%d]: path=%s (xpub redacted, Spec v2)", i, xpubPath)
 
 			// Extract pubkey and chaincode from ExtendedKey (already decoded bytes) for comparison
 			// xpub format: version(4) + depth(1) + fingerprint(4) + childIndex(4) + chaincode(32) + pubkey(33) = 78 bytes
 			if len(xpub.ExtendedKey) >= 78 {
-				psbtChaincodeHex := hex.EncodeToString(xpub.ExtendedKey[13:45]) // bytes 13-45 (32 bytes)
-				psbtPubkeyHex := hex.EncodeToString(xpub.ExtendedKey[45:78])    // bytes 45-78 (33 bytes)
-				Logf("PSBT XPubs[%d]: pubkey (hex, extracted from xpub)=%s, chaincode (hex, extracted from xpub)=%s", i, truncateHex(psbtPubkeyHex), truncateHex(psbtChaincodeHex))
+				psbtPubkeyHex := hex.EncodeToString(xpub.ExtendedKey[45:78]) // bytes 45-78 (33 bytes); chaincode redacted (Spec v2)
+				Logf("PSBT XPubs[%d]: pubkey fingerprint=%s (chaincode redacted, Spec v2)", i, fingerprintHex(psbtPubkeyHex))
 
 				// Derive from keyshare's master key to the PSBT's xpub path level for comparison
 				if xpubPath != "" {
 					Logf("COMPARISON: PSBT xpub is at path %s (account level)", xpubPath)
 					Logf("COMPARISON: Deriving from keyshare master key to PSBT xpub path: %s", xpubPath)
-					Logf("COMPARISON: Keyshare master pub_key (hex)=%s", truncateHex(keyshareData.PubKey))
-					Logf("COMPARISON: Keyshare master chaincode (hex)=%s", truncateHex(keyshareData.ChainCodeHex))
+					Logf("COMPARISON: Keyshare master pub_key fingerprint=%s", fingerprintHex(keyshareData.PubKey))
 
 					derivedPubKeyHex, err := GetDerivedPubKey(keyshareData.PubKey, keyshareData.ChainCodeHex, xpubPath, false)
 					if err != nil {
 						Logf("COMPARISON ERROR: Failed to derive keyshare to PSBT xpub path %s: %v", xpubPath, err)
 					} else {
-						Logf("COMPARISON: Keyshare derived to %s: pubkey (hex)=%s", xpubPath, truncateHex(derivedPubKeyHex))
-						Logf("COMPARISON: PSBT xpub pubkey (hex)=%s", truncateHex(psbtPubkeyHex))
+						Logf("COMPARISON: Keyshare derived to %s: pubkey fingerprint=%s", xpubPath, fingerprintHex(derivedPubKeyHex))
+						Logf("COMPARISON: PSBT xpub pubkey fingerprint=%s", fingerprintHex(psbtPubkeyHex))
 						if derivedPubKeyHex == psbtPubkeyHex {
 							Logf("COMPARISON: ✅ MATCH - Keyshare derived pubkey matches PSBT xpub pubkey at account level %s", xpubPath)
 						} else {
-							Logf("COMPARISON: ❌ MISMATCH - Keyshare derived pubkey (%s) does NOT match PSBT xpub pubkey (%s) at path %s", truncateHex(derivedPubKeyHex), truncateHex(psbtPubkeyHex), xpubPath)
+							Logf("COMPARISON: ❌ MISMATCH at path %s (fingerprints differ)", xpubPath)
 							Logf("COMPARISON: This indicates the keyshare and PSBT are from different wallets or networks")
 						}
 					}
@@ -449,20 +447,13 @@ func validateSignedPSBT(packet *psbt.Packet, prevOutFetcher txscript.PrevOutputF
 	return nil
 }
 
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-// truncateHex truncates a hex string to show only first 4 and last 4 characters
-func truncateHex(hexStr string) string {
+// fingerprintHex returns a short pubkey fingerprint for logs (first 8 hex chars).
+// Spec v2 leak hardening: use for pubkeys; NEVER log chaincode or full xpub.
+func fingerprintHex(hexStr string) string {
 	if len(hexStr) <= 8 {
 		return hexStr
 	}
-	return hexStr[:4] + "..." + hexStr[len(hexStr)-4:]
+	return hexStr[:8]
 }
 
 // formatBip32Path converts a BIP32 path from []uint32 to string format like "m/44'/0'/0'/0/0"
@@ -917,32 +908,30 @@ func runNostrMpcSignPSBTInternal(
 	if len(packet.XPubs) > 0 {
 		for i, xpub := range packet.XPubs {
 			xpubPath := formatBip32Path(xpub.Bip32Path)
-			Logf("PSBT XPubs[%d]: ExtendedKey (base58/xpub)=%s, path=%s", i, xpub.ExtendedKey, xpubPath)
+			Logf("PSBT XPubs[%d]: path=%s (xpub redacted, Spec v2)", i, xpubPath)
 
 			// Extract pubkey and chaincode from ExtendedKey (already decoded bytes) for comparison
 			// xpub format: version(4) + depth(1) + fingerprint(4) + childIndex(4) + chaincode(32) + pubkey(33) = 78 bytes
 			if len(xpub.ExtendedKey) >= 78 {
-				psbtChaincodeHex := hex.EncodeToString(xpub.ExtendedKey[13:45]) // bytes 13-45 (32 bytes)
-				psbtPubkeyHex := hex.EncodeToString(xpub.ExtendedKey[45:78])    // bytes 45-78 (33 bytes)
-				Logf("PSBT XPubs[%d]: pubkey (hex, extracted from xpub)=%s, chaincode (hex, extracted from xpub)=%s", i, truncateHex(psbtPubkeyHex), truncateHex(psbtChaincodeHex))
+				psbtPubkeyHex := hex.EncodeToString(xpub.ExtendedKey[45:78]) // bytes 45-78 (33 bytes); chaincode redacted (Spec v2)
+				Logf("PSBT XPubs[%d]: pubkey fingerprint=%s (chaincode redacted, Spec v2)", i, fingerprintHex(psbtPubkeyHex))
 
 				// Derive from keyshare's master key to the PSBT's xpub path level for comparison
 				if xpubPath != "" {
 					Logf("COMPARISON: PSBT xpub is at path %s (account level)", xpubPath)
 					Logf("COMPARISON: Deriving from keyshare master key to PSBT xpub path: %s", xpubPath)
-					Logf("COMPARISON: Keyshare master pub_key (hex)=%s", truncateHex(keyshareData.PubKey))
-					Logf("COMPARISON: Keyshare master chaincode (hex)=%s", truncateHex(keyshareData.ChainCodeHex))
+					Logf("COMPARISON: Keyshare master pub_key fingerprint=%s", fingerprintHex(keyshareData.PubKey))
 
 					derivedPubKeyHex, err := GetDerivedPubKey(keyshareData.PubKey, keyshareData.ChainCodeHex, xpubPath, false)
 					if err != nil {
 						Logf("COMPARISON ERROR: Failed to derive keyshare to PSBT xpub path %s: %v", xpubPath, err)
 					} else {
-						Logf("COMPARISON: Keyshare derived to %s: pubkey (hex)=%s", xpubPath, truncateHex(derivedPubKeyHex))
-						Logf("COMPARISON: PSBT xpub pubkey (hex)=%s", truncateHex(psbtPubkeyHex))
+						Logf("COMPARISON: Keyshare derived to %s: pubkey fingerprint=%s", xpubPath, fingerprintHex(derivedPubKeyHex))
+						Logf("COMPARISON: PSBT xpub pubkey fingerprint=%s", fingerprintHex(psbtPubkeyHex))
 						if derivedPubKeyHex == psbtPubkeyHex {
 							Logf("COMPARISON: ✅ MATCH - Keyshare derived pubkey matches PSBT xpub pubkey at account level %s", xpubPath)
 						} else {
-							Logf("COMPARISON: ❌ MISMATCH - Keyshare derived pubkey (%s) does NOT match PSBT xpub pubkey (%s) at path %s", truncateHex(derivedPubKeyHex), truncateHex(psbtPubkeyHex), xpubPath)
+							Logf("COMPARISON: ❌ MISMATCH at path %s (fingerprints differ)", xpubPath)
 							Logf("COMPARISON: This indicates the keyshare and PSBT are from different wallets or networks")
 						}
 					}
