@@ -27,11 +27,18 @@ type KeyshareJSON struct {
 }
 
 // KeyshareJSONFromHandle exports a libtss handle into BoldWallet keyshare JSON.
+//
+// F15: the share bytes live in mlock'd SecureBytes and are wiped on every
+// path (defer runs on error returns too). The base64 storage field is still
+// produced here — removing plaintext share_b64 from the stored format needs
+// native-held shares (F15b); see the bridge audit in the Wave 2 PR notes.
 func KeyshareJSONFromHandle(share *libtss.KeyShareHandle, chainCodeHex string, committee []string, localParty string, nostrNpub, nsecHex string) (string, error) {
-	exported, err := libtss.ExportKeyShare(share)
+	secure, err := libtss.ExportKeyShareSecure(share)
 	if err != nil {
 		return "", err
 	}
+	defer secure.Destroy()
+	exported := secure.Bytes()
 	groupKey, err := share.GroupKey()
 	if err != nil {
 		return "", err

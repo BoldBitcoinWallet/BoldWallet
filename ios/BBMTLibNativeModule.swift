@@ -58,21 +58,6 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// RN always passes the keyshare as a Swift `String` from JS (unavoidable bridge copy). This
   /// does not remove that; it zeroes the UTF-8 staging buffer we allocate and short-lived temporaries
   /// via `autoreleasepool`. Tss still receives `NSString*`; copies inside Tss are not under app control.
-  private func withZeroedUTF8Keyshare<T>(_ keyshareFromBridge: String, _ work: (String) -> T) -> T {
-    var bytes = ContiguousArray(keyshareFromBridge.utf8)
-    defer {
-      bytes.withUnsafeMutableBufferPointer { buf in
-        if let base = buf.baseAddress, buf.count > 0 {
-          memset(base, 0, buf.count)
-        }
-      }
-    }
-    let ephemeral = String(bytes: bytes, encoding: .utf8) ?? keyshareFromBridge
-    return autoreleasepool {
-      work(ephemeral)
-    }
-  }
-
   /// Keychain account for the full keyshare JSON. Must match `react-native-encrypted-storage`
   /// (`EncryptedStorage.setItem('keyshare', …)` → `kSecAttrAccount`).
   private enum RNESKeychain {
@@ -120,7 +105,9 @@ class BBMTLibNativeModule: RCTEventEmitter {
       "diag rawLen=\(rawLen) keys=[\(keysCsv)] nsec=\(nsecDesc)")
   }
 
-  /// One Keychain read: parsed Nostr `nsec` for Tss + same raw keyshare JSON string for `withZeroedUTF8Keyshare`.
+  /// One Keychain read: parsed Nostr `nsec` for Tss + same raw keyshare JSON string for native MPC calls.
+  /// NOTE (F15): these strings are the irreducible bridge copies (JS String -> NSString -> Go string).
+  /// Do not add staging copies; full elimination needs native-held shares (F15b).
   private func nsecAndKeyshareJSONFromRNES() throws -> (partyNsec: String, keyshareJSON: String) {
     guard let raw = loadKeyshareJSONFromRNES() else {
       sendLogEvent("nsecFromKeyshare", "FAIL: no_keychain_blob account=keyshare")
@@ -948,11 +935,9 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshareJSON) { ks in
-        TssNostrJoinKeysign(
-          relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, ks,
-          derivationPath, message, &error)
-      }
+      let output = TssNostrJoinKeysign(
+        relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON,
+        derivationPath, message, &error)
       self.sendLogEvent("nostrJoinKeysign", output)
       resolver(error == nil ? output : error!.localizedDescription)
     }
@@ -1090,18 +1075,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshare) { ks in
-        TssMpcSignPSBT(
-          server,
-          partyID,
-          partiesCSV,
-          sessionID,
-          sessionKey,
-          encKey,
-          decKey,
-          ks,
-          psbtBase64, &error)
-      }
+      let output = TssMpcSignPSBT(
+        server,
+        partyID,
+        partiesCSV,
+        sessionID,
+        sessionKey,
+        encKey,
+        decKey,
+        keyshare,
+        psbtBase64, &error)
       self.sendLogEvent("mpcSignPSBT", output)
       resolver(error == nil ? output : error!.localizedDescription)
     }
@@ -1134,23 +1117,21 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshare) { ks in
-        TssMpcSendBTCWithUTXOs(
-          server,
-          partyID,
-          partiesCSV,
-          sessionID,
-          sessionKey,
-          encKey,
-          decKey,
-          ks,
-          publicKey,
-          receiverAddress,
-          amountSatoshi,
-          feeSatoshi,
-          utxosWithPathsJSON,
-          changeAddress, &error)
-      }
+      let output = TssMpcSendBTCWithUTXOs(
+        server,
+        partyID,
+        partiesCSV,
+        sessionID,
+        sessionKey,
+        encKey,
+        decKey,
+        keyshare,
+        publicKey,
+        receiverAddress,
+        amountSatoshi,
+        feeSatoshi,
+        utxosWithPathsJSON,
+        changeAddress, &error)
       self.sendLogEvent("mpcSendBTCWithUTXOs", output)
       resolver(error == nil ? output : error!.localizedDescription)
     }
@@ -1190,20 +1171,18 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshareJSON) { ks in
-        TssNostrMpcSendBTCWithUTXOs(
-          relaysCSV,
-          partyNsec,
-          partiesNpubsCSV,
-          npubsSorted,
-          balanceSats,
-          ks,
-          receiverAddress,
-          amountSatoshi,
-          estimatedFee,
-          utxosWithPathsJSON,
-          changeAddress, &error)
-      }
+      let output = TssNostrMpcSendBTCWithUTXOs(
+        relaysCSV,
+        partyNsec,
+        partiesNpubsCSV,
+        npubsSorted,
+        balanceSats,
+        keyshareJSON,
+        receiverAddress,
+        amountSatoshi,
+        estimatedFee,
+        utxosWithPathsJSON,
+        changeAddress, &error)
       self.sendLogEvent("nostrMpcSendBTC", output)
       resolver(error == nil ? output : error!.localizedDescription)
     }
@@ -1236,10 +1215,8 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshareJSON) { ks in
-        TssNostrMpcSignPSBT(
-          relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, ks, psbtBase64, &error)
-      }
+      let output = TssNostrMpcSignPSBT(
+        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64, &error)
       self.sendLogEvent("nostrMpcSignPSBT", output)
       resolver(error == nil ? output : error!.localizedDescription)
     }
@@ -1260,9 +1237,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(data) { ks in
-        TssAesEncrypt(ks, key, &error)
-      }
+      let output = TssAesEncrypt(data, key, &error)
       self.sendLogEvent("aesEncryptStoredKeyshare", output)
       if error == nil {
         resolver(output)
@@ -1289,9 +1264,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(data) { ks in
-        TssBackupEncrypt(ks, password, &error)
-      }
+      let output = TssBackupEncrypt(data, password, &error)
       if let error = error {
         rejecter("BACKUP_ENCRYPT_ERROR", error.localizedDescription, error)
       } else {
