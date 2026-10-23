@@ -1,0 +1,29 @@
+# BoldWallet remediation tracker (final pass)
+
+Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
+
+| ID | Title | Sev | File:line | Fix | Owner | Status |
+|---|---|---|---|---|---|---|
+| F7 | Hardcoded prod signing passwords on disk | Closed | android/signed-release.sh:10 | Owner-confirmed: history .jks unrelated, never shipped; scripts/keys never committed. Optional keep: fail-closed release build | TBD | Closed |
+| B1 | F1+F2+F16 backup-crypto chain (bundle) | Crit | see F1/F2/F16 | Ship as one fix; see rows | TBD | In Progress |
+| F1 | Backup AES-CBC no-MAC, SHA-256(pw) KDF, no salt | Crit | BBMTLib/tss/mpc.go:484; services/keyshareImport.ts:67 | AES-256-GCM; Argon2id+random salt; fail closed | TBD | In Progress |
+| F2 | Imported pub_key never verified vs group key | High (Crit in B1) | BBMTLib/dkls/keyshare.go:104 | Assert ks.PubKey==hex(share.GroupKey())+suite post-import | TBD | In Progress |
+| F16 | Export password gate is strength>=3, not full policy | Low (gate/UX; handler already enforced) | components/BackupKeyshareModal.tsx:508 | Gate on isValid (all 5 rules); airgap uses PIN path, unaffected | TBD | In Progress |
+| F16b | Airgap export PIN is 6 digits + SHA-256 + CBC | Med | services/airgapPin.ts:3; components/AirgapKeyshareExportModal.tsx:86 | Longer PIN or PAKE; GCM; warn on screen-record | TBD | Open |
+| F15 | ExportKeyShare plaintext despite SecureBytes | High | BBMTLib/dkls/keyshare.go:31 | SecureBytes end-to-end; encrypt-before-stringify; wipe on free | TBD | Open |
+| F3 | Android ESP silently falls back to plaintext | High | BBMTLibNativeModule.kt:170 | Fail closed incl. Invalidated/UserNotAuthenticated; StrongBox | TBD | Open |
+| F4 | iOS Keychain item has no ACL | High | RNEncryptedStorage.m setItem | WhenPasscodeSetThisDeviceOnly + biometryAny | TBD | Open |
+| F5 | nsec in JS heap + embedded in backup blob | High | screens/MobileNostrPairing.tsx:1230; dkls/keyshare.go:26 | nsec in Keychain/RNES only; opaque ref; exclude from export | TBD | Open |
+| F8 | Global Android cleartext + ws/http allowed | High | network_security_config.xml:3 | Scope cleartext to loopback/link-local; block non-LAN ws/http | TBD | Open |
+| F9 | Secrets cross bridge as strings; no zeroization | High | BBMTLibNativeModule.kt:160; BbmtBridge.mm:13 | Opaque handles; SecureBytes/memset+mlock; minimize copies | TBD | Open |
+| F10 | Bridge sign/decrypt callable from any JS; clipboard exfil | High | services/TssProvider.ts:116; KeyshareInfoContent.tsx:605 | Origin pinning or per-call user token; remove secret clipboard | TBD | Open |
+| F11 | No input validation at JNI/Go seams; FFI crashes | High | bbmtmobile/export_dkls.go:17; tss/common.go:465; mpc.go:1238 | Nil/length/caps checks; bound SecureRandom; nil-guard resp/req | TBD | Open |
+| F6 | LAN decrypt-before-verify padding oracle | Med-High | BBMTLib/tss/mpc.go:1149 | Verify-then-decrypt; uniform observable; AEAD | TBD | Open |
+| F12 | Prefix-match cancel + 15-min poison; no-confirm bridge cancel | High | tss/cancel.go:29,103; BBMTLibNativeModule.kt:505 | Exact-match cancel; per-session contexts/keys; confirm token | TBD | Open |
+| F14 | SessionKeyHex inert; secrecy rests on long-term nsec | Med | tss/nostrtransport/config.go:49 | HKDF session key into AEAD or remove field (allowlist is DKG-pinned: signing_resolve.go:57) | TBD | Open |
+| F13 | Background/kill: warning-only; replay memory is RAM-only | Med | services/mpcKeepAlive.ts:200 | Ceremony epoch or fresh session IDs post-death; persist seen-IDs | TBD | Open |
+
+Fix waves: (1) F7+sweep. (2) B1. (3) F15,F3,F4. (4) F11,F6. (5) F12,F14. (6) F13.
+Still owner-side: govulncheck, npm audit, gitleaks/trufflehog history, FROST/DKLs23 fork diff.
+
+## Wave 1 — B1 (F1+F2+F16): IN PROGRESS. F7-residual fail-closed build: parallel commit, Low.
