@@ -36,8 +36,8 @@ func TestF1b_OversizedParams_RejectedBeforeKDF(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "argon2") {
 			t.Fatalf("%s: expected param rejection, got %v", name, err)
 		}
-		if elapsed > 5*time.Second {
-			t.Fatalf("%s: took %s, KDF must not have run", name, elapsed)
+		if elapsed > 100*time.Millisecond {
+			t.Fatalf("%s: took %s, cap must run pre-KDF", name, elapsed)
 		}
 	}
 }
