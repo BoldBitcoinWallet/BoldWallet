@@ -21,8 +21,8 @@ import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 import GlassModalOverlay from './GlassModalOverlay';
 import {
-  BACKUP_PASSWORD_MIN_STRENGTH,
   evaluateBackupPassword,
+  isBackupExportAllowed,
 } from '../services/backupPassword';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -498,19 +498,11 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                 style={[
                   styles.modalButton,
                   styles.confirmButton,
-                  (!password ||
-                    !confirmPassword ||
-                    password !== confirmPassword ||
-                    passwordStrength < BACKUP_PASSWORD_MIN_STRENGTH) &&
+                  !isBackupExportAllowed(password, confirmPassword) &&
                     styles.disabledButton,
                 ]}
                 onPress={handleBackup}
-                disabled={
-                  !password ||
-                  !confirmPassword ||
-                  password !== confirmPassword ||
-                  passwordStrength < BACKUP_PASSWORD_MIN_STRENGTH
-                }
+                disabled={!isBackupExportAllowed(password, confirmPassword)}
                 android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <View style={styles.buttonContent}>
                   <Image

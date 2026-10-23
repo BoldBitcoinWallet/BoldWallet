@@ -1,4 +1,18 @@
-export const BACKUP_PASSWORD_MIN_STRENGTH = 3;
+/**
+ * F16: single export gate. Export requires the FULL 5-rule policy (isValid),
+ * not a reduced strength score: a strength-3 password such as
+ * "passwordpassword1" must not enable export. The strength meter remains
+ * display-only.
+ */
+export function isBackupExportAllowed(
+  password: string,
+  confirmPassword: string,
+): boolean {
+  if (!password || !confirmPassword || password !== confirmPassword) {
+    return false;
+  }
+  return evaluateBackupPassword(password).isValid;
+}
 
 export type BackupPasswordRules = {
   length: boolean;
