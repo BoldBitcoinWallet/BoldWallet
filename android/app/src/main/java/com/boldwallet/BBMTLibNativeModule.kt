@@ -1,10 +1,7 @@
 package com.boldwallet
 
-import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -153,48 +150,25 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * RN always delivers the keyshare as a Java [String] from JS (unavoidable bridge copy).
-     * This does not remove that; it adds a native staging path we control: UTF-8 [ByteArray],
-     * ephemeral [String] for native MPC, then [Arrays.fill] zero on the buffer.
+     * Same file + key as `react-native-encrypted-storage` Android implementation.
+     * F3: fail-closed via [openSecurePrefs] — throws [SecureStorageException]
+     * on every failure. The old plaintext-SharedPreferences fallback is gone.
      */
-    private inline fun <T> withZeroedKeyshareUtf8(keyshareFromBridge: String, block: (String) -> T): T {
-        val bytes = keyshareFromBridge.toByteArray(Charsets.UTF_8)
-        return try {
-            block(String(bytes, Charsets.UTF_8))
-        } finally {
-            Arrays.fill(bytes, 0)
-        }
-    }
-
-    /** Same file + key as `react-native-encrypted-storage` Android implementation. */
-    private fun rnesEncryptedPrefs(): SharedPreferences? {
-        return try {
-            val ctx = reactApplicationContext
-            val masterKey = MasterKey.Builder(ctx)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            EncryptedSharedPreferences.create(
-                ctx,
-                RNES_SHARED_PREF_FILENAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        } catch (e: Exception) {
-            Log.e("BBMTLibNativeModule", "rnesEncryptedPrefs", e)
-            reactApplicationContext.getSharedPreferences(RNES_SHARED_PREF_FILENAME, Context.MODE_PRIVATE)
-        }
-    }
+    private fun rnesEncryptedPrefs(): SharedPreferences =
+        openSecurePrefs(reactApplicationContext, RNES_SHARED_PREF_FILENAME)
 
     /** True when RNES has a `keyshare` entry without reading/decrypting the blob value. */
     private fun keyshareExistsInRNES(): Boolean {
-        val prefs = rnesEncryptedPrefs() ?: return false
-        return prefs.contains(KEY_KEYSHARE)
+        return rnesEncryptedPrefs().contains(KEY_KEYSHARE)
     }
 
+    /**
+     * Null means "no entry", never "storage broken": storage failures throw
+     * [SecureStorageException] (stable `[SECURE_STORAGE_<KIND>]` message
+     * prefix) and propagate to the caller's promise rejection.
+     */
     private fun loadKeyshareJSONFromRNES(): String? {
-        val prefs = rnesEncryptedPrefs() ?: return null
-        return prefs.getString(KEY_KEYSHARE, null)
+        return rnesEncryptedPrefs().getString(KEY_KEYSHARE, null)
     }
 
     /**
@@ -239,7 +213,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * One RNES read: party nsec + same raw keyshare JSON for [withZeroedKeyshareUtf8].
+     * One RNES read: party nsec + same raw keyshare JSON for native MPC calls.
+     * NOTE (F15): the strings returned here are the irreducible bridge copies
+     * (RN String -> JNI chars -> Go string). Do not add staging copies; full
+     * elimination needs native-held shares (F15b).
      * Aligned with iOS [nsecAndKeyshareJSONFromRNES].
      */
     private fun nsecAndKeyshareJSONFromRNES(): Pair<String, String> {
@@ -775,18 +752,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "nostrJoinKeysign")) return@Thread
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    DklsNative.bbmtNostrJoinKeysignNative(
-                        relaysCSV,
-                        partyNsec,
-                        partiesNpubsCSV,
-                        sessionID,
-                        sessionKey,
-                        ks,
-                        derivationPath,
-                        message,
-                    )
-                }
+                val result = DklsNative.bbmtNostrJoinKeysignNative(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    sessionID,
+                    sessionKey,
+                    keyshareJSON,
+                    derivationPath,
+                    message,
+                )
                 ld("nostrJoinKeysign", result)
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -1004,9 +979,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     return@Thread
                 }
                 if (rejectBbmtUnavailable(promise, "aesEncryptStoredKeyshare")) return@Thread
-                val result = withZeroedKeyshareUtf8(data) { ks ->
-                    DklsNative.bbmtAesEncryptNative(ks, key)
-                }
+                val result = DklsNative.bbmtAesEncryptNative(data, key)
                 ld("aesEncryptStoredKeyshare", result)
                 promise.resolve(result)
             } catch (e: Exception) {
@@ -1030,9 +1003,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     return@Thread
                 }
                 if (rejectBbmtUnavailable(promise, "backupEncryptStoredKeyshare")) return@Thread
-                val result = withZeroedKeyshareUtf8(data) { ks ->
-                    DklsNative.bbmtBackupEncryptNative(ks, password)
-                }
+                val result = DklsNative.bbmtBackupEncryptNative(data, password)
                 if (result.startsWith("error:")) {
                     promise.reject("BACKUP_ENCRYPT_ERROR", result.removePrefix("error:"), null)
                     return@Thread
@@ -1123,19 +1094,17 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     return@Thread
                 }
                 if (rejectBbmtUnavailable(promise, "mpcSignPSBT")) return@Thread
-                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
-                    DklsNative.bbmtMpcSignPSBTNative(
-                        server,
-                        partyID,
-                        partiesCSV,
-                        sessionID,
-                        sessionKey,
-                        encKey,
-                        decKey,
-                        ks,
-                        psbtBase64,
-                    )
-                }
+                val result = DklsNative.bbmtMpcSignPSBTNative(
+                    server,
+                    partyID,
+                    partiesCSV,
+                    sessionID,
+                    sessionKey,
+                    encKey,
+                    decKey,
+                    keyshare,
+                    psbtBase64,
+                )
                 ld("mpcSignPSBT", result)
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -1170,24 +1139,22 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     return@Thread
                 }
                 if (rejectBbmtUnavailable(promise, "mpcSendBTCWithUTXOs")) return@Thread
-                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
-                    DklsNative.bbmtMpcSendBTCWithUTXOsNative(
-                        server,
-                        partyID,
-                        partiesCSV,
-                        sessionID,
-                        sessionKey,
-                        encKey,
-                        decKey,
-                        ks,
-                        publicKey,
-                        receiverAddress,
-                        amountSatoshi,
-                        feeSatoshi,
-                        utxosWithPathsJSON,
-                        changeAddress,
-                    )
-                }
+                val result = DklsNative.bbmtMpcSendBTCWithUTXOsNative(
+                    server,
+                    partyID,
+                    partiesCSV,
+                    sessionID,
+                    sessionKey,
+                    encKey,
+                    decKey,
+                    keyshare,
+                    publicKey,
+                    receiverAddress,
+                    amountSatoshi,
+                    feeSatoshi,
+                    utxosWithPathsJSON,
+                    changeAddress,
+                )
                 ld("mpcSendBTCWithUTXOs", result)
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -1214,21 +1181,19 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             try {
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 if (rejectBbmtUnavailable(promise, "nostrMpcSendBTC")) return@Thread
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    DklsNative.bbmtNostrMpcSendBTCWithUTXOsNative(
-                        relaysCSV,
-                        partyNsec,
-                        partiesNpubsCSV,
-                        npubsSorted,
-                        balanceSats,
-                        ks,
-                        receiverAddress,
-                        amountSatoshi,
-                        estimatedFee,
-                        utxosWithPathsJSON,
-                        changeAddress ?: "",
-                    )
-                }
+                val result = DklsNative.bbmtNostrMpcSendBTCWithUTXOsNative(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    npubsSorted,
+                    balanceSats,
+                    keyshareJSON,
+                    receiverAddress,
+                    amountSatoshi,
+                    estimatedFee,
+                    utxosWithPathsJSON,
+                    changeAddress ?: "",
+                )
                 ld("nostrMpcSendBTC", result)
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -1250,16 +1215,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             try {
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 if (rejectBbmtUnavailable(promise, "nostrMpcSignPSBT")) return@Thread
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    DklsNative.bbmtNostrMpcSignPSBTNative(
-                        relaysCSV,
-                        partyNsec,
-                        partiesNpubsCSV,
-                        npubsSorted,
-                        ks,
-                        psbtBase64,
-                    )
-                }
+                val result = DklsNative.bbmtNostrMpcSignPSBTNative(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    npubsSorted,
+                    keyshareJSON,
+                    psbtBase64,
+                )
                 ld("nostrMpcSignPSBT", result)
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -1443,12 +1406,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                         return@Thread
                     }
-                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
-                    DklsNative.mpcSignPsbtNative(
-                        server, partyID, partiesCSV, sessionID, sessionKey,
-                        encKey, decKey, ks, psbtBase64,
-                    )
-                }
+                val result = DklsNative.mpcSignPsbtNative(
+                    server, partyID, partiesCSV, sessionID, sessionKey,
+                    encKey, decKey, keyshare, psbtBase64,
+                )
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_PSBT_LAN", e.message, e)
@@ -1484,13 +1445,11 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                         return@Thread
                     }
-                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
-                    DklsNative.mpcSendBtcWithUtxosNative(
-                        server, partyID, partiesCSV, sessionID, sessionKey,
-                        encKey, decKey, ks, btcPub, toAddress,
-                        satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
-                    )
-                }
+                val result = DklsNative.mpcSendBtcWithUtxosNative(
+                    server, partyID, partiesCSV, sessionID, sessionKey,
+                    encKey, decKey, keyshare, btcPub, toAddress,
+                    satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
+                )
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_SEND_LAN", e.message, e)
@@ -1518,12 +1477,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     return@Thread
                 }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    DklsNative.nostrMpcSendBtcWithUtxosNative(
-                        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, ks,
-                        toAddress, satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
-                    )
-                }
+                val result = DklsNative.nostrMpcSendBtcWithUtxosNative(
+                    relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON,
+                    toAddress, satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
+                )
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_SEND_NOSTR", e.message, e)
@@ -1546,11 +1503,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     return@Thread
                 }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    DklsNative.nostrMpcSignPsbtNative(
-                        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, ks, psbtBase64,
-                    )
-                }
+                val result = DklsNative.nostrMpcSignPsbtNative(
+                    relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64,
+                )
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_PSBT_NOSTR", e.message, e)

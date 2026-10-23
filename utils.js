@@ -5,6 +5,7 @@ import LocalCache from './services/LocalCache';
 import {isDebugLoggingEnabled} from './App';
 import {detectKeyshareTssBackend} from './services/tssBackend';
 import {BBMTLibNativeModule} from './native_modules';
+import {alertSecureStorageError} from './services/secureStorageErrors';
 
 /** EncryptedStorage / RNES account for the full MPC keyshare blob. */
 export const KEYSHARE_STORAGE_KEY = 'keyshare';
@@ -1373,6 +1374,7 @@ export async function hasWalletKeyshareInSecureStorage() {
       return result === true || result === 'true' || result === 1;
     } catch (e) {
       dbg('hasWalletKeyshareInSecureStorage: native check failed', e);
+      alertSecureStorageError(e);
       return false;
     }
   }
@@ -1381,6 +1383,7 @@ export async function hasWalletKeyshareInSecureStorage() {
     return !!(raw && String(raw).trim());
   } catch (e) {
     dbg('hasWalletKeyshareInSecureStorage: fallback failed', e);
+    alertSecureStorageError(e);
     return false;
   }
 }
@@ -1533,6 +1536,7 @@ export async function getKeyshare() {
     return parsed && typeof parsed === 'object' ? parsed : null;
   } catch (e) {
     dbg('getKeyshare: failed', e);
+    alertSecureStorageError(e);
     return null;
   }
 }

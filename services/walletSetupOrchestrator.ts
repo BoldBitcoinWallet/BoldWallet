@@ -8,6 +8,7 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import {BBMTLibNativeModule} from '../native_modules';
 import {KEYSHARE_STORAGE_KEY, saveKeyshareMetadata} from '../utils';
 import {assertNoExistingWallet} from './walletGuard';
+import {secureStorageMessageFor} from './secureStorageErrors';
 import {waitMS} from './WalletService';
 import {
   buildLanRelayServerUrl,
@@ -442,7 +443,17 @@ export async function persistWalletKeyshare(
     throw new Error('Invalid keyshare: empty payload');
   }
   await assertNoExistingWallet();
-  await EncryptedStorage.setItem(KEYSHARE_STORAGE_KEY, finalized);
+  try {
+    await EncryptedStorage.setItem(KEYSHARE_STORAGE_KEY, finalized);
+  } catch (error) {
+    // F3: rewrite storage failures with clear user-facing copy; callers
+    // surface thrown errors. Anything else propagates unchanged.
+    const clear = secureStorageMessageFor(error);
+    if (clear !== null) {
+      throw new Error(clear);
+    }
+    throw error;
+  }
   const verified = await verifyWalletKeysharePersisted();
   if (!verified) {
     throw new Error(

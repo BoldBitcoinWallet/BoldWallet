@@ -121,6 +121,24 @@ describe('walletSetupOrchestrator', () => {
     ).rejects.toThrow(/could not save your key share securely/i);
   });
 
+  it('F3: persistWalletKeyshare rewrites storage failures with clear copy', async () => {
+    (EncryptedStorage.setItem as jest.Mock).mockRejectedValueOnce(
+      new Error('[SECURE_STORAGE_LOCKED] Device must be unlocked.'),
+    );
+    await expect(
+      persistWalletKeyshare(JSON.stringify({pub_key: 'aa', share_b64: 'bb'})),
+    ).rejects.toThrow(/device must be unlocked/i);
+  });
+
+  it('F3: persistWalletKeyshare propagates non-storage errors unchanged', async () => {
+    (EncryptedStorage.setItem as jest.Mock).mockRejectedValueOnce(
+      new Error('quota exceeded'),
+    );
+    await expect(
+      persistWalletKeyshare(JSON.stringify({pub_key: 'aa', share_b64: 'bb'})),
+    ).rejects.toThrow('quota exceeded');
+  });
+
   it('verifyWalletKeysharePersisted returns false for empty storage', async () => {
     (EncryptedStorage.getItem as jest.Mock).mockResolvedValue('  ');
     await expect(verifyWalletKeysharePersisted()).resolves.toBe(false);
