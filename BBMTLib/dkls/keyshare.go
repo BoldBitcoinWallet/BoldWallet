@@ -118,7 +118,37 @@ func ImportKeyshare(jsonStr string) (*libtss.KeyShareHandle, *KeyshareJSON, erro
 	if err != nil {
 		return nil, nil, err
 	}
+	if err := VerifyKeyshareBinding(share, &ks); err != nil {
+		share.Free()
+		return nil, nil, err
+	}
 	return share, &ks, nil
+}
+
+// VerifyKeyshareBinding asserts the JSON labels describe the imported share
+// (F2). A tampered backup can rewrite pub_key while keeping a genuine share;
+// without this check the wallet would derive attacker deposit addresses.
+// Suite 0 (field absent) is accepted for backward compatibility; any present
+// suite must match the share's ciphersuite.
+func VerifyKeyshareBinding(share *libtss.KeyShareHandle, ks *KeyshareJSON) error {
+	if share == nil || ks == nil {
+		return fmt.Errorf("keyshare binding: nil share or metadata")
+	}
+	groupKey, err := share.GroupKey()
+	if err != nil {
+		return fmt.Errorf("keyshare binding: group key: %w", err)
+	}
+	if ks.PubKey == "" || !strings.EqualFold(ks.PubKey, hex.EncodeToString(groupKey)) {
+		return fmt.Errorf("keyshare binding: pub_key label does not match share group key")
+	}
+	suite, err := share.Ciphersuite()
+	if err != nil {
+		return fmt.Errorf("keyshare binding: ciphersuite: %w", err)
+	}
+	if ks.Suite != 0 && ks.Suite != int(suite) {
+		return fmt.Errorf("keyshare binding: suite label %d does not match share ciphersuite %d", ks.Suite, int(suite))
+	}
+	return nil
 }
 
 // ValidateKeyshareFile checks a keyshare JSON file has required DKLs23 fields.
