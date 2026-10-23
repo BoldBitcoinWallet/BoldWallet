@@ -31,6 +31,7 @@ jest.mock('../App', () => ({
 }));
 jest.mock('../native_modules', () => ({
   BBMTLibNativeModule: {
+    backupDecrypt: jest.fn(),
     aesDecrypt: jest.fn(),
     sha256: jest.fn(),
     hasKeyshareInSecureStorage: jest.fn(),
@@ -65,42 +66,97 @@ import {
   urAllSequentialParts,
 } from '../utils/urBytesQr';
 
+const backupDecrypt = BBMTLibNativeModule.backupDecrypt as jest.Mock;
 const aesDecrypt = BBMTLibNativeModule.aesDecrypt as jest.Mock;
 const sha256 = BBMTLibNativeModule.sha256 as jest.Mock;
 
-describe('keyshareImport', () => {
+const v2Envelope = (plaintext: string) =>
+  JSON.stringify({format: 'v2', plaintext});
+const legacyEnvelope = (plaintext: string) =>
+  JSON.stringify({format: 'legacy', plaintext});
+
+describe('keyshareImport (F1)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    sha256.mockResolvedValue('deadbeef');
   });
 
-  it('decryptAndValidateKeyshare rejects wrong password', async () => {
-    aesDecrypt.mockResolvedValue('not-json-without-pub-key');
+  it('F1: v2 success returns parsed keyshare with legacy=false', async () => {
+    backupDecrypt.mockResolvedValue(
+      v2Envelope('{"pub_key":"abc","local_party_key":"KeyShare1"}'),
+    );
     await expect(
-      decryptAndValidateKeyshare('cipher', 'password'),
-    ).rejects.toBeInstanceOf(WrongKeysharePasswordError);
-  });
-
-  it('decryptAndValidateKeyshare rejects invalid keyshare JSON', async () => {
-    aesDecrypt.mockResolvedValue('{"pub_key":""}');
-    await expect(
-      decryptAndValidateKeyshare('cipher', 'password'),
-    ).rejects.toBeInstanceOf(InvalidKeyshareError);
-  });
-
-  it('decryptAndValidateKeyshare returns parsed keyshare on success', async () => {
-    aesDecrypt.mockResolvedValue('{"pub_key":"abc","local_party_key":"KeyShare1"}');
-    await expect(
-      decryptAndValidateKeyshare('cipher', 'password'),
+      decryptAndValidateKeyshare('blob', 'password'),
     ).resolves.toEqual({
       decryptedKeyshare: '{"pub_key":"abc","local_party_key":"KeyShare1"}',
       parsed: {pub_key: 'abc', local_party_key: 'KeyShare1'},
+      legacy: false,
     });
-    expect(sha256).toHaveBeenCalledWith('password');
+    expect(backupDecrypt).toHaveBeenCalledWith('blob', 'password');
+  });
+
+  it('F1: legacy success returns legacy=true', async () => {
+    backupDecrypt.mockResolvedValue(
+      legacyEnvelope('{"pub_key":"abc","local_party_key":"KeyShare1"}'),
+    );
+    await expect(
+      decryptAndValidateKeyshare('blob', 'password'),
+    ).resolves.toMatchObject({legacy: true});
+  });
+
+  it('F1: no derived key in JS (backupDecrypt only, never aesDecrypt/sha256)', async () => {
+    backupDecrypt.mockResolvedValue(
+      v2Envelope('{"pub_key":"abc","local_party_key":"KeyShare1"}'),
+    );
+    await decryptAndValidateKeyshare('blob', 'password');
+    expect(aesDecrypt).not.toHaveBeenCalled();
+    expect(sha256).not.toHaveBeenCalled();
+  });
+
+  it('F1: native rejection (v2 auth failure) maps to wrong password', async () => {
+    backupDecrypt.mockRejectedValue(new Error('backup authentication failed'));
+    await expect(
+      decryptAndValidateKeyshare('blob', 'password'),
+    ).rejects.toBeInstanceOf(WrongKeysharePasswordError);
+  });
+
+  it('F1: legacy garbage without pub_key maps to wrong password', async () => {
+    backupDecrypt.mockResolvedValue(
+      legacyEnvelope('not-json-without-pub-key'),
+    );
+    await expect(
+      decryptAndValidateKeyshare('blob', 'password'),
+    ).rejects.toBeInstanceOf(WrongKeysharePasswordError);
+  });
+
+  it('F1: invalid keyshare JSON maps to invalid keyshare', async () => {
+    backupDecrypt.mockResolvedValue(v2Envelope('{"pub_key":""}'));
+    await expect(
+      decryptAndValidateKeyshare('blob', 'password'),
+    ).rejects.toBeInstanceOf(InvalidKeyshareError);
+  });
+
+  it('F1: malformed envelope maps to invalid keyshare', async () => {
+    backupDecrypt.mockResolvedValue('{"format":"v2"}');
+    await expect(
+      decryptAndValidateKeyshare('blob', 'password'),
+    ).rejects.toBeInstanceOf(InvalidKeyshareError);
+    backupDecrypt.mockResolvedValue('not-json-at-all');
+    await expect(
+      decryptAndValidateKeyshare('blob', 'password'),
+    ).rejects.toBeInstanceOf(InvalidKeyshareError);
+  });
+
+  it('F1: unrecognized format maps to invalid keyshare', async () => {
+    backupDecrypt.mockRejectedValue(
+      new Error('not a recognized backup format'),
+    );
+    await expect(
+      decryptAndValidateKeyshare('blob', 'password'),
+    ).rejects.toBeInstanceOf(InvalidKeyshareError);
   });
 
   it('decryptAndValidateKeyshare accepts ciphertext recovered from airgap UR frames', async () => {
-    const cipherBytes = Buffer.from('fake-aes-ciphertext-bytes-for-airgap');
+    const cipherBytes = Buffer.from('fake-backup-blob-bytes-for-airgap');
     const cipherBase64 = cipherBytes.toString('base64');
     const ur = bufferToUr(cipherBytes);
     expect(ur).not.toBeNull();
@@ -115,8 +171,8 @@ describe('keyshareImport', () => {
     }
     expect(recovered).toBe(cipherBase64);
 
-    aesDecrypt.mockResolvedValue(
-      '{"pub_key":"abc","local_party_key":"KeyShare1"}',
+    backupDecrypt.mockResolvedValue(
+      v2Envelope('{"pub_key":"abc","local_party_key":"KeyShare1"}'),
     );
     await expect(
       decryptAndValidateKeyshare(recovered!, 'password'),

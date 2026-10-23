@@ -47,6 +47,14 @@ func TssAesDecrypt(_ data: String, _ key: String, _ error: NSErrorPointer) -> St
   bbmtResolve(BbmtBridge.aesDecrypt(data, key: key), error)
 }
 
+func TssBackupEncrypt(_ plaintext: String, _ password: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.backupEncrypt(plaintext, password: password), error)
+}
+
+func TssBackupDecrypt(_ blob: String, _ password: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.backupDecrypt(blob, password: password), error)
+}
+
 func TssSha256(_ message: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.sha256(message), error)
 }

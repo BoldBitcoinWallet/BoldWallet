@@ -63,11 +63,41 @@ export async function readKeyshareBase64FromUri(uri: string): Promise<string> {
 export async function decryptAndValidateKeyshare(
   base64Content: string,
   password: string,
-): Promise<{decryptedKeyshare: string; parsed: ParsedKeyshare}> {
-  const decryptedKeyshare = await BBMTLibNativeModule.aesDecrypt(
-    base64Content,
-    await BBMTLibNativeModule.sha256(password),
-  );
+): Promise<{decryptedKeyshare: string; parsed: ParsedKeyshare; legacy: boolean}> {
+  // F1: KDF (Argon2id) + AEAD run in Go; JS passes the password, never a
+  // derived key. Native rejects on v2 auth failure or malformed blobs.
+  let raw: string;
+  try {
+    raw = await BBMTLibNativeModule.backupDecrypt(base64Content, password);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.indexOf('not a recognized backup format') >= 0
+    ) {
+      throw new InvalidKeyshareError();
+    }
+    throw new WrongKeysharePasswordError();
+  }
+  let envelope: {format?: unknown; plaintext?: unknown};
+  try {
+    envelope = JSON.parse(raw);
+  } catch (error) {
+    dbg('decryptAndValidateKeyshare: envelope parse error', error);
+    throw new InvalidKeyshareError();
+  }
+  if (
+    typeof envelope !== 'object' ||
+    envelope === null ||
+    (envelope.format !== 'v2' && envelope.format !== 'legacy') ||
+    typeof envelope.plaintext !== 'string'
+  ) {
+    throw new InvalidKeyshareError();
+  }
+  const legacy = envelope.format === 'legacy';
+  const decryptedKeyshare = envelope.plaintext;
+  // Legacy backups have no MAC: wrong passwords and tampered files surface as
+  // garbage here, which the content checks below reject. v2 garbage is
+  // unreachable (GCM rejects first) but checked identically for uniformity.
   if (decryptedKeyshare.indexOf('pub_key') < 0) {
     throw new WrongKeysharePasswordError();
   }
@@ -81,7 +111,7 @@ export async function decryptAndValidateKeyshare(
     dbg('decryptAndValidateKeyshare: parse error', error);
     throw new InvalidKeyshareError();
   }
-  return {decryptedKeyshare, parsed};
+  return {decryptedKeyshare, parsed, legacy};
 }
 
 export type FinalizeKeyshareImportOptions = {
@@ -125,11 +155,18 @@ export async function importKeyshareFromBase64(
   password: string,
   options: FinalizeKeyshareImportOptions,
 ): Promise<void> {
-  const {decryptedKeyshare, parsed} = await decryptAndValidateKeyshare(
+  const {decryptedKeyshare, parsed, legacy} = await decryptAndValidateKeyshare(
     base64Content,
     password,
   );
   await finalizeKeyshareImport(decryptedKeyshare, parsed, options);
+  if (legacy) {
+    Alert.alert(
+      'Legacy Backup Imported',
+      'This backup uses an older, less secure encryption format. ' +
+        'Please create a new backup from Settings to re-encrypt it with the current format.',
+    );
+  }
 }
 
 export function showWalletAlreadyLoadedAlert(

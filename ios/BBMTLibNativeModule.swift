@@ -535,6 +535,20 @@ class BBMTLibNativeModule: RCTEventEmitter {
     resolve("aesDecrypt", output, error, resolver)
   }
 
+  /// F1: versioned backup import. Resolves {"format":"v2"|"legacy","plaintext":"..."}.
+  @objc func backupDecrypt(
+    _ blob: String, password: String, resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    var error: NSError?
+    let output = TssBackupDecrypt(blob, password, &error)
+    if let error = error {
+      rejecter("BACKUP_DECRYPT_ERROR", error.localizedDescription, error)
+    } else {
+      resolver(output)
+    }
+  }
+
   @objc func sha256(
     _ message: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
@@ -1254,6 +1268,34 @@ class BBMTLibNativeModule: RCTEventEmitter {
         resolver(output)
       } else {
         resolver(error!.localizedDescription)
+      }
+    }
+  }
+
+  /// F1: versioned backup export. Password goes to Go (Argon2id + AES-GCM);
+  /// JS never sees a derived key. Emits v2 format only.
+  @objc func backupEncryptStoredKeyshare(
+    _ password: String,
+    resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard let self = self else {
+        rejecter("MODULE_GONE", "Native module released", nil)
+        return
+      }
+      guard let data = self.loadKeyshareJSONFromRNES() else {
+        rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        return
+      }
+      var error: NSError?
+      let output = self.withZeroedUTF8Keyshare(data) { ks in
+        TssBackupEncrypt(ks, password, &error)
+      }
+      if let error = error {
+        rejecter("BACKUP_ENCRYPT_ERROR", error.localizedDescription, error)
+      } else {
+        resolver(output)
       }
     }
   }

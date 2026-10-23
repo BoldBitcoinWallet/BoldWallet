@@ -222,6 +222,8 @@ object DklsNative {
     fun bbmtComputeTxIdNative(rawTx: String): String = loaded { bbmtComputeTxIdJni(rawTx) }
     fun bbmtAesEncryptNative(data: String, key: String): String = loaded { bbmtAesEncryptJni(data, key) }
     fun bbmtAesDecryptNative(data: String, key: String): String = loaded { bbmtAesDecryptJni(data, key) }
+    fun bbmtBackupEncryptNative(plaintext: String, password: String): String = loaded { bbmtBackupEncryptJni(plaintext, password) }
+    fun bbmtBackupDecryptNative(blob: String, password: String): String = loaded { bbmtBackupDecryptJni(blob, password) }
     fun bbmtSecP256k1RecoverNative(r: String, s: String, v: String, h: String): String =
         loaded { bbmtSecP256k1RecoverJni(r, s, v, h) }
     fun bbmtGetDerivedPubKeyNative(hexPub: String, hexChain: String, path: String, isEdDSA: Boolean): String =
@@ -445,6 +447,8 @@ object DklsNative {
     private external fun bbmtComputeTxIdJni(rawTx: String): String
     private external fun bbmtAesEncryptJni(data: String, key: String): String
     private external fun bbmtAesDecryptJni(data: String, key: String): String
+    private external fun bbmtBackupEncryptJni(plaintext: String, password: String): String
+    private external fun bbmtBackupDecryptJni(blob: String, password: String): String
     private external fun bbmtSecP256k1RecoverJni(r: String, s: String, v: String, h: String): String
     private external fun bbmtGetDerivedPubKeyJni(hexPub: String, hexChain: String, path: String, isEdDSA: Int): String
     private external fun bbmtEncodeXpubJni(hexPub: String, hexChain: String, network: String): String

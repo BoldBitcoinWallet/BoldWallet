@@ -95,10 +95,9 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
         if (!meta) {
           throw new Error('Invalid keyshare.');
         }
+        // F1: v2 format (Argon2id + AES-GCM in Go). PIN entropy itself is F16b, out of scope.
         const encryptedKeyshare =
-          await BBMTLibNativeModule.aesEncryptStoredKeyshare(
-            await BBMTLibNativeModule.sha256(nextPin),
-          );
+          await BBMTLibNativeModule.backupEncryptStoredKeyshare(nextPin);
         if (!encryptedKeyshare) {
           throw new Error('Failed to encrypt the keyshare.');
         }

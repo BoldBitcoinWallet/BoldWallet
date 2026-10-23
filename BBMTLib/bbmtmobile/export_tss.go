@@ -91,6 +91,16 @@ func BbmtSha256(msg *C.char) *C.char {
 	return cString(tss.Sha256(goStr(msg)))
 }
 
+//export BbmtBackupEncrypt
+func BbmtBackupEncrypt(plaintext, password *C.char) *C.char {
+	return cString(tss.BackupEncrypt(goStr(plaintext), goStr(password)))
+}
+
+//export BbmtBackupDecrypt
+func BbmtBackupDecrypt(blob, password *C.char) *C.char {
+	return cString(tss.BackupDecryptEnvelope(goStr(blob), goStr(password)))
+}
+
 //export BbmtSecureRandom
 func BbmtSecureRandom(length C.int) *C.char {
 	return cString(tss.SecureRandom(int(length)))

@@ -125,9 +125,9 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
       const meta = await getKeyshareMetadata();
       if (meta) {
         // Keyshare loaded and encrypted in native (RNES storage); file/share receives ciphertext only.
-        const encryptedKeyshare = await BBMTLibNativeModule.aesEncryptStoredKeyshare(
-          await BBMTLibNativeModule.sha256(password),
-        );
+        // F1: v2 format (Argon2id + AES-GCM in Go). Password goes to native; no derived key in JS.
+        const encryptedKeyshare =
+          await BBMTLibNativeModule.backupEncryptStoredKeyshare(password);
 
         // Create filename based on pub_key hash and keyshare number
         if (!meta.pub_key) {
