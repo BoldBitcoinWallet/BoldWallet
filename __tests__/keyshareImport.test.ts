@@ -123,9 +123,11 @@ describe('keyshareImport (F1)', () => {
     backupDecrypt.mockResolvedValue(
       legacyEnvelope('not-json-without-pub-key'),
     );
-    await expect(
-      decryptAndValidateKeyshare('blob', 'password'),
-    ).rejects.toBeInstanceOf(WrongKeysharePasswordError);
+    const err = await decryptAndValidateKeyshare('blob', 'password').catch(
+      e => e,
+    );
+    expect(err).toBeInstanceOf(WrongKeysharePasswordError);
+    expect((err as Error).message).toBe('Wrong password or corrupted backup');
   });
 
   it('F1: invalid keyshare JSON maps to invalid keyshare', async () => {

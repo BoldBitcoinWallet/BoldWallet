@@ -66,10 +66,13 @@ const (
 	maxBackupBlobBytes = 4 << 20 // 4 MiB input cap at the decrypt seam
 	maxBackupPlaintext = 1 << 20 // 1 MiB plaintext cap (keyshares are ~KB)
 
-	// DoS caps for header-declared KDF cost on decrypt.
-	maxBackupArgonMemoryKB = 1 << 20 // 1 GiB
-	maxBackupArgonTime     = 64
-	maxBackupArgonThreads  = 16
+	// F1b: DoS caps for header-declared KDF cost on decrypt. The header is
+	// unauthenticated at KDF time (you cannot verify GCM until you derive the
+	// key), so a crafted backup could otherwise demand GiBs of RAM or minutes
+	// of CPU. Production writes t=3/m=64MiB/p=1, comfortably inside these.
+	maxBackupArgonMemoryKB = 256 * 1024 // 256 MiB
+	maxBackupArgonTime     = 10
+	maxBackupArgonThreads  = 4
 )
 
 // BackupKDFParams carries Argon2id cost. ProductionEncrypt uses

@@ -26,8 +26,8 @@ export class InvalidKeyshareError extends Error {
 }
 
 export class WrongKeysharePasswordError extends Error {
-  constructor() {
-    super('Wrong password');
+  constructor(message = 'Wrong password') {
+    super(message);
     this.name = 'WrongKeysharePasswordError';
   }
 }
@@ -99,7 +99,9 @@ export async function decryptAndValidateKeyshare(
   // garbage here, which the content checks below reject. v2 garbage is
   // unreachable (GCM rejects first) but checked identically for uniformity.
   if (decryptedKeyshare.indexOf('pub_key') < 0) {
-    throw new WrongKeysharePasswordError();
+    throw new WrongKeysharePasswordError(
+      legacy ? 'Wrong password or corrupted backup' : 'Wrong password',
+    );
   }
   let parsed: ParsedKeyshare;
   try {

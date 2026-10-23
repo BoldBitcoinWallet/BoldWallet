@@ -3,11 +3,70 @@ package tss
 import (
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"encoding/hex"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestF1b_OversizedParams_RejectedBeforeKDF(t *testing.T) {
+	blob, err := BackupEncryptWithParams(testBackupPlaintext, "pw-12-chars!!", testBackupParams)
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	base, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(blob, backupV2Prefix))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	forge := func(mut func([]byte)) string {
+		raw := append([]byte(nil), base...)
+		mut(raw)
+		return backupV2Prefix + base64.StdEncoding.EncodeToString(raw)
+	}
+	cases := map[string]string{
+		"memory 4GiB": forge(func(r []byte) { binary.BigEndian.PutUint32(r[5:9], 4*1024*1024) }),
+		"time 255":    forge(func(r []byte) { binary.BigEndian.PutUint32(r[9:13], 255) }),
+		"threads 255": forge(func(r []byte) { r[13] = 255 }),
+	}
+	for name, forged := range cases {
+		start := time.Now()
+		_, err := BackupDecrypt(forged, "pw-12-chars!!")
+		elapsed := time.Since(start)
+		if err == nil || !strings.Contains(err.Error(), "argon2") {
+			t.Fatalf("%s: expected param rejection, got %v", name, err)
+		}
+		if elapsed > 5*time.Second {
+			t.Fatalf("%s: took %s, KDF must not have run", name, elapsed)
+		}
+	}
+}
+
+func TestF1b_ParamCaps_Boundaries(t *testing.T) {
+	good := []BackupKDFParams{
+		{Time: 3, Memory: 64 * 1024, Threads: 1}, // production
+		{Time: 10, Memory: 256 * 1024, Threads: 4},
+		{Time: 1, Memory: 8 * 1024, Threads: 1}, // unit-test cost
+	}
+	for _, p := range good {
+		if err := p.validForDecrypt(); err != nil {
+			t.Fatalf("valid params %+v rejected: %v", p, err)
+		}
+	}
+	bad := []BackupKDFParams{
+		{Time: 0, Memory: 64 * 1024, Threads: 1},
+		{Time: 11, Memory: 64 * 1024, Threads: 1},
+		{Time: 3, Memory: 0, Threads: 1},
+		{Time: 3, Memory: 256*1024 + 1, Threads: 1},
+		{Time: 3, Memory: 64 * 1024, Threads: 0},
+		{Time: 3, Memory: 64 * 1024, Threads: 5},
+	}
+	for _, p := range bad {
+		if err := p.validForDecrypt(); err == nil {
+			t.Fatalf("invalid params %+v accepted", p)
+		}
+	}
+}
 
 // Fast KDF cost for unit tests. Production cost is covered structurally by
 // TestF1_ProductionParams plus a measured timing log (reference-device gate).
