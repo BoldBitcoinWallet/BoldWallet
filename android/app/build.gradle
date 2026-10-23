@@ -37,6 +37,8 @@ android {
         versionName "4.1.0"
         // App UI is English-only; drop merged AndroidX locale packs from the Play listing.
         resConfigs "en"
+        // F3: instrumentation tests for secure storage.
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         missingDimensionStrategy 'react-native-camera', 'general'
         // Match main: oldarch flavor with newArchEnabled=true in gradle.properties (RN 0.82).
         missingDimensionStrategy 'react-native-arch', 'oldarch'
@@ -130,7 +132,8 @@ dependencies {
     }
     implementation 'androidx.appcompat:appcompat:1.7.1'
     // Same EncryptedSharedPreferences contract as react-native-encrypted-storage (RNES) for native keyshare reads
-    implementation "androidx.security:security-crypto:1.1.0-alpha03"
+    // F3: stable 1.1.0 (was 1.1.0-alpha03); also wins conflict resolution for the RNES library's own alpha03 pin.
+    implementation "androidx.security:security-crypto:1.1.0"
     // Single Go runtime: libbbmtmobile.so + dkls_jni (BBMTLib/build-dkls.sh android).
     // GG18 + DKLs both route through Bbmt*/Dkls* JNI — no gomobile tss.aar.
     implementation project(':react-native-fs')
@@ -143,4 +146,8 @@ dependencies {
     implementation project(':react-native-document-picker')
     implementation project(':rn-barcode-zxing-scan')
     implementation project(':react-native-haptic-feedback')
+    // F3: JVM unit tests (exception mapper) + instrumentation (ESP round-trip).
+    testImplementation "junit:junit:4.13.2"
+    androidTestImplementation "androidx.test:runner:1.5.2"
+    androidTestImplementation "androidx.test.ext:junit:1.1.5"
 }
