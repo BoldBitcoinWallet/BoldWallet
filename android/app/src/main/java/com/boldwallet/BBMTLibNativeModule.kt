@@ -1016,6 +1016,55 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    /**
+     * F1: versioned backup export. KDF (Argon2id) + AEAD (AES-GCM) run in Go;
+     * JS passes the password, never a derived key. Emits v2 format only.
+     */
+    @ReactMethod
+    fun backupEncryptStoredKeyshare(password: String, promise: Promise) {
+        Thread {
+            try {
+                val data = loadKeyshareJSONFromRNES()
+                if (data == null) {
+                    promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
+                    return@Thread
+                }
+                if (rejectBbmtUnavailable(promise, "backupEncryptStoredKeyshare")) return@Thread
+                val result = withZeroedKeyshareUtf8(data) { ks ->
+                    DklsNative.bbmtBackupEncryptNative(ks, password)
+                }
+                if (result.startsWith("error:")) {
+                    promise.reject("BACKUP_ENCRYPT_ERROR", result.removePrefix("error:"), null)
+                    return@Thread
+                }
+                promise.resolve(result)
+            } catch (e: Exception) {
+                promise.reject("BACKUP_ENCRYPT_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F1: versioned backup import. Returns {"format":"v2"|"legacy","plaintext":"..."}.
+     * Legacy (CBC, no MAC) is import-only; callers must warn and prompt re-export.
+     */
+    @ReactMethod
+    fun backupDecrypt(blob: String, password: String, promise: Promise) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "backupDecrypt")) return@Thread
+                val result = DklsNative.bbmtBackupDecryptNative(blob, password)
+                if (result.startsWith("error:")) {
+                    promise.reject("BACKUP_DECRYPT_ERROR", result.removePrefix("error:"), null)
+                    return@Thread
+                }
+                promise.resolve(result)
+            } catch (e: Exception) {
+                promise.reject("BACKUP_DECRYPT_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
     @ReactMethod
     fun sha256(msg: String, promise: Promise) {
         try {

@@ -25,6 +25,10 @@ RCT_EXTERN_METHOD(aesDecrypt:(NSString *)data key:(NSString *)key resolver:(RCTP
 // AES encrypt keyshare loaded from RNES-compatible secure storage (no plaintext through JS)
 RCT_EXTERN_METHOD(aesEncryptStoredKeyshare:(NSString *)key resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
+// F1: versioned backup export (Argon2id + AES-GCM in Go) and import (v2 + legacy envelope)
+RCT_EXTERN_METHOD(backupEncryptStoredKeyshare:(NSString *)password resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(backupDecrypt:(NSString *)blob password:(NSString *)password resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
 // Pre-Params Method
 RCT_EXTERN_METHOD(preparams:(NSString *)outFile timeout:(NSString *)timeout resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 

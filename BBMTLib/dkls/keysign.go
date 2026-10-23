@@ -69,6 +69,9 @@ func NostrJoinKeysignWithSighash(
 		return "", err
 	}
 	defer share.Free()
+	if err := VerifyKeyshareBinding(share, ks); err != nil {
+		return "", err
+	}
 	if ks.NostrNpub != "" && ks.NostrNpub != localNpub {
 		return "", fmt.Errorf("keyshare npub mismatch")
 	}
@@ -197,6 +200,9 @@ func JoinKeysignWithSighash(
 		return "", err
 	}
 	defer share.Free()
+	if err := VerifyKeyshareBinding(share, ks); err != nil {
+		return "", err
+	}
 
 	signSess, err := ResolveSigningSessionLAN(share, ks, partiesCSV)
 	if err != nil {

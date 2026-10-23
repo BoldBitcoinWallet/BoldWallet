@@ -144,6 +144,26 @@ Java_com_boldwallet_DklsNative_bbmtAesDecryptJni(JNIEnv *env, jclass, jstring da
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtBackupEncryptJni(JNIEnv *env, jclass, jstring plaintext, jstring password) {
+  const char *p = env->GetStringUTFChars(plaintext, nullptr);
+  const char *w = env->GetStringUTFChars(password, nullptr);
+  jstring out = to_jstring(env, BbmtBackupEncrypt(const_cast<char *>(p), const_cast<char *>(w)));
+  env->ReleaseStringUTFChars(plaintext, p);
+  env->ReleaseStringUTFChars(password, w);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtBackupDecryptJni(JNIEnv *env, jclass, jstring blob, jstring password) {
+  const char *b = env->GetStringUTFChars(blob, nullptr);
+  const char *w = env->GetStringUTFChars(password, nullptr);
+  jstring out = to_jstring(env, BbmtBackupDecrypt(const_cast<char *>(b), const_cast<char *>(w)));
+  env->ReleaseStringUTFChars(blob, b);
+  env->ReleaseStringUTFChars(password, w);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtSecP256k1RecoverJni(
     JNIEnv *env, jclass, jstring r, jstring s, jstring v, jstring h) {
   const char *rs = env->GetStringUTFChars(r, nullptr);

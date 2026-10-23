@@ -21,8 +21,8 @@ import {useTheme} from '../theme';
 import {createStyles} from './Styles';
 import GlassModalOverlay from './GlassModalOverlay';
 import {
-  BACKUP_PASSWORD_MIN_STRENGTH,
   evaluateBackupPassword,
+  isBackupExportAllowed,
 } from '../services/backupPassword';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -125,9 +125,9 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
       const meta = await getKeyshareMetadata();
       if (meta) {
         // Keyshare loaded and encrypted in native (RNES storage); file/share receives ciphertext only.
-        const encryptedKeyshare = await BBMTLibNativeModule.aesEncryptStoredKeyshare(
-          await BBMTLibNativeModule.sha256(password),
-        );
+        // F1: v2 format (Argon2id + AES-GCM in Go). Password goes to native; no derived key in JS.
+        const encryptedKeyshare =
+          await BBMTLibNativeModule.backupEncryptStoredKeyshare(password);
 
         // Create filename based on pub_key hash and keyshare number
         if (!meta.pub_key) {
@@ -498,19 +498,11 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
                 style={[
                   styles.modalButton,
                   styles.confirmButton,
-                  (!password ||
-                    !confirmPassword ||
-                    password !== confirmPassword ||
-                    passwordStrength < BACKUP_PASSWORD_MIN_STRENGTH) &&
+                  !isBackupExportAllowed(password, confirmPassword) &&
                     styles.disabledButton,
                 ]}
                 onPress={handleBackup}
-                disabled={
-                  !password ||
-                  !confirmPassword ||
-                  password !== confirmPassword ||
-                  passwordStrength < BACKUP_PASSWORD_MIN_STRENGTH
-                }
+                disabled={!isBackupExportAllowed(password, confirmPassword)}
                 android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
                 <View style={styles.buttonContent}>
                   <Image

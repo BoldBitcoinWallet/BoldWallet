@@ -149,6 +149,16 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   NSString *out = wrap(BbmtAesDecrypt(k0, k1));
   free(k0); free(k1); return out;
 }
++ (NSString *)backupEncrypt:(NSString *)plaintext password:(NSString *)password {
+  char *k0=dupC(plaintext); char *k1=dupC(password);
+  NSString *out = wrap(BbmtBackupEncrypt(k0, k1));
+  free(k0); free(k1); return out;
+}
++ (NSString *)backupDecrypt:(NSString *)blob password:(NSString *)password {
+  char *k0=dupC(blob); char *k1=dupC(password);
+  NSString *out = wrap(BbmtBackupDecrypt(k0, k1));
+  free(k0); free(k1); return out;
+}
 + (NSString *)sha256:(NSString *)message {
   char *k0=dupC(message);
   NSString *out = wrap(BbmtSha256(k0));

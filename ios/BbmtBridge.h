@@ -89,6 +89,8 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)generateKeyPair;
 + (NSString *)aesEncrypt:(NSString *)data key:(NSString *)key;
 + (NSString *)aesDecrypt:(NSString *)data key:(NSString *)key;
++ (NSString *)backupEncrypt:(NSString *)plaintext password:(NSString *)password;
++ (NSString *)backupDecrypt:(NSString *)blob password:(NSString *)password;
 + (NSString *)sha256:(NSString *)message;
 + (NSString *)secureRandom:(int)length;
 + (NSString *)secP256k1RecoverR:(NSString *)r s:(NSString *)s v:(NSString *)v h:(NSString *)h;

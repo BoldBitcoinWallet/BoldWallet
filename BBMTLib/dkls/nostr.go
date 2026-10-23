@@ -330,6 +330,9 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 		return "", err
 	}
 	defer share.Free()
+	if err := VerifyKeyshareBinding(share, ks); err != nil {
+		return "", err
+	}
 	if ks.NostrNpub != "" && ks.NostrNpub != localNpub {
 		return "", fmt.Errorf("keyshare npub mismatch")
 	}

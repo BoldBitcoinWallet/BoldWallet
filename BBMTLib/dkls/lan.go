@@ -668,6 +668,9 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		return "", err
 	}
 	defer share.Free()
+	if err := VerifyKeyshareBinding(share, ks); err != nil {
+		return "", err
+	}
 
 	parties := splitCSV(partiesCSV)
 	signSess, err := ResolveSigningSessionLAN(share, ks, partiesCSV)
