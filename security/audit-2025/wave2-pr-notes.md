@@ -52,7 +52,8 @@ through JS. Concretely, today:
 Removing `share_b64` from all of these = native-held shares: native-side
 persist, native-side import-decrypt returning metadata only,
 metadata-only `getKeyshare`, and migrating Android `nostrJoinKeysign`
-to native load. That is F15b (architectural, multi-surface). No heap-scan
+to native load. That is F15b (architectural, multi-surface); the Android keysign
+asymmetry is tracked as F18. No heap-scan
 test was written: it cannot pass while the JSON string exists, and a
 test asserting it would be theater. `TestF15_BackupBlob_CiphertextOnly`
 pins the backup-blob property (B1's) instead.

@@ -12,9 +12,10 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F16 | Export password gate is strength>=3, not full policy | Low (gate/UX; handler already enforced) | components/BackupKeyshareModal.tsx:508 | Gate on isValid (all 5 rules); airgap uses PIN path, unaffected | TBD | Done |
 | F16b | Airgap export PIN is 6 digits + SHA-256 + CBC | Med | services/airgapPin.ts:3; components/AirgapKeyshareExportModal.tsx:86 | Longer PIN or PAKE; GCM; warn on screen-record | TBD | Open |
 | F15 | ExportKeyShare plaintext despite SecureBytes | High | BBMTLib/dkls/keyshare.go:31 | PARTIAL (Wave 2): SecureBytes-at-export + Destroy/wipe + BbmtFree memset + theater-wrapper removal + backup-export opacity. share_b64 still crosses JS on persist/import/read → F15b | TBD | Partial |
-| F15b | Native-held shares: remove share_b64 from all JS-visible values | High | persistWalletKeyshare; getKeyshare; backupDecrypt; nostrJoinKeysign (Android) | Native-side persist; import-decrypt returns metadata only; metadata-only getKeyshare; Android nostrJoinKeysign loads natively | TBD | Open |
+| F15b | Native-held shares: remove share_b64 from all JS-visible values | Critical | persistWalletKeyshare; getKeyshare; backupDecrypt; nostrJoinKeysign (Android) | Native-side persist; import-decrypt returns metadata only; metadata-only getKeyshare; Android nostrJoinKeysign loads natively | TBD | Open |
+| F18 | Android nostrJoinKeysign takes keyshare JSON from JS; iOS loads natively | High | BBMTLibNativeModule.kt:741; ios dkls-equivalent loads from RNES | Android loads from RNES natively like iOS; feeds F15b | TBD | Open |
 | F3 | Android ESP silently falls back to plaintext | High | BBMTLibNativeModule.kt:170 | DONE (Wave 2): typed fail-closed errors, StrongBox→TEE, security-crypto 1.1.0, UI surfacing, patch-package. No per-read auth (backgrounded reads) | TBD | Done |
-| F4 | iOS Keychain item has no ACL | High | RNEncryptedStorage.m setItem | DONE (Wave 2): keyshare-scoped WhenPasscodeSetThisDeviceOnly, no per-read biometry (backgrounded/JS-polled reads; nobody locked out), patch-package, harness 7/7 | TBD | Done |
+| F4 | iOS Keychain item has no ACL | High | RNEncryptedStorage.m setItem | DONE (Wave 2): keyshare-scoped WhenPasscodeSetThisDeviceOnly, biometry deferred to F15b (backgrounded/JS-polled reads can't prompt; nobody locked out), patch-package, harness 7/7 | TBD | Done |
 | F5 | nsec in JS heap + embedded in backup blob | High | screens/MobileNostrPairing.tsx:1230; dkls/keyshare.go:26 | nsec in Keychain/RNES only; opaque ref; exclude from export | TBD | Open |
 | F8 | Global Android cleartext + ws/http allowed | High | network_security_config.xml:3 | Scope cleartext to loopback/link-local; block non-LAN ws/http | TBD | Open |
 | F9 | Secrets cross bridge as strings; no zeroization | High | BBMTLibNativeModule.kt:160; BbmtBridge.mm:13 | Opaque handles; SecureBytes/memset+mlock; minimize copies | TBD | Open |
@@ -25,7 +26,7 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F14 | SessionKeyHex inert; secrecy rests on long-term nsec | Med | tss/nostrtransport/config.go:49 | HKDF session key into AEAD or remove field (allowlist is DKG-pinned: signing_resolve.go:57) | TBD | Open |
 | F13 | Background/kill: warning-only; replay memory is RAM-only | Med | services/mpcKeepAlive.ts:200 | Ceremony epoch or fresh session IDs post-death; persist seen-IDs | TBD | Open |
 
-Fix waves: (1) F7+sweep. (2) B1. (3) F15,F3,F4. (4) F11,F6. (5) F12,F14. (6) F13.
+Fix waves: (1) F7+sweep done. (2) B1 done. (3) F15(partial→F15b),F3,F4 done. Next: Wave 3 = F15b+F18+F10; Wave 4 = F11+F6; then F12,F14; F13.
 Still owner-side: govulncheck, npm audit, gitleaks/trufflehog history, FROST/DKLs23 fork diff.
 
 ## Wave 1 — B1 (F1+F2+F16): DONE (merged c6d2613f). F7-residual fail-closed build: done.
