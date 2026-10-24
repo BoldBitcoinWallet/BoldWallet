@@ -794,6 +794,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 }
                 if (rejectBbmtUnavailable(promise, "publishData")) return@Thread
                 val output = DklsNative.bbmtPublishDataNative(port, timeout, encKey, raw, mode)
+                if (output.startsWith("error:")) {
+                    promise.reject("PUBLISH_DATA_ERROR", output.removePrefix("error:"), null)
+                    return@Thread
+                }
                 ld("publishData", output)
                 promise.resolve(output)
             } catch (e: Throwable) {
@@ -823,6 +827,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 }
                 if (rejectBbmtUnavailable(promise, "fetchData")) return@Thread
                 val raw = DklsNative.bbmtFetchDataNative(url, decKey, payload)
+                // F11 fail-closed: Go errors surface as rejects. No false
+                // positive: legit payloads are hex/base64/JSON, and an
+                // "error:"-prefixed plaintext would fail the handshake
+                // loudly either way — reject is the safe direction.
+                if (raw.startsWith("error:")) {
+                    promise.reject("FETCH_DATA_ERROR", raw.removePrefix("error:"), null)
+                    return@Thread
+                }
                 ld("fetchData", raw)
                 promise.resolve(raw)
             } catch (e: Throwable) {
