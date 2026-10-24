@@ -460,6 +460,14 @@ describe('3b-5 L5 malicious-JS simulation (F10-bridge)', () => {
     );
     expect(setup.kind).toBe('legacy-gg18');
     expect(native.completeCeremonyToken).toHaveBeenCalledTimes(2);
+    // GG18 server-setup arg shape: ppmFile sits at index 2, so the
+    // session the native gate binds is at index 4 (DKLs twin: 3).
+    // Pinned by assertion — if the order drifts, the gate binds
+    // the wrong value and this fails before production does.
+    const setupCall = native.mpcTssSetup.mock.calls[0];
+    expect(setupCall[4]).toBe('sess-gg18-kg');
+    const signCall = native.mpcSignPSBT.mock.calls[0];
+    expect(signCall[3]).toBe('sess-gg18-ok');
   });
 
   test('every unsigned direct call across the gated surface fails closed', async () => {

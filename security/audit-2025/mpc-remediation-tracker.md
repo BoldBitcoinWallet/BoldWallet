@@ -373,7 +373,11 @@ authorization assertions; GG18 legacy e2e
 proves backward compat. F10-GG18 → Done, F10-bridge →
 Done, F19 → Done (tokenized). Evidence: jest 743 passed
 (same 6 pre-existing suite failures), JVM 44/44, harness
-98/98, L5 15/15 over 25 methods, iOS Debug + Release
+98/98, L5 15/15 over 25 methods (GG18 session-index pins
+asserted, not just documented), Go
+TestF19_LegacyGG18LoopbackKeysign PASS (in-process 2-party
+DKG + threshold sign, both sigs independently verified;
+11.7s, -race clean, -short skip), iOS Debug + Release
 SUCCEEDED, assembleDebug green, JNI 65 symbols, tsc 32
 pre-existing, eslint clean.
 2. Real-device QA is a merge gate (8 items, Android
