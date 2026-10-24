@@ -153,16 +153,7 @@ Java_com_boldwallet_DklsNative_bbmtBackupEncryptJni(JNIEnv *env, jclass, jstring
   return out;
 }
 
-JNIEXPORT jstring JNICALL
-Java_com_boldwallet_DklsNative_bbmtBackupDecryptJni(JNIEnv *env, jclass, jstring blob, jstring password) {
-  const char *b = env->GetStringUTFChars(blob, nullptr);
-  const char *w = env->GetStringUTFChars(password, nullptr);
-  jstring out = to_jstring(env, BbmtBackupDecrypt(const_cast<char *>(b), const_cast<char *>(w)));
-  env->ReleaseStringUTFChars(blob, b);
-  env->ReleaseStringUTFChars(password, w);
-  return out;
-}
-
+// F15b-1 (A5): bbmtBackupDecryptJni REMOVED (staged import replaces it).
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtImportBackupStagedJni(JNIEnv *env, jclass, jstring blob, jstring password) {
   const char *b = env->GetStringUTFChars(blob, nullptr);

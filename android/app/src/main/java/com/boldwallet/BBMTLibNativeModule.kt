@@ -1015,23 +1015,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      * F1: versioned backup import. Returns {"format":"v2"|"legacy","plaintext":"..."}.
      * Legacy (CBC, no MAC) is import-only; callers must warn and prompt re-export.
      */
-    @ReactMethod
-    fun backupDecrypt(blob: String, password: String, promise: Promise) {
-        Thread {
-            try {
-                if (rejectBbmtUnavailable(promise, "backupDecrypt")) return@Thread
-                val result = DklsNative.bbmtBackupDecryptNative(blob, password)
-                if (result.startsWith("error:")) {
-                    promise.reject("BACKUP_DECRYPT_ERROR", result.removePrefix("error:"), null)
-                    return@Thread
-                }
-                promise.resolve(result)
-            } catch (e: Exception) {
-                promise.reject("BACKUP_DECRYPT_ERROR", e.message, e)
-            }
-        }.start()
-    }
-
+    // F15b-1 (A5): backupDecrypt REMOVED — plaintext-to-JS import
+    // replaced by importBackupToStagedHandle (A6).
     /**
      * F15b-1 (A6): versioned backup import that stages natively.
      * Resolves {handle, metadata, legacy} — never plaintext. Error

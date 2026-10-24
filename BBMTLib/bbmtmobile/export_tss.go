@@ -96,10 +96,9 @@ func BbmtBackupEncrypt(plaintext, password *C.char) *C.char {
 	return cString(tss.BackupEncrypt(goStr(plaintext), goStr(password)))
 }
 
-//export BbmtBackupDecrypt
-func BbmtBackupDecrypt(blob, password *C.char) *C.char {
-	return cString(tss.BackupDecryptEnvelope(goStr(blob), goStr(password)))
-}
+// F15b-1 (A5): BbmtBackupDecrypt REMOVED — plaintext-to-JS import
+// replaced by staged BbmtImportBackupStaged. tss.BackupDecrypt
+// (envelope parse + AEAD) stays: the staged path calls it.
 
 //export BbmtSecureRandom
 func BbmtSecureRandom(length C.int) *C.char {

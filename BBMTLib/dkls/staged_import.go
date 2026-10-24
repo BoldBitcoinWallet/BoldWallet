@@ -50,6 +50,12 @@ func ImportBackupStaged(blob, password string) (string, error) {
 	}
 	plain := []byte(res.Plaintext)
 	if _, err := requireImportableJSON(res.Plaintext); err != nil {
+		// Legacy backups have no MAC: garbage content means wrong
+		// password OR corruption (B1 UX preserved). v2 content
+		// failures are unreachable post-GCM — format error stands.
+		if res.Legacy {
+			return "", fmt.Errorf("legacy backup content invalid (wrong password or corrupted backup)")
+		}
 		return "", err
 	}
 	backend := keyhandles.SniffBackend(plain)

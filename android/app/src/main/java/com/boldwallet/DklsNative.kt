@@ -223,7 +223,6 @@ object DklsNative {
     fun bbmtAesEncryptNative(data: String, key: String): String = loaded { bbmtAesEncryptJni(data, key) }
     fun bbmtAesDecryptNative(data: String, key: String): String = loaded { bbmtAesDecryptJni(data, key) }
     fun bbmtBackupEncryptNative(plaintext: String, password: String): String = loaded { bbmtBackupEncryptJni(plaintext, password) }
-    fun bbmtBackupDecryptNative(blob: String, password: String): String = loaded { bbmtBackupDecryptJni(blob, password) }
     fun bbmtImportBackupStagedNative(blob: String, password: String): String = loaded { bbmtImportBackupStagedJni(blob, password) }
     fun bbmtFinalizeStagedForPersistNative(handle: String, nsec: String, npub: String): String =
         loaded { bbmtFinalizeStagedForPersistJni(handle, nsec, npub) }
@@ -455,7 +454,6 @@ object DklsNative {
     private external fun bbmtAesEncryptJni(data: String, key: String): String
     private external fun bbmtAesDecryptJni(data: String, key: String): String
     private external fun bbmtBackupEncryptJni(plaintext: String, password: String): String
-    private external fun bbmtBackupDecryptJni(blob: String, password: String): String
     private external fun bbmtImportBackupStagedJni(blob: String, password: String): String
     private external fun bbmtFinalizeStagedForPersistJni(handle: String, nsec: String, npub: String): String
     private external fun bbmtDestroyStagedJni(handle: String): String

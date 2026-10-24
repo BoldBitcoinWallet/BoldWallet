@@ -183,6 +183,17 @@ func TestF15b1_StagedFlows(t *testing.T) {
 		keyhandles.Destroy(handle)
 	})
 
+	t.Run("ImportLegacyGarbagePasswordFlavor", func(t *testing.T) {
+		blob := legacyBlobForTest(t, "garbage-not-json", "legacy-pass-12!")
+		_, err := ImportBackupStaged(blob, "legacy-pass-12!")
+		if err == nil {
+			t.Fatal("legacy garbage staged")
+		}
+		if !strings.Contains(err.Error(), "wrong password or corrupted backup") {
+			t.Fatalf("legacy UX text lost: %v", err)
+		}
+	})
+
 	t.Run("StageKeygenOutput", func(t *testing.T) {
 		keyhandles.DestroyAll()
 		raw, err := StageKeygenOutput(ksJSON)

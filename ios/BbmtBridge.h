@@ -90,7 +90,6 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)aesEncrypt:(NSString *)data key:(NSString *)key;
 + (NSString *)aesDecrypt:(NSString *)data key:(NSString *)key;
 + (NSString *)backupEncrypt:(NSString *)plaintext password:(NSString *)password;
-+ (NSString *)backupDecrypt:(NSString *)blob password:(NSString *)password;
 + (NSString *)importBackupStaged:(NSString *)blob password:(NSString *)password;
 + (NSString *)finalizeStagedForPersist:(NSString *)handle nsec:(NSString *)nsec npub:(NSString *)npub;
 + (NSString *)destroyStaged:(NSString *)handle;

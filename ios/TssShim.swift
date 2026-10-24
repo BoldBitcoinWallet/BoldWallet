@@ -51,9 +51,6 @@ func TssBackupEncrypt(_ plaintext: String, _ password: String, _ error: NSErrorP
   bbmtResolve(BbmtBridge.backupEncrypt(plaintext, password: password), error)
 }
 
-func TssBackupDecrypt(_ blob: String, _ password: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.backupDecrypt(blob, password: password), error)
-}
 
 func TssImportBackupStaged(_ blob: String, _ password: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.importBackupStaged(blob, password: password), error)

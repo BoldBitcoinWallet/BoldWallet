@@ -546,19 +546,8 @@ class BBMTLibNativeModule: RCTEventEmitter {
   // aesEncryptStoredKeyshare REMOVED (zero callers repo-wide, no
   // WebView/eval/reflection path; Go TssAes* stays for native use).
   /// F1: versioned backup import. Resolves {"format":"v2"|"legacy","plaintext":"..."}.
-  @objc func backupDecrypt(
-    _ blob: String, password: String, resolver: @escaping RCTPromiseResolveBlock,
-    rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    var error: NSError?
-    let output = TssBackupDecrypt(blob, password, &error)
-    if let error = error {
-      rejecter("BACKUP_DECRYPT_ERROR", error.localizedDescription, error)
-    } else {
-      resolver(output)
-    }
-  }
-
+  // F15b-1 (A5): backupDecrypt REMOVED — plaintext-to-JS import
+  // replaced by importBackupToStagedHandle (A6).
   /// F15b-1 (A6): versioned backup import that stages natively.
   /// Resolves {handle, metadata, legacy} — never plaintext.
   @objc func importBackupToStagedHandle(
