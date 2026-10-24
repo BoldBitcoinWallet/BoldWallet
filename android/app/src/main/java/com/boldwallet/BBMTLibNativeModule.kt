@@ -119,7 +119,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun addListener(eventName: String) {
+    fun addListener(eventName: String?) {
         if (bbmtLibraryPresentInApk()) {
             ensureBbmtRuntime()
         }
@@ -342,7 +342,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun disableLogging(tag: String, promise: Promise) {
+    fun disableLogging(tag: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (tag == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         useLog = false
         if (ensureBbmtRuntime()) {
             DklsNative.bbmtDisableLogsNative()
@@ -351,7 +358,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun setBtcNetwork(network: String, promise: Promise) {
+    fun setBtcNetwork(network: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (network == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "setBtcNetwork")) return
             DklsNative.bbmtSetNetworkNative(network)
@@ -365,7 +379,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun setFeePolicy(policy: String, promise: Promise) {
+    fun setFeePolicy(policy: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (policy == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "setFeePolicy")) return
             val result = DklsNative.bbmtUseFeePolicyNative(policy)
@@ -378,7 +399,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun totalUTXO(address: String, promise: Promise) {
+    fun totalUTXO(address: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (address == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "totalUTXO")) return
             val result = DklsNative.bbmtTotalUTXONative(address)
@@ -426,6 +454,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         promise: Promise,
         method: String,
     ): Boolean {
+        // F11: shape before auth — malformed URLs never prompt nor persist.
+        for (url in urls) {
+            if (!CeremonyApiAllowlist.isAllowedApiUrlShape(url)) {
+                ld(method, "rejecting malformed API URL")
+                promise.reject("INVALID_URL", "Malformed API URL", null)
+                return false
+            }
+        }
         return when (
             CeremonyApiAllowlist.decide(urls, ceremonyToken, ceremonySessionID, apiAllowlistStore)
         ) {
@@ -447,16 +483,27 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun setAPI(
-        network: String,
-        baseAPI: String,
-        ceremonyToken: String,
-        ceremonySessionID: String,
+        network: String?,
+        baseAPI: String?,
+        ceremonyToken: String?,
+        ceremonySessionID: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (network == null || baseAPI == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (!gateApiUrls(listOf(baseAPI), ceremonyToken, ceremonySessionID, promise, "setAPI")) return
             if (rejectBbmtUnavailable(promise, "setAPI")) return
             val result = DklsNative.bbmtUseAPINative(network, baseAPI)
+            if (result.startsWith("error:")) {
+                promise.reject("SET_API_ERROR", result.removePrefix("error:"), null)
+                return
+            }
             ld("setAPI", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -467,16 +514,27 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun setFeeAPIs(
-        urls: String,
-        ceremonyToken: String,
-        ceremonySessionID: String,
+        urls: String?,
+        ceremonyToken: String?,
+        ceremonySessionID: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (urls == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             val parsed = CeremonyApiAllowlist.parseCsv(urls)
             if (!gateApiUrls(parsed, ceremonyToken, ceremonySessionID, promise, "setFeeAPIs")) return
             if (rejectBbmtUnavailable(promise, "setFeeAPIs")) return
             val result = DklsNative.bbmtUseFeeAPIsNative(urls)
+            if (result.startsWith("error:")) {
+                promise.reject("SET_FEE_APIS_ERROR", result.removePrefix("error:"), null)
+                return
+            }
             ld("setFeeAPIs", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -486,7 +544,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun spendingHash(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+    fun spendingHash(senderAddress: String?, receiverAddress: String?, amountSatoshi: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (senderAddress == null || receiverAddress == null || amountSatoshi == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "spendingHash")) return@Thread
@@ -502,7 +567,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun spendingHashWithUTXOs(utxosWithPathsJSON: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+    fun spendingHashWithUTXOs(utxosWithPathsJSON: String?, receiverAddress: String?, amountSatoshi: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (utxosWithPathsJSON == null || receiverAddress == null || amountSatoshi == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "spendingHashWithUTXOs")) return@Thread
@@ -519,7 +591,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun estimateFees(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+    fun estimateFees(senderAddress: String?, receiverAddress: String?, amountSatoshi: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (senderAddress == null || receiverAddress == null || amountSatoshi == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "estimateFees")) return@Thread
@@ -536,12 +615,19 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun estimateFeeWithUTXOs(
-        utxosWithPathsJSON: String,
-        receiverAddress: String,
-        amountSatoshi: String,
-        changeAddress: String,
+        utxosWithPathsJSON: String?,
+        receiverAddress: String?,
+        amountSatoshi: String?,
+        changeAddress: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (utxosWithPathsJSON == null || receiverAddress == null || amountSatoshi == null || changeAddress == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "estimateFeeWithUTXOs")) return@Thread
@@ -561,7 +647,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun postTx(rawTxHex: String, promise: Promise) {
+    fun postTx(rawTxHex: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (rawTxHex == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "postTx")) return@Thread
@@ -576,7 +669,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun computeTxId(rawTxHex: String, promise: Promise) {
+    fun computeTxId(rawTxHex: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (rawTxHex == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "computeTxId")) return
             val txid = DklsNative.bbmtComputeTxIdNative(rawTxHex)
@@ -587,7 +687,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun cancelMpcSession(sessionID: String, ceremonyToken: String, promise: Promise) {
+    fun cancelMpcSession(sessionID: String?, ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             // 3b-4 B19: cancel consumes the ceremony token (same
             // op+session) and atomically revokes the session.
@@ -604,7 +711,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun cancelNostrMpc(ceremonyToken: String, promise: Promise) {
+    fun cancelNostrMpc(ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             // 3b-4 B19: global cancel consumes a live ceremony
             // token; the token's own session scopes revocation.
@@ -621,7 +735,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun runRelay(port: String, promise: Promise) {
+    fun runRelay(port: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (port == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "runRelay")) return
             val result = DklsNative.bbmtRunRelayNative(port)
@@ -634,7 +755,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun stopRelay(tag: String, promise: Promise) {
+    fun stopRelay(tag: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (tag == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "stopRelay")) return
             val result = DklsNative.bbmtStopRelayNative()
@@ -647,9 +775,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun publishData(port: String, timeout: String, encKey: String, raw: String, mode: String,
-                    ceremonyToken: String, ceremonySessionID: String,
+    fun publishData(port: String?, timeout: String?, encKey: String?, raw: String?, mode: String?,
+                    ceremonyToken: String?, ceremonySessionID: String?,
                     promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (port == null || timeout == null || encKey == null || raw == null || mode == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-2c B13: rides the handshake ceremony token (sign|keygen).
@@ -663,15 +798,22 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(output)
             } catch (e: Throwable) {
                 ld("publishData", "error: ${e.message}")
-                promise.resolve("")
+                promise.reject("PUBLISH_DATA_ERROR", e.message, e)
             }
         }.start()
     }
 
     @ReactMethod
-    fun fetchData(url: String, decKey: String, payload: String,
-                  ceremonyToken: String, ceremonySessionID: String,
+    fun fetchData(url: String?, decKey: String?, payload: String?,
+                  ceremonyToken: String?, ceremonySessionID: String?,
                   promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (url == null || decKey == null || payload == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-2c B14: rides the handshake ceremony token (sign|keygen).
@@ -685,13 +827,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(raw)
             } catch (e: Throwable) {
                 ld("fetchData", "error: ${e.message}")
-                promise.resolve("")
+                promise.reject("FETCH_DATA_ERROR", e.message, e)
             }
         }.start()
     }
 
     @ReactMethod
-    fun listenForPeers(id: String, pubkey: String, port: String, timeout: String, mode: String, promise: Promise) {
+    fun listenForPeers(id: String?, pubkey: String?, port: String?, timeout: String?, mode: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (id == null || pubkey == null || port == null || timeout == null || mode == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "listenForPeers")) return@Thread
@@ -700,13 +849,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(peer)
             } catch (e: Throwable) {
                 ld("listenForPeers", "error: ${e.message}")
-                promise.resolve("")
+                promise.reject("LISTEN_PEERS_ERROR", e.message, e)
             }
         }.start()
     }
 
     @ReactMethod
-    fun discoverPeers(id: String, pubkey: String, localIP: String, remoteIP: String, port: String, timeout: String, mode: String, promise: Promise) {
+    fun discoverPeers(id: String?, pubkey: String?, localIP: String?, remoteIP: String?, port: String?, timeout: String?, mode: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (id == null || pubkey == null || localIP == null || remoteIP == null || port == null || timeout == null || mode == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "discoverPeers")) return@Thread
@@ -717,13 +873,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(peer)
             } catch (e: Throwable) {
                 ld("discoverPeers", "error: ${e.message}")
-                promise.resolve("")
+                promise.reject("DISCOVER_PEERS_ERROR", e.message, e)
             }
         }.start()
     }
 
     @ReactMethod
-    fun getLanIp(peerIP: String, promise: Promise) {
+    fun getLanIp(peerIP: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (peerIP == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         var resolved = false
         try {
             val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
@@ -811,7 +974,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
     
     @ReactMethod
-    fun nostrKeypair(ceremonyToken: String, promise: Promise) {
+    fun nostrKeypair(ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             // 3b-2b B20: single-call keygen ceremony (no MPC session yet).
             if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.KEYGEN)) {
@@ -829,7 +999,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun hexToNpub(hexKey: String, promise: Promise) {
+    fun hexToNpub(hexKey: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (hexKey == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "hexToNpub")) return@Thread
@@ -847,16 +1024,23 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     // variant decision deferred). DKLs twins stage natively.
     @ReactMethod
     fun nostrMpcTssSetup(
-        relaysCSV: String,
-        partyNsec: String,
-        partiesNpubsCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        chaincode: String,
-        ppmFile: String,
-        ceremonyToken: String,
+        relaysCSV: String?,
+        partyNsec: String?,
+        partiesNpubsCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        chaincode: String?,
+        ppmFile: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partyNsec == null || partiesNpubsCSV == null || sessionID == null || sessionKey == null || chaincode == null || ppmFile == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-6: GG18 setup takes a keygen token (strict session).
@@ -891,18 +1075,25 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     // variant decision deferred). DKLs twins stage natively.
     @ReactMethod
     fun mpcTssSetup(
-        server: String,
-        partyID: String,
-        ppmFile: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        chaincode: String,
-        ceremonyToken: String,
+        server: String?,
+        partyID: String?,
+        ppmFile: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        chaincode: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || ppmFile == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || chaincode == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-6: GG18 setup takes a keygen token (strict session).
@@ -932,7 +1123,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun preparams(partyID: String, timeout: String, promise: Promise) {
+    fun preparams(partyID: String?, timeout: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (partyID == null || timeout == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "preparams")) return@Thread
@@ -947,7 +1145,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun recoverPubkey(r: String, s: String, v: String, h: String, promise: Promise) {
+    fun recoverPubkey(r: String?, s: String?, v: String?, h: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (r == null || s == null || v == null || h == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "recoverPubkey")) return
             val result = DklsNative.bbmtSecP256k1RecoverNative(r, s, v, h)
@@ -960,7 +1165,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun derivePubkey(hexPubkey: String, hexChaincode: String, path: String, promise: Promise) {
+    fun derivePubkey(hexPubkey: String?, hexChaincode: String?, path: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (hexPubkey == null || hexChaincode == null || path == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "derivePubkey")) return
             val result = DklsNative.bbmtGetDerivedPubKeyNative(hexPubkey, hexChaincode, path, false)
@@ -973,7 +1185,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun encodeXpub(hexPubkey: String, hexChaincode: String, network: String, promise: Promise) {
+    fun encodeXpub(hexPubkey: String?, hexChaincode: String?, network: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (hexPubkey == null || hexChaincode == null || network == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "encodeXpub")) return
             val result = DklsNative.bbmtEncodeXpubNative(hexPubkey, hexChaincode, network)
@@ -986,7 +1205,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun getOutputDescriptor(hexPubkey: String, hexChaincode: String, network: String, addressType: String, promise: Promise) {
+    fun getOutputDescriptor(hexPubkey: String?, hexChaincode: String?, network: String?, addressType: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (hexPubkey == null || hexChaincode == null || network == null || addressType == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "getOutputDescriptor")) return
             val result = DklsNative.bbmtGetOutputDescriptorNative(hexPubkey, hexChaincode, network, addressType)
@@ -999,7 +1225,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun appendOutputDescriptorChecksum(descriptorBody: String, promise: Promise) {
+    fun appendOutputDescriptorChecksum(descriptorBody: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (descriptorBody == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "appendOutputDescriptorChecksum")) return
             val result = DklsNative.bbmtAppendOutputDescriptorChecksumNative(descriptorBody)
@@ -1016,7 +1249,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun btcAddress(compressedPubkey: String, network: String, addressType: String,  promise: Promise) {
+    fun btcAddress(compressedPubkey: String?, network: String?, addressType: String?,  promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (compressedPubkey == null || network == null || addressType == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         var resolved = false
         try {
             if (rejectBbmtUnavailable(promise, "btcAddress")) return
@@ -1045,7 +1285,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun eciesKeypair(ceremonyToken: String, promise: Promise) {
+    fun eciesKeypair(ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-2b B21: single-call keygen ceremony (no MPC session yet).
@@ -1081,7 +1328,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      * JS passes the password, never a derived key. Emits v2 format only.
      */
     @ReactMethod
-    fun backupEncryptStoredKeyshare(password: String, ceremonyToken: String, promise: Promise) {
+    fun backupEncryptStoredKeyshare(password: String?, ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (password == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-3 A12: single-call export ceremony (no MPC session).
@@ -1122,12 +1376,19 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun importBackupToStagedHandle(
-        blob: String,
-        password: String,
-        ceremonyToken: String,
-        ceremonySessionID: String,
+        blob: String?,
+        password: String?,
+        ceremonyToken: String?,
+        ceremonySessionID: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (blob == null || password == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-2e B17: strict import ceremony (owner-shared stage+persist).
@@ -1157,13 +1418,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      */
     @ReactMethod
     fun persistStoredKeyshare(
-        handle: String,
-        nsec: String,
-        npub: String,
-        ceremonyToken: String,
-        ceremonySessionID: String,
+        handle: String?,
+        nsec: String?,
+        npub: String?,
+        ceremonyToken: String?,
+        ceremonySessionID: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (handle == null || nsec == null || npub == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-2e B18: strict import ceremony (shared with stage, or
@@ -1306,7 +1574,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun requestSignCeremonyToken(sessionID: String, promise: Promise) {
+    fun requestSignCeremonyToken(sessionID: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         promptAndMint(
             CeremonyTokens.OpClass.SIGN, sessionID,
             "Authenticate to sign", "Approve the signing ceremony", promise,
@@ -1314,7 +1589,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun requestKeygenCeremonyToken(sessionID: String, promise: Promise) {
+    fun requestKeygenCeremonyToken(sessionID: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         promptAndMint(
             CeremonyTokens.OpClass.KEYGEN, sessionID,
             "Authenticate to generate keys", "Approve the wallet setup ceremony", promise,
@@ -1322,7 +1604,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun requestExportCeremonyToken(sessionID: String, promise: Promise) {
+    fun requestExportCeremonyToken(sessionID: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         promptAndMint(
             CeremonyTokens.OpClass.EXPORT, sessionID,
             "Authenticate to export backup", "Approve the backup export", promise,
@@ -1330,7 +1619,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun requestImportCeremonyToken(sessionID: String, promise: Promise) {
+    fun requestImportCeremonyToken(sessionID: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         promptAndMint(
             CeremonyTokens.OpClass.IMPORT, sessionID,
             "Authenticate to import backup", "Approve the backup import", promise,
@@ -1338,7 +1634,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun requestConfigCeremonyToken(sessionID: String, promise: Promise) {
+    fun requestConfigCeremonyToken(sessionID: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         promptAndMint(
             CeremonyTokens.OpClass.CONFIG, sessionID,
             "Authenticate to change settings", "Approve the network settings change", promise,
@@ -1439,7 +1742,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     /** 3b-1: retire a token after ceremony success (-> USED). */
     @ReactMethod
-    fun completeCeremonyToken(token: String, promise: Promise) {
+    fun completeCeremonyToken(token: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (token == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             CeremonyTokens.complete(token)
             promise.resolve(true)
@@ -1450,7 +1760,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     /** 3b-1: revoke a token on teardown (-> REVOKED). Idempotent. */
     @ReactMethod
-    fun releaseCeremonyToken(token: String, promise: Promise) {
+    fun releaseCeremonyToken(token: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (token == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             CeremonyTokens.release(token)
             promise.resolve(true)
@@ -1486,7 +1803,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun sha256(msg: String, promise: Promise) {
+    fun sha256(msg: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (msg == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "sha256")) return
             val result = DklsNative.bbmtSha256Native(msg)
@@ -1525,17 +1849,24 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun mpcSignPSBT(
-        server: String,
-        partyID: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        psbtBase64: String,
-        ceremonyToken: String,
+        server: String?,
+        partyID: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        psbtBase64: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || psbtBase64 == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-6: GG18 sign takes a sign token (strict session).
@@ -1571,22 +1902,29 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun mpcSendBTCWithUTXOs(
-        server: String,
-        partyID: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        publicKey: String,
-        receiverAddress: String,
-        amountSatoshi: String,
-        feeSatoshi: String,
-        utxosWithPathsJSON: String,
-        changeAddress: String,
-        ceremonyToken: String,
+        server: String?,
+        partyID: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        publicKey: String?,
+        receiverAddress: String?,
+        amountSatoshi: String?,
+        feeSatoshi: String?,
+        utxosWithPathsJSON: String?,
+        changeAddress: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || publicKey == null || receiverAddress == null || amountSatoshi == null || feeSatoshi == null || utxosWithPathsJSON == null || changeAddress == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-6: GG18 send takes a sign token (strict session).
@@ -1627,18 +1965,25 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun nostrMpcSendBTC(
-        relaysCSV: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        balanceSats: String,
-        receiverAddress: String,
-        amountSatoshi: String,
-        estimatedFee: String,
-        utxosWithPathsJSON: String,
-        changeAddress: String,
-        ceremonyToken: String,
+        relaysCSV: String?,
+        partiesNpubsCSV: String?,
+        npubsSorted: String?,
+        balanceSats: String?,
+        receiverAddress: String?,
+        amountSatoshi: String?,
+        estimatedFee: String?,
+        utxosWithPathsJSON: String?,
+        changeAddress: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partiesNpubsCSV == null || npubsSorted == null || balanceSats == null || receiverAddress == null || amountSatoshi == null || estimatedFee == null || utxosWithPathsJSON == null || changeAddress == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-6: GG18 nostr send takes a sign token (single-call).
@@ -1672,13 +2017,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun nostrMpcSignPSBT(
-        relaysCSV: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        psbtBase64: String,
-        ceremonyToken: String,
+        relaysCSV: String?,
+        partiesNpubsCSV: String?,
+        npubsSorted: String?,
+        psbtBase64: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partiesNpubsCSV == null || npubsSorted == null || psbtBase64 == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-6: GG18 nostr sign takes a sign token (single-call).
@@ -1758,17 +2110,24 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsMpcTssSetup(
-        server: String,
-        partyID: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        chaincode: String,
-        ceremonyToken: String,
+        server: String?,
+        partyID: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        chaincode: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || chaincode == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
@@ -1803,15 +2162,22 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsNostrMpcTssSetup(
-        relaysCSV: String,
-        partyNsec: String,
-        partiesNpubsCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        chaincode: String,
-        ceremonyToken: String,
+        relaysCSV: String?,
+        partyNsec: String?,
+        partiesNpubsCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        chaincode: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partyNsec == null || partiesNpubsCSV == null || sessionID == null || sessionKey == null || chaincode == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
@@ -1843,7 +2209,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun dklsCancelMpcSession(sessionID: String, ceremonyToken: String, promise: Promise) {
+    fun dklsCancelMpcSession(sessionID: String?, ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-4 B19: cancel consumes the ceremony token (same
@@ -1862,7 +2235,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun dklsCancelNostrMpc(ceremonyToken: String, promise: Promise) {
+    fun dklsCancelNostrMpc(ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 // 3b-4 B19: global cancel consumes a live ceremony
@@ -1882,17 +2262,24 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsMpcSignPSBT(
-        server: String,
-        partyID: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        psbtBase64: String,
-        ceremonyToken: String,
+        server: String?,
+        partyID: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        psbtBase64: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || psbtBase64 == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
@@ -1921,22 +2308,29 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsMpcSendBTCWithUTXOs(
-        server: String,
-        partyID: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        btcPub: String,
-        toAddress: String,
-        satoshiAmount: String,
-        satoshiFees: String,
-        utxosWithPathsJSON: String,
-        changeAddress: String,
-        ceremonyToken: String,
+        server: String?,
+        partyID: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        btcPub: String?,
+        toAddress: String?,
+        satoshiAmount: String?,
+        satoshiFees: String?,
+        utxosWithPathsJSON: String?,
+        changeAddress: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || btcPub == null || toAddress == null || satoshiAmount == null || satoshiFees == null || utxosWithPathsJSON == null || changeAddress == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
@@ -1966,18 +2360,25 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsNostrMpcSendBTC(
-        relaysCSV: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        balanceSats: String,
-        toAddress: String,
-        satoshiAmount: String,
-        satoshiFees: String,
-        utxosWithPathsJSON: String,
-        changeAddress: String,
-        ceremonyToken: String,
+        relaysCSV: String?,
+        partiesNpubsCSV: String?,
+        npubsSorted: String?,
+        balanceSats: String?,
+        toAddress: String?,
+        satoshiAmount: String?,
+        satoshiFees: String?,
+        utxosWithPathsJSON: String?,
+        changeAddress: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partiesNpubsCSV == null || npubsSorted == null || balanceSats == null || toAddress == null || satoshiAmount == null || satoshiFees == null || utxosWithPathsJSON == null || changeAddress == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
@@ -2002,13 +2403,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsNostrMpcSignPSBT(
-        relaysCSV: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        psbtBase64: String,
-        ceremonyToken: String,
+        relaysCSV: String?,
+        partiesNpubsCSV: String?,
+        npubsSorted: String?,
+        psbtBase64: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partiesNpubsCSV == null || npubsSorted == null || psbtBase64 == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
@@ -2098,7 +2506,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun parsePSBTDetails(psbtBase64: String, promise: Promise) {
+    fun parsePSBTDetails(psbtBase64: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (psbtBase64 == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "parsePSBTDetails")) return@Thread
@@ -2113,7 +2528,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun psbtIdentityHash(psbtBase64: String, promise: Promise) {
+    fun psbtIdentityHash(psbtBase64: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (psbtBase64 == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "psbtIdentityHash")) return@Thread
