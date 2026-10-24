@@ -2,8 +2,8 @@ package com.boldwallet
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.facebook.react.bridge.BridgeReactContext
 import com.facebook.react.bridge.Promise
-import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.WritableMap
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -94,7 +94,7 @@ class F11BridgeValidationInstrumentedTest {
     }
 
     private fun module(): BBMTLibNativeModule {
-        val ctx = ReactApplicationContext(
+        val ctx = BridgeReactContext(
             InstrumentationRegistry.getInstrumentation().targetContext,
         )
         return BBMTLibNativeModule(ctx)

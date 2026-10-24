@@ -590,15 +590,18 @@ describe('3b-5 L5 malicious-JS simulation (F10-bridge)', () => {
     for (const name of methods) {
       // Kotlin + Swift declarations take the token…
       expect(kt).toMatch(new RegExp(`fun ${name}\\(`));
+      // F11: 600→1300 — the null-guard block + nullable suffixes pushed
+      // the verify call out (measured max 1162 on 14-param GG18 send);
+      // the property is unchanged.
       const ktDecl = kt.slice(
         kt.indexOf(`fun ${name}(`),
-        kt.indexOf(`fun ${name}(`) + 600,
+        kt.indexOf(`fun ${name}(`) + 1300,
       );
       expect(ktDecl).toContain('ceremonyToken');
       expect(swift).toMatch(new RegExp(`func ${name}\\(`));
       const swiftDecl = swift.slice(
         swift.indexOf(`func ${name}(`),
-        swift.indexOf(`func ${name}(`) + 600,
+        swift.indexOf(`func ${name}(`) + 1300,
       );
       expect(swiftDecl).toContain('ceremonyToken');
       // …the .m export exposes it (except no-arg-impossible shapes)…

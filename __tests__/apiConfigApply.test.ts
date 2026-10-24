@@ -122,6 +122,7 @@ describe('3b-2d config gating (F10-bridge B15-B16)', () => {
     );
     const confirm = jest.fn(async () => true);
     await expect(
+      // eslint-disable-next-line no-script-url -- attack-string test input, not code
       ensureFeeApisApplied(['javascript:alert(1)'], confirm),
     ).rejects.toThrow('Malformed API URL');
     expect(confirm).not.toHaveBeenCalled();
