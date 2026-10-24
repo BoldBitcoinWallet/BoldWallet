@@ -92,7 +92,7 @@ type MintEntry = {op: string; session: string};
 const mintRegistry = new Map<string, MintEntry>();
 const approvedUrls = new Set<string>([
   'https://mempool.space/api',
-  'https://mempool.space/testnet/api',
+  'https://mempool.space/testnet4/api',
 ]);
 
 function mintStub(op: string) {

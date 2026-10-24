@@ -166,11 +166,11 @@ describe('3b-2d config gating (F10-bridge B15-B16)', () => {
   test('fee helper joins bases and applies silently when allowed', async () => {
     const out = await ensureFeeApisApplied([
       'https://mempool.space/api',
-      'https://mempool.space/testnet/api',
+      'https://mempool.space/testnet4/api',
     ]);
     expect(out).toBe('ok');
     expect(native.setFeeAPIs).toHaveBeenCalledWith(
-      'https://mempool.space/api,https://mempool.space/testnet/api',
+      'https://mempool.space/api,https://mempool.space/testnet4/api',
       '',
       '',
     );
