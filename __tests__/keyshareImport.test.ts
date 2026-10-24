@@ -47,11 +47,6 @@ jest.mock('../services/TssProvider', () => ({
 jest.mock('../services/walletSetupOrchestrator', () => ({
   persistStagedKeyshare: jest.fn(),
 }));
-jest.mock('../services/backupNudge', () => ({
-  setBackupNudgeActive: jest.fn(),
-  clearBackupNudge: jest.fn(),
-  isBackupNudgeActive: jest.fn(),
-}));
 jest.mock('../services/repositories/AppConfigRepository', () => ({
   __esModule: true,
   default: {
@@ -67,7 +62,6 @@ jest.mock('../services/repositories/AppConfigRepository', () => ({
 
 import {Alert} from 'react-native';
 import RNFS from 'react-native-fs';
-import {setBackupNudgeActive} from '../services/backupNudge';
 import {BBMTLibNativeModule} from '../native_modules';
 import {
   decryptAndValidateKeyshare,
@@ -246,10 +240,9 @@ describe('keyshareImport (F1 mapping, F15b-1 staged)', () => {
     });
     expect(native.completeCeremonyToken).toHaveBeenCalledWith('tok-imp-owner');
     expect(native.releaseCeremonyToken).not.toHaveBeenCalled();
-    expect(setBackupNudgeActive).not.toHaveBeenCalled();
   });
 
-  it('3b-6e: legacy import is silent and sets the persistent nudge', async () => {
+  it('3b-6f: legacy import is silent (no alert, internal realign only)', async () => {
     native.sha256.mockResolvedValue('sess-imp-legacy');
     native.requestImportCeremonyToken.mockResolvedValue('tok-imp-legacy');
     native.completeCeremonyToken.mockResolvedValue(true);
@@ -265,7 +258,6 @@ describe('keyshareImport (F1 mapping, F15b-1 staged)', () => {
     } finally {
       alertSpy.mockRestore();
     }
-    expect(setBackupNudgeActive).toHaveBeenCalledTimes(1);
     expect(alertSpy).not.toHaveBeenCalled();
   });
 

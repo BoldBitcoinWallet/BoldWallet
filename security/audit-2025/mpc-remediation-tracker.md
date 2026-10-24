@@ -403,13 +403,14 @@ DKG + threshold sign, both sigs independently verified;
 SUCCEEDED, assembleDebug green, JNI 65 symbols, tsc 32
 pre-existing, eslint clean.
 
-3b-6e (backup nudge UX): legacy import is silent (no
-blocking alert); sets persistent STALE_BACKUP_NUDGE flag
-shown as a card on Wallet home + a line in Settings >
-Security, cleared on fresh v2 export (fail-safe helpers).
-Post-migration prompt also sets the flag so "Later"
-persists as the nudge. Airgap-QR export does not clear
-the flag (no completion signal) — follow-up if needed.
+3b-6e (backup nudge UX): REVERTED by 3b-6f per product
+— persistent nag removed as annoying/meaningless since
+internal auto-realign + always-newest-format exports
+cover old keys. What stays: SILENT legacy import (no
+alert, envelope realign internally, newest format on next
+export; pinned by 3b-6f no-alert test). One-time
+post-migration prompt ("Keyshare storage upgraded", Q2)
+kept — fires once ever, only when a migration ran.
 2. Real-device QA is a merge gate (8 items, Android
 fingerprint + iOS Face ID). Not run by the agent — record
 "QA passed" here before merging.

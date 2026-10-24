@@ -50,9 +50,6 @@ export const CONFIG_KEYS = {
   PSBT_MODE_FIRST_VISIT: 'psbt_mode_first_visit',
   /** F15b-1: one-time post-envelope-migration backup prompt shown. */
   ENVELOPE_MIGRATION_BACKUP_PROMPTED: 'envelope_migration_backup_prompted',
-  /** 3b-6e: persistent "backup recommended" nudge (legacy import or
-   * post-migration dismissal). Cleared on fresh v2 export. */
-  STALE_BACKUP_NUDGE: 'stale_backup_nudge',
   /** Last selected Android camouflage preset id (`default` / `quickcalc` / …). */
   APP_ICON_PREFERENCE: 'app_icon_preference',
   /** Camouflage unlock PIN salt:hash (not the PIN). */

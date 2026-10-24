@@ -39,7 +39,6 @@ import {
 } from '../services/walletOnlineStore';
 import {setNavMenuStyle, useNavMenuStyle} from '../services/navMenuStore';
 import {discardPendingKeyshares} from '../services/keyshareHandles';
-import {isBackupNudgeActive} from '../services/backupNudge';
 import {
   dbg,
   setHapticsEnabled,
@@ -353,12 +352,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [isDeleting, setIsDeleting] = useState(false);
   const [isModalResetVisible, setIsModalResetVisible] = useState(false);
   const [isBackupModalVisible, setIsBackupModalVisible] = useState(false);
-  // 3b-6e: persistent backup nudge; re-read when the export modal
-  // closes (fresh export clears the flag).
-  const [backupNudgeActive, setBackupNudgeActive] = useState(false);
-  useEffect(() => {
-    setBackupNudgeActive(isBackupNudgeActive());
-  }, [isBackupModalVisible]);
   const [isAirgapExportModalVisible, setIsAirgapExportModalVisible] =
     useState(false);
   const [isTestnet, setIsTestnet] = useState(true);
@@ -1435,14 +1428,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           color: theme.colors.textSecondary,
           lineHeight: 18,
           textAlign: 'left' as const,
-        },
-        nudgeText: {
-          fontSize: theme.fontSizes?.sm || 12,
-          fontFamily: theme.fontFamilies?.regular,
-          color: theme.colors.warning,
-          lineHeight: 18,
-          textAlign: 'left' as const,
-          marginBottom: 8,
         },
         hintBold: {
           fontFamily: theme.fontFamilies?.bold,
@@ -2981,11 +2966,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             styles={styles}
             theme={theme}>
             <Text style={styles.apiName}>Backup Wallet Keyshare</Text>
-            {backupNudgeActive && (
-              <Text style={styles.nudgeText}>
-                Recommended — your last backup uses an older format.
-              </Text>
-            )}
             <AppPressable
               style={[
                 styles.button,

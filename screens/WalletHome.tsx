@@ -34,8 +34,6 @@ import ReceiveModal from './ReceiveModal';
 import RestoringIndexesModal from '../components/RestoringIndexesModal';
 import SignedPSBTModal from './SignedPSBTModal';
 import LegacyWalletModal from '../components/LegacyWalletModal';
-import BackupNudgeCard from '../components/BackupNudgeCard';
-import {isBackupNudgeActive} from '../services/backupNudge';
 import ExtensionPairingModal from '../components/ExtensionPairingModal';
 import AppText from '../components/AppText';
 import {
@@ -359,14 +357,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Navigation hook for detecting screen changes
   const nav = useNavigation();
   const homeFocused = useIsFocused();
-  // 3b-6e: persistent backup nudge; re-read on focus (export in
-  // Settings clears the flag while Home is unfocused).
-  const [backupNudgeVisible, setBackupNudgeVisible] = useState(false);
-  useEffect(() => {
-    if (homeFocused) {
-      setBackupNudgeVisible(isBackupNudgeActive());
-    }
-  }, [homeFocused]);
   const homeFocusedRef = useRef(homeFocused);
   useEffect(() => {
     homeFocusedRef.current = homeFocused;
@@ -2282,12 +2272,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   return (
     <SafeAreaView style={styles.container} edges={['left', 'right']}>
       <View style={styles.contentContainer}>
-        <BackupNudgeCard
-          visible={backupNudgeVisible}
-          onBackUp={() =>
-            navigation.navigate('Settings', {expandSection: 'backup'})
-          }
-        />
         <View style={styles.walletHeader}>
           <View style={styles.balanceContainer}>
             {/* Eye icon on left */}

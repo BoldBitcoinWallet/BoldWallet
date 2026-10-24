@@ -5,7 +5,6 @@ import appConfigRepository, {
   CONFIG_KEYS,
 } from './repositories/AppConfigRepository';
 import {alertSecureStorageError} from './secureStorageErrors';
-import {setBackupNudgeActive} from './backupNudge';
 
 /**
  * F15b-1 migration bootstrap (§1.5 steps 7–8). Runs once per app
@@ -62,9 +61,6 @@ export async function maybePromptPostMigrationBackup(
   } catch {
     /* prompt anyway — one extra prompt beats a missed backup */
   }
-  // 3b-6e: the one-time prompt persists as the "backup
-  // recommended" nudge, so "Later" doesn't mean "never reminded".
-  setBackupNudgeActive();
   Alert.alert(
     'Keyshare storage upgraded',
     'Your keyshare storage was upgraded. Make sure you have a current backup.',

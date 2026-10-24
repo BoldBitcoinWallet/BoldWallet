@@ -16,10 +16,6 @@ jest.mock('../services/secureStorageErrors', () => ({
   alertSecureStorageError: jest.fn(),
 }));
 
-jest.mock('../services/backupNudge', () => ({
-  setBackupNudgeActive: jest.fn(),
-}));
-
 import {Alert} from 'react-native';
 import {BBMTLibNativeModule} from '../native_modules';
 import appConfigRepository from '../services/repositories/AppConfigRepository';
@@ -28,7 +24,6 @@ import {
   maybePromptPostMigrationBackup,
   runEnvelopeMigrationIfNeeded,
 } from '../services/keyshareEnvelopeMigration';
-import {setBackupNudgeActive} from '../services/backupNudge';
 
 const native = BBMTLibNativeModule as any;
 const repo = appConfigRepository as any;
@@ -70,7 +65,6 @@ describe('F15b-1 envelope migration bootstrap', () => {
       false,
     );
     expect(Alert.alert).not.toHaveBeenCalled();
-    expect(setBackupNudgeActive).not.toHaveBeenCalled();
   });
 
   test('prompt fires once and Open backup navigates', async () => {
@@ -89,8 +83,6 @@ describe('F15b-1 envelope migration bootstrap', () => {
     expect(open).toBeDefined();
     open.onPress();
     expect(onOpen).toHaveBeenCalledTimes(1);
-    // 3b-6e: the one-time prompt persists as the backup nudge.
-    expect(setBackupNudgeActive).toHaveBeenCalledTimes(1);
   });
 
   test('prompt suppressed after the one-time flag is set', async () => {
@@ -99,6 +91,5 @@ describe('F15b-1 envelope migration bootstrap', () => {
       maybePromptPostMigrationBackup(true, jest.fn()),
     ).resolves.toBe(false);
     expect(Alert.alert).not.toHaveBeenCalled();
-    expect(setBackupNudgeActive).not.toHaveBeenCalled();
   });
 });
