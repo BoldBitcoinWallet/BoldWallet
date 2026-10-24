@@ -1,7 +1,13 @@
 package com.boldwallet
 
+import android.app.KeyguardManager
+import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -1162,6 +1168,156 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.reject("DESTROY_HANDLES_ERROR", e.message, e)
             }
         }.start()
+    }
+
+    /**
+     * 3b-1 ceremony-token mint: OS-visible auth FIRST
+     * (BiometricPrompt, biometric-or-device-credential), mint ONLY
+     * on success. No screen lock → CEREMONY_AUTH_NO_LOCK refuse
+     * (Q3). Every other failure → CEREMONY_AUTH_REQUIRED (no
+     * reason oracle). Mint itself enforces single-live-session.
+     */
+    @ReactMethod
+    fun requestCeremonyToken(
+        op: String,
+        sessionID: String,
+        title: String,
+        detail: String,
+        promise: Promise,
+    ) {
+        val opClass = CeremonyTokens.OpClass.parse(op)
+        if (opClass == null || sessionID.isEmpty()) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Confirm to continue — authenticate in the prompt.",
+                null,
+            )
+            return
+        }
+        val ctx = reactApplicationContext
+        val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        if (km == null || !km.isDeviceSecure) {
+            promise.reject(
+                "CEREMONY_AUTH_NO_LOCK",
+                "Set a device screen lock to continue.",
+                null,
+            )
+            return
+        }
+        val activity = ctx.currentActivity as? FragmentActivity
+        if (activity == null) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Confirm to continue — authenticate in the prompt.",
+                null,
+            )
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                val executor = ContextCompat.getMainExecutor(activity)
+                val callback = object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(
+                        result: BiometricPrompt.AuthenticationResult,
+                    ) {
+                        try {
+                            promise.resolve(CeremonyTokens.mint(opClass, sessionID))
+                        } catch (e: Exception) {
+                            promise.reject(
+                                "CEREMONY_AUTH_REQUIRED",
+                                "Confirm to continue — authenticate in the prompt.",
+                                e,
+                            )
+                        }
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        // User cancel, lockout, HW failure: never mint.
+                        promise.reject(
+                            "CEREMONY_AUTH_REQUIRED",
+                            "Confirm to continue — authenticate in the prompt.",
+                            null,
+                        )
+                    }
+
+                    override fun onAuthenticationFailed() {
+                        // Single bad biometric — retryable, do not settle.
+                    }
+                }
+                val infoBuilder = BiometricPrompt.PromptInfo.Builder()
+                    .setTitle(title.ifEmpty { "Confirm to continue" })
+                    .setAllowedAuthenticators(
+                        BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                            BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+                    )
+                if (detail.isNotEmpty()) {
+                    infoBuilder.setSubtitle(detail)
+                }
+                // NOTE: no negative button — forbidden with DEVICE_CREDENTIAL.
+                BiometricPrompt(activity, executor, callback).authenticate(infoBuilder.build())
+            } catch (e: Exception) {
+                promise.reject(
+                    "CEREMONY_AUTH_REQUIRED",
+                    "Confirm to continue — authenticate in the prompt.",
+                    e,
+                )
+            }
+        }
+    }
+
+    /** 3b-1: retire a token after ceremony success (-> USED). */
+    @ReactMethod
+    fun completeCeremonyToken(token: String, promise: Promise) {
+        try {
+            CeremonyTokens.complete(token)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("CEREMONY_TOKEN_ERROR", e.message, e)
+        }
+    }
+
+    /** 3b-1: revoke a token on teardown (-> REVOKED). Idempotent. */
+    @ReactMethod
+    fun releaseCeremonyToken(token: String, promise: Promise) {
+        try {
+            CeremonyTokens.release(token)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("CEREMONY_TOKEN_ERROR", e.message, e)
+        }
+    }
+
+    /**
+     * DEBUG-ONLY prompt-bypassing mint for tests. Refuses unless
+     * BuildConfig.DEBUG (release bytecode keeps the method but the
+     * path always refuses — unlike Swift #if DEBUG which strips
+     * it; disclosed, same security property). Production code
+     * must never call this — guardrailed in jest.
+     */
+    @ReactMethod
+    fun requestCeremonyTokenTest(op: String, sessionID: String, promise: Promise) {
+        if (!CeremonyTestMint.isAllowed(BuildConfig.DEBUG)) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Confirm to continue — authenticate in the prompt.",
+                null,
+            )
+            return
+        }
+        val opClass = CeremonyTokens.OpClass.parse(op)
+        if (opClass == null || sessionID.isEmpty()) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Confirm to continue — authenticate in the prompt.",
+                null,
+            )
+            return
+        }
+        try {
+            promise.resolve(CeremonyTokens.mint(opClass, sessionID))
+        } catch (e: Exception) {
+            promise.reject("CEREMONY_TOKEN_ERROR", e.message, e)
+        }
     }
 
     /**

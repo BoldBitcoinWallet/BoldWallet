@@ -103,6 +103,22 @@ the ceremony token; only F12's exact-match mechanism stays
 Wave 4). Keypair generators: retain + token-gate (B20–B21),
 do not remove. F21 tracked Done independently of F15b-2.
 
+3b-1 token core GREEN: CeremonyTokens.kt + CeremonyTokens.swift
+(state machine minted→active→used|expired|revoked, class+
+session binding, ≤10min TTL, single-live-session mint,
+cancel→revokeSession), JVM CeremonyTokensTest 12/12,
+ceremony-harness PASSED (mirrors JVM case-for-case),
+ceremonyAuth.test.ts 8/8 (wrapper + malicious-mint
+simulation + Test-hook guardrail), Debug+Release iOS builds
+green (#if DEBUG strip proven), Android compile green
+(androidx.biometric 1.1.0 — cached; 1.2.0 API unused).
+Backgrounding DECISION (flag b): NO revoke on background —
+Android foreground-service keep-alive legitimately runs
+prepare/keygen/co-sign for minutes backgrounded
+(mpcKeepAlive.ts); revoke-on-background would break it.
+≤10min expiry is the bound; mint implicitly requires
+foreground (OS prompt needs a live Activity/scene).
+
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
   arm64 emulator (pure-Go build; x/crypto/argon2 has amd64 asm only, so ARM

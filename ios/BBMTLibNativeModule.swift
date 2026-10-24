@@ -6,6 +6,7 @@
 //
 import Darwin
 import Foundation
+import LocalAuthentication
 import Network
 import React
 import Security
@@ -677,6 +678,81 @@ class BBMTLibNativeModule: RCTEventEmitter {
       resolver(true)
     }
   }
+
+  /// 3b-1 ceremony-token mint: OS-visible auth FIRST (LAContext,
+  /// biometric-or-device-passcode), mint ONLY on success. No
+  /// screen lock → CEREMONY_AUTH_NO_LOCK refuse (Q3). Every other
+  /// failure → CEREMONY_AUTH_REQUIRED (no reason oracle).
+  @objc func requestCeremonyToken(
+    _ op: String, sessionID: String, title: String, detail: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    guard let opClass = CeremonyOpClass.parse(op), !sessionID.isEmpty else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
+      return
+    }
+    let context = LAContext()
+    var evalError: NSError?
+    guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &evalError) else {
+      if let code = evalError?.code, code == LAError.passcodeNotSet.rawValue {
+        rejecter("CEREMONY_AUTH_NO_LOCK", "Set a device screen lock to continue.", nil)
+      } else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", evalError)
+      }
+      return
+    }
+    // LAContext takes a single reason string (Android uses
+    // title+subtitle); combine for parity. JS-supplied summary
+    // is a disclosed residual per §6.4; F20 owns the native
+    // screen. The prompt itself is always OS-rendered.
+    var reason = title.isEmpty ? "Confirm to continue" : title
+    if !detail.isEmpty {
+      reason += " — " + detail
+    }
+    context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+      if success {
+        resolver(CeremonyTokens.mint(opClass: opClass, sessionID: sessionID))
+      } else {
+        // User cancel, fallback, lockout, failure: never mint.
+        rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
+      }
+    }
+  }
+
+  /// 3b-1: retire a token after ceremony success (-> used).
+  @objc func completeCeremonyToken(
+    _ token: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    CeremonyTokens.complete(token: token)
+    resolver(true)
+  }
+
+  /// 3b-1: revoke a token on teardown (-> revoked). Idempotent.
+  @objc func releaseCeremonyToken(
+    _ token: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    CeremonyTokens.release(token: token)
+    resolver(true)
+  }
+
+  #if DEBUG
+    /// DEBUG-ONLY prompt-bypassing mint for tests. Stripped from
+    /// release by #if DEBUG (unlike Android's runtime gate;
+    /// disclosed, same security property). Production code must
+    /// never call this — guardrailed in jest.
+    @objc func requestCeremonyTokenTest(
+      _ op: String, sessionID: String,
+      resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    ) {
+      guard let opClass = CeremonyOpClass.parse(op), !sessionID.isEmpty else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
+        return
+      }
+      resolver(CeremonyTokens.mint(opClass: opClass, sessionID: sessionID))
+    }
+  #endif
 
   /// F15b-1 migration bootstrap (§1.5 step 7): idempotent
   /// plaintext → envelope migration. Resolves {migrated:bool}.
