@@ -13,8 +13,8 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F16b | Airgap export PIN is 6 digits + SHA-256 + CBC | Med | services/airgapPin.ts:3; components/AirgapKeyshareExportModal.tsx:86 | Longer PIN or PAKE; GCM; warn on screen-record | TBD | Open |
 | F15 | ExportKeyShare plaintext despite SecureBytes | High | BBMTLib/dkls/keyshare.go:31 | PARTIAL (Wave 2): SecureBytes-at-export + Destroy/wipe + BbmtFree memset + theater-wrapper removal + backup-export opacity. share_b64 still crosses JS on persist/import/read → F15b | TBD | Partial |
 | F15b-1 | Native-held shares: storage flows (3a) | Critical | persistWalletKeyshare; getKeyshare; backupDecrypt; RNES keyshare value | Go registry + at-rest envelope + native persist/staged-import/metadata getters; GG18 setup carved to F19 | TBD | Green (3a-5 evidence below; unmerged on security/wave3a-f15b1-f10clip) |
-| F15b-2 | Native-held shares: ceremony flows (3b) | Critical | signing methods; nostrJoinKeysign ×2 | Token params on DKLs signing; F18 removal; GG18 carved to F19 | TBD | In Progress (security/wave3b-f15b2-f18-f10) |
-| F18 | nostrJoinKeysign takes keyshare JSON from JS on BOTH platforms; dead from JS | High | BBMTLibNativeModule.kt:741; BBMTLibNativeModule.swift:927 | REMOVE both bridge methods in 3b (dead code mitigates reachability, not severity — any JS can call them today) | TBD | In Progress (security/wave3b-f15b2-f18-f10) |
+| F15b-2 | Native-held shares: ceremony flows (3b) | Critical | signing methods; nostrJoinKeysign ×2 | DONE (3b): per-ceremony tokens (sign/keygen/export/import/config, ≤10min TTL-start, OS prompt, no-lock refuse) gate all DKLs sign/setup/keypair/transport/import/export/cancel; F18 removed; GG18 carved to F19; evidence 3b-5 | TBD | Done (security/wave3b-f15b2-f18-f10, unmerged) |
+| F18 | nostrJoinKeysign takes keyshare JSON from JS on BOTH platforms; dead from JS | High | BBMTLibNativeModule.kt:741; BBMTLibNativeModule.swift:927 | DONE (3b-3): REMOVED both bridge methods + JNI/shim layers after zero-caller re-verification (static/dynamic/WebView/reflection); Go core stays native-only; f18Removal 6/6 pins | TBD | Done (security/wave3b-f15b2-f18-f10, unmerged) |
 | F19 | GG18 protocol-variant decision (deferred, post-Wave-3) | High | mpcTssSetup; nostrMpcTssSetup; GG18 signing ×4 | Decide: migrate GG18 (setup A1/A2 plaintext reachable via opt-out pref; signing untokenized) to handles, or deprecate new GG18 keygen. A6/A7/envelope stay backend-agnostic (no GG18 import regression) | TBD | Open (deferred) |
 | F20 | No native PSBT-confirmation screen (ceremony prompt summary is JS-supplied/spoofable) | High | §6.4 wave3-design | Native screen parsing destination/amount from PSBT bytes at signing time | TBD | Open (post-Wave-3) |
 | F21 | Pairing nsec returned to JS in full, retained in state after finalize (not the MPC share; separate from F15b) | Med | screens/MobileNostrPairing.tsx:1240,478,1242,1891 | Clear localNsec state + pendingKeyshareRef.partyNsec after ensureNostrKeyshareStored succeeds; long-term native-held nsec handle (F5 scope) | TBD | Done (3b first commit; guardrail __tests__/f21PairingNsec.test.ts 3/3; dereference, not heap wipe — disclosed) |
@@ -24,14 +24,14 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F8 | Global Android cleartext + ws/http allowed | High | network_security_config.xml:3 | Scope cleartext to loopback/link-local; block non-LAN ws/http | TBD | Open |
 | F9 | Secrets cross bridge as strings; no zeroization | High | BBMTLibNativeModule.kt:160; BbmtBridge.mm:13 | Opaque handles; SecureBytes/memset+mlock; minimize copies | TBD | Open |
 | F10-clipboard | Secret clipboard writes (full keyshare JSON, dice rolls) | High | KeyshareInfoContent.tsx:605; DiceEntropySheet.tsx:604 | Metadata-only copy (npub/pub_key/suite); dice copyDisabled; clipboard-after-export tests | TBD | Green (3a-5 evidence below; unmerged on security/wave3a-f15b1-f10clip) |
-| F10-bridge | Bridge sign/decrypt callable from any JS | High | services/TssProvider.ts:116 (62 native methods) | Ceremony tokens (3b); setAPI/fee allowlist; dead-oracle removal in 3a; keypair generators retained + token-gated (B20–B21, OS-visible prompt) — acceptance, not removal | TBD | In Progress (security/wave3b-f15b2-f18-f10) |
+| F10-bridge | Bridge sign/decrypt callable from any JS | High | services/TssProvider.ts:116 (62 native methods) | DONE (3b): Table B fully gated (B5–B21 + A12 + B19 cancel-consume); setAPI/fee allowlist-or-token; keypair generators retained + gated (OS prompt); L5 malicious-JS suite 11/11 | TBD | Done (security/wave3b-f15b2-f18-f10, unmerged) |
 | F11 | No input validation at JNI/Go seams; FFI crashes | High | bbmtmobile/export_dkls.go:17; tss/common.go:465; mpc.go:1238 | Nil/length/caps checks; bound SecureRandom; nil-guard resp/req. Wave-3 scope MUST include new BbmtBackupEncrypt/Decrypt + JNI trampolines (added guard-less in B1) | TBD | Open |
 | F6 | LAN decrypt-before-verify padding oracle | Med-High | BBMTLib/tss/mpc.go:1149 | Verify-then-decrypt; uniform observable; AEAD | TBD | Open |
 | F12 | Prefix-match cancel + 15-min poison; no-confirm bridge cancel | High | tss/cancel.go:29,103; BBMTLibNativeModule.kt:505 | Exact-match cancel; per-session contexts/keys; confirm token | TBD | Open |
 | F14 | SessionKeyHex inert; secrecy rests on long-term nsec | Med | tss/nostrtransport/config.go:49 | HKDF session key into AEAD or remove field (allowlist is DKG-pinned: signing_resolve.go:57) | TBD | Open |
 | F13 | Background/kill: warning-only; replay memory is RAM-only | Med | services/mpcKeepAlive.ts:200 | Ceremony epoch or fresh session IDs post-death; persist seen-IDs | TBD | Open |
 
-Fix waves: (1) F7+sweep done. (2) B1 done. (3) F15(partial→F15b),F3,F4 done. Wave 3a = F15b-1+F10-clip (GREEN, unmerged); Wave 3b = F15b-2+F18+F10-bridge+F4-auth; Wave 4 = F11+F6; then F12,F14; F13. F19/F20 deferred; F21 open (nsec JS-retention, non-blocking for 3a).
+Fix waves: (1) F7+sweep done. (2) B1 done. (3) F15(partial→F15b),F3,F4 done. Wave 3a = F15b-1+F10-clip (GREEN, unmerged); Wave 3b = F15b-2+F18+F10-bridge+F4-auth (GREEN, unmerged); Wave 4 = F11+F6; then F12,F14; F13. F19/F20 deferred; F21 Done (3b first commit).
 Still owner-side: govulncheck, npm audit, gitleaks/trufflehog history, FROST/DKLs23 fork diff.
 
 ## Wave 1 — B1 (F1+F2+F16): DONE (merged c6d2613f). F7-residual fail-closed build: done.
@@ -90,10 +90,11 @@ PSBT-screen to F20.
   (native loads creds). Fix is a post-finalize clear, tracked
   separately — nsec isn't the MPC share.
 
-## Wave 3b — F15b-2 + F18 + F10-bridge + F4-auth: IN PROGRESS on `security/wave3b-f15b2-f18-f10`.
+## Wave 3b — F15b-2 + F18 + F10-bridge + F4-auth: GREEN (unmerged) on `security/wave3b-f15b2-f18-f10`.
 
 Sequence: F21 (Done, first commit) → 3b-1 token core →
-Table B gating → F18 + A12 → cancel/F4 → L5 tests.
+Table B gating → F18 + A12 → cancel/F4 → L5 tests. All
+slices green; F15b-2/F18/F10-bridge Done pending merge.
 Doc reconciliations at kickoff (design §6/Table B–D):
 (1) token expiry 10 min wins (§6.2 "30-min" was a doc bug);
 (2) Table C dead-oracle removals actually landed in 3a,
@@ -265,6 +266,39 @@ tssCancelTokenGating 6/6, f4CeremonyAuth 8/8, JVM 23/23,
 harness PASSED (98 checks), iOS Debug + Android release
 green, tsc 32 pre-existing, eslint 0 errors. Full jest 717
 passed, same 6 pre-existing failures.
+
+3b-5 GREEN (L5 + round-trips + evidence): l5MaliciousJs 11/11
+(strict-native simulator: all unsigned/direct calls fail
+closed; cross-class and cross-session replay fail; config
+evil-URL/wrong-class fail, seeds pass; no generic minter;
+all 19 gated methods carry + verify ceremonyToken both
+platforms; setup→persist→read→sign round-trip leaves zero
+live tokens; no background revocation wiring; tokens
+memory-only so kill-mid-session recovers nothing).
+Regression: JVM 44/44, instrumented 6/6 on emulator,
+harness 98 checks PASSED, iOS Debug + Release SUCCEEDED,
+assembleDebug (NDK) green, JNI 65 symbols no dupes, tsc 32
+pre-existing, eslint 0 errors. Full jest 728 passed; same 6
+pre-existing failures (2 suites identical at 3b base;
+4 libtss-submodule environmental).
+
+MANUAL QA CHECKLIST (real devices, pre-merge recommended):
+1. Fresh install → create wallet (LAN + nostr): OS prompt at
+keypair + setup + save; completes; no spurious prompts.
+2. Restore backup (v2 + legacy): one import prompt; legacy
+warning shows; wrong password errors cleanly.
+3. Send + sign PSBT (LAN + nostr): prompt per ceremony;
+abort mid-sign cancels without a second prompt; stuck abort
+(GG18/airplane) re-prompts once and cancels.
+4. Export backup (password + airgap): prompt per export.
+5. Change API/fee provider in settings: prompt once, new
+host persists; restart applies silently.
+6. Background mid-ceremony 2+ min → foreground: ceremony
+continues (no revoke); kill mid-sign → restart clean, no
+orphan state, re-sign works.
+7. No-lock device: every ceremony refuses with the screen-lock
+message (never a raw keychain error).
+8. Cancel lands with the ceremony dead (no late signature).
 
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
