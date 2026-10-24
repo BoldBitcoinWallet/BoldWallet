@@ -58,6 +58,7 @@ import {
   KEYSHARE_STORAGE_KEY,
 } from '../utils';
 import {chaincodeHexFromBlob, resolveChaincodeHex} from '../services/chaincodeReader';
+import {discardPendingKeyshares} from '../services/keyshareHandles';
 import {
   createUrDecoder,
   formatUrFragmentProgress,
@@ -1287,6 +1288,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           try {
             await EncryptedStorage.removeItem(KEYSHARE_STORAGE_KEY);
             await clearKeyshareMetadata();
+            // F15b-1 (A10): wipe any Go-staged keyshare behind a dropped handle.
+            await discardPendingKeyshares();
           } catch (e) {
             dbg('WalletHome: clear unfinished keyshare failed', e);
           }

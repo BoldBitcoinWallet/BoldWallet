@@ -37,6 +37,7 @@ import type {DiceSet} from './diceEntropy';
 import {TssProvider, type SetupResult} from './TssProvider';
 
 export type {SetupResult};
+export {discardPendingKeyshares} from './keyshareHandles';
 import type {SetupMode, TssBackend} from './tssBackend';
 import {resolveTssBackendForKeygen} from './tssBackend';
 import {prepareDeviceForKeygen} from './tssKeygenPrepare';
@@ -432,22 +433,6 @@ export async function verifyWalletKeysharePersisted(): Promise<boolean> {
     return result === true || result === 'true' || result === 1;
   } catch {
     return false;
-  }
-}
-
-/**
- * F15b-1: best-effort wipe of Go-staged keyshares. Called on abort,
- * new-run reset, and anywhere a pending staged handle is dropped
- * without persist. Never throws — teardown must not fail setup UX.
- */
-export async function discardPendingKeyshares(): Promise<void> {
-  try {
-    const fn = BBMTLibNativeModule?.destroyKeyshareHandles;
-    if (typeof fn === 'function') {
-      await fn();
-    }
-  } catch {
-    /* staged entries also die on next Stage / process death */
   }
 }
 
