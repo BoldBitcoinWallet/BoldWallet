@@ -16,7 +16,7 @@ import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {PSBTLoader} from './PSBTModal';
 import {canonicalPsbtBase64} from '../services/psbtIdentity';
-import {dbg, generateAllOutputDescriptors, getKeyshare, getKeyshareMetadata} from '../utils';
+import {dbg, generateAllOutputDescriptors, getKeyshareSecureMetadata, getKeyshareMetadata} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
 import TransportModeSelector from '../components/TransportModeSelector';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -133,8 +133,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   }, [isPSBTSectionExpanded]);
   const loadKeyshareInfo = useCallback(async () => {
     try {
-      // Spec v2: chaincode from encrypted blob only, never SQLite metadata.
-      const keyshare = await getKeyshare();
+      // F15b-1: chaincode from native-projected secure fields, never SQLite metadata.
+      const keyshare = await getKeyshareSecureMetadata();
       if (!keyshare) {
         setKeyshareInfo(null);
         return;

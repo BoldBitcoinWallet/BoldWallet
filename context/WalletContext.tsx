@@ -5,7 +5,7 @@ import {
   getReceivePath,
   resolveUseLegacyDerivationPaths,
   clearKeyshareMetadata,
-  getKeyshare,
+  getKeyshareSecureMetadata,
   getKeyshareMetadata,
   hasWalletKeyshareInSecureStorage,
 } from '../utils';
@@ -44,9 +44,9 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
   const refreshWallet = async () => {
     try {
       dbg('WalletContext: Starting wallet refresh');
-      // Spec v2: chaincode from encrypted blob only, never SQLite metadata.
+      // F15b-1: chaincode from native-projected secure fields, never SQLite metadata.
       const ksMeta = await getKeyshareMetadata();
-      const ksBlob: any = await getKeyshare().catch(() => null);
+      const ksBlob: any = await getKeyshareSecureMetadata().catch(() => null);
       const ks = ksBlob ?? ksMeta;
       if (!ks) {
         dbg('WalletContext: No keyshare found, skipping wallet refresh');

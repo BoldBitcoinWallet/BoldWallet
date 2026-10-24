@@ -45,4 +45,26 @@ describe('secure storage errors (F3/F4)', () => {
     expect(alertSecureStorageError(new Error('plain failure'))).toBe(false);
     expect(Alert.alert).toHaveBeenCalledTimes(1);
   });
+
+  it('F15b-1: repeats within the window are suppressed, still handled', () => {
+    // LOCKED message — distinct from the UNAVAILABLE message above so
+    // module-level dedupe state cannot leak between tests.
+    const err = () => new Error('[SECURE_STORAGE_LOCKED] x');
+    expect(alertSecureStorageError(err())).toBe(true);
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(alertSecureStorageError(err())).toBe(true);
+    expect(alertSecureStorageError(err())).toBe(true);
+    expect(Alert.alert).toHaveBeenCalledTimes(1);
+  });
+
+  it('F15b-1: a different message is not suppressed', () => {
+    expect(alertSecureStorageError(new Error('[SECURE_STORAGE_LOCKED] x'))).toBe(
+      true,
+    );
+    const before = (Alert.alert as jest.Mock).mock.calls.length;
+    expect(
+      alertSecureStorageError(new Error('[SECURE_STORAGE_CORRUPTED] x')),
+    ).toBe(true);
+    expect((Alert.alert as jest.Mock).mock.calls.length).toBe(before + 1);
+  });
 });

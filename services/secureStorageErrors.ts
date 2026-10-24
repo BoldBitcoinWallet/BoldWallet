@@ -59,12 +59,27 @@ export function secureStorageMessageFor(error: unknown): string | null {
 /**
  * Shows the user-facing alert when the error is storage-related.
  * Returns true when handled (caller should treat the op as failed-safe).
+ *
+ * F15b-1: repeats of the same message within a short window are
+ * suppressed (still returns true). Derivation batches call the
+ * secure reader a dozen times per refresh — one alert per outage,
+ * not one per call.
  */
+const ALERT_DEDUPE_WINDOW_MS = 10_000;
+let lastAlertMessage: string | null = null;
+let lastAlertAt = 0;
+
 export function alertSecureStorageError(error: unknown): boolean {
   const message = secureStorageMessageFor(error);
   if (message === null) {
     return false;
   }
+  const now = Date.now();
+  if (message === lastAlertMessage && now - lastAlertAt < ALERT_DEDUPE_WINDOW_MS) {
+    return true;
+  }
+  lastAlertMessage = message;
+  lastAlertAt = now;
   Alert.alert('Secure Storage Unavailable', message);
   return true;
 }

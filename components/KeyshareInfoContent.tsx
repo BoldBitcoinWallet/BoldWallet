@@ -10,7 +10,7 @@ import {
   Linking,
   ActivityIndicator,
 } from 'react-native';
-import EncryptedStorage from 'react-native-encrypted-storage';
+import {BBMTLibNativeModule} from '../native_modules';
 import AppPressable from './AppPressable';
 import AppText from './AppText';
 import {SafeAreaView} from 'react-native-safe-area-context';
@@ -497,7 +497,18 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   const loadDevKeyshareStructure = useCallback(async () => {
     setDevKeyshareLoading(true);
     try {
-      const raw = await EncryptedStorage.getItem('keyshare');
+      // F15b-1 (A9): redacted structure — secret leaves replaced natively,
+      // shape preserved. The raw blob never enters JS.
+      let raw: string | null;
+      try {
+        raw = await BBMTLibNativeModule.getKeyshareStructureRedacted();
+      } catch (e: any) {
+        if ((e?.code ?? '') === 'NO_KEYSHARE') {
+          raw = null;
+        } else {
+          throw e;
+        }
+      }
       const parsed = parseKeyshareJsonForDevView(raw);
       if ('error' in parsed) {
         setDevKeyshareData(null);

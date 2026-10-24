@@ -172,7 +172,7 @@ export const generateAllOutputDescriptors = async (
     .toLowerCase();
   // Native GetOutputDescriptor returns the text "empty chain code" as a
   // resolved string when chaincode is blank. Metadata always blanks it;
-  // callers must pass the encrypted blob's 64-hex chain code.
+  // callers must pass the secure-fields 64-hex chain code.
   if (!/^[0-9a-f]{64}$/.test(chain)) {
     return {
       legacy: '',

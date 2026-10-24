@@ -14,7 +14,7 @@ import {
   getReceivePath,
   resolveUseLegacyDerivationPaths,
   dbg,
-  getKeyshare,
+  getKeyshareSecureMetadata,
   getKeyshareMetadata,
 } from '../utils';
 import {chaincodeHexFromBlob} from '../services/chaincodeReader';
@@ -278,9 +278,9 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       // Always derive btcPub fresh to ensure it matches the current address type
       // This prevents issues where stored btcPub was derived with a different address type
       let pub = '';
-      // Spec v2: chaincode from encrypted blob only, never SQLite metadata.
+      // F15b-1: chaincode from native-projected secure fields, never SQLite metadata.
       const ksMeta = await getKeyshareMetadata();
-      const ksBlob: any = await getKeyshare().catch(() => null);
+      const ksBlob: any = await getKeyshareSecureMetadata().catch(() => null);
       const ks = ksBlob ?? ksMeta;
       const chaincodeHex = chaincodeHexFromBlob(ksBlob);
       if (ks) {

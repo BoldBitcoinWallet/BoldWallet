@@ -53,6 +53,7 @@ import {
   decodeSendBitcoinQR,
   clearKeyshareMetadata,
   getKeyshareMetadata,
+  getKeyshareSecureMetadata,
   hasWalletKeyshareInSecureStorage,
   KEYSHARE_STORAGE_KEY,
 } from '../utils';
@@ -830,8 +831,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         let reinitChain = String(ks.chain_code_hex || '').trim().toLowerCase();
         if (!reinitChain) {
           try {
-            const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
-            reinitChain = chaincodeHexFromBlob(raw ? JSON.parse(raw) : null);
+            // F15b-1: native-projected secure fields, never the raw blob.
+            const secure = await getKeyshareSecureMetadata();
+            reinitChain = chaincodeHexFromBlob(secure);
           } catch {
             reinitChain = '';
           }
@@ -1270,8 +1272,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         const ks = await getKeyshareMetadata();
         let blob: any = null;
         try {
-          const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
-          blob = raw ? JSON.parse(raw) : null;
+          // F15b-1: native-projected secure fields, never the raw blob.
+          blob = await getKeyshareSecureMetadata();
         } catch {
           blob = null;
         }
