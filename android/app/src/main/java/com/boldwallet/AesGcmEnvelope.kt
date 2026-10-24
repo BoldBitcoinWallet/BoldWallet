@@ -1,6 +1,5 @@
 package com.boldwallet
 
-import java.security.SecureRandom
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -42,10 +41,19 @@ object AesGcmEnvelope {
         key: SecretKey,
         b64encode: (ByteArray) -> String,
     ): String {
-        val nonce = ByteArray(NONCE_LEN)
-        SecureRandom().nextBytes(nonce)
+        // Provider-generated IV (init WITHOUT GCMParameterSpec):
+        // AndroidKeyStore with randomized-encryption-required
+        // REJECTS caller-provided IVs on encrypt ("Caller-provided
+        // IV not permitted"); SunJCE/BouncyCastle generate a random
+        // 12-byte IV in this mode. One path serves both providers.
+        // (Decrypt always takes the explicit stored IV — permitted.)
         val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        cipher.init(Cipher.ENCRYPT_MODE, key, GCMParameterSpec(TAG_BITS, nonce))
+        cipher.init(Cipher.ENCRYPT_MODE, key)
+        val nonce = cipher.iv
+            ?: throw IllegalStateException("no provider IV generated")
+        if (nonce.size != NONCE_LEN) {
+            throw IllegalStateException("provider IV length ${nonce.size}")
+        }
         val ct = cipher.doFinal(plaintext)
         return MARKER + b64encode(nonce) + ":" + b64encode(ct)
     }
