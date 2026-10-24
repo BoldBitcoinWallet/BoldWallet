@@ -2702,6 +2702,17 @@ const MobileNostrPairing = ({navigation}: any) => {
         rememberNostrLegacyFlag(JSON.parse(persisted));
       }
       keysharePersistedRef.current = true;
+      // F21: the pairing nsec's JS job is done (DKG + finalize
+      // consumed it; signing takes no nsec). Drop both JS
+      // references; unmount/GC reclaims the heap copies. JS
+      // strings are immutable — this dereferences, not wipes.
+      setLocalNsec('');
+      if (pendingKeyshareRef.current) {
+        pendingKeyshareRef.current = {
+          ...pendingKeyshareRef.current,
+          partyNsec: undefined,
+        };
+      }
       return true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
