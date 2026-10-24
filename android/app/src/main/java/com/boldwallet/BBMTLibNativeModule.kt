@@ -166,9 +166,43 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      * Null means "no entry", never "storage broken": storage failures throw
      * [SecureStorageException] (stable `[SECURE_STORAGE_<KIND>]` message
      * prefix) and propagate to the caller's promise rejection.
+     *
+     * F15b-1: de-envelopes the RNES value. Pre-migration plaintext
+     * self-heals inline (migration is idempotent; steady-state
+     * reads pay only the isEnvelope check).
      */
     private fun loadKeyshareJSONFromRNES(): String? {
-        return rnesEncryptedPrefs().getString(KEY_KEYSHARE, null)
+        val prefs = rnesEncryptedPrefs()
+        val raw = prefs.getString(KEY_KEYSHARE, null) ?: return null
+        if (!KeyshareEnvelope.isEnvelope(raw)) {
+            KeyshareEnvelope.ensureEnveloped(prefs, KEY_KEYSHARE)
+            val migrated = prefs.getString(KEY_KEYSHARE, null) ?: return null
+            if (!KeyshareEnvelope.isEnvelope(migrated)) return null
+            return KeyshareEnvelope.decryptKeyshareJson(migrated)
+        }
+        return KeyshareEnvelope.decryptKeyshareJson(raw)
+    }
+
+    /**
+     * F15b-1 resolve guard: throws when a value about to resolve to
+     * JS contains share-material labels. Called inside the
+     * surrounding try/catch so violations become rejections, never
+     * resolutions.
+     */
+    private fun guardJsSafeResolve(value: String, method: String) {
+        if (AesGcmEnvelope.containsShareSecrets(value)) {
+            ld(method, "REFUSED to resolve share bytes to JS")
+            throw IllegalStateException("Refusing to expose keyshare secrets to JS")
+        }
+    }
+
+    /** F15b-1: staged DKG/import results must carry a handle ID. */
+    private fun guardStagedShape(value: String, method: String) {
+        guardJsSafeResolve(value, method)
+        if (!value.contains("\"handle\"")) {
+            ld(method, "REFUSED malformed staged result (no handle)")
+            throw IllegalStateException("Keyshare staging failed")
+        }
     }
 
     /**
@@ -705,6 +739,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
+    // variant decision deferred). DKLs twins stage natively.
     @ReactMethod
     fun nostrMpcTssSetup(
         relaysCSV: String,
@@ -771,6 +807,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
+    // variant decision deferred). DKLs twins stage natively.
     @ReactMethod
     fun mpcTssSetup(
         server: String,
@@ -943,51 +981,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
-    @ReactMethod
-    fun aesEncrypt(data: String, key: String, promise: Promise) {
-        try {
-            if (rejectBbmtUnavailable(promise, "aesEncrypt")) return
-            val result = DklsNative.bbmtAesEncryptNative(data, key)
-            ld("aesEncrypt", result)
-            promise.resolve(result)
-        } catch (e: Exception) {
-            ld("aesEncrypt", "error: ${e.stackTraceToString()}")
-            promise.resolve(e.message)
-        }
-    }
-
-    @ReactMethod
-    fun aesDecrypt(data: String, key: String, promise: Promise) {
-        try {
-            if (rejectBbmtUnavailable(promise, "aesDecrypt")) return
-            val result = DklsNative.bbmtAesDecryptNative(data, key)
-            ld("aesDecrypt", result)
-            promise.resolve(result)
-        } catch (e: Exception) {
-            ld("aesDecrypt", "error: ${e.stackTraceToString()}")
-            promise.resolve(e.message)
-        }
-    }
-
-    @ReactMethod
-    fun aesEncryptStoredKeyshare(key: String, promise: Promise) {
-        Thread {
-            try {
-                val data = loadKeyshareJSONFromRNES()
-                if (data == null) {
-                    promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
-                    return@Thread
-                }
-                if (rejectBbmtUnavailable(promise, "aesEncryptStoredKeyshare")) return@Thread
-                val result = DklsNative.bbmtAesEncryptNative(data, key)
-                ld("aesEncryptStoredKeyshare", result)
-                promise.resolve(result)
-            } catch (e: Exception) {
-                ld("aesEncryptStoredKeyshare", "error: ${e.stackTraceToString()}")
-                promise.resolve(e.message)
-            }
-        }.start()
-    }
+    // F10 (3a): dead oracle methods aesEncrypt / aesDecrypt /
+    // aesEncryptStoredKeyshare REMOVED (zero callers repo-wide, no
+    // WebView/eval/reflection path; Go BbmtAes* stays for native use).
 
     /**
      * F1: versioned backup export. KDF (Argon2id) + AEAD (AES-GCM) run in Go;
@@ -1019,19 +1015,173 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      * F1: versioned backup import. Returns {"format":"v2"|"legacy","plaintext":"..."}.
      * Legacy (CBC, no MAC) is import-only; callers must warn and prompt re-export.
      */
+    // F15b-1 (A5): backupDecrypt REMOVED — plaintext-to-JS import
+    // replaced by importBackupToStagedHandle (A6).
+    /**
+     * F15b-1 (A6): versioned backup import that stages natively.
+     * Resolves {handle, metadata, legacy} — never plaintext. Error
+     * TEXT preserves B1 semantics for the JS mapping (format vs
+     * wrong-password). Replaces backupDecrypt (removed with its
+     * caller rewrite).
+     */
     @ReactMethod
-    fun backupDecrypt(blob: String, password: String, promise: Promise) {
+    fun importBackupToStagedHandle(blob: String, password: String, promise: Promise) {
         Thread {
             try {
-                if (rejectBbmtUnavailable(promise, "backupDecrypt")) return@Thread
-                val result = DklsNative.bbmtBackupDecryptNative(blob, password)
+                if (rejectBbmtUnavailable(promise, "importBackupToStagedHandle")) return@Thread
+                val result = DklsNative.bbmtImportBackupStagedNative(blob, password)
                 if (result.startsWith("error:")) {
-                    promise.reject("BACKUP_DECRYPT_ERROR", result.removePrefix("error:"), null)
+                    promise.reject("BACKUP_IMPORT_ERROR", result.removePrefix("error:"), null)
                     return@Thread
                 }
+                guardStagedShape(result, "importBackupToStagedHandle")
                 promise.resolve(result)
             } catch (e: Exception) {
-                promise.reject("BACKUP_DECRYPT_ERROR", e.message, e)
+                promise.reject("BACKUP_IMPORT_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F15b-1 (A7): persist a staged handle to enveloped RNES.
+     * Resolves post-finalize metadata for the JS SQLite mirror.
+     * Staged entry is destroyed only after a VERIFIED write, so
+     * failed persists are retryable with the same handle.
+     */
+    @ReactMethod
+    fun persistStoredKeyshare(handle: String, nsec: String, npub: String, promise: Promise) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "persistStoredKeyshare")) return@Thread
+                val json = DklsNative.bbmtFinalizeStagedForPersistNative(handle, nsec, npub)
+                if (json.startsWith("error:")) {
+                    promise.reject("PERSIST_ERROR", json.removePrefix("error:"), null)
+                    return@Thread
+                }
+                val prefs = rnesEncryptedPrefs()
+                val envelope = KeyshareEnvelope.encryptKeyshareJson(json)
+                prefs.edit().putString(KEY_KEYSHARE, envelope).commit()
+                val check = prefs.getString(KEY_KEYSHARE, null)
+                if (check == null || KeyshareEnvelope.decryptKeyshareJson(check) != json) {
+                    promise.reject("PERSIST_ERROR", "Secure write verification failed. Retry setup without force-closing the app.", null)
+                    return@Thread
+                }
+                val metadata = DklsNative.bbmtProjectMetadataNative(json)
+                if (metadata.startsWith("error:")) {
+                    promise.reject("PERSIST_ERROR", metadata.removePrefix("error:"), null)
+                    return@Thread
+                }
+                val destroyed = DklsNative.bbmtDestroyStagedNative(handle)
+                if (destroyed.startsWith("error:")) {
+                    ld("persistStoredKeyshare", "staged destroy failed (non-fatal): $destroyed")
+                }
+                guardJsSafeResolve(metadata, "persistStoredKeyshare")
+                promise.resolve(metadata)
+            } catch (e: SecureStorageException) {
+                promise.reject("PERSIST_ERROR", e.message, e)
+            } catch (e: Exception) {
+                promise.reject("PERSIST_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F15b-1 (A8): §3 superset metadata for descriptors, chaincode,
+     * labels, legacy detection. Never share bytes (tripwire).
+     */
+    @ReactMethod
+    fun getKeyshareMetadataJSON(promise: Promise) {
+        Thread {
+            try {
+                val raw = loadKeyshareJSONFromRNES()
+                if (raw == null) {
+                    promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
+                    return@Thread
+                }
+                if (rejectBbmtUnavailable(promise, "getKeyshareMetadataJSON")) return@Thread
+                val metadata = DklsNative.bbmtProjectMetadataNative(raw)
+                if (metadata.startsWith("error:")) {
+                    promise.reject("KEYSHARE_META_ERROR", metadata.removePrefix("error:"), null)
+                    return@Thread
+                }
+                guardJsSafeResolve(metadata, "getKeyshareMetadataJSON")
+                promise.resolve(metadata)
+            } catch (e: SecureStorageException) {
+                promise.reject("KEYSHARE_META_ERROR", e.message, e)
+            } catch (e: Exception) {
+                promise.reject("KEYSHARE_META_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F15b-1 (A9): redacted structure for the dev tree view
+     * (secret leaves replaced, shape preserved).
+     */
+    @ReactMethod
+    fun getKeyshareStructureRedacted(promise: Promise) {
+        Thread {
+            try {
+                val raw = loadKeyshareJSONFromRNES()
+                if (raw == null) {
+                    promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
+                    return@Thread
+                }
+                if (rejectBbmtUnavailable(promise, "getKeyshareStructureRedacted")) return@Thread
+                val redacted = DklsNative.bbmtRedactedStructureNative(raw)
+                if (redacted.startsWith("error:")) {
+                    promise.reject("KEYSHARE_STRUCT_ERROR", redacted.removePrefix("error:"), null)
+                    return@Thread
+                }
+                guardJsSafeResolve(redacted, "getKeyshareStructureRedacted")
+                promise.resolve(redacted)
+            } catch (e: SecureStorageException) {
+                promise.reject("KEYSHARE_STRUCT_ERROR", e.message, e)
+            } catch (e: Exception) {
+                promise.reject("KEYSHARE_STRUCT_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F15b-1 (A10): wipe staged Go entries. No RNES touch (delete
+     * flows clear RNES separately). Always safe to call.
+     */
+    @ReactMethod
+    fun destroyKeyshareHandles(promise: Promise) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "destroyKeyshareHandles")) return@Thread
+                val result = DklsNative.bbmtDestroyAllStagedNative()
+                if (result.startsWith("error:")) {
+                    promise.reject("DESTROY_HANDLES_ERROR", result.removePrefix("error:"), null)
+                    return@Thread
+                }
+                promise.resolve(true)
+            } catch (e: Exception) {
+                promise.reject("DESTROY_HANDLES_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F15b-1 migration bootstrap (§1.5 step 7): idempotent
+     * plaintext → envelope migration. Resolves {migrated:bool}.
+     * Storage failures reject with [SECURE_STORAGE_*] copy.
+     */
+    @ReactMethod
+    fun ensureKeyshareEnveloped(promise: Promise) {
+        Thread {
+            try {
+                val prefs = rnesEncryptedPrefs()
+                val migrated = KeyshareEnvelope.ensureEnveloped(prefs, KEY_KEYSHARE)
+                val out = Arguments.createMap()
+                out.putBoolean("migrated", migrated)
+                promise.resolve(out)
+            } catch (e: SecureStorageException) {
+                promise.reject("MIGRATION_ERROR", e.message, e)
+            } catch (e: Exception) {
+                promise.reject("MIGRATION_ERROR", mapSecureStorageError(e).message, e)
             }
         }.start()
     }
@@ -1315,6 +1465,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     encKey,
                     decKey,
                 )
+                guardStagedShape(result, "dklsMpcTssSetup")
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_MPC_SETUP_ERROR", e.message, e)
@@ -1350,6 +1501,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     sessionKey,
                     chaincode,
                 )
+                guardStagedShape(result, "dklsNostrMpcTssSetup")
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_NOSTR_KEYGEN_ERROR", e.message, e)

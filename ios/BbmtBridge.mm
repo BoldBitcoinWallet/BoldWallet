@@ -154,10 +154,34 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   NSString *out = wrap(BbmtBackupEncrypt(k0, k1));
   free(k0); free(k1); return out;
 }
-+ (NSString *)backupDecrypt:(NSString *)blob password:(NSString *)password {
++ (NSString *)importBackupStaged:(NSString *)blob password:(NSString *)password {
   char *k0=dupC(blob); char *k1=dupC(password);
-  NSString *out = wrap(BbmtBackupDecrypt(k0, k1));
+  NSString *out = wrap(BbmtImportBackupStaged(k0, k1));
   free(k0); free(k1); return out;
+}
++ (NSString *)finalizeStagedForPersist:(NSString *)handle nsec:(NSString *)nsec npub:(NSString *)npub {
+  char *k0=dupC(handle); char *k1=dupC(nsec); char *k2=dupC(npub);
+  NSString *out = wrap(BbmtFinalizeStagedForPersist(k0, k1, k2));
+  free(k0); free(k1); free(k2); return out;
+}
++ (NSString *)destroyStaged:(NSString *)handle {
+  char *k0=dupC(handle);
+  NSString *out = wrap(BbmtDestroyStaged(k0));
+  free(k0); return out;
+}
++ (NSString *)destroyAllStaged {
+  NSString *out = wrap(BbmtDestroyAllStaged());
+  return out;
+}
++ (NSString *)projectMetadata:(NSString *)fullJson {
+  char *k0=dupC(fullJson);
+  NSString *out = wrap(BbmtProjectMetadata(k0));
+  free(k0); return out;
+}
++ (NSString *)redactedStructure:(NSString *)fullJson {
+  char *k0=dupC(fullJson);
+  NSString *out = wrap(BbmtRedactedStructure(k0));
+  free(k0); return out;
 }
 + (NSString *)sha256:(NSString *)message {
   char *k0=dupC(message);

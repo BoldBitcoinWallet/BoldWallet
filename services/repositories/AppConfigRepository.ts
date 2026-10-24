@@ -48,6 +48,8 @@ export const CONFIG_KEYS = {
   DEV_DEBUG_ENABLED: 'dev_debug_enabled',
   /** One-shot PSBT tab first-open layout. */
   PSBT_MODE_FIRST_VISIT: 'psbt_mode_first_visit',
+  /** F15b-1: one-time post-envelope-migration backup prompt shown. */
+  ENVELOPE_MIGRATION_BACKUP_PROMPTED: 'envelope_migration_backup_prompted',
   /** Last selected Android camouflage preset id (`default` / `quickcalc` / …). */
   APP_ICON_PREFERENCE: 'app_icon_preference',
   /** Camouflage unlock PIN salt:hash (not the PIN). */

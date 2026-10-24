@@ -13,6 +13,12 @@ jest.mock('../services/LocalCache', () => ({
 jest.mock('../App', () => ({
   isDebugLoggingEnabled: () => false,
 }));
+// utils → Database chain pulls ESM-only @op-engineering/op-sqlite,
+// which jest cannot parse. Stub it (this suite tests pure date/
+// backend helpers, never the DB).
+jest.mock('@op-engineering/op-sqlite', () => ({
+  open: jest.fn(),
+}));
 
 import {
   normalizeCreatedAtMs,

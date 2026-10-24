@@ -39,6 +39,7 @@ import {
   useWalletOnline,
 } from '../services/walletOnlineStore';
 import {setNavMenuStyle, useNavMenuStyle} from '../services/navMenuStore';
+import {discardPendingKeyshares} from '../services/keyshareHandles';
 import {
   dbg,
   setHapticsEnabled,
@@ -1120,6 +1121,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             removeLegacyEncryptedPrefKeys(),
           ]);
         }
+        // F15b-1 (A10): wipe any Go-staged keyshare behind a dropped handle.
+        await discardPendingKeyshares();
         await resetLauncherCamouflageToDefault();
         // Trigger a full app reload so all providers/contexts re‑initialize
         navigation.reset({index: 0, routes: [{name: 'Welcome'}]});

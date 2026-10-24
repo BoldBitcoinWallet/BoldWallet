@@ -16,18 +16,11 @@ RCT_EXTERN_METHOD(secureRandom:(int)length resolver:(RCTPromiseResolveBlock)reso
 // ECIES Key Pair Generation
 RCT_EXTERN_METHOD(eciesKeypair:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
-// AES Encryption
-RCT_EXTERN_METHOD(aesEncrypt:(NSString *)data key:(NSString *)key resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-
-// AES Decryption
-RCT_EXTERN_METHOD(aesDecrypt:(NSString *)data key:(NSString *)key resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-
-// AES encrypt keyshare loaded from RNES-compatible secure storage (no plaintext through JS)
-RCT_EXTERN_METHOD(aesEncryptStoredKeyshare:(NSString *)key resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+// 3a-2: aesEncrypt / aesDecrypt / aesEncryptStoredKeyshare / backupDecrypt
+// externs removed with their dead implementations — no JS-callable oracle remains.
 
 // F1: versioned backup export (Argon2id + AES-GCM in Go) and import (v2 + legacy envelope)
 RCT_EXTERN_METHOD(backupEncryptStoredKeyshare:(NSString *)password resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(backupDecrypt:(NSString *)blob password:(NSString *)password resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // Pre-Params Method
 RCT_EXTERN_METHOD(preparams:(NSString *)outFile timeout:(NSString *)timeout resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
@@ -383,5 +376,13 @@ RCT_EXTERN_METHOD(hasKeyshareInSecureStorage:(RCTPromiseResolveBlock)resolve
 // Device entropy source metadata (informational, not gating)
 RCT_EXTERN_METHOD(getDeviceEntropyMetadata:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
+
+// F15b-1 staged import/persist/read/destroy/migration (Wave 3a)
+RCT_EXTERN_METHOD(importBackupToStagedHandle:(NSString *)blob password:(NSString *)password resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(persistStoredKeyshare:(NSString *)handle nsec:(NSString *)nsec npub:(NSString *)npub resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(getKeyshareMetadataJSON:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(getKeyshareStructureRedacted:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(destroyKeyshareHandles:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(ensureKeyshareEnveloped:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 @end

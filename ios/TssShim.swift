@@ -51,8 +51,29 @@ func TssBackupEncrypt(_ plaintext: String, _ password: String, _ error: NSErrorP
   bbmtResolve(BbmtBridge.backupEncrypt(plaintext, password: password), error)
 }
 
-func TssBackupDecrypt(_ blob: String, _ password: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.backupDecrypt(blob, password: password), error)
+
+func TssImportBackupStaged(_ blob: String, _ password: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.importBackupStaged(blob, password: password), error)
+}
+
+func TssFinalizeStagedForPersist(_ handle: String, _ nsec: String, _ npub: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.finalizeStaged(forPersist: handle, nsec: nsec, npub: npub), error)
+}
+
+func TssDestroyStaged(_ handle: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.destroyStaged(handle), error)
+}
+
+func TssDestroyAllStaged(_ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.destroyAllStaged(), error)
+}
+
+func TssProjectMetadata(_ fullJson: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.projectMetadata(fullJson), error)
+}
+
+func TssRedactedStructure(_ fullJson: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.redactedStructure(fullJson), error)
 }
 
 func TssSha256(_ message: String, _ error: NSErrorPointer) -> String {

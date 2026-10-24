@@ -29,6 +29,7 @@ import {
   clearShowcaseImportPrefs,
   removeLegacyEncryptedPrefKeys,
 } from '../services/encryptedPrefsMigration';
+import {discardPendingKeyshares} from '../services/keyshareHandles';
 import KeyshareImportPasswordModal from '../components/KeyshareImportPasswordModal';
 import QRScanner, {stopAndroidContinuousScan} from '../components/QRScanner';
 import {
@@ -215,6 +216,8 @@ const ShowcaseScreen = ({navigation}: any) => {
               dbg('Showcase: keyshare remove failed', e);
             }
             await clearKeyshareMetadata();
+            // F15b-1 (A10): wipe any Go-staged keyshare behind a dropped handle.
+            await discardPendingKeyshares();
             setWalletAlreadyLoaded(false);
           },
         },

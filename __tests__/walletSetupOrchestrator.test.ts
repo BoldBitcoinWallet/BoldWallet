@@ -3,13 +3,21 @@ jest.mock('../services/WalletService', () => ({
 }));
 
 jest.mock('../native_modules', () => ({
-  BBMTLibNativeModule: {},
+  BBMTLibNativeModule: {
+    persistStoredKeyshare: jest.fn(async () =>
+      JSON.stringify({pub_key: 'aa', tss_backend: 'dkls23'}),
+    ),
+    hasKeyshareInSecureStorage: jest.fn(async () => true),
+    destroyKeyshareHandles: jest.fn(async () => true),
+  },
 }));
 
 jest.mock('../services/lanMpcSetup', () => ({}));
 jest.mock('../services/lanMpcTransport', () => ({}));
 jest.mock('../services/trioLanKeygenPreflight', () => ({}));
-jest.mock('../services/TssProvider', () => ({TssProvider: {}}));
+jest.mock('../services/TssProvider', () => ({
+  TssProvider: {mpcTssSetup: jest.fn(), nostrMpcTssSetup: jest.fn()},
+}));
 
 jest.mock('../services/tssKeygenPrepare', () => ({
   prepareDeviceForKeygen: jest.fn(async () => 'dkls23'),
@@ -38,12 +46,18 @@ jest.mock('../services/walletGuard', () => ({
 }));
 
 import EncryptedStorage from 'react-native-encrypted-storage';
+import {BBMTLibNativeModule} from '../native_modules';
+import {TssProvider} from '../services/TssProvider';
 import {assertNoExistingWallet} from '../services/walletGuard';
 import {saveKeyshareMetadata} from '../utils';
 import {
+  discardPendingKeyshares,
   finalizeKeyshareForStorage,
+  invokeLanWalletKeygen,
+  invokeNostrWalletKeygen,
   mixNostrChaincodeWithDice,
   nsecFieldForKeyshareJson,
+  persistStagedKeyshare,
   persistWalletKeyshare,
   resolveWalletSetupBackend,
   verifyWalletKeysharePersisted,
@@ -52,6 +66,10 @@ import {
 import {resolveTssBackendForKeygen} from '../services/tssBackend';
 
 describe('walletSetupOrchestrator', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
   it('uses explicit backend over preference', async () => {
     expect(await resolveWalletSetupBackend('gg18')).toBe('gg18');
     expect(await resolveWalletSetupBackend('dkls23')).toBe('dkls23');
@@ -99,49 +117,76 @@ describe('walletSetupOrchestrator', () => {
     expect(JSON.parse(out).nostr_npub).toBe('npub1x');
   });
 
-  it('persistWalletKeyshare writes encrypted keyshare and metadata', async () => {
-    const json = JSON.stringify({pub_key: 'aa', share_b64: 'bb'});
-    (EncryptedStorage.getItem as jest.Mock).mockResolvedValue(json);
-    const saved = await persistWalletKeyshare(json, {
+  it('F15b-1: persistStagedKeyshare persists via native, mirrors metadata', async () => {
+    const meta = await persistStagedKeyshare('handle-abc123', {
       partyNsec: 'nsec1persisttest',
       nostrNpub: 'npub1persist',
     });
     expect(assertNoExistingWallet).toHaveBeenCalled();
-    expect(saved).toContain('"nsec"');
-    expect(EncryptedStorage.setItem).toHaveBeenCalledWith('keyshare', saved);
-    expect(saveKeyshareMetadata).toHaveBeenCalledWith(saved, {
-      throwOnError: true,
-    });
+    expect(
+      BBMTLibNativeModule.persistStoredKeyshare,
+    ).toHaveBeenCalledWith('handle-abc123', 'nsec1persisttest', 'npub1persist');
+    // No share bytes cross JS: RNES is never touched from here.
+    expect(EncryptedStorage.setItem).not.toHaveBeenCalled();
+    expect(EncryptedStorage.getItem).not.toHaveBeenCalled();
+    expect(saveKeyshareMetadata).toHaveBeenCalledWith(
+      {pub_key: 'aa', tss_backend: 'dkls23'},
+      {throwOnError: true},
+    );
+    expect(meta.pub_key).toBe('aa');
   });
 
-  it('persistWalletKeyshare fails when read-back verification fails', async () => {
-    (EncryptedStorage.getItem as jest.Mock).mockResolvedValue(null);
-    await expect(
-      persistWalletKeyshare(JSON.stringify({pub_key: 'aa', share_b64: 'bb'})),
-    ).rejects.toThrow(/could not save your key share securely/i);
+  it('F15b-1: persistStagedKeyshare rejects empty handles', async () => {
+    await expect(persistStagedKeyshare('  ')).rejects.toThrow(
+      /invalid keyshare handle/i,
+    );
   });
 
-  it('F3: persistWalletKeyshare rewrites storage failures with clear copy', async () => {
-    (EncryptedStorage.setItem as jest.Mock).mockRejectedValueOnce(
+  it('F15b-1: persistStagedKeyshare fails when verification fails', async () => {
+    (BBMTLibNativeModule.hasKeyshareInSecureStorage as jest.Mock)
+      .mockResolvedValueOnce(false);
+    await expect(persistStagedKeyshare('handle-abc123')).rejects.toThrow(
+      /key share was lost during setup/i,
+    );
+  });
+
+  it('F3: persistStagedKeyshare rewrites storage failures with clear copy', async () => {
+    (BBMTLibNativeModule.persistStoredKeyshare as jest.Mock).mockRejectedValueOnce(
       new Error('[SECURE_STORAGE_LOCKED] Device must be unlocked.'),
     );
-    await expect(
-      persistWalletKeyshare(JSON.stringify({pub_key: 'aa', share_b64: 'bb'})),
-    ).rejects.toThrow(/device must be unlocked/i);
+    await expect(persistStagedKeyshare('handle-abc123')).rejects.toThrow(
+      /device must be unlocked/i,
+    );
   });
 
-  it('F3: persistWalletKeyshare propagates non-storage errors unchanged', async () => {
-    (EncryptedStorage.setItem as jest.Mock).mockRejectedValueOnce(
+  it('F3: persistStagedKeyshare propagates non-storage errors unchanged', async () => {
+    (BBMTLibNativeModule.persistStoredKeyshare as jest.Mock).mockRejectedValueOnce(
       new Error('quota exceeded'),
     );
-    await expect(
-      persistWalletKeyshare(JSON.stringify({pub_key: 'aa', share_b64: 'bb'})),
-    ).rejects.toThrow('quota exceeded');
+    await expect(persistStagedKeyshare('handle-abc123')).rejects.toThrow(
+      'quota exceeded',
+    );
   });
 
-  it('verifyWalletKeysharePersisted returns false for empty storage', async () => {
-    (EncryptedStorage.getItem as jest.Mock).mockResolvedValue('  ');
+  it('F19: persistWalletKeyshare legacy path still writes + mirrors (GG18)', async () => {
+    const json = JSON.stringify({pub_key: 'aa', share_b64: 'bb'});
+    (EncryptedStorage.getItem as jest.Mock).mockResolvedValue(json);
+    (BBMTLibNativeModule.hasKeyshareInSecureStorage as jest.Mock)
+      .mockResolvedValue(true);
+    const saved = await persistWalletKeyshare(json, {
+      partyNsec: 'nsec1legacytest',
+      nostrNpub: 'npub1legacy',
+    });
+    expect(saved).toContain('"nsec"');
+    expect(EncryptedStorage.setItem).toHaveBeenCalledWith('keyshare', saved);
+    expect(saveKeyshareMetadata).toHaveBeenCalled();
+  });
+
+  it('verifyWalletKeysharePersisted uses the native presence check', async () => {
+    (BBMTLibNativeModule.hasKeyshareInSecureStorage as jest.Mock)
+      .mockResolvedValueOnce(false);
     await expect(verifyWalletKeysharePersisted()).resolves.toBe(false);
+    expect(EncryptedStorage.getItem).not.toHaveBeenCalled();
   });
 
   it('skip keeps the base chaincode and dice replaces it locally', async () => {
@@ -165,5 +210,65 @@ describe('walletSetupOrchestrator', () => {
     expect(dice.diceUsed).toBe(true);
     expect(dice.finalChaincodeHex).not.toBe(base);
     expect(dice.finalChaincodeHex).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe('F15b-1 setup invoke/discard', () => {
+  const provider = TssProvider as any;
+  const native = BBMTLibNativeModule as any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('invokeLanWalletKeygen passes the staged SetupResult through', async () => {
+    const staged = {
+      kind: 'staged',
+      handle: 'h1',
+      metadata: {pub_key: 'aa'},
+    };
+    provider.mpcTssSetup.mockResolvedValue(staged);
+    const orch = {
+      server: 'srv',
+      partyID: 'p1',
+      partiesCSV: 'p1,p2',
+      sessionID: 'sid',
+      transport: {sessionKey: 'sk', encKey: 'ek', decKey: 'dk'},
+      chaincode: 'cc',
+      backend: 'dkls23',
+    } as any;
+    const res = await invokeLanWalletKeygen(orch, 'ppm', 'duo');
+    expect(provider.mpcTssSetup).toHaveBeenCalledTimes(1);
+    expect(res).toBe(staged);
+    expect(JSON.stringify(res)).not.toContain('share_b64');
+  });
+
+  test('invokeNostrWalletKeygen passes the legacy branch through', async () => {
+    const legacy = {kind: 'legacy-gg18', json: '{"pub_key":"bb"}'};
+    provider.nostrMpcTssSetup.mockResolvedValue(legacy);
+    const res = await invokeNostrWalletKeygen({
+      relaysCSV: 'r',
+      partyNsec: 'nsec1x',
+      partiesNpubsCSV: 'npub1,npub2',
+      sessionID: 'sid',
+      sessionKey: 'sk',
+      chaincode:
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      ppmPath: 'ppm',
+      setupMode: 'duo',
+      backend: 'gg18',
+    });
+    expect(provider.nostrMpcTssSetup).toHaveBeenCalledTimes(1);
+    expect(res).toBe(legacy);
+  });
+
+  test('discardPendingKeyshares wipes staged entries', async () => {
+    await discardPendingKeyshares();
+    expect(native.destroyKeyshareHandles).toHaveBeenCalledTimes(1);
+  });
+
+  test('discardPendingKeyshares never throws', async () => {
+    native.destroyKeyshareHandles.mockRejectedValueOnce(new Error('down'));
+    await expect(discardPendingKeyshares()).resolves.toBeUndefined();
   });
 });

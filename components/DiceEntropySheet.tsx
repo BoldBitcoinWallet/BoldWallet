@@ -18,7 +18,7 @@ import {
   View,
 } from 'react-native';
 import Clipboard from '@react-native-clipboard/clipboard';
-import Toast from 'react-native-toast-message';
+
 import GlassModalOverlay from './GlassModalOverlay';
 import QRScanner from './QRScanner';
 import StaticQRCode from './StaticQRCode';
@@ -599,15 +599,8 @@ export default function DiceEntropySheet({
     onUseDice({sets});
   };
 
-  const copyQrPayload = () => {
-    if (!qrValue) return;
-    Clipboard.setString(qrValue);
-    Toast.show({
-      type: 'success',
-      text1: 'Copied',
-      text2: 'Dice rolls copied — paste on the other phone.',
-    });
-  };
+  // F10-clipboard: raw dice rolls (chaincode preimage) must not reach
+  // the clipboard. Transfer is optical-only (scan the QR above).
 
   const styles = StyleSheet.create({
     wrap: {
@@ -1008,14 +1001,10 @@ export default function DiceEntropySheet({
                           contentStyle={{padding: 6}}
                         />
                         <Text style={styles.qrCaption}>Optical only · BOLD-DICE-QR-v1</Text>
-                        <AppPressable style={styles.copyBtn} onPress={copyQrPayload}>
-                          <Image
-                            source={require('../assets/copy-icon.png')}
-                            style={styles.copyIcon}
-                            resizeMode="contain"
-                          />
-                          <Text style={styles.copyLabel}>Copy to clipboard</Text>
-                        </AppPressable>
+                        <Text style={styles.hint}>
+                          Scan this QR on the other phone — copying is
+                          disabled to protect the dice entropy.
+                        </Text>
                       </View>
                     )}
                     <AppPressable onPress={() => setWhyOpen(v => !v)}>

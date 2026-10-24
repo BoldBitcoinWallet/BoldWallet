@@ -7,7 +7,7 @@ import {
   getTssBackendDisplayLabel,
   type TssBackend,
 } from '../services/tssBackend';
-import {dbg, getKeyshareDisplayLabel, getKeyshare, getKeyshareMetadata} from '../utils';
+import {dbg, getKeyshareDisplayLabel, getKeyshareSecureMetadata, getKeyshareMetadata} from '../utils';
 import {generateAllOutputDescriptors} from '../utils';
 
 const {BBMTLibNativeModule} = NativeModules;
@@ -39,7 +39,8 @@ const DeviceScreen: React.FC = () => {
     try {
       const blob: any = await (async () => {
         try {
-          const full = await getKeyshare();
+          // F15b-1: native-projected secure fields, never the raw blob.
+          const full = await getKeyshareSecureMetadata();
           if (full) {
             return full;
           }

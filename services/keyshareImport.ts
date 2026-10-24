@@ -2,7 +2,7 @@ import {Alert} from 'react-native';
 import {CommonActions} from '@react-navigation/native';
 import RNFS from 'react-native-fs';
 import {safeUnlink} from './rnfsSafe';
-import {persistWalletKeyshare} from './walletSetupOrchestrator';
+import {persistStagedKeyshare} from './walletSetupOrchestrator';
 import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigRepository';
 import LocalCache from './LocalCache';
 import {BBMTLibNativeModule} from '../native_modules';
@@ -63,57 +63,53 @@ export async function readKeyshareBase64FromUri(uri: string): Promise<string> {
 export async function decryptAndValidateKeyshare(
   base64Content: string,
   password: string,
-): Promise<{decryptedKeyshare: string; parsed: ParsedKeyshare; legacy: boolean}> {
-  // F1: KDF (Argon2id) + AEAD run in Go; JS passes the password, never a
-  // derived key. Native rejects on v2 auth failure or malformed blobs.
+): Promise<{handle: string; parsed: ParsedKeyshare; legacy: boolean}> {
+  // F15b-1: decrypt (B1) + verify (F2) + stage run natively (A6). JS
+  // passes the password, receives {handle, metadata, legacy} — the
+  // plaintext keyshare never crosses the bridge. Error TEXT mapping
+  // preserves B1 semantics (format vs wrong-password).
   let raw: string;
   try {
-    raw = await BBMTLibNativeModule.backupDecrypt(base64Content, password);
+    raw = await BBMTLibNativeModule.importBackupToStagedHandle(
+      base64Content,
+      password,
+    );
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.indexOf('not a recognized backup format') >= 0
-    ) {
+    if (!(error instanceof Error)) {
+      throw new WrongKeysharePasswordError();
+    }
+    if (error.message.indexOf('not a recognized backup format') >= 0) {
       throw new InvalidKeyshareError();
+    }
+    if (error.message.indexOf('wrong password or corrupted backup') >= 0) {
+      throw new WrongKeysharePasswordError(
+        'Wrong password or corrupted backup',
+      );
     }
     throw new WrongKeysharePasswordError();
   }
-  let envelope: {format?: unknown; plaintext?: unknown};
+  let staged: {handle?: unknown; metadata?: unknown; legacy?: unknown};
   try {
-    envelope = JSON.parse(raw);
+    staged = JSON.parse(raw);
   } catch (error) {
-    dbg('decryptAndValidateKeyshare: envelope parse error', error);
+    dbg('decryptAndValidateKeyshare: staged parse error', error);
     throw new InvalidKeyshareError();
   }
   if (
-    typeof envelope !== 'object' ||
-    envelope === null ||
-    (envelope.format !== 'v2' && envelope.format !== 'legacy') ||
-    typeof envelope.plaintext !== 'string'
+    typeof staged !== 'object' ||
+    staged === null ||
+    typeof staged.handle !== 'string' ||
+    !staged.handle ||
+    typeof staged.metadata !== 'object' ||
+    staged.metadata === null
   ) {
     throw new InvalidKeyshareError();
   }
-  const legacy = envelope.format === 'legacy';
-  const decryptedKeyshare = envelope.plaintext;
-  // Legacy backups have no MAC: wrong passwords and tampered files surface as
-  // garbage here, which the content checks below reject. v2 garbage is
-  // unreachable (GCM rejects first) but checked identically for uniformity.
-  if (decryptedKeyshare.indexOf('pub_key') < 0) {
-    throw new WrongKeysharePasswordError(
-      legacy ? 'Wrong password or corrupted backup' : 'Wrong password',
-    );
-  }
-  let parsed: ParsedKeyshare;
-  try {
-    parsed = JSON.parse(decryptedKeyshare);
-    if (!parsed.pub_key) {
-      throw new InvalidKeyshareError();
-    }
-  } catch (error) {
-    dbg('decryptAndValidateKeyshare: parse error', error);
+  const parsed = staged.metadata as ParsedKeyshare;
+  if (!parsed.pub_key) {
     throw new InvalidKeyshareError();
   }
-  return {decryptedKeyshare, parsed, legacy};
+  return {handle: staged.handle, parsed, legacy: staged.legacy === true};
 }
 
 export type FinalizeKeyshareImportOptions = {
@@ -122,11 +118,11 @@ export type FinalizeKeyshareImportOptions = {
 };
 
 export async function finalizeKeyshareImport(
-  decryptedKeyshare: string,
+  handle: string,
   parsed: ParsedKeyshare,
   options: FinalizeKeyshareImportOptions,
 ): Promise<void> {
-  await persistWalletKeyshare(decryptedKeyshare);
+  await persistStagedKeyshare(handle);
   await LocalCache.clear();
   appConfigRepository.remove(CONFIG_KEYS.CURRENT_ADDRESS);
   const isLegacyPath = resolveUseLegacyDerivationPaths({
@@ -157,11 +153,11 @@ export async function importKeyshareFromBase64(
   password: string,
   options: FinalizeKeyshareImportOptions,
 ): Promise<void> {
-  const {decryptedKeyshare, parsed, legacy} = await decryptAndValidateKeyshare(
+  const {handle, parsed, legacy} = await decryptAndValidateKeyshare(
     base64Content,
     password,
   );
-  await finalizeKeyshareImport(decryptedKeyshare, parsed, options);
+  await finalizeKeyshareImport(handle, parsed, options);
   if (legacy) {
     Alert.alert(
       'Legacy Backup Imported',
