@@ -90,6 +90,13 @@ PSBT-screen to F20.
   (native loads creds). Fix is a post-finalize clear, tracked
   separately — nsec isn't the MPC share.
 
+## Wave 3a QA gate — RESULT: passed (2026-10-24, release-owner reported)
+- Scope: 3a storage flows on device (envelope persist/read, legacy
+  migration converge, clipboard metadata-only, backup export v2).
+- Devices/OS/runner: to be confirmed by QA runner (verbal pass
+  received; models + OS versions pending fill-in).
+- Merge gate satisfied; 3a merges to main, then 3b.
+
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
   arm64 emulator (pure-Go build; x/crypto/argon2 has amd64 asm only, so ARM
