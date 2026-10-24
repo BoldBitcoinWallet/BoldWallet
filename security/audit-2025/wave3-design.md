@@ -13,7 +13,8 @@ source, not assumed):
    `nostrJoinKeysign` "loads from RNES natively". It does not:
    `ios/BBMTLibNativeModule.swift:927` takes `keyshareJSON: String`
    from JS, exactly like Android `:741`. BOTH platforms pass
-   keyshare-JSON-from-JS on this method. F18 = reshape BOTH.
+   keyshare-JSON-from-JS on this method. F18 = REMOVE BOTH bridge methods in 3b (dead code mitigates
+   reachability, not severity — severity stays High).
 2. **`nostrJoinKeysign` is dead from JS** (repo-wide search: zero
    callers outside audit docs). F18 reshape has zero JS migration
    cost; the method today is pure attack surface.
@@ -149,6 +150,35 @@ lazily on next foreground use.
   stays; B1 backup format untouched (export re-uses
   `backupEncryptStoredKeyshare`, which de-envelopes natively
   first — one-line change inside an already-ciphertext method).
+- Migration protocol (atomic, retry-safe; RNES is key-value,
+  so atomicity comes from a staging key, not file rename):
+  1. DETECT: read `keyshare`; `v1:` marker present → done
+     (delete any leftover `keyshare_migrating`, resolve
+     `{migrated:false}`). Absent → sniff `pub_key` (else
+     corrupt → typed error, direct to backup re-import).
+  2. WRITE envelope to `keyshare_migrating` (ESP `commit()`,
+     synchronous — never `apply()`; Keychain Add is sync).
+  3. VERIFY: read back staging, decrypt, compare bytes to
+     the plaintext read in (1).
+  4. PROMOTE: write envelope to `keyshare`, verify decrypt,
+     delete `keyshare_migrating`, then the plaintext is gone
+     (overwritten — no separate delete step can strand it).
+  5. CRASH-MID-MIGRATION: recovery is idempotent — staging
+     present+valid → resume at (4); `keyshare` already `v1:`
+     → delete staging, done; plaintext + no staging →
+     restart at (2). Plaintext and envelope never coexist
+     past step (4) except across a crash, and recovery
+     always converges to envelope-only.
+  6. SANITIZED LOGGING: lengths, booleans, step markers only
+     (`migrating len=412`, `promoted ok`). Never values,
+     never partial plaintext, never nonces.
+  7. UI: bootstrap calls `ensureKeyshareEnveloped()`
+     (idempotent) with a blocking "Securing your keyshare…"
+     status; resolves `{migrated:bool}`.
+  8. POST-MIGRATION (Q2 condition): on first `{migrated:true}`
+     (one-time flag in AppConfigRepository), show "Your
+     keyshare storage was upgraded. Make sure you have a
+     current backup." with an "Open backup" action.
 
 ### 1.6 Wipe semantics
 
@@ -175,8 +205,8 @@ unchanged.
 
 | # | Method | Current | New |
 |---|---|---|---|
-| A1 | `mpcTssSetup` | resolves GG18 LocalState JSON (secret) | resolves `{handle, metadata}` |
-| A2 | `nostrMpcTssSetup` | resolves LocalState JSON; takes `partyNsec` | resolves `{handle, metadata}`; KEEPS `partyNsec` (F5-owned: no stored nsec exists at setup time) |
+| A1 | `mpcTssSetup` | resolves GG18 LocalState JSON (secret) | OUT OF WAVE 3 (F19): stays plaintext (reachable via opt-out pref); TssProvider takes the legacy branch (C1/C2 note) |
+| A2 | `nostrMpcTssSetup` | resolves LocalState JSON; takes `partyNsec` | OUT OF WAVE 3 (F19): stays plaintext; TssProvider takes the legacy branch (C1/C2 note) |
 | A3 | `dklsMpcTssSetup` | resolves keyshare JSON (`share_b64`) | resolves `{handle, metadata}` |
 | A4 | `dklsNostrMpcTssSetup` | resolves keyshare JSON; takes `partyNsec` | resolves `{handle, metadata}`; KEEPS `partyNsec` (same rationale) |
 | A5 | `backupDecrypt` | resolves `{format, plaintext}` (secret) | REMOVED. Replaced by A6 (sole caller: import flow) |
@@ -185,7 +215,7 @@ unchanged.
 | A8 | NEW `getKeyshareMetadataJSON` | — | `()` → §3 superset metadata. Replaces blob reads for descriptors, chaincode, labels, legacy detection |
 | A9 | NEW `getKeyshareStructureRedacted` | — | `()` → dev field tree, secret values `<redacted len=N>`. Replaces direct RNES read in dev view |
 | A10 | NEW `destroyKeyshareHandles` | — | `()` → `true`. Wipes staged + activeCache + native caches. Delete/abort flows |
-| A11 | `nostrJoinKeysign` (BOTH — F18 reframe, 3b) | takes `keyshareJSON` + `partyNsec` from JS | takes NEITHER; native loads unit via `nsecAndKeyshareJSONFromRNES`; ADD `token`. Dead from JS: zero migration |
+| A11 | `nostrJoinKeysign` (BOTH — F18, 3b) | takes `keyshareJSON` + `partyNsec` from JS | REMOVED both platforms (dead from JS: zero migration; removal beats reshape for dead attack surface). Go cgo stays (native-only, harmless) |
 | A12 | `backupEncryptStoredKeyshare` | `(password)` → ciphertext (already clean) | 3a: unchanged. 3b: ADD `token` (replaces JS-layer biometric gate with enforced ceremony auth) |
 
 ### Table B — token-gated, no plaintext change (all 3b)
@@ -195,13 +225,15 @@ verifies §6, else rejects `[CEREMONY_AUTH_REQUIRED]`.
 
 | # | Method | Token op |
 |---|---|---|
-| B1–B4 | `mpcSignPSBT`, `mpcSendBTCWithUTXOs`, `nostrMpcSendBTC`, `nostrMpcSignPSBT` | `sign` |
+| B1–B4 | GG18 signing ×4 | EXCLUDED from Wave 3 (F19): stay untokenized. Fail closed naturally on DKLs wallets (LocalState parse fails); GG18-wallet ceremony-auth gap disclosed under F19 |
 | B5–B8 | `dklsMpcSignPSBT`, `dklsMpcSendBTCWithUTXOs`, `dklsNostrMpcSendBTC`, `dklsNostrMpcSignPSBT` | `sign` |
-| B9–B12 | A1–A4 (setup methods) | `keygen` (3a ships WITHOUT tokens; DKG-start ungated interim — solo DKG harmless, disclosed) |
+| B9–B12 | A3–A4 (DKLs setup; A1–A2 GG18 excluded per F19) | `keygen` (3a ships WITHOUT tokens; DKG-start ungated interim — solo DKG harmless, disclosed) |
 | B13 | `publishData` | `transport` (LAN send within ceremony session) |
 | B14 | `fetchData` | `transport` (poll loop covered by ceremony token — why tokens are session-scoped, never per-call) |
 | B15 | `setAPI` | allowlist-or-token: OK iff URL ∈ native-persisted allowlist OR valid `config` token (which persists the URL). Init passes with stored URLs; attacker hosts fail without a user-visible prompt |
 | B16 | `setFeeAPIs` | same rule as B15 (same oracle-pointing class) |
+| B17–B18 | A6 `importBackupToStagedHandle`, A7 `persistStoredKeyshare` | `import` (one prompt covers stage+persist; persist ungated would let malicious JS overwrite RNES with an attacker share — the guard is JS-side and skippable) |
+| B19 | cancel ×4 | ceremony token (same op+session). STUCK-cancel: fresh token for the same sessionID re-auths (acceptable UX, no un-cancellable state). F12's exact-match mechanism stays Wave 4 |
 
 ### Table C — removed (3b, dead surface, zero callers)
 
@@ -209,6 +241,15 @@ verifies §6, else rejects `[CEREMONY_AUTH_REQUIRED]`.
 platforms). Generic oracles with no JS callers. Go
 `BbmtAesEncrypt/Decrypt` stay (native-stored path + Go-internal
 callers — verify in Phase B, do not remove blindly).
+
+Verification rule (applied pre-Phase-B + re-run at removal):
+repo-wide zero-caller search AND WebView inventory (single
+static-HTML quotes marquee; zero onMessage/injectedJavaScript/
+postMessage app-wide) AND `eval(`/`new Function` (zero) AND
+dynamic bridge indexing `NativeModule[` (zero). No hidden path
+reaches the dead methods → plain method deletion; no bridge
+registration change needed. (If any path is ever found, pair
+removal with registration-gating instead.)
 
 ### Table D — unchanged + why (all others, both platforms)
 
@@ -227,7 +268,10 @@ callers — verify in Phase B, do not remove blindly).
   `dklsHelloDkg` (no secrets).
 - Fresh-secret generators: `nostrKeypair`, `eciesKeypair`.
   Return NEW secrets — F5 scope, explicitly unchanged.
-  (Generation ≠ exfil of the wallet share.)
+  (Generation ≠ exfil of the wallet share.) Q7 verification:
+  LIVE callers confirmed (`MobileNostrPairing:1232` pairing
+  identity; `MobilesPairing:1953` LAN transport) → removal
+  BLOCKED (would regress pairing); retained.
 - Non-sensitive config: `setBtcNetwork`, `setFeePolicy`.
 - Presence (already clean): `hasKeyshareInSecureStorage`,
   `getKeyshareNostrPrepJSON` (fixed 5-key contract, 1 caller).
@@ -301,6 +345,13 @@ asserts the mirror never contains secret fields.
 | C9 | `DiceEntropySheet.tsx:604` | copies raw dice rolls (chaincode preimage) | `copyDisabled` (QR scan remains the transfer path; mirrors airgap precedent). PROPOSED — reviewer can strike (§9 Q4) |
 | C10 | `utils.js` `save/get/clearKeyshareMetadata` + backfill (~1508) | mirror writes from blob; backfill reads blob | mirror I/O takes §3 meta; backfill → A8 |
 
+GG18 note (F19): C1/C2 dispatch by backend. GG18 runs keep
+the CURRENT plaintext flow on an explicit
+`{kind:'legacy-gg18'}` branch — F19-cited, fully functional,
+NOT silent compat. L1 spy tests skip the GG18 branch with an
+F19 cite. A6/A7/envelope stay backend-agnostic (no GG18
+import/persist regression).
+
 Already-clean, NO CHANGE (verified): `BackupKeyshareModal`,
 `AirgapKeyshareExportModal` (ciphertext via A12); NostrPrep
 caller (`MobileNostrPairing:281`); `WalletHome`/`WalletSettings`/
@@ -336,6 +387,13 @@ read fires backgrounded, and (b) ceremony auth is
 mint-in-foreground/use-anywhere. This is what makes F4
 biometry re-integration feasible (§6).
 
+EXPLICITLY CONFIRMED pre-Phase-B: zero keyshare/RNES reads in
+AppState active-transition handlers repo-wide; zero in
+setInterval/setTimeout bodies in MobilesPairing,
+MobileNostrPairing, mpcKeepAlive, TssProvider (8 sites —
+transport/status only). No biometry exemptions needed; no
+re-read path exists to exempt.
+
 ## 6. Ceremony tokens + F4 biometry re-integration (3b)
 
 ### 6.1 Why tokens, why not handles-alone (§0.9)
@@ -360,10 +418,13 @@ an ACTIVE ceremony is unaffected by granularity anyway
   NATIVE shows OS auth (BiometricPrompt / LAContext,
   biometric-or-device-passcode; no-sensor devices still get a
   device-passcode prompt — never silent) → mints random 128-bit
-  token → native map `{token: (op, sessionID, expiry=30min)}` →
-  resolves token string. Devices with NO screen lock configured:
-  typed refusal (`[CEREMONY_AUTH_NO_LOCK]`, "set a device screen
-  lock to continue") — §9 Q3.
+  token → native map `{token: (opClass, sessionID,
+  expiry≤10min)}` → resolves token string. Op CLASSES: `sign`,
+  `keygen`, `export`, `import`, `transport`, `config` — no
+  cross-class replay (sign/decrypt/export tokens never
+  interchange). Devices with NO screen lock configured:
+  REFUSE with UX message (`[CEREMONY_AUTH_NO_LOCK]`, "Set a
+  device screen lock to continue") — DECIDED (Q3).
 - Table-B methods take `token`, verify (exists, unexpired, op +
   sessionID match), else `[CEREMONY_AUTH_REQUIRED]`. Tokens are
   multi-use within their (op, sessionID); replay across
@@ -385,7 +446,8 @@ an ACTIVE ceremony is unaffected by granularity anyway
   (`sign`), DKG setup (`keygen`), backup/airgap export
   (`export` — replaces the current JS-layer biometric gate
   with enforced ceremony auth; one prompt, not two),
-  custom-API writes (`config`), Nostr join (`join`).
+  custom-API writes (`config`), backup import+stage (`import`,
+  one prompt covers A6+A7). (No `join` class: A11 removed.)
 - NO PROMPT: metadata reads, presence checks, restore
   discovery, bootstrap, in-flight backgrounded work (uses
   minted token), delete (typed-phrase gate stays).
@@ -423,20 +485,24 @@ clean (storage flows need no ceremony auth to be fully
 closed):
 
 WAVE 3a = F15b-1 (storage confidentiality) + F10-clipboard:
-Go registry + envelope + migration (§1) + Table A A1–A10
-(setup methods WITHOUT tokens) + §3 + §4-C1–C10 + F10
-clipboard (C7/C9 + clipboard-after-export tests). Closes:
-create, persist, import-decrypt, read, dev-view, delete.
-Interim states, all disclosed: DKG-start ungated (solo DKG
-harmless); signing still implicit-load without tokens
-(no JS plaintext — same as today, strictly safer via
-envelope); cancel ungated (F12).
+Table C dead-oracle removals + Go registry + envelope +
+migration (§1) + Table A A3–A10 (A1–A2 GG18 → F19; setup
+WITHOUT tokens) + §3 + §4-C1–C10 + F10 clipboard (C7/C9 +
+clipboard-after-export tests). FIRST COMMIT: clipboard
+removal (highest-likelihood exfil path, independent of
+envelope). Closes: DKLs create, persist, import-decrypt,
+read, dev-view, delete. Interim states, all disclosed:
+DKG-start ungated (solo DKG harmless); signing still
+implicit-load without tokens (no JS plaintext — same as
+today, strictly safer via envelope); GG18 plaintext (F19).
 
 WAVE 3b = F15b-2 (ceremony) + F18 + F10-bridge + F4-auth:
-Table A A11–A12 + Table B + Table C + §6 + F18 parity tests
-+ malicious-JS simulation tests + round-trips. Closes:
-signing-path plaintext (F18 both platforms), bridge
-authorization (F10), ceremony biometry (F4 intent).
+Table A A11(removal)–A12 + Table B incl. B17–B19 (B1–B4
+GG18 excluded per F19) + §6 + F18 removal verification +
+malicious-JS simulation tests + round-trips. Closes:
+signing-path plaintext (F18 both platforms removed),
+bridge authorization incl. cancel (F10), ceremony biometry
+(F4 intent). Keypair generators retained per Q7.
 
 Each merges only with its scope FULLY closed (§8 evidence).
 If the reviewer vetoes the split, the same design executes
@@ -500,3 +566,28 @@ is proven in layers:
 END OF PHASE A. Awaiting review + sign-off before Phase B.
 Branch for this doc: `security/wave3-f15b-f18-f10` (rename at
 Phase B kickoff if Q1 splits).
+
+## 10. Pre-Phase-B resolutions (approved with split)
+
+- Q1 SPLIT: 3a = storage confidentiality + clipboard +
+  dead-oracle removals (`security/wave3a-f15b1-f10clip`); 3b =
+  ceremony + F18 + F10-bridge + F4-auth + cancel gating.
+- Q2 ENVELOPE APPROVED with: atomic migration (staging-key
+  protocol §1.5), fail-closed device-key loss (typed error),
+  one-time post-migration backup prompt.
+- Q3 REFUSE to sign without screen lock, with UX message.
+- Q4 CLIPBOARD FIRST: secret clipboard removal lands as the
+  first 3a commit, before the envelope. Metadata-only copy
+  (npub, pub_key, suite) kept. Dice copy disabled.
+- Q5 GG18 OUT OF WAVE 3 → F19 (protocol-variant decision,
+  deferred, High). A1/A2 + B1–B4 excluded; A6/A7/envelope
+  stay backend-agnostic.
+- Q6 CANCEL GATED in 3b (B19); F12 mechanism stays Wave 4.
+- Q7 KEYPAIR VERIFICATION: live callers found → removal
+  BLOCKED; retained, F5 scope.
+- Q8 PSBT-SCREEN → F20 (High, post-Wave-3).
+
+3a sequence (mandated): clipboard removal → dead-oracle
+removals → envelope + registry → consumers → migration →
+tests. L1+L2 accepted as primary evidence. Report green
+before 3b.
