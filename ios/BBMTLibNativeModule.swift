@@ -678,6 +678,22 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
   }
 
+  /// F15b-1 migration bootstrap (§1.5 step 7): idempotent
+  /// plaintext → envelope migration. Resolves {migrated:bool}.
+  /// Storage failures reject with [SECURE_STORAGE_*] copy.
+  @objc func ensureKeyshareEnveloped(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      do {
+        let migrated = try KeyshareEnvelope.ensureEnveloped(account: RNESKeychain.keyshareAccount)
+        resolver(["migrated": migrated])
+      } catch {
+        rejecter("MIGRATION_ERROR", self?.secureStorageMessage(error) ?? String(describing: error), error as NSError)
+      }
+    }
+  }
+
   @objc func sha256(
     _ message: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock

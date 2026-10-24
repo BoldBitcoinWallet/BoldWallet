@@ -30,8 +30,13 @@ import database from './services/Database';
 import {runMigrationIfNeeded} from './services/LocalCacheMigration';
 import {migrateEncryptedPrefsIfNeeded} from './services/encryptedPrefsMigration';
 import {runBrantaVerifiedBackfillIfNeeded} from './services/BrantaVerifiedBackfill';
+import {
+  maybePromptPostMigrationBackup,
+  runEnvelopeMigrationIfNeeded,
+} from './services/keyshareEnvelopeMigration';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
+  ActivityIndicator,
   Alert,
   EmitterSubscription,
   NativeEventEmitter,
@@ -557,6 +562,10 @@ const MainTabs = () => {
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  /** F15b-1: blocking envelope-migration status at bootstrap. */
+  const [migrationSecuring, setMigrationSecuring] = useState(false);
+  /** F15b-1: Q2 one-time backup prompt, shown once wallet UI is up. */
+  const [backupPromptPending, setBackupPromptPending] = useState(false);
   /** Remount wallet UI after lock (keeps UserProvider — avoids keychain reads while locked). */
   const [contentResetKey, setContentResetKey] = useState(0);
   /** Full remount including UserProvider (wallet delete / import only). */
@@ -608,10 +617,22 @@ const App = () => {
       } catch (dbErr) {
         dbg('App: Database init error (non-fatal):', dbErr);
       }
+      // F15b-1 (§1.5 step 7): idempotent envelope migration with a
+      // blocking status. Non-fatal — reads self-heal inline.
+      let migrated = false;
+      setMigrationSecuring(true);
+      try {
+        migrated = (await runEnvelopeMigrationIfNeeded()).migrated;
+      } finally {
+        setMigrationSecuring(false);
+      }
       try {
         const route = await resolveInitialWalletRoute();
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
+        if (migrated) {
+          setBackupPromptPending(true);
+        }
       } catch (error) {
         dbg('Error in initializeApp:', error);
         setInitialRoute('Welcome');
@@ -836,10 +857,20 @@ const App = () => {
                 key={`content-${contentResetKey}`}
                 initialRoute={initialRoute}
                 isAuthenticated={isAuthenticated}
+                backupPromptPending={backupPromptPending}
+                onBackupPromptShown={() => setBackupPromptPending(false)}
               />
             )}
           </UserProvider>
         </ThemeProvider>
+        {migrationSecuring && (
+          <View style={styles.migrationOverlay} pointerEvents="auto">
+            <ActivityIndicator size="large" color="#ffffff" />
+            <Text style={styles.migrationOverlayText}>
+              Securing your keyshare…
+            </Text>
+          </View>
+        )}
       </SafeAreaProvider>
     </ErrorBoundary>
   );
@@ -847,12 +878,31 @@ const App = () => {
 const AppContent = ({
   initialRoute,
   isAuthenticated,
+  backupPromptPending,
+  onBackupPromptShown,
 }: {
   initialRoute: string | null;
   isAuthenticated: boolean;
+  backupPromptPending: boolean;
+  onBackupPromptShown: () => void;
 }) => {
   const {theme} = useTheme();
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
+  // F15b-1 (Q2): one-time backup prompt after a migration ran. The
+  // alert fires once wallet UI is up; navigation happens on press,
+  // so no container-readiness race.
+  useEffect(() => {
+    if (!backupPromptPending) {
+      return;
+    }
+    onBackupPromptShown();
+    maybePromptPostMigrationBackup(true, () => {
+      navigationRef.current?.navigate('MainTabs', {
+        screen: 'Settings',
+        params: {expandSection: 'backup'},
+      });
+    });
+  }, [backupPromptPending, onBackupPromptShown]);
   const dynamicStyles = {
     navigationContainer: {
       ...styles.navigationContainer,
@@ -936,6 +986,19 @@ const styles = StyleSheet.create({
     zIndex: 99999,
     elevation: 99999,
     pointerEvents: 'box-none',
+  },
+  migrationOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 99998,
+    elevation: 99998,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  migrationOverlayText: {
+    marginTop: 16,
+    color: '#ffffff',
+    fontSize: 16,
   },
 });
 export default App;

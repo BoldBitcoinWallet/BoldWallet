@@ -1164,6 +1164,28 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
+    /**
+     * F15b-1 migration bootstrap (§1.5 step 7): idempotent
+     * plaintext → envelope migration. Resolves {migrated:bool}.
+     * Storage failures reject with [SECURE_STORAGE_*] copy.
+     */
+    @ReactMethod
+    fun ensureKeyshareEnveloped(promise: Promise) {
+        Thread {
+            try {
+                val prefs = rnesEncryptedPrefs()
+                val migrated = KeyshareEnvelope.ensureEnveloped(prefs, KEY_KEYSHARE)
+                val out = Arguments.createMap()
+                out.putBoolean("migrated", migrated)
+                promise.resolve(out)
+            } catch (e: SecureStorageException) {
+                promise.reject("MIGRATION_ERROR", e.message, e)
+            } catch (e: Exception) {
+                promise.reject("MIGRATION_ERROR", mapSecureStorageError(e).message, e)
+            }
+        }.start()
+    }
+
     @ReactMethod
     fun sha256(msg: String, promise: Promise) {
         try {
