@@ -21,6 +21,41 @@ export {
   resolveTssBackendForKeygen,
 } from './tssBackend';
 
+/**
+ * F15b-1: DKG setup result. DKLs setup stages the keyshare in Go and
+ * returns a handle + allowlisted metadata only — share bytes never
+ * cross the bridge. GG18 (F19 legacy branch) still returns full JSON;
+ * that branch stays plaintext by explicit protocol-variant deferral.
+ */
+export type SetupResult =
+  | {kind: 'staged'; handle: string; metadata: Record<string, any>}
+  | {kind: 'legacy-gg18'; json: string};
+
+/**
+ * Parse + validate the staged-setup envelope returned by the native
+ * DKLs keygen methods. Throws on malformed input — callers fail
+ * closed, never treat raw output as a keyshare.
+ */
+export function parseStagedSetupResult(raw: string): SetupResult {
+  let parsed: any = null;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('Invalid staged setup result');
+  }
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    typeof parsed.handle !== 'string' ||
+    parsed.handle.trim() === '' ||
+    !parsed.metadata ||
+    typeof parsed.metadata !== 'object'
+  ) {
+    throw new Error('Invalid staged setup result');
+  }
+  return {kind: 'staged', handle: parsed.handle, metadata: parsed.metadata};
+}
+
 export const TssProvider = {
   resolveTssBackend,
   resolveTssBackendForKeygen,
@@ -48,10 +83,10 @@ export const TssProvider = {
     chaincode: string,
     setupMode?: SetupMode,
     backend?: TssBackend | null,
-  ): Promise<string> {
+  ): Promise<SetupResult> {
     const resolved = await resolveTssBackendForKeygen(setupMode, backend);
     if (resolved === 'dkls23') {
-      return BBMTLibNativeModule.dklsMpcTssSetup(
+      const raw = await BBMTLibNativeModule.dklsMpcTssSetup(
         server,
         partyID,
         partiesCSV,
@@ -61,8 +96,10 @@ export const TssProvider = {
         decKey,
         chaincode,
       );
+      return parseStagedSetupResult(raw);
     }
-    return BBMTLibNativeModule.mpcTssSetup(
+    // F19: GG18 legacy branch — full JSON through JS by explicit deferral.
+    const json = await BBMTLibNativeModule.mpcTssSetup(
       server,
       partyID,
       ppmFile,
@@ -73,6 +110,7 @@ export const TssProvider = {
       decKey,
       chaincode,
     );
+    return {kind: 'legacy-gg18', json};
   },
 
   async nostrMpcTssSetup(
@@ -85,10 +123,10 @@ export const TssProvider = {
     ppmPath: string,
     setupMode?: SetupMode,
     backend?: TssBackend | null,
-  ): Promise<string> {
+  ): Promise<SetupResult> {
     const resolved = await resolveTssBackendForKeygen(setupMode, backend);
     if (resolved === 'dkls23') {
-      return BBMTLibNativeModule.dklsNostrMpcTssSetup(
+      const raw = await BBMTLibNativeModule.dklsNostrMpcTssSetup(
         relaysCSV,
         partyNsec,
         partiesNpubsCSV,
@@ -96,8 +134,10 @@ export const TssProvider = {
         sessionKey,
         chaincode,
       );
+      return parseStagedSetupResult(raw);
     }
-    return BBMTLibNativeModule.nostrMpcTssSetup(
+    // F19: GG18 legacy branch — full JSON through JS by explicit deferral.
+    const json = await BBMTLibNativeModule.nostrMpcTssSetup(
       relaysCSV,
       partyNsec,
       partiesNpubsCSV,
@@ -106,6 +146,7 @@ export const TssProvider = {
       chaincode,
       ppmPath,
     );
+    return {kind: 'legacy-gg18', json};
   },
 
   /** Human-readable backend id for logs (gg18 | dkls23). */

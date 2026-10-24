@@ -125,11 +125,14 @@ import {
   type MpcKeepAliveOutcome,
 } from '../services/mpcKeepAlive';
 import {
+  discardPendingKeyshares,
   invokeNostrWalletKeygen,
   KEYGEN_FINALIZING_STORAGE_STATUS,
+  persistStagedKeyshare,
   persistWalletKeyshare,
   resolveWalletSetupBackend,
   runWalletSetupPrepare,
+  type SetupResult,
   type WalletSetupRouteParams,
 } from '../services/walletSetupOrchestrator';
 import {
@@ -549,8 +552,11 @@ const MobileNostrPairing = ({navigation}: any) => {
   const activeMpcSessionIdRef = useRef<string | null>(null);
   const isPairingRef = useRef(false);
   const keysharePersistedRef = useRef(false);
+  // F15b-1: pending DKG output — staged handle+metadata (DKLs) or
+  // full JSON (F19 GG18 legacy branch) — plus Nostr credentials for
+  // native finalize.
   const pendingKeyshareRef = useRef<{
-    json: string;
+    pending: SetupResult;
     partyNsec?: string;
     nostrNpub?: string;
   } | null>(null);
@@ -713,6 +719,8 @@ const MobileNostrPairing = ({navigation}: any) => {
             } catch (e) {
               dbg('MobileNostrPairing: cancelNostrMpc failed', e);
             }
+            // F15b-1: wipe staged keyshares (covers DKG-return/abort races).
+            await discardPendingKeyshares();
           },
         },
       ],
@@ -1692,6 +1700,8 @@ const MobileNostrPairing = ({navigation}: any) => {
     setPairingActive(true);
     keysharePersistedRef.current = false;
     pendingKeyshareRef.current = null;
+    // F15b-1: wipe any staged keyshare from an abandoned prior run.
+    discardPendingKeyshares();
     setMpcDone(false);
     resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
     resetCircle();
@@ -1808,7 +1818,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         'peers to publish "ready" events',
       );
       dbg('=== END GO BACKEND INPUT ===');
-      let keyshareJSON = await invokeNostrWalletKeygen({
+      const setupResult = await invokeNostrWalletKeygen({
         relaysCSV,
         partyNsec: localNsec,
         partiesNpubsCSV,
@@ -1822,15 +1832,25 @@ const MobileNostrPairing = ({navigation}: any) => {
       });
       // Validate keyshare and map keyshare positions
       let keyshare: any;
-      try {
-        keyshare = JSON.parse(keyshareJSON);
-        if (!keyshare.pub_key) {
-          throw new Error('Invalid keyshare: missing pub_key');
+      if (setupResult.kind === 'staged') {
+        // F15b-1: staged handle + metadata only — no share bytes in JS.
+        keyshare = setupResult.metadata;
+        if (!keyshare || !keyshare.pub_key) {
+          throw new Error('Invalid keyshare received');
         }
         dbg('Keygen successful, party:', keyshare.local_party_key);
-      } catch (error) {
-        dbg('Error parsing keyshare:', error);
-        throw new Error('Invalid keyshare received');
+      } else {
+        // F19: GG18 legacy branch — full JSON through JS by deferral.
+        try {
+          keyshare = JSON.parse(setupResult.json);
+          if (!keyshare.pub_key) {
+            throw new Error('Invalid keyshare: missing pub_key');
+          }
+          dbg('Keygen successful, party:', keyshare.local_party_key);
+        } catch (error) {
+          dbg('Error parsing keyshare:', error);
+          throw new Error('Invalid keyshare received');
+        }
       }
       // Map keyshare positions based on sorted npubs for UI display
       const sortedNpubs = allNpubs.sort();
@@ -1867,7 +1887,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       setKeyshareMapping(mapping);
       dbg('Keyshare mapping:', mapping);
       pendingKeyshareRef.current = {
-        json: keyshareJSON,
+        pending: setupResult,
         partyNsec: localNsec,
         nostrNpub: localNpub,
       };
@@ -2632,9 +2652,10 @@ const MobileNostrPairing = ({navigation}: any) => {
   const toggleBackedup = (key: keyof typeof backupChecks) => {
     setBackupChecks(prev => ({...prev, [key]: !prev[key]}));
   };
-  const rememberNostrLegacyFlag = (keyshareJson: string) => {
+  // F15b-1: takes parsed keyshare fields (staged metadata or parsed
+  // legacy JSON) — never parses a JSON blob itself.
+  const rememberNostrLegacyFlag = (ksParsed: Record<string, any>) => {
     try {
-      const ksParsed = JSON.parse(keyshareJson);
       const useLegacyPath = resolveUseLegacyDerivationPaths({
         created_at: ksParsed.created_at,
         tss_backend: detectKeyshareTssBackend(ksParsed),
@@ -2657,21 +2678,30 @@ const MobileNostrPairing = ({navigation}: any) => {
       return true;
     }
     const pending = pendingKeyshareRef.current;
-    if (!pending?.json) {
+    if (!pending) {
       Alert.alert('Nothing to save', 'Run wallet setup again.');
       return false;
     }
     try {
-      const persisted = await persistWalletKeyshare(pending.json, {
-        partyNsec: pending.partyNsec,
-        nostrNpub: pending.nostrNpub,
-      });
-      pendingKeyshareRef.current = {
-        ...pending,
-        json: persisted,
-      };
+      if (pending.pending.kind === 'staged') {
+        const meta = await persistStagedKeyshare(pending.pending.handle, {
+          partyNsec: pending.partyNsec,
+          nostrNpub: pending.nostrNpub,
+        });
+        rememberNostrLegacyFlag(meta);
+      } else {
+        // F19: GG18 legacy branch — full JSON through JS.
+        const persisted = await persistWalletKeyshare(pending.pending.json, {
+          partyNsec: pending.partyNsec,
+          nostrNpub: pending.nostrNpub,
+        });
+        pendingKeyshareRef.current = {
+          ...pending,
+          pending: {kind: 'legacy-gg18', json: persisted},
+        };
+        rememberNostrLegacyFlag(JSON.parse(persisted));
+      }
       keysharePersistedRef.current = true;
-      rememberNostrLegacyFlag(persisted);
       return true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -2709,6 +2739,8 @@ const MobileNostrPairing = ({navigation}: any) => {
             await clearKeyshareMetadata();
             keysharePersistedRef.current = false;
             pendingKeyshareRef.current = null;
+            // F15b-1: wipe the staged keyshare behind the dropped handle.
+            await discardPendingKeyshares();
             setMpcDone(false);
             setBackupChecks({
               deviceOne: false,

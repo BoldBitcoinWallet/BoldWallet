@@ -103,13 +103,16 @@ import {
   resolveGg18LanSigningPartiesFromKeyshare,
 } from '../services/lanMpcSetup';
 import {
+  discardPendingKeyshares,
   invokeLanWalletKeygen,
   KEYGEN_FINALIZING_STORAGE_STATUS,
   persistLanRolesFromContext,
+  persistStagedKeyshare,
   persistWalletKeyshare,
   resolveWalletSetupBackend,
   runLanWalletKeygen,
   runWalletSetupPrepare,
+  type SetupResult,
   type WalletSetupRouteParams,
 } from '../services/walletSetupOrchestrator';
 import {resolveChaincodeHex} from '../services/chaincodeReader';
@@ -450,7 +453,9 @@ const MobilesPairing = ({navigation}: any) => {
   const activeMpcSessionIdRef = useRef<string | null>(null);
   const doingMpcRef = useRef(false);
   const keysharePersistedRef = useRef(false);
-  const pendingKeyshareRef = useRef<string | null>(null);
+  // F15b-1: pending DKG output — staged handle+metadata (DKLs) or
+  // full JSON (F19 GG18 legacy branch).
+  const pendingKeyshareRef = useRef<SetupResult | null>(null);
   const keepAliveOutcomeRef = useRef<MpcKeepAliveOutcome>('failure');
   const setMpcModalActive = useCallback(
     (active: boolean) => {
@@ -541,6 +546,8 @@ const MobilesPairing = ({navigation}: any) => {
             } catch {
               // ignore
             }
+            // F15b-1: wipe staged keyshares (covers DKG-return/abort races).
+            await discardPendingKeyshares();
           },
         },
       ],
@@ -564,9 +571,10 @@ const MobilesPairing = ({navigation}: any) => {
   const toggleKeygenReady = () => {
     setIsKeygenReady(!isKeygenReady);
   };
-  const rememberLegacyWalletFlag = (keyshareJson: string) => {
+  // F15b-1: takes parsed keyshare fields (staged metadata or parsed
+  // legacy JSON) — never parses a JSON blob itself.
+  const rememberLegacyWalletFlag = (ksParsed: Record<string, any>) => {
     try {
-      const ksParsed = JSON.parse(keyshareJson);
       const useLegacyPath = resolveUseLegacyDerivationPaths({
         created_at: ksParsed.created_at,
         tss_backend: detectKeyshareTssBackend(ksParsed),
@@ -588,16 +596,22 @@ const MobilesPairing = ({navigation}: any) => {
     if (keysharePersistedRef.current) {
       return true;
     }
-    const raw = pendingKeyshareRef.current;
-    if (!raw) {
+    const pending = pendingKeyshareRef.current;
+    if (!pending) {
       Alert.alert('Nothing to save', 'Run wallet setup again.');
       return false;
     }
     try {
-      const persisted = await persistWalletKeyshare(raw);
-      pendingKeyshareRef.current = persisted;
+      if (pending.kind === 'staged') {
+        const meta = await persistStagedKeyshare(pending.handle);
+        rememberLegacyWalletFlag(meta);
+      } else {
+        // F19: GG18 legacy branch — full JSON through JS.
+        const persisted = await persistWalletKeyshare(pending.json);
+        pendingKeyshareRef.current = {kind: 'legacy-gg18', json: persisted};
+        rememberLegacyWalletFlag(JSON.parse(persisted));
+      }
       keysharePersistedRef.current = true;
-      rememberLegacyWalletFlag(persisted);
       return true;
     } catch (error: unknown) {
       Alert.alert('Could not save wallet', formatMpcError(error));
@@ -634,6 +648,8 @@ const MobilesPairing = ({navigation}: any) => {
             await clearKeyshareMetadata();
             keysharePersistedRef.current = false;
             pendingKeyshareRef.current = null;
+            // F15b-1: wipe the staged keyshare behind the dropped handle.
+            await discardPendingKeyshares();
             setKeyshare('');
             setMpcDone(false);
             setBackupChecks({
@@ -1077,6 +1093,8 @@ const MobilesPairing = ({navigation}: any) => {
       setMpcDone(false);
       keysharePersistedRef.current = false;
       pendingKeyshareRef.current = null;
+      // F15b-1: wipe any staged keyshare from an abandoned prior run.
+      discardPendingKeyshares();
       setPrepCounter(0);
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
       setMpcSessionShort(null);
@@ -1153,38 +1171,64 @@ const MobilesPairing = ({navigation}: any) => {
         dataLen: orch.chaincode.length,
       });
       try {
-        const result = await invokeLanWalletKeygen(
+        const setupResult = await invokeLanWalletKeygen(
           orch,
           ppmFile,
           keygenSetupMode,
         );
-        dbg('keygen result', result.substring(0, 40).concat('...'));
-        setKeyshare(result);
-        try {
-          const ks = JSON.parse(result);
-          if (!ks.pub_key) {
-            throw 'Error: pub_key or chain_code_hex not found in keyshare';
+        if (setupResult.kind === 'legacy-gg18') {
+          // F19: GG18 legacy branch — full JSON through JS by deferral.
+          const result = setupResult.json;
+          dbg('keygen result', result.substring(0, 40).concat('...'));
+          setKeyshare(result);
+          try {
+            const ks = JSON.parse(result);
+            if (!ks.pub_key) {
+              throw 'Error: pub_key or chain_code_hex not found in keyshare';
+            }
+            dbg('Party loaded', ks.local_party_key);
+          } catch (error) {
+            dbg('Error parsing keyshare:', error);
+            throw 'Error: Invalid keyshare';
           }
-          dbg('Party loaded', ks.local_party_key);
-        } catch (error) {
-          dbg('Error parsing keyshare:', error);
-          throw 'Error: Invalid keyshare';
-        }
-        pendingKeyshareRef.current = result;
-        keysharePersistedRef.current = false;
-        keepAliveOutcomeRef.current = 'success';
-        try {
-          const ksParsed = JSON.parse(result);
-          const display = getKeyshareDisplayLabel(ksParsed);
-          if (display) {
-            setShareName(display);
+          pendingKeyshareRef.current = setupResult;
+          keysharePersistedRef.current = false;
+          keepAliveOutcomeRef.current = 'success';
+          try {
+            const ksParsed = JSON.parse(result);
+            const display = getKeyshareDisplayLabel(ksParsed);
+            if (display) {
+              setShareName(display);
+            }
+          } catch {
+            /* keep protocol party id in shareName */
           }
-        } catch {
-          /* keep protocol party id in shareName */
+          setKeyshare(result);
+          setMpcDone(true);
+          deletePreparams();
+        } else {
+          // F15b-1: staged handle + metadata only — no share bytes in JS.
+          const {metadata} = setupResult;
+          dbg('keygen result staged');
+          if (!metadata || !metadata.pub_key) {
+            throw 'Error: Invalid keyshare';
+          }
+          dbg('Party loaded', metadata.local_party_key);
+          setKeyshare(JSON.stringify(metadata));
+          pendingKeyshareRef.current = setupResult;
+          keysharePersistedRef.current = false;
+          keepAliveOutcomeRef.current = 'success';
+          try {
+            const display = getKeyshareDisplayLabel(metadata);
+            if (display) {
+              setShareName(display);
+            }
+          } catch {
+            /* keep protocol party id in shareName */
+          }
+          setMpcDone(true);
+          deletePreparams();
         }
-        setKeyshare(result);
-        setMpcDone(true);
-        deletePreparams();
       } catch (error: unknown) {
         dbg('keygen error', error);
         setMpcDone(false);

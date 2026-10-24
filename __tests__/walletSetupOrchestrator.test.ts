@@ -8,13 +8,16 @@ jest.mock('../native_modules', () => ({
       JSON.stringify({pub_key: 'aa', tss_backend: 'dkls23'}),
     ),
     hasKeyshareInSecureStorage: jest.fn(async () => true),
+    destroyKeyshareHandles: jest.fn(async () => true),
   },
 }));
 
 jest.mock('../services/lanMpcSetup', () => ({}));
 jest.mock('../services/lanMpcTransport', () => ({}));
 jest.mock('../services/trioLanKeygenPreflight', () => ({}));
-jest.mock('../services/TssProvider', () => ({TssProvider: {}}));
+jest.mock('../services/TssProvider', () => ({
+  TssProvider: {mpcTssSetup: jest.fn(), nostrMpcTssSetup: jest.fn()},
+}));
 
 jest.mock('../services/tssKeygenPrepare', () => ({
   prepareDeviceForKeygen: jest.fn(async () => 'dkls23'),
@@ -44,10 +47,14 @@ jest.mock('../services/walletGuard', () => ({
 
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {BBMTLibNativeModule} from '../native_modules';
+import {TssProvider} from '../services/TssProvider';
 import {assertNoExistingWallet} from '../services/walletGuard';
 import {saveKeyshareMetadata} from '../utils';
 import {
+  discardPendingKeyshares,
   finalizeKeyshareForStorage,
+  invokeLanWalletKeygen,
+  invokeNostrWalletKeygen,
   mixNostrChaincodeWithDice,
   nsecFieldForKeyshareJson,
   persistStagedKeyshare,
@@ -203,5 +210,65 @@ describe('walletSetupOrchestrator', () => {
     expect(dice.diceUsed).toBe(true);
     expect(dice.finalChaincodeHex).not.toBe(base);
     expect(dice.finalChaincodeHex).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe('F15b-1 setup invoke/discard', () => {
+  const provider = TssProvider as any;
+  const native = BBMTLibNativeModule as any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test('invokeLanWalletKeygen passes the staged SetupResult through', async () => {
+    const staged = {
+      kind: 'staged',
+      handle: 'h1',
+      metadata: {pub_key: 'aa'},
+    };
+    provider.mpcTssSetup.mockResolvedValue(staged);
+    const orch = {
+      server: 'srv',
+      partyID: 'p1',
+      partiesCSV: 'p1,p2',
+      sessionID: 'sid',
+      transport: {sessionKey: 'sk', encKey: 'ek', decKey: 'dk'},
+      chaincode: 'cc',
+      backend: 'dkls23',
+    } as any;
+    const res = await invokeLanWalletKeygen(orch, 'ppm', 'duo');
+    expect(provider.mpcTssSetup).toHaveBeenCalledTimes(1);
+    expect(res).toBe(staged);
+    expect(JSON.stringify(res)).not.toContain('share_b64');
+  });
+
+  test('invokeNostrWalletKeygen passes the legacy branch through', async () => {
+    const legacy = {kind: 'legacy-gg18', json: '{"pub_key":"bb"}'};
+    provider.nostrMpcTssSetup.mockResolvedValue(legacy);
+    const res = await invokeNostrWalletKeygen({
+      relaysCSV: 'r',
+      partyNsec: 'nsec1x',
+      partiesNpubsCSV: 'npub1,npub2',
+      sessionID: 'sid',
+      sessionKey: 'sk',
+      chaincode:
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+      ppmPath: 'ppm',
+      setupMode: 'duo',
+      backend: 'gg18',
+    });
+    expect(provider.nostrMpcTssSetup).toHaveBeenCalledTimes(1);
+    expect(res).toBe(legacy);
+  });
+
+  test('discardPendingKeyshares wipes staged entries', async () => {
+    await discardPendingKeyshares();
+    expect(native.destroyKeyshareHandles).toHaveBeenCalledTimes(1);
+  });
+
+  test('discardPendingKeyshares never throws', async () => {
+    native.destroyKeyshareHandles.mockRejectedValueOnce(new Error('down'));
+    await expect(discardPendingKeyshares()).resolves.toBeUndefined();
   });
 });

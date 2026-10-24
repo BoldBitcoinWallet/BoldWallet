@@ -34,7 +34,9 @@ import {
 } from './diceEntropy';
 import {assertCommitmentsOnlyPayload} from './logRedact';
 import type {DiceSet} from './diceEntropy';
-import {TssProvider} from './TssProvider';
+import {TssProvider, type SetupResult} from './TssProvider';
+
+export type {SetupResult};
 import type {SetupMode, TssBackend} from './tssBackend';
 import {resolveTssBackendForKeygen} from './tssBackend';
 import {prepareDeviceForKeygen} from './tssKeygenPrepare';
@@ -296,7 +298,7 @@ export async function invokeLanWalletKeygen(
   orch: LanKeygenOrchestrationResult,
   ppmFile: string,
   setupMode?: SetupMode,
-): Promise<string> {
+): Promise<SetupResult> {
   return TssProvider.mpcTssSetup(
     orch.server,
     orch.partyID,
@@ -357,7 +359,7 @@ export async function mixNostrChaincodeWithDice(
 
 export async function invokeNostrWalletKeygen(
   input: NostrKeygenInvokeInput,
-): Promise<string> {
+): Promise<SetupResult> {
   const backend = await resolveWalletSetupBackend(
     input.backend,
     input.setupMode,
@@ -430,6 +432,22 @@ export async function verifyWalletKeysharePersisted(): Promise<boolean> {
     return result === true || result === 'true' || result === 1;
   } catch {
     return false;
+  }
+}
+
+/**
+ * F15b-1: best-effort wipe of Go-staged keyshares. Called on abort,
+ * new-run reset, and anywhere a pending staged handle is dropped
+ * without persist. Never throws — teardown must not fail setup UX.
+ */
+export async function discardPendingKeyshares(): Promise<void> {
+  try {
+    const fn = BBMTLibNativeModule?.destroyKeyshareHandles;
+    if (typeof fn === 'function') {
+      await fn();
+    }
+  } catch {
+    /* staged entries also die on next Stage / process death */
   }
 }
 
