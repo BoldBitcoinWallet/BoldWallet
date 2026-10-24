@@ -70,6 +70,15 @@ import {
 } from '../services/tssBackend';
 import {TssProvider} from '../services/TssProvider';
 import {
+  CeremonyAuthRequiredError,
+  CeremonyNoLockError,
+  completeCeremonyToken,
+  newCeremonySessionID,
+  releaseCeremonyToken,
+  requestKeygenCeremonyToken,
+  requestSignCeremonyToken,
+} from '../services/ceremonyAuth';
+import {
   parseEciesKeypairJson,
   resolveLanKeysignTransportKeys,
 } from '../services/lanMpcTransport';
@@ -809,6 +818,9 @@ const MobilesPairing = ({navigation}: any) => {
 
   async function initSession() {
     const keygenFlow = !isSendBitcoin && !isSignPSBT;
+    // 3b-2c: set once the handshake mint succeeds; the catch
+    // releases it (returns complete before returning).
+    let hsTokenForCleanup: string | null = null;
     try {
       const keypairJson =
         (keypair || '').trim() ||
@@ -844,6 +856,16 @@ const MobilesPairing = ({navigation}: any) => {
           kp.publicKey.length > 16 ? kp.publicKey.slice(0, 16) + '…' : '…',
       });
       setStatus(sessionWaitMessage(isMaster, keygenFlow));
+      // 3b-2c B13/B14: the handshake IS the ceremony. Mint after
+      // validation (no prompt on a broken setup), complete before
+      // each return, release on any throw (see catch). Class
+      // matches the upcoming ceremony (keygen for setup, sign
+      // for send/sign); native verifyTransport accepts either.
+      const hsSession = await newCeremonySessionID('lan-handshake');
+      const hsToken = keygenFlow
+        ? await requestKeygenCeremonyToken(hsSession)
+        : await requestSignCeremonyToken(hsSession);
+      hsTokenForCleanup = hsToken;
       if (isMaster) {
         dbg('initSession: Running as master device');
         const attemptId = await generateMpcAttemptId();
@@ -889,12 +911,14 @@ const MobilesPairing = ({navigation}: any) => {
           ? [peerEnc, peerPubkey2].filter(Boolean).join(',')
           : peerEnc;
         const publishHandshake = () =>
-          BBMTLibNativeModule.publishData(
+          TssProvider.publishData(
             String(discoveryPort),
             String(timeout),
             enckeyCSV,
             _data,
             isTrio ? 'trio' : 'duo',
+            hsToken,
+            hsSession,
           );
         const publishStartedAt = Date.now();
         await ensureLanHandshakePortFree();
@@ -953,6 +977,11 @@ const MobilesPairing = ({navigation}: any) => {
             );
           }
           dbg('initSession: Session initialization completed successfully');
+          try {
+            await completeCeremonyToken(hsToken);
+          } catch {
+            /* logged in ceremonyAuth; handshake stands */
+          }
           return (_data || '').trim();
         } else {
           const elapsedMs = Date.now() - publishStartedAt;
@@ -1036,6 +1065,8 @@ const MobilesPairing = ({navigation}: any) => {
           peerURL,
           kp.privateKey,
           fetchStamp,
+          hsToken,
+          hsSession,
           acceptSessionPayload,
           keygenFlow ? 90 : timeout,
         );
@@ -1056,10 +1087,31 @@ const MobilesPairing = ({navigation}: any) => {
         dbg('initSession: Data fetched successfully', {
           len: rawFetched?.length ?? 0,
         });
+        try {
+          await completeCeremonyToken(hsToken);
+        } catch {
+          /* logged in ceremonyAuth; handshake stands */
+        }
         return (rawFetched || '').trim();
       }
     } catch (error: any) {
       dbg('initSession: Error occurred', {error});
+      // 3b-2c: release the handshake token on any failure.
+      if (hsTokenForCleanup !== null) {
+        try {
+          await releaseCeremonyToken(hsTokenForCleanup);
+        } catch {
+          /* logged in ceremonyAuth */
+        }
+        hsTokenForCleanup = null;
+      }
+      // User-facing ceremony errors pass through unprefixed.
+      if (error instanceof CeremonyAuthRequiredError) {
+        throw 'Authentication was cancelled — tap Start again to retry.';
+      }
+      if (error instanceof CeremonyNoLockError) {
+        throw error.message;
+      }
       const detail =
         error?.message ?? (typeof error === 'string' ? error : String(error));
       throw `Error initializing session:\n${detail}`;
@@ -2317,16 +2369,22 @@ const MobilesPairing = ({navigation}: any) => {
     peerURL: string,
     privateKey: string,
     checksum: string,
+    // 3b-2c B14: handshake ceremony token (REQUIRED — transport
+    // never mints; the poll loop reuses the phase token).
+    ceremonyToken: string,
+    ceremonySessionID: string,
     acceptPayload?: (data: string) => boolean,
     timeoutSec: number = timeout,
   ) {
     const until = Date.now() + timeoutSec * 1000;
     while (Date.now() < until) {
       try {
-        const rawFetched = await BBMTLibNativeModule.fetchData(
+        const rawFetched = await TssProvider.fetchData(
           peerURL,
           privateKey,
           checksum,
+          ceremonyToken,
+          ceremonySessionID,
         );
         if (rawFetched) {
           if (isNativeFetchErrorPayload(rawFetched)) {

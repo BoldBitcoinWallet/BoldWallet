@@ -111,7 +111,7 @@ enum CeremonyTokens {
   /// Native-side authorization check. Call with the op class the
   /// NATIVE method requires — never a class supplied by JS.
   static func verify(token: String, opClass: CeremonyOpClass, sessionID: String) -> Bool {
-    verifyInner(token: token, opClass: opClass, sessionID: sessionID)
+    verifyInner(token: token, allowedClasses: [opClass], sessionID: sessionID)
   }
 
   /// 3b-2a: single-call ceremonies without an MPC session (sends,
@@ -119,10 +119,18 @@ enum CeremonyTokens {
   /// equality is inapplicable (nothing to match). Call sites that
   /// HAVE a session must use verify(), not this.
   static func verifySingleCall(token: String, opClass: CeremonyOpClass) -> Bool {
-    verifyInner(token: token, opClass: opClass, sessionID: nil)
+    verifyInner(token: token, allowedClasses: [opClass], sessionID: nil)
   }
 
-  private static func verifyInner(token: String, opClass: CeremonyOpClass, sessionID: String?) -> Bool {
+  /// 3b-2c B13/B14: LAN handshake transport rides the handshake
+  /// ceremony token (keygen for setup, sign for send/sign) with
+  /// strict session equality. No transport class exists — the
+  /// handshake IS the ceremony, minted at initSession start.
+  static func verifyTransport(token: String, sessionID: String) -> Bool {
+    verifyInner(token: token, allowedClasses: [.sign, .keygen], sessionID: sessionID)
+  }
+
+  private static func verifyInner(token: String, allowedClasses: Set<CeremonyOpClass>, sessionID: String?) -> Bool {
     lock.lock()
     defer { lock.unlock() }
     guard var rec = tokens[token] else { return false }
@@ -133,7 +141,7 @@ enum CeremonyTokens {
       tokens[token] = rec
       return false
     }
-    if rec.opClass != opClass {
+    if !allowedClasses.contains(rec.opClass) {
       return false
     }
     if let sessionID, rec.sessionID != sessionID {

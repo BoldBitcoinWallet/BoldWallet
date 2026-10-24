@@ -161,6 +161,25 @@ PASSED, iOS Debug + Android release green, tsc 32
 pre-existing, eslint 0 errors. Spy/dispatch mocks extended
 for the keygen mint (token traffic share-free).
 
+3b-2c transport slice GREEN (B13-B14): design premise
+corrected — the only JS transport callers are pre-ceremony
+LAN pairing signaling (MobilesPairing publish/fetch);
+in-ceremony MPC transport runs inside Go (net/http), so no
+parent ceremony token exists at these call sites. Resolution:
+the HANDSHAKE is the ceremony — initSession mints a
+keygen (setup) or sign (send/sign) token after validation,
+owns it across publish + fetch polls, completes before each
+return, releases on any throw; user-cancel/no-lock errors
+pass through with actionable text. Native verifyTransport
+(sign|keygen + strict session; no transport class) both
+platforms; TssProvider wrappers take REQUIRED token+session
+(transport never mints — a fallback would prompt-spam the
+poll loop). Gate rejects (fail fast), unlike the legacy
+resolve-"" transport errors. Evidence: tssTransportGating
+4/4, JVM 18/18, harness PASSED (66 checks), iOS Debug +
+Android release green, tsc 32 pre-existing, eslint 0 errors.
+Full jest 670 passed, same 6 pre-existing failures.
+
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
   arm64 emulator (pure-Go build; x/crypto/argon2 has amd64 asm only, so ARM

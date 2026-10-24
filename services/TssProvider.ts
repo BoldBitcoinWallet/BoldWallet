@@ -248,6 +248,53 @@ export const TssProvider = {
     );
   },
 
+  /**
+   * 3b-2c B13: LAN handshake publish. Rides the handshake
+   * ceremony token (sign|keygen) — the token is REQUIRED:
+   * transport never mints (a mint fallback inside poll/retry
+   * loops would prompt-spam). The phase owner (initSession)
+   * mints, passes, and completes.
+   */
+  async publishData(
+    port: string,
+    timeout: string,
+    encKey: string,
+    raw: string,
+    mode: string,
+    ceremonyToken: string,
+    ceremonySessionID: string,
+  ): Promise<string> {
+    return BBMTLibNativeModule.publishData(
+      port,
+      timeout,
+      encKey,
+      raw,
+      mode,
+      ceremonyToken,
+      ceremonySessionID,
+    );
+  },
+
+  /**
+   * 3b-2c B14: LAN handshake fetch. Same required-token rule
+   * as publishData.
+   */
+  async fetchData(
+    url: string,
+    decKey: string,
+    payload: string,
+    ceremonyToken: string,
+    ceremonySessionID: string,
+  ): Promise<string> {
+    return BBMTLibNativeModule.fetchData(
+      url,
+      decKey,
+      payload,
+      ceremonyToken,
+      ceremonySessionID,
+    );
+  },
+
   /** Human-readable backend id for logs (gg18 | dkls23). */
   normalizeBackendLabel(backend: string): 'gg18' | 'dkls23' {
     return backend === 'dkls23' || backend === 'dkls' ? 'dkls23' : 'gg18';

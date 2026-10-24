@@ -279,8 +279,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   @objc func publishData(
     _ port: String, timeout: String, encKey: String, raw: String, mode: String,
+    ceremonyToken: String, ceremonySessionID: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2c B13: rides the handshake ceremony token (sign|keygen).
+    guard CeremonyTokens.verifyTransport(token: ceremonyToken, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssPublishData(port, timeout, encKey, raw, mode, &error)
@@ -295,9 +301,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func fetchData(
-    _ url: String, decKey: String, payload: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ url: String, decKey: String, payload: String,
+    ceremonyToken: String, ceremonySessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2c B14: rides the handshake ceremony token (sign|keygen).
+    guard CeremonyTokens.verifyTransport(token: ceremonyToken, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     var error: NSError?
     let output = TssFetchData(url, decKey, payload, &error)
     if error == nil {

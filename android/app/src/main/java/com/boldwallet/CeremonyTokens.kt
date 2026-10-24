@@ -120,7 +120,7 @@ object CeremonyTokens {
      * NATIVE method requires — never a class supplied by JS.
      */
     fun verify(token: String, opClass: OpClass, sessionID: String): Boolean {
-        return verifyInner(token, opClass, sessionID)
+        return verifyInner(token, setOf(opClass), sessionID)
     }
 
     /**
@@ -130,12 +130,22 @@ object CeremonyTokens {
      * HAVE a session must use verify(), not this.
      */
     fun verifySingleCall(token: String, opClass: OpClass): Boolean {
-        return verifyInner(token, opClass, null)
+        return verifyInner(token, setOf(opClass), null)
+    }
+
+    /**
+     * 3b-2c B13/B14: LAN handshake transport rides the handshake
+     * ceremony token (keygen for setup, sign for send/sign) with
+     * strict session equality. No transport class exists — the
+     * handshake IS the ceremony, minted at initSession start.
+     */
+    fun verifyTransport(token: String, sessionID: String): Boolean {
+        return verifyInner(token, setOf(OpClass.SIGN, OpClass.KEYGEN), sessionID)
     }
 
     private fun verifyInner(
         token: String,
-        opClass: OpClass,
+        allowedClasses: Set<OpClass>,
         sessionID: String?,
     ): Boolean {
         synchronized(lock) {
@@ -146,7 +156,7 @@ object CeremonyTokens {
                 tokens[token] = rec.copy(state = State.EXPIRED)
                 return false
             }
-            if (rec.opClass != opClass) {
+            if (rec.opClass !in allowedClasses) {
                 return false
             }
             if (sessionID != null && rec.sessionID != sessionID) {

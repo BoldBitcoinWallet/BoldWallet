@@ -84,6 +84,8 @@ RCT_EXTERN_METHOD(stopRelay:(NSString *)tag
 RCT_EXTERN_METHOD(fetchData:(NSString *)url
                   decKey:(NSString *)decKey
                   payload:(NSString *)payload
+                  ceremonyToken:(NSString *)ceremonyToken
+                  ceremonySessionID:(NSString *)ceremonySessionID
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -93,6 +95,8 @@ RCT_EXTERN_METHOD(publishData:(NSString *)port
                   encKey:(NSString *)encKey
                   raw:(NSString *)raw
                   mode:(NSString *)mode
+                  ceremonyToken:(NSString *)ceremonyToken
+                  ceremonySessionID:(NSString *)ceremonySessionID
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

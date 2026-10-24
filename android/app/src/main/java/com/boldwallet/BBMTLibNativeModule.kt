@@ -568,9 +568,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun publishData(port: String, timeout: String, encKey: String, raw: String, mode: String,
+                    ceremonyToken: String, ceremonySessionID: String,
                     promise: Promise) {
         Thread {
             try {
+                // 3b-2c B13: rides the handshake ceremony token (sign|keygen).
+                if (!CeremonyTokens.verifyTransport(ceremonyToken, ceremonySessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "publishData")) return@Thread
                 val output = DklsNative.bbmtPublishDataNative(port, timeout, encKey, raw, mode)
                 ld("publishData", output)
@@ -583,9 +589,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun fetchData(url: String, decKey: String, payload: String, promise: Promise) {
+    fun fetchData(url: String, decKey: String, payload: String,
+                  ceremonyToken: String, ceremonySessionID: String,
+                  promise: Promise) {
         Thread {
             try {
+                // 3b-2c B14: rides the handshake ceremony token (sign|keygen).
+                if (!CeremonyTokens.verifyTransport(ceremonyToken, ceremonySessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "fetchData")) return@Thread
                 val raw = DklsNative.bbmtFetchDataNative(url, decKey, payload)
                 ld("fetchData", raw)

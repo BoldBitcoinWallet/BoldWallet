@@ -188,6 +188,38 @@ class CeremonyTokensTest {
     }
 
     @Test
+    fun testF15b2_Transport_AcceptsSignAndKeygen() {
+        // 3b-2c B13/B14: handshake rides sign|keygen + strict session.
+        val s = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "hs-1")
+        assertTrue(CeremonyTokens.verifyTransport(s, "hs-1"))
+        val k = CeremonyTokens.mint(CeremonyTokens.OpClass.KEYGEN, "hs-2")
+        assertTrue(CeremonyTokens.verifyTransport(k, "hs-2"))
+        // Multi-use poll loop stays ACTIVE.
+        assertTrue(CeremonyTokens.verifyTransport(k, "hs-2"))
+        assertEquals(CeremonyTokens.State.ACTIVE, CeremonyTokens.stateOf(k))
+    }
+
+    @Test
+    fun testF15b2_Transport_RejectsOtherClassesAndMismatch() {
+        val e = CeremonyTokens.mint(CeremonyTokens.OpClass.EXPORT, "hs-1")
+        assertFalse(CeremonyTokens.verifyTransport(e, "hs-1"))
+        val c = CeremonyTokens.mint(CeremonyTokens.OpClass.CONFIG, "hs-1")
+        assertFalse(CeremonyTokens.verifyTransport(c, "hs-1"))
+        val i = CeremonyTokens.mint(CeremonyTokens.OpClass.IMPORT, "hs-1")
+        assertFalse(CeremonyTokens.verifyTransport(i, "hs-1"))
+        val s = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "hs-1")
+        assertFalse(CeremonyTokens.verifyTransport(s, "hs-2"))
+        assertFalse(
+            CeremonyTokens.verifyTransport(
+                "tok0000000000000000000000000099",
+                "hs-1",
+            ),
+        )
+        CeremonyTokens.release(s)
+        assertFalse(CeremonyTokens.verifyTransport(s, "hs-1"))
+    }
+
+    @Test
     fun testF15b2_OpClassWireParsing() {
         assertEquals(
             CeremonyTokens.OpClass.SIGN,
