@@ -57,6 +57,19 @@ class AesGcmEnvelopeTest {
     }
 
     @Test
+    fun testF15b1_ResolveTripwire() {
+        assertTrue(AesGcmEnvelope.containsShareSecrets("""{"share_b64":"eA=="}"""))
+        assertTrue(AesGcmEnvelope.containsShareSecrets("""{"ecdsa_local_data":{}}"""))
+        assertTrue(AesGcmEnvelope.containsShareSecrets("""{"nsec":"abc"}"""))
+        assertTrue(AesGcmEnvelope.containsShareSecrets("""{"sessionKeyHex":"00"}"""))
+        assertFalse(
+            AesGcmEnvelope.containsShareSecrets(
+                """{"handle":"ab12","metadata":{"pub_key":"03aa","nostr_npub":"npub1x"}}""",
+            ),
+        )
+    }
+
+    @Test
     fun testF15b1_EnvelopeMalformedFails() {
         // isEnvelope is shape-only (marker + 3 parts); undecodable
         // base64 passes shape but must fail open.

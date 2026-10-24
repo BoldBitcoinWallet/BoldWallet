@@ -59,6 +59,43 @@ func TestF15b1_StageReplacesPrior(t *testing.T) {
 	DestroyAll()
 }
 
+func TestF15b1_RedactedStructure(t *testing.T) {
+	raw, err := RedactedStructure(dklsJSON)
+	if err != nil {
+		t.Fatalf("redact: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if m["pub_key"] != "03aa" {
+		t.Error("public field altered")
+	}
+	if s, _ := m["share_b64"].(string); !strings.HasPrefix(s, "<redacted len=") {
+		t.Errorf("share_b64 not redacted: %v", m["share_b64"])
+	}
+	if s, _ := m["nsec"].(string); !strings.HasPrefix(s, "<redacted len=") {
+		t.Errorf("nsec not redacted: %v", m["nsec"])
+	}
+	full := string(raw)
+	for _, secret := range []string{"F15B-SECRET-SHARE", "6e736563"} {
+		if strings.Contains(full, secret) {
+			t.Errorf("redacted output leaks %q", secret)
+		}
+	}
+	graw, err := RedactedStructure(gg18JSON)
+	if err != nil {
+		t.Fatalf("gg18 redact: %v", err)
+	}
+	if !strings.Contains(string(graw), "<redacted object>") ||
+		strings.Contains(string(graw), "F15B-GG18-SECRET") {
+		t.Error("gg18 ecdsa subtree not redacted")
+	}
+	if _, err := RedactedStructure([]byte(`{oops`)); err == nil {
+		t.Error("invalid JSON accepted")
+	}
+}
+
 func TestF15b1_SniffBackend(t *testing.T) {
 	cases := []struct {
 		name string

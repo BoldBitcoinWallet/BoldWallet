@@ -183,6 +183,39 @@ func SniffBackend(fullJSON []byte) Backend {
 	return BackendGG18
 }
 
+// RedactedStructure walks keyshare JSON for the dev tree view,
+// replacing secret leaves with "<redacted len=N>" (scalars) or
+// "<redacted object>" (the ecdsa_local_data subtree). All other
+// values pass through verbatim.
+func RedactedStructure(fullJSON []byte) ([]byte, error) {
+	var m map[string]any
+	if err := json.Unmarshal(fullJSON, &m); err != nil {
+		return nil, fmt.Errorf("redact: %w", err)
+	}
+	redactValue := func(key string, v any) any {
+		switch key {
+		case "share_b64", "nsec":
+			if s, ok := v.(string); ok {
+				return fmt.Sprintf("<redacted len=%d>", len(s))
+			}
+			return "<redacted>"
+		case "ecdsa_local_data":
+			return "<redacted object>"
+		default:
+			return v
+		}
+	}
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		out[k] = redactValue(k, v)
+	}
+	raw, err := json.Marshal(out)
+	if err != nil {
+		return nil, fmt.Errorf("redact marshal: %w", err)
+	}
+	return raw, nil
+}
+
 // MetadataJSON projects full keyshare JSON onto the allowlist.
 // Unknown/absent keys are omitted; secret keys can never appear
 // (projection, not redaction).

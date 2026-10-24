@@ -95,6 +95,8 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)finalizeStagedForPersist:(NSString *)handle nsec:(NSString *)nsec npub:(NSString *)npub;
 + (NSString *)destroyStaged:(NSString *)handle;
 + (NSString *)destroyAllStaged;
++ (NSString *)projectMetadata:(NSString *)fullJson;
++ (NSString *)redactedStructure:(NSString *)fullJson;
 + (NSString *)sha256:(NSString *)message;
 + (NSString *)secureRandom:(int)length;
 + (NSString *)secP256k1RecoverR:(NSString *)r s:(NSString *)s v:(NSString *)v h:(NSString *)h;

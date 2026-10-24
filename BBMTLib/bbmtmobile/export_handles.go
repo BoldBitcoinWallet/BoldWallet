@@ -42,3 +42,21 @@ func BbmtDestroyAllStaged() *C.char {
 	keyhandles.DestroyAll()
 	return cString("ok", nil)
 }
+
+//export BbmtProjectMetadata
+func BbmtProjectMetadata(fullJSON *C.char) *C.char {
+	raw, err := keyhandles.MetadataJSON([]byte(C.GoString(fullJSON)))
+	if err != nil {
+		return cString("", err)
+	}
+	return cString(string(raw), nil)
+}
+
+//export BbmtRedactedStructure
+func BbmtRedactedStructure(fullJSON *C.char) *C.char {
+	raw, err := keyhandles.RedactedStructure([]byte(C.GoString(fullJSON)))
+	if err != nil {
+		return cString("", err)
+	}
+	return cString(string(raw), nil)
+}

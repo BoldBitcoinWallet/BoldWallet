@@ -178,6 +178,16 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   NSString *out = wrap(BbmtDestroyAllStaged());
   return out;
 }
++ (NSString *)projectMetadata:(NSString *)fullJson {
+  char *k0=dupC(fullJson);
+  NSString *out = wrap(BbmtProjectMetadata(k0));
+  free(k0); return out;
+}
++ (NSString *)redactedStructure:(NSString *)fullJson {
+  char *k0=dupC(fullJson);
+  NSString *out = wrap(BbmtRedactedStructure(k0));
+  free(k0); return out;
+}
 + (NSString *)sha256:(NSString *)message {
   char *k0=dupC(message);
   NSString *out = wrap(BbmtSha256(k0));

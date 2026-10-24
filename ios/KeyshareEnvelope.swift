@@ -33,6 +33,14 @@ enum KeyshareEnvelope {
     return s.split(separator: ":", omittingEmptySubsequences: false).count == 3
   }
 
+  /// F15b-1 resolve tripwire: true when a value about to cross to
+  /// JS contains share-material labels. Label-based last line at
+  /// the exact boundary (L1 spy tests use known fixtures).
+  static func containsShareSecrets(_ s: String) -> Bool {
+    return s.contains("\"share_b64\"") || s.contains("\"ecdsa_local_data\"")
+      || s.contains("\"nsec\"") || s.contains("\"sessionKeyHex\"")
+  }
+
   // MARK: - Device key
 
   static func deviceKey(account: String = keyAccount) throws -> SymmetricKey {

@@ -71,6 +71,14 @@ func TssDestroyAllStaged(_ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.destroyAllStaged(), error)
 }
 
+func TssProjectMetadata(_ fullJson: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.projectMetadata(fullJson), error)
+}
+
+func TssRedactedStructure(_ fullJson: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.redactedStructure(fullJson), error)
+}
+
 func TssSha256(_ message: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.sha256(message), error)
 }

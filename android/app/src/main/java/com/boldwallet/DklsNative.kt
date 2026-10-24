@@ -229,6 +229,8 @@ object DklsNative {
         loaded { bbmtFinalizeStagedForPersistJni(handle, nsec, npub) }
     fun bbmtDestroyStagedNative(handle: String): String = loaded { bbmtDestroyStagedJni(handle) }
     fun bbmtDestroyAllStagedNative(): String = loaded { bbmtDestroyAllStagedJni() }
+    fun bbmtProjectMetadataNative(fullJson: String): String = loaded { bbmtProjectMetadataJni(fullJson) }
+    fun bbmtRedactedStructureNative(fullJson: String): String = loaded { bbmtRedactedStructureJni(fullJson) }
     fun bbmtSecP256k1RecoverNative(r: String, s: String, v: String, h: String): String =
         loaded { bbmtSecP256k1RecoverJni(r, s, v, h) }
     fun bbmtGetDerivedPubKeyNative(hexPub: String, hexChain: String, path: String, isEdDSA: Boolean): String =
@@ -458,6 +460,8 @@ object DklsNative {
     private external fun bbmtFinalizeStagedForPersistJni(handle: String, nsec: String, npub: String): String
     private external fun bbmtDestroyStagedJni(handle: String): String
     private external fun bbmtDestroyAllStagedJni(): String
+    private external fun bbmtProjectMetadataJni(fullJson: String): String
+    private external fun bbmtRedactedStructureJni(fullJson: String): String
     private external fun bbmtSecP256k1RecoverJni(r: String, s: String, v: String, h: String): String
     private external fun bbmtGetDerivedPubKeyJni(hexPub: String, hexChain: String, path: String, isEdDSA: Int): String
     private external fun bbmtEncodeXpubJni(hexPub: String, hexChain: String, network: String): String

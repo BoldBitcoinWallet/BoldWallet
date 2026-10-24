@@ -222,20 +222,58 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   /// Read keyshare from the same Keychain layout as `RNEncryptedStorage` iOS implementation.
   private func loadKeyshareJSONFromRNES() -> String? {
-    let query: [String: Any] = [
-      kSecClass as String: kSecClassGenericPassword,
-      kSecAttrAccount as String: RNESKeychain.keyshareAccount,
-      kSecReturnData as String: true,
-      kSecMatchLimit as String: kSecMatchLimitOne,
-    ]
-    var dataRef: CFTypeRef?
-    let status = SecItemCopyMatching(query as CFDictionary, &dataRef)
-    if status == errSecItemNotFound { return nil }
-    guard status == errSecSuccess else { return nil }
-    guard let ref = dataRef else { return nil }
-    // Do not call CFRelease: SecItemCopyMatching result is bridged to Data and ARC-managed.
-    guard let data = ref as? Data else { return nil }
-    return String(data: data, encoding: .utf8)
+    // F15b-1: de-envelopes; pre-migration plaintext self-heals
+    // inline. Corruption surfaces loudly at bootstrap migration;
+    // here nil → NO_KEYSHARE (same user action: re-import).
+    guard let data = try? KeyshareEnvelope.readItem(account: RNESKeychain.keyshareAccount),
+      let raw = String(data: data, encoding: .utf8)
+    else { return nil }
+    if !KeyshareEnvelope.isEnvelope(raw) {
+      guard (try? KeyshareEnvelope.ensureEnveloped(account: RNESKeychain.keyshareAccount)) != nil,
+        let data2 = try? KeyshareEnvelope.readItem(account: RNESKeychain.keyshareAccount),
+        let migrated = String(data: data2, encoding: .utf8),
+        KeyshareEnvelope.isEnvelope(migrated)
+      else { return nil }
+      return try? KeyshareEnvelope.decrypt(migrated)
+    }
+    return try? KeyshareEnvelope.decrypt(raw)
+  }
+
+  /// F15b-1 resolve guard: returns false (and logs) when a value
+  /// about to resolve to JS contains share-material labels.
+  private func guardJsSafeResolve(_ value: String, method: String) -> Bool {
+    if KeyshareEnvelope.containsShareSecrets(value) {
+      sendLogEvent(method, "REFUSED to resolve share bytes to JS")
+      return false
+    }
+    return true
+  }
+
+  /// F15b-1: staged DKG/import results must carry a handle ID.
+  private func guardStagedShape(_ value: String, method: String) -> Bool {
+    guard guardJsSafeResolve(value, method: method) else { return false }
+    guard value.contains("\"handle\"") else {
+      sendLogEvent(method, "REFUSED malformed staged result (no handle)")
+      return false
+    }
+    return true
+  }
+
+  /// Maps envelope/keychain failures to the shared
+  /// [SECURE_STORAGE_*] tokens so JS copy matches F3/F4.
+  private func secureStorageMessage(_ error: Error) -> String {
+    if let e = error as? KeyshareEnvelopeError {
+      switch e {
+      case .keychain(let op, let status):
+        if status == errSecInteractionNotAllowed || status == errSecAuthFailed {
+          return "[SECURE_STORAGE_LOCKED] Keychain \(op) failed. Your keyshare was not saved/read."
+        }
+        return "[SECURE_STORAGE_UNAVAILABLE] Keychain \(op) failed (\(status)). Your keyshare was not saved/read."
+      case .malformed, .authFailed:
+        return "[SECURE_STORAGE_CORRUPTED] Secure storage is corrupted. Your keyshare was not saved/read. Please re-import your keyshare backup."
+      }
+    }
+    return "[SECURE_STORAGE_UNAVAILABLE] Secure storage unavailable. Your keyshare was not saved/read."
   }
 
   @objc func publishData(
@@ -521,6 +559,136 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
   }
 
+  /// F15b-1 (A6): versioned backup import that stages natively.
+  /// Resolves {handle, metadata, legacy} — never plaintext.
+  @objc func importBackupToStagedHandle(
+    _ blob: String, password: String, resolver: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let output = TssImportBackupStaged(blob, password, &error)
+      if let error = error {
+        rejecter("BACKUP_IMPORT_ERROR", error.localizedDescription, error)
+        return
+      }
+      guard self?.guardStagedShape(output, method: "importBackupToStagedHandle") == true else {
+        rejecter("BACKUP_IMPORT_ERROR", "Keyshare staging failed", nil)
+        return
+      }
+      resolver(output)
+    }
+  }
+
+  /// F15b-1 (A7): persist a staged handle to enveloped Keychain.
+  /// Resolves post-finalize metadata for the JS mirror. Staged
+  /// entry is destroyed only after a VERIFIED write (retryable).
+  @objc func persistStoredKeyshare(
+    _ handle: String, nsec: String, npub: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let json = TssFinalizeStagedForPersist(handle, nsec, npub, &error)
+      if let error = error {
+        rejecter("PERSIST_ERROR", error.localizedDescription, error)
+        return
+      }
+      do {
+        let envelope = try KeyshareEnvelope.encrypt(json)
+        try KeyshareEnvelope.deleteItem(account: RNESKeychain.keyshareAccount)
+        try KeyshareEnvelope.addItem(
+          account: RNESKeychain.keyshareAccount, data: Data(envelope.utf8),
+          accessible: KeyshareEnvelope.keyshareAccessible)
+        guard let check = try KeyshareEnvelope.readItem(account: RNESKeychain.keyshareAccount),
+          let checkStr = String(data: check, encoding: .utf8),
+          (try? KeyshareEnvelope.decrypt(checkStr)) == json
+        else {
+          rejecter(
+            "PERSIST_ERROR",
+            "Secure write verification failed. Retry setup without force-closing the app.", nil)
+          return
+        }
+        var metaError: NSError?
+        let metadata = TssProjectMetadata(json, &metaError)
+        if let metaError = metaError {
+          rejecter("PERSIST_ERROR", metaError.localizedDescription, metaError)
+          return
+        }
+        var destroyError: NSError?
+        _ = TssDestroyStaged(handle, &destroyError) // best-effort; memory-only entry
+        guard self?.guardJsSafeResolve(metadata, method: "persistStoredKeyshare") == true else {
+          rejecter("PERSIST_ERROR", "Refusing to expose keyshare secrets to JS", nil)
+          return
+        }
+        resolver(metadata)
+      } catch {
+        rejecter("PERSIST_ERROR", self?.secureStorageMessage(error) ?? "Secure storage error", error as NSError)
+      }
+    }
+  }
+
+  /// F15b-1 (A8): §3 superset metadata. Never share bytes.
+  @objc func getKeyshareMetadataJSON(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard let raw = self?.loadKeyshareJSONFromRNES() else {
+        rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        return
+      }
+      var error: NSError?
+      let metadata = TssProjectMetadata(raw, &error)
+      if let error = error {
+        rejecter("KEYSHARE_META_ERROR", error.localizedDescription, error)
+        return
+      }
+      guard self?.guardJsSafeResolve(metadata, method: "getKeyshareMetadataJSON") == true else {
+        rejecter("KEYSHARE_META_ERROR", "Refusing to expose keyshare secrets to JS", nil)
+        return
+      }
+      resolver(metadata)
+    }
+  }
+
+  /// F15b-1 (A9): redacted structure for the dev tree view.
+  @objc func getKeyshareStructureRedacted(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard let raw = self?.loadKeyshareJSONFromRNES() else {
+        rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        return
+      }
+      var error: NSError?
+      let redacted = TssRedactedStructure(raw, &error)
+      if let error = error {
+        rejecter("KEYSHARE_STRUCT_ERROR", error.localizedDescription, error)
+        return
+      }
+      guard self?.guardJsSafeResolve(redacted, method: "getKeyshareStructureRedacted") == true else {
+        rejecter("KEYSHARE_STRUCT_ERROR", "Refusing to expose keyshare secrets to JS", nil)
+        return
+      }
+      resolver(redacted)
+    }
+  }
+
+  /// F15b-1 (A10): wipe staged Go entries. No Keychain touch.
+  @objc func destroyKeyshareHandles(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async {
+      var error: NSError?
+      _ = TssDestroyAllStaged(&error)
+      if let error = error {
+        rejecter("DESTROY_HANDLES_ERROR", error.localizedDescription, error)
+        return
+      }
+      resolver(true)
+    }
+  }
+
   @objc func sha256(
     _ message: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
@@ -664,6 +832,8 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
   }
 
+  // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
+  // variant decision deferred). DKLs twins stage natively.
   @objc func mpcTssSetup(
     _ server: String, partyID: String, ppmFile: String, partiesCSV: String, sessionID: String,
     sessionKey: String, encKey: String, decKey: String, chaincode: String,
@@ -734,7 +904,12 @@ class BBMTLibNativeModule: RCTEventEmitter {
         rejecter("DKLS_MPC_SETUP_ERROR", output, nil)
         return
       }
-      self?.sendLogEvent("dklsMpcTssSetup", String(output.prefix(120)))
+      // F15b-1: staged shape only; never log resolve values.
+      guard self?.guardStagedShape(output, method: "dklsMpcTssSetup") == true else {
+        rejecter("DKLS_MPC_SETUP_ERROR", "Keyshare staging failed", nil)
+        return
+      }
+      self?.sendLogEvent("dklsMpcTssSetup", "staged ok len=\(output.count)")
       resolver(output)
     }
   }
@@ -759,7 +934,12 @@ class BBMTLibNativeModule: RCTEventEmitter {
         rejecter("DKLS_NOSTR_KEYGEN_ERROR", output, nil)
         return
       }
-      self?.sendLogEvent("dklsNostrMpcTssSetup", String(output.prefix(120)))
+      // F15b-1: staged shape only; never log resolve values.
+      guard self?.guardStagedShape(output, method: "dklsNostrMpcTssSetup") == true else {
+        rejecter("DKLS_NOSTR_KEYGEN_ERROR", "Keyshare staging failed", nil)
+        return
+      }
+      self?.sendLogEvent("dklsNostrMpcTssSetup", "staged ok len=\(output.count)")
       resolver(output)
     }
   }
@@ -895,6 +1075,8 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
   }
 
+  // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
+  // variant decision deferred). DKLs twins stage natively.
   @objc func nostrMpcTssSetup(
     _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
     sessionKey: String, chaincode: String, ppmFile: String,

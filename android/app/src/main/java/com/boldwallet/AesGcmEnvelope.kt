@@ -24,6 +24,19 @@ object AesGcmEnvelope {
         return s.split(":").size == 3
     }
 
+    /**
+     * F15b-1 resolve tripwire: true when a value about to cross to
+     * JS contains share-material labels. Defense in depth at the
+     * exact boundary (label-based; L1 spy tests use known fixtures
+     * for label-less values).
+     */
+    fun containsShareSecrets(s: String): Boolean {
+        return s.contains("\"share_b64\"") ||
+            s.contains("\"ecdsa_local_data\"") ||
+            s.contains("\"nsec\"") ||
+            s.contains("\"sessionKeyHex\"")
+    }
+
     fun seal(
         plaintext: ByteArray,
         key: SecretKey,

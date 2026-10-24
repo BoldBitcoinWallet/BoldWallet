@@ -200,6 +200,22 @@ Java_com_boldwallet_DklsNative_bbmtDestroyAllStagedJni(JNIEnv *env, jclass) {
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtProjectMetadataJni(JNIEnv *env, jclass, jstring fullJson) {
+  const char *j = env->GetStringUTFChars(fullJson, nullptr);
+  jstring out = to_jstring(env, BbmtProjectMetadata(const_cast<char *>(j)));
+  env->ReleaseStringUTFChars(fullJson, j);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtRedactedStructureJni(JNIEnv *env, jclass, jstring fullJson) {
+  const char *j = env->GetStringUTFChars(fullJson, nullptr);
+  jstring out = to_jstring(env, BbmtRedactedStructure(const_cast<char *>(j)));
+  env->ReleaseStringUTFChars(fullJson, j);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtSecP256k1RecoverJni(
     JNIEnv *env, jclass, jstring r, jstring s, jstring v, jstring h) {
   const char *rs = env->GetStringUTFChars(r, nullptr);

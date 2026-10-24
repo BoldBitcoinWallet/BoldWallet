@@ -46,6 +46,16 @@ do {
     } catch { check(true, "malformed rejected: \(bad.prefix(12))") }
   }
 
+  // Resolve tripwire.
+  check(KeyshareEnvelope.containsShareSecrets("{\"share_b64\":\"eA==\"}"), "tripwire share_b64")
+  check(
+    KeyshareEnvelope.containsShareSecrets("{\"ecdsa_local_data\":{}}"), "tripwire ecdsa")
+  check(KeyshareEnvelope.containsShareSecrets("{\"nsec\":\"x\"}"), "tripwire nsec")
+  check(
+    !KeyshareEnvelope.containsShareSecrets(
+      "{\"handle\":\"ab12\",\"metadata\":{\"pub_key\":\"03aa\",\"nostr_npub\":\"npub1x\"}}"),
+    "tripwire clean on metadata")
+
   // Store-query carries the F4 protection class (no drift vs .m patch).
   let q = KeyshareEnvelope.storeQueryForKey(account: "keyshare", data: Data("x".utf8))
   check(
