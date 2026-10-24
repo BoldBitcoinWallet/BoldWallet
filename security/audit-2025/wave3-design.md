@@ -233,9 +233,10 @@ verifies §6, else rejects `[CEREMONY_AUTH_REQUIRED]`.
 | B15 | `setAPI` | allowlist-or-token: OK iff URL ∈ native-persisted allowlist OR valid `config` token (which persists the URL). Init passes with stored URLs; attacker hosts fail without a user-visible prompt |
 | B16 | `setFeeAPIs` | same rule as B15 (same oracle-pointing class) |
 | B17–B18 | A6 `importBackupToStagedHandle`, A7 `persistStoredKeyshare` | `import` (one prompt covers stage+persist; persist ungated would let malicious JS overwrite RNES with an attacker share — the guard is JS-side and skippable) |
-| B19 | cancel ×4 | ceremony token (same op+session). STUCK-cancel: fresh token for the same sessionID re-auths (acceptable UX, no un-cancellable state). F12's exact-match mechanism stays Wave 4 |
+| B19 | cancel ×4 | ceremony token (same op+session). STUCK-cancel: fresh token for the same sessionID re-auths (acceptable UX, no un-cancellable state). F12's exact-match mechanism stays Wave 4. Cancel REVOKES the session token natively (3b authorization requirement — F10 isn't closed if cancel leaves the token valid) |
+| B20–B21 | `nostrKeypair`, `eciesKeypair` (REVISED 3b kickoff: retain + gate, do not remove — live callers confirmed) | `keygen` (same ceremony/session as DKG: one token covers pairing-identity generation + setup; generation ≠ exfil but a live secret-minting oracle needs the OS-visible prompt all the same) |
 
-### Table C — removed (3b, dead surface, zero callers)
+### Table C — removed (LANDED IN 3a per mandated sequence; the "(3b)" label here is stale — no code action)
 
 `aesEncrypt`, `aesDecrypt`, `aesEncryptStoredKeyshare` (both
 platforms). Generic oracles with no JS callers. Go
@@ -267,17 +268,21 @@ removal with registration-gating instead.)
 - Setup helpers: `preparams`, `ensureDklsLanRuntime`,
   `dklsHelloDkg` (no secrets).
 - Fresh-secret generators: `nostrKeypair`, `eciesKeypair`.
-  Return NEW secrets — F5 scope, explicitly unchanged.
-  (Generation ≠ exfil of the wallet share.) Q7 verification:
-  LIVE callers confirmed (`MobileNostrPairing:1232` pairing
-  identity; `MobilesPairing:1953` LAN transport) → removal
-  BLOCKED (would regress pairing); retained.
+  REVISED 3b kickoff: RETAIN + TOKEN-GATE (B20–B21, `keygen`
+  class), do not remove. Q7 verification: LIVE callers
+  confirmed (`MobileNostrPairing:1240` pairing identity;
+  `MobilesPairing:1953` LAN transport) → removal BLOCKED
+  (would regress pairing). A removed dead method is a win; a
+  gated live method is the actual fix — minting requires the
+  OS-visible prompt like every other secret-yielding call.
 - Non-sensitive config: `setBtcNetwork`, `setFeePolicy`.
 - Presence (already clean): `hasKeyshareInSecureStorage`,
   `getKeyshareNostrPrepJSON` (fixed 5-key contract, 1 caller).
-- Cancel ×4: deliberately UNGATED until F12 (Wave 4). Gating
-  cancel on a losable token risks stuck ceremonies; F12 owns
-  cancel auth. Known-open, tracked.
+- ~~Cancel ×4: deliberately UNGATED until F12 (Wave 4)~~ —
+  STRUCK 3b kickoff, superseded by B19 (Q6): cancel takes the
+  ceremony token (same op+session) and REVOKES the session
+  token natively. STUCK-cancel answered by fresh-token
+  re-auth. Only F12's exact-match MECHANISM stays Wave 4.
 - Plumbing: `addListener`, `removeListeners`, `disableLogging`.
 
 ### Go/cgo surface changes (3a)
@@ -431,7 +436,8 @@ an ACTIVE ceremony is unaffected by granularity anyway
   op/session fails. JS maps stable tokens to user copy
   ("Confirm to continue — authenticate in the prompt").
 - Release: explicit `releaseCeremonyToken(token)` on
-  cancel/complete (best-effort from JS) + 30-min expiry +
+  cancel/complete (best-effort from JS) + 10-min expiry (§10:
+  10 min wins; the earlier "30-min" here was a doc bug) +
   native wipe on A10. Stale tokens fail closed, never linger.
 - Tests: jest mocks the native module (no OS prompt); JVM/XCTest
   use a DEBUG-only `requestCeremonyTokenTest(op, sessionID)`

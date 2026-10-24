@@ -24,7 +24,7 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F8 | Global Android cleartext + ws/http allowed | High | network_security_config.xml:3 | Scope cleartext to loopback/link-local; block non-LAN ws/http | TBD | Open |
 | F9 | Secrets cross bridge as strings; no zeroization | High | BBMTLibNativeModule.kt:160; BbmtBridge.mm:13 | Opaque handles; SecureBytes/memset+mlock; minimize copies | TBD | Open |
 | F10-clipboard | Secret clipboard writes (full keyshare JSON, dice rolls) | High | KeyshareInfoContent.tsx:605; DiceEntropySheet.tsx:604 | Metadata-only copy (npub/pub_key/suite); dice copyDisabled; clipboard-after-export tests | TBD | Green (3a-5 evidence below; unmerged on security/wave3a-f15b1-f10clip) |
-| F10-bridge | Bridge sign/decrypt callable from any JS | High | services/TssProvider.ts:116 (62 native methods) | Ceremony tokens (3b); setAPI/fee allowlist; dead-oracle removal in 3a | TBD | In Progress (security/wave3b-f15b2-f18-f10) |
+| F10-bridge | Bridge sign/decrypt callable from any JS | High | services/TssProvider.ts:116 (62 native methods) | Ceremony tokens (3b); setAPI/fee allowlist; dead-oracle removal in 3a; keypair generators retained + token-gated (B20–B21, OS-visible prompt) — acceptance, not removal | TBD | In Progress (security/wave3b-f15b2-f18-f10) |
 | F11 | No input validation at JNI/Go seams; FFI crashes | High | bbmtmobile/export_dkls.go:17; tss/common.go:465; mpc.go:1238 | Nil/length/caps checks; bound SecureRandom; nil-guard resp/req. Wave-3 scope MUST include new BbmtBackupEncrypt/Decrypt + JNI trampolines (added guard-less in B1) | TBD | Open |
 | F6 | LAN decrypt-before-verify padding oracle | Med-High | BBMTLib/tss/mpc.go:1149 | Verify-then-decrypt; uniform observable; AEAD | TBD | Open |
 | F12 | Prefix-match cancel + 15-min poison; no-confirm bridge cancel | High | tss/cancel.go:29,103; BBMTLibNativeModule.kt:505 | Exact-match cancel; per-session contexts/keys; confirm token | TBD | Open |
@@ -89,6 +89,19 @@ PSBT-screen to F20.
   persistent-store writes found; signing takes no nsec
   (native loads creds). Fix is a post-finalize clear, tracked
   separately — nsec isn't the MPC share.
+
+## Wave 3b — F15b-2 + F18 + F10-bridge + F4-auth: IN PROGRESS on `security/wave3b-f15b2-f18-f10`.
+
+Sequence: F21 (Done, first commit) → 3b-1 token core →
+Table B gating → F18 + A12 → cancel/F4 → L5 tests.
+Doc reconciliations at kickoff (design §6/Table B–D):
+(1) token expiry 10 min wins (§6.2 "30-min" was a doc bug);
+(2) Table C dead-oracle removals actually landed in 3a,
+"(3b)" label stale — no code action; (3) Table D cancel
+bullet struck, superseded by B19 (cancel takes + revokes
+the ceremony token; only F12's exact-match mechanism stays
+Wave 4). Keypair generators: retain + token-gate (B20–B21),
+do not remove. F21 tracked Done independently of F15b-2.
 
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
