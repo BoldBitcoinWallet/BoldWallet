@@ -5,16 +5,19 @@ import {safeUnlink} from './rnfsSafe';
 import {persistStagedKeyshare} from './walletSetupOrchestrator';
 import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigRepository';
 import LocalCache from './LocalCache';
-import {BBMTLibNativeModule} from '../native_modules';
+import {
+  completeCeremonyToken,
+  newCeremonySessionID,
+  releaseCeremonyToken,
+  requestImportCeremonyToken,
+} from './ceremonyAuth';
+import {TssProvider} from './TssProvider';
 import {
   dbg,
   detectKeyshareTssBackend,
   resolveUseLegacyDerivationPaths,
 } from '../utils';
-import {
-  assertNoExistingWallet,
-  WalletAlreadyLoadedError,
-} from './walletGuard';
+import {WalletAlreadyLoadedError} from './walletGuard';
 
 export {WalletAlreadyLoadedError, assertNoExistingWallet} from './walletGuard';
 
@@ -63,16 +66,22 @@ export async function readKeyshareBase64FromUri(uri: string): Promise<string> {
 export async function decryptAndValidateKeyshare(
   base64Content: string,
   password: string,
+  // 3b-2e B17: owner import ceremony (both-or-neither); absent =
+  // wrapper mints a single-call ceremony. Error TEXT mapping
+  // preserves B1 semantics (format vs wrong-password).
+  ceremonyToken?: string,
+  ceremonySessionID?: string,
 ): Promise<{handle: string; parsed: ParsedKeyshare; legacy: boolean}> {
   // F15b-1: decrypt (B1) + verify (F2) + stage run natively (A6). JS
   // passes the password, receives {handle, metadata, legacy} — the
-  // plaintext keyshare never crosses the bridge. Error TEXT mapping
-  // preserves B1 semantics (format vs wrong-password).
+  // plaintext keyshare never crosses the bridge.
   let raw: string;
   try {
-    raw = await BBMTLibNativeModule.importBackupToStagedHandle(
+    raw = await TssProvider.importBackupToStagedHandle(
       base64Content,
       password,
+      ceremonyToken,
+      ceremonySessionID,
     );
   } catch (error) {
     if (!(error instanceof Error)) {
@@ -121,8 +130,16 @@ export async function finalizeKeyshareImport(
   handle: string,
   parsed: ParsedKeyshare,
   options: FinalizeKeyshareImportOptions,
+  // 3b-2e B18: owner import ceremony (both-or-neither); absent =
+  // persist mints its own save ceremony.
+  ceremonyToken?: string,
+  ceremonySessionID?: string,
 ): Promise<void> {
-  await persistStagedKeyshare(handle);
+  const persistOpts =
+    ceremonyToken !== undefined && ceremonySessionID !== undefined
+      ? {ceremonyToken, ceremonySessionID}
+      : undefined;
+  await persistStagedKeyshare(handle, persistOpts);
   await LocalCache.clear();
   appConfigRepository.remove(CONFIG_KEYS.CURRENT_ADDRESS);
   const isLegacyPath = resolveUseLegacyDerivationPaths({
@@ -153,17 +170,39 @@ export async function importKeyshareFromBase64(
   password: string,
   options: FinalizeKeyshareImportOptions,
 ): Promise<void> {
-  const {handle, parsed, legacy} = await decryptAndValidateKeyshare(
-    base64Content,
-    password,
-  );
-  await finalizeKeyshareImport(handle, parsed, options);
-  if (legacy) {
-    Alert.alert(
-      'Legacy Backup Imported',
-      'This backup uses an older, less secure encryption format. ' +
-        'Please create a new backup from Settings to re-encrypt it with the current format.',
+  // 3b-2e B17/B18: one `import` ceremony covers stage+persist
+  // (adjacent, no user action between): mint here, thread the
+  // owner pair through both, complete at the end.
+  const sessionID = await newCeremonySessionID('import');
+  const token = await requestImportCeremonyToken(sessionID);
+  try {
+    const {handle, parsed, legacy} = await decryptAndValidateKeyshare(
+      base64Content,
+      password,
+      token,
+      sessionID,
     );
+    await finalizeKeyshareImport(handle, parsed, options, token, sessionID);
+    try {
+      await completeCeremonyToken(token);
+    } catch {
+      /* logged in ceremonyAuth; import stands */
+    }
+    if (legacy) {
+      Alert.alert(
+        'Legacy Backup Imported',
+        'This backup uses an older, less secure encryption format. ' +
+          'Please create a new backup from Settings to re-encrypt it with the current format.',
+      );
+    }
+    return;
+  } catch (error) {
+    try {
+      await releaseCeremonyToken(token);
+    } catch {
+      /* logged in ceremonyAuth */
+    }
+    throw error;
   }
 }
 

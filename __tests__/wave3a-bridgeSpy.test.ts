@@ -34,6 +34,8 @@ jest.mock('../native_modules', () => ({
     // 3b-2b: setup is keygen-token-gated; the spy records the
     // token arg (share-free) like any other bridge traffic.
     requestKeygenCeremonyToken: jest.fn(),
+    // 3b-2e: stage/persist are import-token-gated (same).
+    requestImportCeremonyToken: jest.fn(),
     completeCeremonyToken: jest.fn(),
     releaseCeremonyToken: jest.fn(),
   },
@@ -218,6 +220,10 @@ function stubResolve(name: string, _args: unknown[]): unknown {
       return true;
     case 'requestKeygenCeremonyToken':
       return 'tok-spy-keygen-1';
+    case 'requestImportCeremonyToken':
+      return 'tok-spy-import-1';
+    case 'sha256':
+      return 'spy-sha256-stub';
     case 'completeCeremonyToken':
     case 'releaseCeremonyToken':
       return true;
@@ -348,7 +354,13 @@ describe('Wave 3a L1 bridge-spy (F15b-1 + F10-clip)', () => {
     expect(out.handle).toBe('ab'.repeat(16));
     expect(out.legacy).toBe(false);
     expect(native.importBackupToStagedHandle).toHaveBeenCalledTimes(1);
-    expect(native.sha256).not.toHaveBeenCalled();
+    // F1 intent preserved (3b-2e): sha256 may mint ceremony
+    // session IDs only — never a password-derived key. Every
+    // input must be a `ceremony/<purpose>/…` nonce string.
+    for (const call of native.sha256.mock.calls as unknown[][]) {
+      expect(String(call[0]).startsWith('ceremony/')).toBe(true);
+      expect(String(call[0])).not.toContain('pw');
+    }
     expectNoShareTraffic();
     expectNoNsecInResolutions();
   });

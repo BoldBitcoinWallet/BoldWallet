@@ -188,6 +188,17 @@ class CeremonyTokensTest {
     }
 
     @Test
+    fun testF15b2_ImportClassRoundTrip() {
+        // 3b-2e B17/B18: stage+persist share a strict import ceremony.
+        val t = CeremonyTokens.mint(CeremonyTokens.OpClass.IMPORT, "imp-1")
+        assertTrue(CeremonyTokens.verify(t, CeremonyTokens.OpClass.IMPORT, "imp-1"))
+        // Multi-use: stage verify then persist verify on one token.
+        assertTrue(CeremonyTokens.verify(t, CeremonyTokens.OpClass.IMPORT, "imp-1"))
+        assertFalse(CeremonyTokens.verify(t, CeremonyTokens.OpClass.SIGN, "imp-1"))
+        assertFalse(CeremonyTokens.verify(t, CeremonyTokens.OpClass.IMPORT, "imp-2"))
+    }
+
+    @Test
     fun testF15b2_Transport_AcceptsSignAndKeygen() {
         // 3b-2c B13/B14: handshake rides sign|keygen + strict session.
         val s = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "hs-1")

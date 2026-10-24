@@ -132,6 +132,14 @@ reset()
 let kg = CeremonyTokens.mint(opClass: .keygen, sessionID: "pairing-1")
 check(CeremonyTokens.verifySingleCall(token: kg, opClass: .keygen), "single-call keygen round-trip")
 check(!CeremonyTokens.verifySingleCall(token: kg, opClass: .sign), "single-call keygen not sign")
+// 3b-2e B17/B18: stage+persist share a strict import ceremony.
+reset()
+let im = CeremonyTokens.mint(opClass: .import, sessionID: "imp-1")
+check(CeremonyTokens.verify(token: im, opClass: .import, sessionID: "imp-1"), "import round-trip (stage)")
+check(CeremonyTokens.verify(token: im, opClass: .import, sessionID: "imp-1"), "import multi-use (persist)")
+check(!CeremonyTokens.verify(token: im, opClass: .sign, sessionID: "imp-1"), "import not sign")
+check(!CeremonyTokens.verify(token: im, opClass: .import, sessionID: "imp-2"), "import wrong session fails")
+
 // 3b-2c B13/B14: transport rides sign|keygen + strict session.
 reset()
 let ts = CeremonyTokens.mint(opClass: .sign, sessionID: "hs-1")

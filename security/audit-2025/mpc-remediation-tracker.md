@@ -203,6 +203,26 @@ the Alert. Evidence: apiConfigApply 12/12, JVM allowlist
 Android release green, tsc 32 pre-existing, eslint 0 errors.
 Full jest 682 passed, same 6 pre-existing failures.
 
+3b-2e import slice GREEN (B17-B18, Table B COMPLETE):
+strict `import` ceremony on stage + persist, both platforms.
+Import flow (adjacent stage→persist, no user action between)
+shares ONE owner ceremony: importKeyshareFromBase64 mints,
+threads the pair, completes at the end. Setup-commit flows
+are DECOUPLED from setup by the backup-check UI (persist
+from a pending-handle ref on an explicit save tap), so
+persist mints its own save ceremony there — one prompt per
+explicit user action, not one per flow. TssProvider wrappers
+are owner-or-mint with a both-or-neither half-pair guard
+(throws, never silently re-mints); withCeremonyToken fn now
+also receives the ceremony session for native strict verify.
+Spy F1 sha256 assertion narrowed to ceremony-session inputs
+only (ceremony/<purpose>/ nonce, never password-derived).
+Evidence: tssImportTokenGating 8/8, keyshareImport owner
+tests 3/3, JVM tokens 19/19, harness PASSED (84 checks), iOS
+Debug + Android release green, tsc 32 pre-existing, eslint 0
+errors (fixed one pre-existing unused import in the touched
+file). Full jest 693 passed, same 6 pre-existing failures.
+
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
   arm64 emulator (pure-Go build; x/crypto/argon2 has amd64 asm only, so ARM

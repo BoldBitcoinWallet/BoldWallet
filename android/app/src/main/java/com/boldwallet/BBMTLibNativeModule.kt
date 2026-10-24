@@ -1122,9 +1122,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      * caller rewrite).
      */
     @ReactMethod
-    fun importBackupToStagedHandle(blob: String, password: String, promise: Promise) {
+    fun importBackupToStagedHandle(
+        blob: String,
+        password: String,
+        ceremonyToken: String,
+        ceremonySessionID: String,
+        promise: Promise,
+    ) {
         Thread {
             try {
+                // 3b-2e B17: strict import ceremony (owner-shared stage+persist).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.IMPORT, ceremonySessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "importBackupToStagedHandle")) return@Thread
                 val result = DklsNative.bbmtImportBackupStagedNative(blob, password)
                 if (result.startsWith("error:")) {
@@ -1146,9 +1157,22 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      * failed persists are retryable with the same handle.
      */
     @ReactMethod
-    fun persistStoredKeyshare(handle: String, nsec: String, npub: String, promise: Promise) {
+    fun persistStoredKeyshare(
+        handle: String,
+        nsec: String,
+        npub: String,
+        ceremonyToken: String,
+        ceremonySessionID: String,
+        promise: Promise,
+    ) {
         Thread {
             try {
+                // 3b-2e B18: strict import ceremony (shared with stage, or
+                // the setup-commit flow's own save ceremony).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.IMPORT, ceremonySessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "persistStoredKeyshare")) return@Thread
                 val json = DklsNative.bbmtFinalizeStagedForPersistNative(handle, nsec, npub)
                 if (json.startsWith("error:")) {

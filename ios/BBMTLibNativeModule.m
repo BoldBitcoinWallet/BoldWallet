@@ -392,8 +392,8 @@ RCT_EXTERN_METHOD(getDeviceEntropyMetadata:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // F15b-1 staged import/persist/read/destroy/migration (Wave 3a)
-RCT_EXTERN_METHOD(importBackupToStagedHandle:(NSString *)blob password:(NSString *)password resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-RCT_EXTERN_METHOD(persistStoredKeyshare:(NSString *)handle nsec:(NSString *)nsec npub:(NSString *)npub resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(importBackupToStagedHandle:(NSString *)blob password:(NSString *)password ceremonyToken:(NSString *)ceremonyToken ceremonySessionID:(NSString *)ceremonySessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(persistStoredKeyshare:(NSString *)handle nsec:(NSString *)nsec npub:(NSString *)npub ceremonyToken:(NSString *)ceremonyToken ceremonySessionID:(NSString *)ceremonySessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(getKeyshareMetadataJSON:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(getKeyshareStructureRedacted:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(destroyKeyshareHandles:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)

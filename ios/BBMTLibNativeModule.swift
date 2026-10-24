@@ -571,9 +571,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// F15b-1 (A6): versioned backup import that stages natively.
   /// Resolves {handle, metadata, legacy} — never plaintext.
   @objc func importBackupToStagedHandle(
-    _ blob: String, password: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ blob: String, password: String, ceremonyToken: String, ceremonySessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2e B17: strict import ceremony (owner-shared stage+persist).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .import, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssImportBackupStaged(blob, password, &error)
@@ -594,8 +600,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// entry is destroyed only after a VERIFIED write (retryable).
   @objc func persistStoredKeyshare(
     _ handle: String, nsec: String, npub: String,
+    ceremonyToken: String, ceremonySessionID: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2e B18: strict import ceremony (shared with stage, or
+    // the setup-commit flow's own save ceremony).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .import, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let json = TssFinalizeStagedForPersist(handle, nsec, npub, &error)

@@ -397,6 +397,10 @@ export function nsecFieldForKeyshareJson(bech32Nsec: string): string {
 export type FinalizeKeyshareOpts = {
   partyNsec?: string;
   nostrNpub?: string;
+  // 3b-2e B18: owner import ceremony (both-or-neither); absent =
+  // persist mints its own save ceremony.
+  ceremonyToken?: string;
+  ceremonySessionID?: string;
 };
 
 /**
@@ -452,10 +456,13 @@ export async function persistStagedKeyshare(
   await assertNoExistingWallet();
   let metaJson: string;
   try {
-    metaJson = await BBMTLibNativeModule.persistStoredKeyshare(
+    // 3b-2e B18: token-gated persist (owner pair or own mint).
+    metaJson = await TssProvider.persistStoredKeyshare(
       handle,
       opts?.partyNsec ?? '',
       opts?.nostrNpub ?? '',
+      opts?.ceremonyToken,
+      opts?.ceremonySessionID,
     );
   } catch (error) {
     const clear = secureStorageMessageFor(error);

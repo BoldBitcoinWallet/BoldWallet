@@ -3,6 +3,7 @@ import {
   completeCeremonyToken,
   newCeremonySessionID,
   releaseCeremonyToken,
+  requestImportCeremonyToken,
   requestKeygenCeremonyToken,
   requestSignCeremonyToken,
 } from './ceremonyAuth';
@@ -39,13 +40,15 @@ async function withCeremonyToken<T>(
   ceremonyToken: string | undefined,
   mint: (sessionID: string) => Promise<string>,
   purpose: string,
-  fn: (token: string) => Promise<T>,
+  // 3b-2e: fn also receives the ceremony session (native strict
+  // verify needs token + session; minted sessions originate here).
+  fn: (token: string, ceremonyID: string) => Promise<T>,
 ): Promise<T> {
   const ceremonyID = sessionID ?? (await newCeremonySessionID(purpose));
   const token = ceremonyToken ?? (await mint(ceremonyID));
   const owned = ceremonyToken === undefined;
   try {
-    const out = await fn(token);
+    const out = await fn(token, ceremonyID);
     if (owned) {
       try {
         await completeCeremonyToken(token);
@@ -308,6 +311,94 @@ export const TssProvider = {
       urlsCSV,
       ceremonyToken ?? '',
       ceremonySessionID ?? '',
+    );
+  },
+
+  /**
+   * 3b-2e B17: backup stage. Owner token+session pass through
+   * untouched (import flow shares one `import` ceremony across
+   * stage+persist); otherwise mint a single-call import ceremony
+   * here. Half pairs (token xor session) throw — a caller bug,
+   * never silently downgraded to a second mint.
+   */
+  async importBackupToStagedHandle(
+    blob: string,
+    password: string,
+    ceremonyToken?: string,
+    ceremonySessionID?: string,
+  ): Promise<string> {
+    if (
+      (ceremonyToken === undefined) !== (ceremonySessionID === undefined)
+    ) {
+      throw new Error(
+        'importBackupToStagedHandle: ceremonyToken and ceremonySessionID are both-or-neither',
+      );
+    }
+    if (ceremonyToken !== undefined && ceremonySessionID !== undefined) {
+      return BBMTLibNativeModule.importBackupToStagedHandle(
+        blob,
+        password,
+        ceremonyToken,
+        ceremonySessionID,
+      );
+    }
+    return withCeremonyToken(
+      undefined,
+      undefined,
+      requestImportCeremonyToken,
+      'import',
+      (token, ceremonyID) =>
+        BBMTLibNativeModule.importBackupToStagedHandle(
+          blob,
+          password,
+          token,
+          ceremonyID,
+        ),
+    );
+  },
+
+  /**
+   * 3b-2e B18: staged-handle persist. Same owner-or-mint `import`
+   * rule as B17. Setup-commit flows (decoupled from setup by the
+   * backup-check UI) mint their own save ceremony — one prompt
+   * per explicit user action.
+   */
+  async persistStoredKeyshare(
+    handle: string,
+    nsec: string,
+    npub: string,
+    ceremonyToken?: string,
+    ceremonySessionID?: string,
+  ): Promise<string> {
+    if (
+      (ceremonyToken === undefined) !== (ceremonySessionID === undefined)
+    ) {
+      throw new Error(
+        'persistStoredKeyshare: ceremonyToken and ceremonySessionID are both-or-neither',
+      );
+    }
+    if (ceremonyToken !== undefined && ceremonySessionID !== undefined) {
+      return BBMTLibNativeModule.persistStoredKeyshare(
+        handle,
+        nsec,
+        npub,
+        ceremonyToken,
+        ceremonySessionID,
+      );
+    }
+    return withCeremonyToken(
+      undefined,
+      undefined,
+      requestImportCeremonyToken,
+      'import',
+      (token, ceremonyID) =>
+        BBMTLibNativeModule.persistStoredKeyshare(
+          handle,
+          nsec,
+          npub,
+          token,
+          ceremonyID,
+        ),
     );
   },
 
