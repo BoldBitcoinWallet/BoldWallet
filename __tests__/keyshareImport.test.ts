@@ -60,12 +60,14 @@ jest.mock('../services/repositories/AppConfigRepository', () => ({
   },
 }));
 
+import RNFS from 'react-native-fs';
 import {BBMTLibNativeModule} from '../native_modules';
 import {
   decryptAndValidateKeyshare,
   finalizeKeyshareImport,
   importKeyshareFromBase64,
   InvalidKeyshareError,
+  readBackupBlobFromUri,
   WrongKeysharePasswordError,
 } from '../services/keyshareImport';
 import {TssProvider} from '../services/TssProvider';
@@ -300,5 +302,58 @@ describe('keyshareImport (F1 mapping, F15b-1 staged)', () => {
     ).resolves.toMatchObject({
       parsed: {pub_key: 'abc'},
     });
+  });
+});
+
+describe('readBackupBlobFromUri (3b-6d file compat, F23)', () => {
+  const fs = RNFS as any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fs.copyFile.mockResolvedValue(undefined);
+  });
+
+  it('passes fixed v2 ASCII files through verbatim (no base64 read)', async () => {
+    fs.readFile.mockResolvedValueOnce('BW2$QUJDREVG');
+    await expect(readBackupBlobFromUri('file:///x/a.share')).resolves.toBe(
+      'BW2$QUJDREVG',
+    );
+    expect(fs.readFile).toHaveBeenCalledTimes(1);
+    expect(fs.readFile).toHaveBeenCalledWith(expect.any(String), 'utf8');
+  });
+
+  it('trims surrounding whitespace on v2 files', async () => {
+    fs.readFile.mockResolvedValueOnce('  BW2$QUJD\n');
+    await expect(readBackupBlobFromUri('file:///x/a.share')).resolves.toBe(
+      'BW2$QUJD',
+    );
+  });
+
+  it('falls back to base64 for legacy raw-byte files (utf8 reject)', async () => {
+    fs.readFile
+      .mockRejectedValueOnce(new Error('invalid utf8'))
+      .mockResolvedValueOnce('aGk=');
+    await expect(readBackupBlobFromUri('file:///x/a.share')).resolves.toBe(
+      'aGk=',
+    );
+    expect(fs.readFile).toHaveBeenNthCalledWith(2, expect.any(String), 'base64');
+  });
+
+  it('falls back to base64 when utf8 yields non-envelope text', async () => {
+    fs.readFile
+      .mockResolvedValueOnce('not-a-backup')
+      .mockResolvedValueOnce('bGVnYWN5');
+    await expect(readBackupBlobFromUri('file:///x/a.share')).resolves.toBe(
+      'bGVnYWN5',
+    );
+  });
+
+  it('empty file (B1 iOS silent-empty) fails Invalid, not wrong-password', async () => {
+    fs.readFile
+      .mockResolvedValueOnce('')
+      .mockResolvedValueOnce('');
+    await expect(
+      readBackupBlobFromUri('file:///x/empty.share'),
+    ).rejects.toBeInstanceOf(InvalidKeyshareError);
   });
 });

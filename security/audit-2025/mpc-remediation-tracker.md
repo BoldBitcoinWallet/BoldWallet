@@ -18,6 +18,7 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F19 | GG18 protocol-variant decision | High | mpcTssSetup; nostrMpcTssSetup; GG18 signing ×4 | Decided pre-Wave-4: TOKENIZE, do not remove/deprecate (production holds live GG18 keyshares; removal locks funds). 3b-6 gated all 6 GG18 sign/setup branches with class-binding tokens + OS prompts; GG18 e2e with legacy keyshare (no tss_backend) proves backward compat. Future deprecation (out of scope, not queued): (1) tokenize — done; (2) stop issuing new GG18 keyshares at DKG; (3) remove GG18 signing only after telemetry proves zero GG18 keyshares remain | TBD | Done (tokenized) |
 | F20 | No native PSBT-confirmation screen (ceremony prompt summary is JS-supplied/spoofable) | High | §6.4 wave3-design | Native screen parsing destination/amount from PSBT bytes at signing time | TBD | Open (post-Wave-3) |
 | F21 | Pairing nsec returned to JS in full, retained in state after finalize (not the MPC share; separate from F15b) | Med | screens/MobileNostrPairing.tsx:1240,478,1242,1891 | Clear localNsec state + pendingKeyshareRef.partyNsec after ensureNostrKeyshareStored succeeds; long-term native-held nsec handle (F5 scope) | TBD | Done (3b first commit; guardrail __tests__/f21PairingNsec.test.ts 3/3; dereference, not heap wipe — disclosed) |
+| F23 | v2 file backups silently empty on iOS / export fails on Android (B1 file-layer escape) | Critical | components/BackupKeyshareModal.tsx:164 (writeFile 'base64' of "BW2$..."); services/keyshareImport.ts read path | DONE (3b-6d, pre-merge blocker): write envelope as utf8 ASCII + fail-closed stat guard (never share 0-byte file); import sniffs utf8 "BW2$" passthrough else base64 legacy fallback (readBackupBlobFromUri). iOS B1-era v2 files are 0 bytes and UNRECOVERABLE from the file — recovery via older legacy backup or live paired device only. Legacy backups never affected. Opacity test encoding pin corrected base64→utf8; 6 new tests (5 sniff + 1 stat guard) | TBD | Done (3b-6d; needs device retest round-trip before merge) |
 | F3 | Android ESP silently falls back to plaintext | High | BBMTLibNativeModule.kt:170 | DONE (Wave 2): typed fail-closed errors, StrongBox→TEE, security-crypto 1.1.0, UI surfacing, patch-package. No per-read auth (backgrounded reads) | TBD | Done |
 | F4 | iOS Keychain item has no ACL | High | RNEncryptedStorage.m setItem | DONE (Wave 2): keyshare-scoped WhenPasscodeSetThisDeviceOnly, biometry → 3b ceremony auth (per-ceremony OS prompt; item class stands), patch-package, harness 7/7 | TBD | Done |
 | F5 | nsec in JS heap + embedded in backup blob | High | screens/MobileNostrPairing.tsx:1230; dkls/keyshare.go:26 | nsec in Keychain/RNES only; opaque ref; exclude from export | TBD | Open |
@@ -32,7 +33,7 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F14 | SessionKeyHex inert; secrecy rests on long-term nsec | Med | tss/nostrtransport/config.go:49 | HKDF session key into AEAD or remove field (allowlist is DKG-pinned: signing_resolve.go:57) | TBD | Open |
 | F13 | Background/kill: warning-only; replay memory is RAM-only | Med | services/mpcKeepAlive.ts:200 | Ceremony epoch or fresh session IDs post-death; persist seen-IDs | TBD | Open |
 
-Fix waves: (1) F7+sweep done. (2) B1 done. (3) F15(partial→F15b),F3,F4 done. Wave 3a = F15b-1+F10-clip (GREEN, unmerged); Wave 3b = F15b-2+F18+F10-bridge+F4-auth (implemented incl. 3b-6 GG18 tokenization, pending QA/merge); Wave 4 = F11+F6; then F12,F14; F13. F19 Done (tokenized); F20 deferred; F21 Done (3b first commit). F10-GG18 Done.
+Fix waves: (1) F7+sweep done. (2) B1 done. (3) F15(partial→F15b),F3,F4 done. Wave 3a = F15b-1+F10-clip (GREEN, unmerged); Wave 3b = F15b-2+F18+F10-bridge+F4-auth (implemented incl. 3b-6 GG18 tokenization, pending QA/merge); Wave 4 = F11+F6; then F12,F14; F13. F19 Done (tokenized); F20 deferred; F21 Done (3b first commit). F10-GG18 Done. F23 Done (3b-6d v2 file fix; retest round-trip gates merge).
 Still owner-side: govulncheck, npm audit, gitleaks/trufflehog history, FROST/DKLs23 fork diff.
 
 ## Wave 1 — B1 (F1+F2+F16): DONE (merged c6d2613f). F7-residual fail-closed build: done.
@@ -313,7 +314,10 @@ then cancels.
 4. Export backup: WalletSettings → backup → password
 export (BackupKeyshareModal, 5-rule password) → confirm.
 OBSERVE: one "Authenticate to export backup" prompt per
-export; file writes. Repeat airgap QR export
+export; file writes. F23 ROUND-TRIP (merge gate):
+verify the .share file is NON-EMPTY (>0 bytes), then
+delete the wallet and restore from THAT file — restore
+must succeed. Repeat airgap QR export
 (AirgapKeyshareExportModal): prompt fires, QR shows.
 5. Change provider: WalletSettings → Network providers →
 edit/add a mempool host → save. OBSERVE: one

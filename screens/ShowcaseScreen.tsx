@@ -35,7 +35,7 @@ import QRScanner, {stopAndroidContinuousScan} from '../components/QRScanner';
 import {
   assertNoExistingWallet,
   importKeyshareFromBase64,
-  readKeyshareBase64FromUri,
+  readBackupBlobFromUri,
   showKeyshareImportError,
   showWalletAlreadyLoadedAlert,
   WalletAlreadyLoadedError,
@@ -230,7 +230,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       const res = await DocumentPicker.pickSingle({
         type: [DocumentPicker.types.allFiles],
       });
-      const content = await readKeyshareBase64FromUri(`${res.uri}`);
+      const content = await readBackupBlobFromUri(`${res.uri}`);
       setRestoreMode('file');
       setFileContent(content);
       setModalVisible(true);

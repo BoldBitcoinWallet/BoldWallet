@@ -15,7 +15,7 @@ jest.mock('../utils', () => ({
 
 const mockSetActiveNetwork = jest.fn();
 const mockClassifyIncomingFile = jest.fn();
-const mockReadKeyshareBase64FromUri = jest.fn();
+const mockReadBackupBlobFromUri = jest.fn();
 const mockSubscribeToSharedFiles = jest.fn();
 const mockGetInitialSharedFileUri = jest.fn();
 const mockModalProps = jest.fn();
@@ -37,7 +37,7 @@ jest.mock('../services/incomingFileClassifier', () => ({
 
 jest.mock('../services/keyshareImport', () => ({
   importKeyshareFromBase64: jest.fn(),
-  readKeyshareBase64FromUri: (uri: string) => mockReadKeyshareBase64FromUri(uri),
+  readBackupBlobFromUri: (uri: string) => mockReadBackupBlobFromUri(uri),
   showKeyshareImportError: jest.fn(),
   showWalletAlreadyLoadedAlert: jest.fn(),
   WalletAlreadyLoadedError: class WalletAlreadyLoadedError extends Error {},
@@ -81,7 +81,7 @@ describe('IncomingShareHandler', () => {
 
     mockGetInitialSharedFileUri.mockResolvedValue('file:///tmp/pending_keyshare.share');
     mockClassifyIncomingFile.mockResolvedValue('keyshare');
-    mockReadKeyshareBase64FromUri.mockResolvedValue('encrypted-keyshare-content');
+    mockReadBackupBlobFromUri.mockResolvedValue('encrypted-keyshare-content');
 
     Object.defineProperty(AppState, 'currentState', {
       configurable: true,
@@ -118,7 +118,7 @@ describe('IncomingShareHandler', () => {
 
     expect(mockGetInitialSharedFileUri).not.toHaveBeenCalled();
     expect(mockClassifyIncomingFile).not.toHaveBeenCalled();
-    expect(mockReadKeyshareBase64FromUri).not.toHaveBeenCalled();
+    expect(mockReadBackupBlobFromUri).not.toHaveBeenCalled();
 
     await act(async () => {
       appStateHandler?.('active');
@@ -131,7 +131,7 @@ describe('IncomingShareHandler', () => {
     expect(mockClassifyIncomingFile).toHaveBeenCalledWith(
       'file:///tmp/pending_keyshare.share',
     );
-    expect(mockReadKeyshareBase64FromUri).toHaveBeenCalledWith(
+    expect(mockReadBackupBlobFromUri).toHaveBeenCalledWith(
       'file:///tmp/pending_keyshare.share',
     );
 
@@ -165,7 +165,7 @@ describe('IncomingShareHandler', () => {
       'Unsupported file',
       'This file type is not supported by BoldWallet.',
     );
-    expect(mockReadKeyshareBase64FromUri).not.toHaveBeenCalled();
+    expect(mockReadBackupBlobFromUri).not.toHaveBeenCalled();
     expect(mockClearPendingSharedFile).toHaveBeenCalled();
   });
 });

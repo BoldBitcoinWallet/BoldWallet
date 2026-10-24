@@ -52,6 +52,7 @@ jest.mock('react-native-fs', () => ({
   CachesDirectoryPath: '/tmp',
   DocumentDirectoryPath: '/tmp',
   writeFile: jest.fn(),
+  stat: jest.fn(),
 }));
 jest.mock('../services/rnfsSafe', () => ({safeUnlink: jest.fn()}));
 // 3b-3 A12: export routes via TssProvider (token plumbing pinned
@@ -91,6 +92,7 @@ describe('BackupKeyshareModal export opacity (F15)', () => {
     exportEncrypt.mockResolvedValue(V2_BLOB);
     nativeMocks.sha256.mockResolvedValue('abcdef123456');
     (RNFS.writeFile as jest.Mock).mockResolvedValue(undefined);
+    (RNFS.stat as jest.Mock).mockResolvedValue({size: V2_BLOB.length});
     (Share.open as jest.Mock).mockResolvedValue(undefined);
   });
 
@@ -138,8 +140,21 @@ describe('BackupKeyshareModal export opacity (F15)', () => {
     expect(RNFS.writeFile).toHaveBeenCalledTimes(1);
     const [, blob, encoding] = (RNFS.writeFile as jest.Mock).mock.calls[0];
     expect(blob).toBe(V2_BLOB);
-    expect(encoding).toBe('base64');
+    // 3b-6d (F23): ASCII "BW2$..." envelope MUST be written utf8.
+    // 'base64' decodes first — "$" is not base64, so iOS wrote
+    // silent empty files (nil data resolves success).
+    expect(encoding).toBe('utf8');
     expect(Share.open).toHaveBeenCalledTimes(1);
+  });
+
+  it('F23: empty backup file is never shared (fail-closed stat guard)', async () => {
+    (RNFS.stat as jest.Mock).mockResolvedValueOnce({size: 0});
+    await renderAndExport('Correct-Horse-12!');
+    expect(Share.open).not.toHaveBeenCalled();
+    expect(Alert.alert).toHaveBeenCalledWith(
+      'Error',
+      expect.stringContaining('could not be written'),
+    );
   });
 
   it('F15: no share bytes cross any JS-handled value on export', async () => {

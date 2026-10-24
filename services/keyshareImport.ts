@@ -48,13 +48,31 @@ export type ParsedKeyshare = {
   [key: string]: unknown;
 };
 
-export async function readKeyshareBase64FromUri(uri: string): Promise<string> {
+/**
+ * 3b-6d (F23): read a backup file into the blob string the native
+ * import expects. Fixed v2 files hold the ASCII "BW2$..." envelope
+ * (written utf8) — pass through verbatim. Legacy files hold raw
+ * bytes (written base64-decoded) — re-encode to base64. Empty files
+ * (the B1-era iOS silent-empty bug wrote 0-byte v2 "backups") fail
+ * here with InvalidKeyshareError, never as a wrong-password.
+ */
+export async function readBackupBlobFromUri(uri: string): Promise<string> {
   const normalizedUri = uri.startsWith('file://') || uri.startsWith('content://')
     ? uri
     : `file://${uri}`;
   const localFilePath = `${RNFS.DocumentDirectoryPath}/tempKeyshareImport.share`;
   await safeUnlink(localFilePath);
   await RNFS.copyFile(normalizedUri, localFilePath);
+  try {
+    const text = await RNFS.readFile(localFilePath, 'utf8');
+    const trimmed = String(text ?? '').trim();
+    if (trimmed.startsWith('BW2$')) {
+      await safeUnlink(localFilePath);
+      return trimmed;
+    }
+  } catch {
+    // Binary (legacy raw bytes) — fall through to base64.
+  }
   const content = await RNFS.readFile(localFilePath, 'base64');
   await safeUnlink(localFilePath);
   if (!content || !String(content).trim()) {
