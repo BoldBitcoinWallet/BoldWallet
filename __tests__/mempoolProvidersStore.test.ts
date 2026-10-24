@@ -156,11 +156,11 @@ describe('mempoolProvidersStore', () => {
       'mempool.space',
     );
     expect(
-      hostnameFromMempoolApiBase('https://mempool.space/testnet/api'),
-    ).toBe('mempool.space/testnet');
+      hostnameFromMempoolApiBase('https://mempool.space/testnet4/api'),
+    ).toBe('mempool.space/testnet4');
   });
 
-  it('header label on testnet ignores mainnet enabled pool', () => {
+  it('header label on testnet4 ignores mainnet enabled pool', () => {
     (appConfigRepository.get as jest.Mock).mockImplementation((key: string) => {
       if (key === 'mempool_providers_entries') {
         return JSON.stringify([
@@ -172,11 +172,11 @@ describe('mempoolProvidersStore', () => {
       return null;
     });
     expect(
-      getHeaderProviderDisplay('https://mempool.space/testnet/api'),
+      getHeaderProviderDisplay('https://mempool.space/testnet4/api'),
     ).toEqual({
-      host: 'mempool.space/testnet',
+      host: 'mempool.space/testnet4',
       extraCount: 0,
-      label: 'mempool.space/testnet',
+      label: 'mempool.space/testnet4',
     });
   });
 });

@@ -29,6 +29,7 @@ describe('transactionFlowUtils', () => {
   });
 
   it('network helpers detect testnet', () => {
+    expect(isTestnetNetwork('testnet4')).toBe(true);
     expect(isTestnetNetwork('testnet')).toBe(true);
     expect(isTestnetNetwork('testnet3')).toBe(true);
     expect(isTestnetNetwork('mainnet')).toBe(false);

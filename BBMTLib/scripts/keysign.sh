@@ -9,10 +9,10 @@ BUILD_DIR="./bin"
 print_usage() {
   cat <<EOF
 Usage:
-  $0 [--network <mainnet|testnet3>] [--address-type <p2pkh|p2wpkh|p2sh-p2wpkh|p2tr>] [--derivation-path <path>]
+  $0 [--network <mainnet|testnet4>] [--address-type <p2pkh|p2wpkh|p2sh-p2wpkh|p2tr>] [--derivation-path <path>]
 
 Options:
-  --network        Network to use (default: testnet3)
+  --network        Network to use (default: testnet4)
   --address-type   Address type (default: p2pkh)
                    Options: p2pkh, p2wpkh, p2sh-p2wpkh, p2tr
   --derivation-path Custom derivation path (overrides network/address-type)
@@ -30,7 +30,7 @@ EOF
 }
 
 # Defaults
-NETWORK="testnet3"
+NETWORK="testnet4"
 ADDRESS_TYPE="p2pkh"
 DERIVATION_PATH=""
 

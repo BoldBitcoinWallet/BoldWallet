@@ -704,7 +704,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           appConfigRepository.get('api') ||
           (network === 'mainnet'
             ? 'https://mempool.space/api'
-            : 'https://mempool.space/testnet/api');
+            : 'https://mempool.space/testnet4/api');
 
         // ── Step 2: flush in-memory caches before discovery ───────────────
         // Every isAddressUsed call inside discoverHdIndexesForNetwork must
@@ -827,7 +827,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         appConfigRepository.get('api') ||
         (network === 'mainnet'
           ? 'https://mempool.space/api'
-          : 'https://mempool.space/testnet/api');
+          : 'https://mempool.space/testnet4/api');
 
       appConfigRepository.set(CONFIG_KEYS.NETWORK, network);
       appConfigRepository.set('api', apiUrl);
@@ -970,7 +970,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         resolvedApi =
           net === 'mainnet'
             ? 'https://mempool.space/api'
-            : 'https://mempool.space/testnet/api';
+            : 'https://mempool.space/testnet4/api';
         appConfigRepository.set('api', resolvedApi);
         if (net) appConfigRepository.set(`api_${net}`, resolvedApi);
       }
@@ -2825,7 +2825,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   activeApiProvider ||
                   (activeNetwork === 'mainnet'
                     ? 'https://mempool.space/api'
-                    : 'https://mempool.space/testnet/api');
+                    : 'https://mempool.space/testnet4/api');
                 try {
                   await runRestoreIndexing(
                     activeNetwork,

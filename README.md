@@ -153,8 +153,8 @@ cd BBMTLib
 ./bin/bold-spend-darwin-arm64 \
   --to-address <recipient_address> \
   --amount-sats <amount> \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/84'/1'/0'/0/0" \
   --address-type p2wpkh \
   --keyshare1 "KeyShare1.Dec19.2025.1257.share" \
@@ -168,8 +168,8 @@ cd BBMTLib
   --to-address <recipient_address> \
   --amount-sats <amount> \
   --fee-sats <estimated_fee> \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/84'/1'/0'/0/0" \
   --address-type p2wpkh \
   --keyshare1 "KeyShare1.Dec19.2025.1257.share" \
