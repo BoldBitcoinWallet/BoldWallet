@@ -457,11 +457,14 @@ an ACTIVE ceremony is unaffected by granularity anyway
   complete/release/cancel, single-live-session supersession,
   and process death.
 - Tests: jest mocks the native module (no OS prompt); JVM/XCTest
-  use a DEBUG-only `requestCeremonyTokenTest(op, sessionID)`
-  (compile-gated: `BuildConfig.DEBUG` / `#if DEBUG`; absent in
-  release). No `__DEV__` fail-open anywhere near ceremony auth
-  (unlike the advisory JS helper, which keeps its semantics for
-  non-enforcing UI gates only).
+  use a DEBUG-only `requestCeremonyTokenTest(op, sessionID)`.
+  Compile-time elimination BOTH platforms (3b-1d): Android =
+  debug-source-set module (`CeremonyTestModule`, reflectively
+  registered; release classes verified absent), iOS = `#if
+  DEBUG` method + extern (verified by Release build). No
+  `__DEV__` / `BuildConfig` runtime fail-open anywhere near
+  ceremony auth (unlike the advisory JS helper, which keeps
+  its semantics for non-enforcing UI gates only).
 
 ### 6.3 F4 biometry: what prompts, what doesn't
 

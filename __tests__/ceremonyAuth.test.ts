@@ -149,7 +149,7 @@ describe('3b-1 no generic mint (malicious-mint simulation)', () => {
     }
   });
 
-  test('production JS never references the DEBUG Test hook', () => {
+  test('production JS never references the DEBUG Test hook or module', () => {
     const hits: string[] = [];
     const walk = (dir: string) => {
       for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
@@ -160,8 +160,10 @@ describe('3b-1 no generic mint (malicious-mint simulation)', () => {
         if (entry.isDirectory()) {
           walk(full);
         } else if (/\.(ts|tsx|js)$/.test(entry.name)) {
+          const text = fs.readFileSync(full, 'utf8');
           if (
-            fs.readFileSync(full, 'utf8').includes('requestCeremonyTokenTest')
+            text.includes('requestCeremonyTokenTest') ||
+            text.includes('CeremonyTestModule')
           ) {
             hits.push(path.relative(ROOT, full));
           }
@@ -172,5 +174,90 @@ describe('3b-1 no generic mint (malicious-mint simulation)', () => {
       walk(path.join(ROOT, sub));
     }
     expect(hits).toEqual([]);
+  });
+
+  test('Android Test mint lives ONLY in the debug source set', () => {
+    // Compile-time elimination: the prompt-bypassing minter must
+    // not exist under src/main (release compiles main only).
+    const mainHits: string[] = [];
+    const walkMain = (dir: string) => {
+      for (const entry of fs.readdirSync(dir, {withFileTypes: true})) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          walkMain(full);
+        } else if (/\.(kt|java)$/.test(entry.name)) {
+          const text = fs.readFileSync(full, 'utf8');
+          if (
+            text.includes('requestCeremonyTokenTest') ||
+            text.includes('CeremonyTestModule') ||
+            text.includes('CeremonyTestPackage')
+          ) {
+            mainHits.push(path.relative(ROOT, full));
+          }
+        }
+      }
+    };
+    walkMain(path.join(ROOT, 'android', 'app', 'src', 'main'));
+    // Allowed: MainApplication's reflective loader (string name
+    // only — no static edge, release-safe) + NOTE comments naming
+    // the debug location. Anything else is a leak.
+    const loaderOk = (f: string, text: string) =>
+      f.endsWith('MainApplication.kt') &&
+      !text.includes('import com.boldwallet.CeremonyTest');
+    const leaks = mainHits.filter(f => {
+      const text = fs.readFileSync(path.join(ROOT, f), 'utf8');
+      if (loaderOk(f, text)) {
+        return false;
+      }
+      // NOTE comments may name the debug module; method/callers may not.
+      const stripped = text
+        .split('\n')
+        .filter(l => !l.trim().startsWith('//') && !l.trim().startsWith('*'))
+        .join('\n');
+      return (
+        stripped.includes('requestCeremonyTokenTest') ||
+        stripped.includes('CeremonyTestModule(') ||
+        stripped.includes('CeremonyTestPackage(')
+      );
+    });
+    expect(leaks).toEqual([]);
+    // …and the debug source set actually contains the minter
+    // (guard against vacuous pass by deletion).
+    const debugMod = fs.readFileSync(
+      path.join(
+        ROOT,
+        'android',
+        'app',
+        'src',
+        'debug',
+        'java',
+        'com',
+        'boldwallet',
+        'CeremonyTestModule.kt',
+      ),
+      'utf8',
+    );
+    expect(debugMod).toContain('fun requestCeremonyTokenTest(');
+  });
+
+  test('iOS Test hook sits inside #if DEBUG on both sides', () => {
+    const swift = fs.readFileSync(
+      path.join(ROOT, 'ios', 'BBMTLibNativeModule.swift'),
+      'utf8',
+    );
+    const m = fs.readFileSync(
+      path.join(ROOT, 'ios', 'BBMTLibNativeModule.m'),
+      'utf8',
+    );
+    for (const text of [swift, m]) {
+      const use = text.indexOf('requestCeremonyTokenTest');
+      expect(use).toBeGreaterThan(-1);
+      const ifDebug = text.lastIndexOf('#if DEBUG', use);
+      const endif = text.indexOf('#endif', use);
+      expect(ifDebug).toBeGreaterThan(-1);
+      expect(endif).toBeGreaterThan(use);
+      // No second, unguarded occurrence.
+      expect(text.indexOf('requestCeremonyTokenTest', endif)).toBe(-1);
+    }
   });
 });

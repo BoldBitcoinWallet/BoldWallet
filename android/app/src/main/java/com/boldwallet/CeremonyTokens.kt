@@ -9,7 +9,7 @@ import java.security.SecureRandom
  * adds the OS-visible prompt + device-lock gate; NOTHING here mints
  * without the caller having authenticated — enforced by keeping
  * mint() callable only from the post-prompt continuation and the
- * DEBUG-gated test entry.
+ * debug-source-set test module (absent in release).
  *
  * State machine (terminal: USED, EXPIRED, REVOKED):
  *   MINTED → ACTIVE    (first successful verify)
@@ -200,11 +200,7 @@ object CeremonyTokens {
     }
 }
 
-/**
- * DEBUG-test-mint gate, extracted pure so JVM tests pin the rule:
- * the prompt-bypassing mint exists ONLY when buildDebug is true.
- * The bridge passes BuildConfig.DEBUG; release bytecode refuses.
- */
-object CeremonyTestMint {
-    fun isAllowed(buildDebug: Boolean): Boolean = buildDebug
-}
+// NOTE: no test-mint gate here. The prompt-bypassing mint is a
+// debug-source-set module (CeremonyTestModule) + Swift
+// #if DEBUG — compile-time absent from release, not runtime
+// gated. Guardrailed in jest (ceremonyAuth.test.ts).

@@ -163,9 +163,4 @@ class CeremonyTokensTest {
         assertNull(CeremonyTokens.OpClass.parse("transport"))
     }
 
-    @Test
-    fun testF15b2_TestMintGateRefusesRelease() {
-        assertTrue(CeremonyTestMint.isAllowed(true))
-        assertFalse(CeremonyTestMint.isAllowed(false))
-    }
 }

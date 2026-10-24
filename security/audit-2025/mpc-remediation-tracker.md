@@ -124,6 +124,11 @@ alone cannot revoke a live ceremony — not exploitable).
 androidx.biometric pinned 1.1.0 (cached; upgrade when
 online — 1.2.0 API unused). Verify is timing-flat
 pre-check (single false, no transition-then-rollback).
+3b-1d: test mint compile-eliminated both platforms
+(Android debug source set + reflective registration,
+release classes verified absent; iOS #if DEBUG, Release
+build green). Mint entry is per-ceremony only (3b-1b, no
+generic minter); TTL bounds start (3b-1c).
 
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms

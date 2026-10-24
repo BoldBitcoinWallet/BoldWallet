@@ -1332,38 +1332,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }
     }
 
-    /**
-     * DEBUG-ONLY prompt-bypassing mint for tests. Refuses unless
-     * BuildConfig.DEBUG (release bytecode keeps the method but the
-     * path always refuses — unlike Swift #if DEBUG which strips
-     * it; disclosed, same security property). Production code
-     * must never call this — guardrailed in jest.
-     */
-    @ReactMethod
-    fun requestCeremonyTokenTest(op: String, sessionID: String, promise: Promise) {
-        if (!CeremonyTestMint.isAllowed(BuildConfig.DEBUG)) {
-            promise.reject(
-                "CEREMONY_AUTH_REQUIRED",
-                "Confirm to continue — authenticate in the prompt.",
-                null,
-            )
-            return
-        }
-        val opClass = CeremonyTokens.OpClass.parse(op)
-        if (opClass == null || sessionID.isEmpty()) {
-            promise.reject(
-                "CEREMONY_AUTH_REQUIRED",
-                "Confirm to continue — authenticate in the prompt.",
-                null,
-            )
-            return
-        }
-        try {
-            promise.resolve(CeremonyTokens.mint(opClass, sessionID))
-        } catch (e: Exception) {
-            promise.reject("CEREMONY_TOKEN_ERROR", e.message, e)
-        }
-    }
+    // NOTE: NO debug test mint here. The prompt-bypassing mint
+    // lives in src/debug (CeremonyTestModule) + Swift #if DEBUG —
+    // absent from release binaries. Guardrailed in jest.
 
     /**
      * F15b-1 migration bootstrap (§1.5 step 7): idempotent
