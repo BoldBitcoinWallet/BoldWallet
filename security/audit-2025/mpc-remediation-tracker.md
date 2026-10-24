@@ -425,6 +425,16 @@ kill = re-auth on next ceremony (no recovery, no orphans).
 Dead dkls-side nostrJoinKeysignJni decl + impl deferred as
 Low cleanup (unreachable, zero Kotlin callers) — not Wave 4.
 
+## Wave 3b QA gate — RESULT: passed (2026-10-24, release-owner reported)
+- Scope: 12-item real-device checklist (8 ceremony items +
+  4 GG18 additions: legacy-keyshare sign, setup, cancel
+  revocation, abort no-orphan). All pass, incl. GG18
+  backward-compat items 9–12.
+- Devices/OS/runner: to be confirmed by QA runner (verbal pass
+  received; models + OS versions pending fill-in).
+- Merge gate satisfied; merge 3a → main (--no-ff), then
+  3b → main (--no-ff, references 3a).
+
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
   arm64 emulator (pure-Go build; x/crypto/argon2 has amd64 asm only, so ARM
