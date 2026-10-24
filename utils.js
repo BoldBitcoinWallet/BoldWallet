@@ -1285,28 +1285,28 @@ async function persistNormalizedKeyshareMeta(meta, repo, CONFIG_KEYS) {
 }
 
 /**
- * Metadata cache omits MPC secrets; re-infer tss_backend from full keyshare when missing
- * so DKLs wallets are not treated as GG18 for path policy.
+ * Metadata cache omits MPC secrets; re-infer tss_backend from secure
+ * metadata (A8) when missing so DKLs wallets are not treated as GG18
+ * for path policy. F15b-1: never reads the blob.
  * @param {import('./types/keyshare').KeyshareMetadata} meta
  * @returns {Promise<import('./types/keyshare').KeyshareMetadata>}
  */
-async function enrichMetaTssBackendFromFullKeyshare(meta) {
+async function enrichMetaTssBackendFromSecureMetadata(meta) {
   if (meta.tss_backend === 'dkls23' || meta.tss_backend === 'gg18') {
     return meta;
   }
   try {
-    const full = await EncryptedStorage.getItem('keyshare');
-    if (!full || String(full).trim() === '') {
+    const secure = await getKeyshareSecureMetadata();
+    if (!secure) {
       return meta;
     }
-    const parsed = JSON.parse(full);
-    const backend = detectKeyshareTssBackend(parsed);
+    const backend = detectKeyshareTssBackend(secure);
     if (backend === meta.tss_backend) {
       return meta;
     }
     return {...meta, tss_backend: backend};
   } catch (e) {
-    dbg('enrichMetaTssBackendFromFullKeyshare: failed', e);
+    dbg('enrichMetaTssBackendFromSecureMetadata: failed', e);
     return meta;
   }
 }
@@ -1322,19 +1322,17 @@ function metaNeedsPersistAfterEnrich(before, after) {
 }
 
 /**
- * Extract and persist only the non-secret metadata fields from a keyshare JSON string.
- * Call this whenever EncryptedStorage.setItem('keyshare', …) is called.
- * Metadata lives in SQLite `app_config` (`keyshare_meta_json`).
- * @param {string} keyshareJson - Raw keyshare JSON string
- */
-/**
- * @param {string} keyshareJson
+ * Persist the non-secret keyshare metadata mirror (SQLite `app_config`).
+ * F15b-1: takes the allowlisted metadata object (preferred) or its JSON.
+ * The normalizer is a projection — secret fields can never land in SQLite.
+ * @param {object|string} metaInput - allowlisted metadata, never the blob
  * @param {{ throwOnError?: boolean }} [opts]
  */
-export const saveKeyshareMetadata = async (keyshareJson, opts = {}) => {
+export const saveKeyshareMetadata = async (metaInput, opts = {}) => {
   const throwOnError = opts.throwOnError === true;
   try {
-    const parsed = JSON.parse(keyshareJson);
+    const parsed =
+      typeof metaInput === 'string' ? JSON.parse(metaInput) : metaInput;
     const meta = normalizeKeyshareMetaObject(parsed);
     const json = JSON.stringify(meta);
     const {repo, CONFIG_KEYS} = loadAppConfigRepository();
@@ -1378,14 +1376,9 @@ export async function hasWalletKeyshareInSecureStorage() {
       return false;
     }
   }
-  try {
-    const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
-    return !!(raw && String(raw).trim());
-  } catch (e) {
-    dbg('hasWalletKeyshareInSecureStorage: fallback failed', e);
-    alertSecureStorageError(e);
-    return false;
-  }
+  // F15b-1: no RNES-direct fallback (it would transit the blob
+  // value to JS). Native presence check or fail closed.
+  return false;
 }
 
 /**
@@ -1438,15 +1431,6 @@ export async function hasUsableWalletKeyshare() {
 export const getKeyshareMetadata = async () => {
   const {repo, CONFIG_KEYS} = loadAppConfigRepository();
 
-  const legacyInMemoryFallback = legacyJson => {
-    try {
-      const parsed = JSON.parse(legacyJson);
-      return normalizeKeyshareMetaObject(parsed);
-    } catch {
-      return null;
-    }
-  };
-
   const readDbMeta = () => {
     const dbRaw =
       repo && CONFIG_KEYS ? repo.get(CONFIG_KEYS.KEYSHARE_META_JSON) : null;
@@ -1484,7 +1468,7 @@ export const getKeyshareMetadata = async () => {
 
     if (dbMeta) {
       let out = dbMeta.norm;
-      const enriched = await enrichMetaTssBackendFromFullKeyshare(dbMeta.norm);
+      const enriched = await enrichMetaTssBackendFromSecureMetadata(dbMeta.norm);
       if (metaNeedsPersistAfterEnrich(dbMeta.norm, enriched)) {
         out = enriched;
       }
@@ -1501,16 +1485,17 @@ export const getKeyshareMetadata = async () => {
       return out;
     }
 
-    const legacy = await EncryptedStorage.getItem('keyshare');
-    if (!legacy || String(legacy).trim() === '') {
+    // F15b-1: backfill from secure metadata (A8), never the blob.
+    const secure = await getKeyshareSecureMetadata();
+    if (!secure) {
       return null;
     }
-    await saveKeyshareMetadata(legacy);
+    await saveKeyshareMetadata(secure);
     const after = readDbMeta();
     if (after) {
       return after.norm;
     }
-    const mem = legacyInMemoryFallback(legacy);
+    const mem = normalizeKeyshareMetaObject(secure);
     if (mem && keyshareMetaLooksComplete(mem)) {
       return mem;
     }
@@ -1522,20 +1507,28 @@ export const getKeyshareMetadata = async () => {
 };
 
 /**
- * Full MPC keyshare blob from secure storage.
- * Includes chain_code_hex. Plaintext metadata (getKeyshareMetadata) blanks it.
+ * F15b-1 secure metadata from native storage (A8): the §3 superset
+ * INCLUDING chain_code_hex (unlike the SQLite mirror, which blanks
+ * it). Replaces getKeyshare (removed): no caller receives share
+ * bytes anymore. Returns null when no wallet exists; storage
+ * errors alert (F3 UX) and return null.
  * @returns {Promise<Record<string, any>|null>}
  */
-export async function getKeyshare() {
+export async function getKeyshareSecureMetadata() {
   try {
-    const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
+    const raw = await BBMTLibNativeModule.getKeyshareMetadataJSON();
     if (!raw || String(raw).trim() === '') {
       return null;
     }
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;
   } catch (e) {
-    dbg('getKeyshare: failed', e);
+    const code = e?.code ?? '';
+    const msg = String(e?.message ?? e ?? '');
+    if (code === 'NO_KEYSHARE' || /no keyshare/i.test(msg)) {
+      return null;
+    }
+    dbg('getKeyshareSecureMetadata: failed', e);
     alertSecureStorageError(e);
     return null;
   }

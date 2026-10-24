@@ -420,15 +420,62 @@ export const KEYGEN_FINALIZING_STORAGE_STATUS =
 
 /** Read-back check that the full keyshare blob exists in RNES. */
 export async function verifyWalletKeysharePersisted(): Promise<boolean> {
+  // F15b-1: presence via native check — never transits the blob.
   try {
-    const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
-    return !!(raw && String(raw).trim());
+    const fn = BBMTLibNativeModule?.hasKeyshareInSecureStorage;
+    if (typeof fn !== 'function') {
+      return false;
+    }
+    const result = await fn();
+    return result === true || result === 'true' || result === 1;
   } catch {
     return false;
   }
 }
 
 /**
+ * F15b-1: persist a STAGED handle (DKLs setup/import). Native
+ * finalizes, envelopes, writes, and verifies; JS writes only the
+ * metadata mirror. Returns the post-finalize metadata object.
+ * Throws on guard/verify failures (same copy as the legacy path).
+ */
+export async function persistStagedKeyshare(
+  handle: string,
+  opts?: FinalizeKeyshareOpts,
+): Promise<any> {
+  if (!handle || !String(handle).trim()) {
+    throw new Error('Invalid keyshare handle');
+  }
+  await assertNoExistingWallet();
+  let metaJson: string;
+  try {
+    metaJson = await BBMTLibNativeModule.persistStoredKeyshare(
+      handle,
+      opts?.partyNsec ?? '',
+      opts?.nostrNpub ?? '',
+    );
+  } catch (error) {
+    const clear = secureStorageMessageFor(error);
+    if (clear !== null) {
+      throw new Error(clear);
+    }
+    throw error;
+  }
+  const meta = JSON.parse(metaJson);
+  await saveKeyshareMetadata(meta, {throwOnError: true});
+  const verified = await verifyWalletKeysharePersisted();
+  if (!verified) {
+    throw new Error(
+      'Key share was lost during setup. Please run wallet setup again.',
+    );
+  }
+  return meta;
+}
+
+/**
+ * F19: GG18 legacy-branch persist (full-JSON through JS). Kept for
+ * GG18 setup output, which stays plaintext in Wave 3 (protocol-
+ * variant decision deferred). DKLs uses persistStagedKeyshare.
  * Persist full keyshare + metadata mirror atomically for setup success.
  * Throws if blob write or read-back verification fails (metadata write must succeed).
  */
