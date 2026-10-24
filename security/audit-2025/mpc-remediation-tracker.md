@@ -349,6 +349,24 @@ share on device (fresh restore/create works after).
 QA RESULT: _pending — record "QA passed" + device models,
 OS versions, date here before merging._
 
+Log-trace close-out (pre-merge, parallel with QA): the two
+"[redacted: sensitive log suppressed]" lines in the GG18
+loopback output are the repo's OWN sanitizer
+(sanitizeLogMessage, logs.go:62) redacting
+`Logln("BBMTLog", "keyshare generated: ", moniker)` — the
+"keyshare" substring token matches, so party monikers
+("p1"/"p2", non-secret) are suppressed by design.
+Bypass audit: only relay.go uses raw log.Printf (5 sites:
+session register/delete, message add/delete, 2 completion
+logs); content is session/participant/message IDs + one
+full message struct whose body is encrypted-or-public
+transport bytes — no share/nonce/nsec/session-key
+material. With InitLog, even those pass the sanitizer via
+logWriter before reaching the RN bridge. VERDICT: verified
+non-secret, sanitizer over-matches by design — no F22.
+Hygiene note for Wave 4 (opportunistic, not a finding):
+trim relay.go:239 `%+v` full-body log to metadata-only.
+
 3b-review response (pre-merge items):
 1. GG18 verdict: LIVE — do NOT remove. Evidence: production
 Welcome screen (App.tsx "Welcome" → ShowcaseScreen) offers
