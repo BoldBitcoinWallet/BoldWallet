@@ -20,32 +20,37 @@ import (
 var errUnknownHandle = errors.New("unknown or expired keyshare handle")
 
 //export BbmtImportBackupStaged
-func BbmtImportBackupStaged(blob, password *C.char) *C.char {
-	return cString(dkls.ImportBackupStaged(C.GoString(blob), C.GoString(password)))
+func BbmtImportBackupStaged(blob, password *C.char) (out *C.char) {
+	defer recoverBridge(&out)
+	return cString(dkls.ImportBackupStaged(mustGoStr(blob, "blob"), mustGoStr(password, "password")))
 }
 
 //export BbmtFinalizeStagedForPersist
-func BbmtFinalizeStagedForPersist(handle, nsec, npub *C.char) *C.char {
-	return cString(dkls.FinalizeStagedForPersist(C.GoString(handle), C.GoString(nsec), C.GoString(npub)))
+func BbmtFinalizeStagedForPersist(handle, nsec, npub *C.char) (out *C.char) {
+	defer recoverBridge(&out)
+	return cString(dkls.FinalizeStagedForPersist(mustGoStr(handle, "handle"), mustGoStr(nsec, "nsec"), mustGoStr(npub, "npub")))
 }
 
 //export BbmtDestroyStaged
-func BbmtDestroyStaged(handle *C.char) *C.char {
-	if !keyhandles.Destroy(C.GoString(handle)) {
+func BbmtDestroyStaged(handle *C.char) (out *C.char) {
+	defer recoverBridge(&out)
+	if !keyhandles.Destroy(mustGoStr(handle, "handle")) {
 		return cString("", errUnknownHandle)
 	}
 	return cString("ok", nil)
 }
 
 //export BbmtDestroyAllStaged
-func BbmtDestroyAllStaged() *C.char {
+func BbmtDestroyAllStaged() (out *C.char) {
+	defer recoverBridge(&out)
 	keyhandles.DestroyAll()
 	return cString("ok", nil)
 }
 
 //export BbmtProjectMetadata
-func BbmtProjectMetadata(fullJSON *C.char) *C.char {
-	raw, err := keyhandles.MetadataJSON([]byte(C.GoString(fullJSON)))
+func BbmtProjectMetadata(fullJSON *C.char) (out *C.char) {
+	defer recoverBridge(&out)
+	raw, err := keyhandles.MetadataJSON([]byte(mustGoStr(fullJSON, "fullJSON")))
 	if err != nil {
 		return cString("", err)
 	}
@@ -53,8 +58,9 @@ func BbmtProjectMetadata(fullJSON *C.char) *C.char {
 }
 
 //export BbmtRedactedStructure
-func BbmtRedactedStructure(fullJSON *C.char) *C.char {
-	raw, err := keyhandles.RedactedStructure([]byte(C.GoString(fullJSON)))
+func BbmtRedactedStructure(fullJSON *C.char) (out *C.char) {
+	defer recoverBridge(&out)
+	raw, err := keyhandles.RedactedStructure([]byte(mustGoStr(fullJSON, "fullJSON")))
 	if err != nil {
 		return cString("", err)
 	}

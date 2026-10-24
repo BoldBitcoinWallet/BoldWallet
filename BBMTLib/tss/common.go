@@ -462,10 +462,18 @@ func Sha256Bytes(data []byte) (result string, err error) {
 	return hex.EncodeToString(hashBytes[:]), nil
 }
 
-func SecureRandom(length int) (string, error) {
+// MaxSecureRandomLen caps SecureRandom output (F11: 4 KiB hex chars).
+// The largest in-repo caller needs 64.
+const MaxSecureRandomLen = 4 << 10
+
+func SecureRandom(length int) (result string, err error) {
+	defer RecoverAsError("SecureRandom", &err, &result)
+
+	if length <= 0 || length > MaxSecureRandomLen {
+		return "", fmt.Errorf("f11: SecureRandom length out of range [1,%d]: %d", MaxSecureRandomLen, length)
+	}
 	bytes := make([]byte, (length+1)/2)
-	_, err := rand.Read(bytes)
-	if err != nil {
+	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
 	return fmt.Sprintf("%x", bytes)[:length], nil
