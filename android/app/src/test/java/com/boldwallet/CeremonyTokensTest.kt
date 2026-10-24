@@ -154,6 +154,14 @@ class CeremonyTokensTest {
     }
 
     @Test
+    fun testF15b2_SingleCall_KeygenClassRoundTrip() {
+        // 3b-2b B20/B21: keypair generators mint keygen, verify keygen.
+        val t = CeremonyTokens.mint(CeremonyTokens.OpClass.KEYGEN, "pairing-1")
+        assertTrue(CeremonyTokens.verifySingleCall(t, CeremonyTokens.OpClass.KEYGEN))
+        assertFalse(CeremonyTokens.verifySingleCall(t, CeremonyTokens.OpClass.SIGN))
+    }
+
+    @Test
     fun testF15b2_SingleCall_RejectsWrongClass() {
         val t = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "s1")
         assertFalse(CeremonyTokens.verifySingleCall(t, CeremonyTokens.OpClass.EXPORT))

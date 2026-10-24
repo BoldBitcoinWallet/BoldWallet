@@ -127,6 +127,11 @@ let sce = CeremonyTokens.mint(opClass: .sign, sessionID: "s9")
 now += CeremonyTokens.ttlMs + 1
 check(!CeremonyTokens.verifySingleCall(token: sce, opClass: .sign), "single-call rejects expired")
 check(CeremonyTokens.stateOf(token: sce) == .expired, "single-call expiry terminal")
+// 3b-2b B20/B21: keypair generators mint keygen, verify keygen.
+reset()
+let kg = CeremonyTokens.mint(opClass: .keygen, sessionID: "pairing-1")
+check(CeremonyTokens.verifySingleCall(token: kg, opClass: .keygen), "single-call keygen round-trip")
+check(!CeremonyTokens.verifySingleCall(token: kg, opClass: .sign), "single-call keygen not sign")
 
 // Wire parsing strict.
 check(CeremonyOpClass.parse("sign") == .sign, "parse sign")

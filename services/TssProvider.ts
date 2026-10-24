@@ -3,6 +3,7 @@ import {
   completeCeremonyToken,
   newCeremonySessionID,
   releaseCeremonyToken,
+  requestKeygenCeremonyToken,
   requestSignCeremonyToken,
 } from './ceremonyAuth';
 import {
@@ -23,21 +24,25 @@ import {
 export type {TssBackend};
 
 /**
- * 3b-2a: sign-ceremony token scope. Owner-provided tokens pass
- * through untouched (owner owns lifecycle); otherwise mint here
- * (OS prompt), complete on success, release on throw.
- * Calls without an MPC session (sends, nostr) get a fresh
+ * 3b-2: ceremony-token scope. Owner-provided tokens pass through
+ * untouched (owner owns lifecycle); otherwise mint here (OS
+ * prompt), complete on success, release on throw. Calls without
+ * an MPC session (sends, nostr, keypair generators) get a fresh
  * single-call ceremony ID; session equality then binds the token
  * to this call only (opClass + TTL + revocation still enforced).
+ * The mint fn is pinned per call site (sign vs keygen) — there
+ * is no generic minter; the class is chosen by the wrapper, and
+ * enforced natively by the gated method.
  */
-async function withSignToken<T>(
+async function withCeremonyToken<T>(
   sessionID: string | undefined,
   ceremonyToken: string | undefined,
+  mint: (sessionID: string) => Promise<string>,
+  purpose: string,
   fn: (token: string) => Promise<T>,
 ): Promise<T> {
-  const ceremonyID = sessionID ?? (await newCeremonySessionID('sign'));
-  const token =
-    ceremonyToken ?? (await requestSignCeremonyToken(ceremonyID));
+  const ceremonyID = sessionID ?? (await newCeremonySessionID(purpose));
+  const token = ceremonyToken ?? (await mint(ceremonyID));
   const owned = ceremonyToken === undefined;
   try {
     const out = await fn(token);
@@ -129,18 +134,27 @@ export const TssProvider = {
     chaincode: string,
     setupMode?: SetupMode,
     backend?: TssBackend | null,
+    ceremonyToken?: string,
   ): Promise<SetupResult> {
     const resolved = await resolveTssBackendForKeygen(setupMode, backend);
     if (resolved === 'dkls23') {
-      const raw = await BBMTLibNativeModule.dklsMpcTssSetup(
-        server,
-        partyID,
-        partiesCSV,
+      const raw = await withCeremonyToken<string>(
         sessionID,
-        sessionKey,
-        encKey,
-        decKey,
-        chaincode,
+        ceremonyToken,
+        requestKeygenCeremonyToken,
+        'keygen',
+        token =>
+          BBMTLibNativeModule.dklsMpcTssSetup(
+            server,
+            partyID,
+            partiesCSV,
+            sessionID,
+            sessionKey,
+            encKey,
+            decKey,
+            chaincode,
+            token,
+          ),
       );
       return parseStagedSetupResult(raw);
     }
@@ -169,16 +183,25 @@ export const TssProvider = {
     ppmPath: string,
     setupMode?: SetupMode,
     backend?: TssBackend | null,
+    ceremonyToken?: string,
   ): Promise<SetupResult> {
     const resolved = await resolveTssBackendForKeygen(setupMode, backend);
     if (resolved === 'dkls23') {
-      const raw = await BBMTLibNativeModule.dklsNostrMpcTssSetup(
-        relaysCSV,
-        partyNsec,
-        partiesNpubsCSV,
+      const raw = await withCeremonyToken<string>(
         sessionID,
-        sessionKey,
-        chaincode,
+        ceremonyToken,
+        requestKeygenCeremonyToken,
+        'keygen',
+        token =>
+          BBMTLibNativeModule.dklsNostrMpcTssSetup(
+            relaysCSV,
+            partyNsec,
+            partiesNpubsCSV,
+            sessionID,
+            sessionKey,
+            chaincode,
+            token,
+          ),
       );
       return parseStagedSetupResult(raw);
     }
@@ -193,6 +216,36 @@ export const TssProvider = {
       ppmPath,
     );
     return {kind: 'legacy-gg18', json};
+  },
+
+  /**
+   * 3b-2b B20: pairing-identity keypair. Gated by a single-call
+   * `keygen` ceremony — generation precedes any DKG session (the
+   * pairing phase runs first), so no DKG token can be shared;
+   * each mint carries its own OS-visible prompt.
+   */
+  async nostrKeypair(ceremonyToken?: string): Promise<string> {
+    return withCeremonyToken(
+      undefined,
+      ceremonyToken,
+      requestKeygenCeremonyToken,
+      'keygen',
+      token => BBMTLibNativeModule.nostrKeypair(token),
+    );
+  },
+
+  /**
+   * 3b-2b B21: LAN ECIES device keypair. Same single-call
+   * `keygen` ceremony as nostrKeypair.
+   */
+  async eciesKeypair(ceremonyToken?: string): Promise<string> {
+    return withCeremonyToken(
+      undefined,
+      ceremonyToken,
+      requestKeygenCeremonyToken,
+      'keygen',
+      token => BBMTLibNativeModule.eciesKeypair(token),
+    );
   },
 
   /** Human-readable backend id for logs (gg18 | dkls23). */
@@ -213,7 +266,7 @@ export const TssProvider = {
   ): Promise<string> {
     const backend = await resolveTssBackend();
     if (backend === 'dkls23') {
-      return withSignToken(sessionID, ceremonyToken, token =>
+      return withCeremonyToken(sessionID, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
         BBMTLibNativeModule.dklsMpcSignPSBT(
           server,
           partyID,
@@ -258,7 +311,7 @@ export const TssProvider = {
   ): Promise<string> {
     const backend = await resolveTssBackend();
     if (backend === 'dkls23') {
-      return withSignToken(sessionID, ceremonyToken, token =>
+      return withCeremonyToken(sessionID, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
         BBMTLibNativeModule.dklsMpcSendBTCWithUTXOs(
           server,
           partyID,
@@ -309,7 +362,7 @@ export const TssProvider = {
   ): Promise<string> {
     const backend = await resolveTssBackend();
     if (backend === 'dkls23') {
-      return withSignToken(undefined, ceremonyToken, token =>
+      return withCeremonyToken(undefined, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
         BBMTLibNativeModule.dklsNostrMpcSendBTC(
           relaysCSV,
           partiesNpubsCSV,
@@ -347,7 +400,7 @@ export const TssProvider = {
   ): Promise<string> {
     const backend = await resolveTssBackend();
     if (backend === 'dkls23') {
-      return withSignToken(undefined, ceremonyToken, token =>
+      return withCeremonyToken(undefined, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
         BBMTLibNativeModule.dklsNostrMpcSignPSBT(
           relaysCSV,
           partiesNpubsCSV,

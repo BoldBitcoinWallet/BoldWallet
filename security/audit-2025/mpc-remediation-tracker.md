@@ -146,6 +146,21 @@ ceremony-harness PASSED, tsc 32 pre-existing, eslint
 clean. complete/release evict the JS session map in
 finally (no stale reuse after native failure).
 
+3b-2b keygen/keypair slice GREEN (B9-B12, B20-B21): 2 DKLs
+setup wrappers take keygen tokens (strict session verify;
+GG18 setup excluded per F19, tested); nostrKeypair +
+eciesKeypair retained + gated via new TssProvider wrappers
+(single-call keygen ceremony each — pairing precedes DKG by
+minutes, so the design's "one token covers both" sharing is
+inapplicable; each mint carries its own OS prompt).
+withSignToken generalized to withCeremonyToken (mint fn
+pinned per call site — still no generic minter). Zero
+direct native keypair callers remain (2 screens migrated).
+Evidence: tssKeygenTokenGating 8/8, JVM 16/16, harness
+PASSED, iOS Debug + Android release green, tsc 32
+pre-existing, eslint 0 errors. Spy/dispatch mocks extended
+for the keygen mint (token traffic share-free).
+
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
   arm64 emulator (pure-Go build; x/crypto/argon2 has amd64 asm only, so ARM

@@ -1237,7 +1237,8 @@ const MobileNostrPairing = ({navigation}: any) => {
   ]);
   const generateLocalKeypair = async () => {
     try {
-      const keypairJSON = await BBMTLibNativeModule.nostrKeypair();
+      // 3b-2b B20: token-gated via TssProvider (OS-visible prompt).
+      const keypairJSON = await TssProvider.nostrKeypair();
       const keypair = JSON.parse(keypairJSON);
       setLocalNsec(keypair.nsec);
       setLocalNpub(keypair.npub);

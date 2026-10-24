@@ -4,6 +4,10 @@ jest.mock('../native_modules', () => ({
     mpcTssSetup: jest.fn(),
     dklsNostrMpcTssSetup: jest.fn(),
     nostrMpcTssSetup: jest.fn(),
+    // 3b-2b: setup is keygen-token-gated; tests pin dispatch, not auth.
+    requestKeygenCeremonyToken: jest.fn(async () => 'tok-keygen-dispatch'),
+    completeCeremonyToken: jest.fn(async () => true),
+    releaseCeremonyToken: jest.fn(async () => true),
   },
 }));
 

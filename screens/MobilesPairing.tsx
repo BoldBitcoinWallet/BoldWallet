@@ -1994,7 +1994,8 @@ const MobilesPairing = ({navigation}: any) => {
     try {
       // Android: keep gomobile for LAN pairing only; load libbbmtmobile at wallet setup (mpcTssSetup).
       setStatus('Generating device keys...');
-      const jkp = await BBMTLibNativeModule.eciesKeypair();
+      // 3b-2b B21: token-gated via TssProvider (OS-visible prompt).
+      const jkp = await TssProvider.eciesKeypair();
       const kp = parseEciesKeypairJson(jkp);
       setKeypair(jkp);
       setStatus('Syncing local IP...');

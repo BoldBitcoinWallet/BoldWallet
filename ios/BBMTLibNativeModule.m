@@ -14,7 +14,7 @@ RCT_EXTERN_METHOD(sha256:(NSString *)message resolver:(RCTPromiseResolveBlock)re
 RCT_EXTERN_METHOD(secureRandom:(int)length resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // ECIES Key Pair Generation
-RCT_EXTERN_METHOD(eciesKeypair:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(eciesKeypair:(NSString *)ceremonyToken resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // 3a-2: aesEncrypt / aesDecrypt / aesEncryptStoredKeyshare / backupDecrypt
 // externs removed with their dead implementations — no JS-callable oracle remains.
@@ -200,7 +200,7 @@ RCT_EXTERN_METHOD(mpcSendBTCWithUTXOs:(NSString *)server
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Nostr Keypair Generation
-RCT_EXTERN_METHOD(nostrKeypair:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(nostrKeypair:(NSString *)ceremonyToken resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // Hex to Npub Conversion
 RCT_EXTERN_METHOD(hexToNpub:(NSString *)hexKey resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
@@ -272,6 +272,7 @@ RCT_EXTERN_METHOD(dklsMpcTssSetup:(NSString *)server
                   encKey:(NSString *)encKey
                   decKey:(NSString *)decKey
                   chaincode:(NSString *)chaincode
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -281,6 +282,7 @@ RCT_EXTERN_METHOD(dklsNostrMpcTssSetup:(NSString *)relaysCSV
                   sessionID:(NSString *)sessionID
                   sessionKey:(NSString *)sessionKey
                   chaincode:(NSString *)chaincode
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

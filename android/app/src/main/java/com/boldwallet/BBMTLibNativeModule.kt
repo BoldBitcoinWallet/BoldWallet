@@ -718,8 +718,13 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
     
     @ReactMethod
-    fun nostrKeypair(promise: Promise) {
+    fun nostrKeypair(ceremonyToken: String, promise: Promise) {
         try {
+            // 3b-2b B20: single-call keygen ceremony (no MPC session yet).
+            if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.KEYGEN)) {
+                rejectCeremonyUnauthorized(promise)
+                return
+            }
             if (rejectBbmtUnavailable(promise, "nostrKeypair")) return
             val result = DklsNative.bbmtNostrKeypairNative()
             ld("nostrKeypair", result)
@@ -965,9 +970,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun eciesKeypair(promise: Promise) {
+    fun eciesKeypair(ceremonyToken: String, promise: Promise) {
         Thread {
             try {
+                // 3b-2b B21: single-call keygen ceremony (no MPC session yet).
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.KEYGEN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "eciesKeypair")) return@Thread
                 val result = DklsNative.bbmtGenerateKeyPairNative()
                 if (result.startsWith("error:")) {
@@ -1628,10 +1638,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         encKey: String,
         decKey: String,
         chaincode: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject(
                         "DKLS_NATIVE_REQUIRED",
@@ -1666,10 +1681,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         sessionID: String,
         sessionKey: String,
         chaincode: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject(
                         "DKLS_NATIVE_REQUIRED",

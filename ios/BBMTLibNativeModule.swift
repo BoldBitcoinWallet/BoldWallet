@@ -536,8 +536,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func eciesKeypair(
-    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    _ ceremonyToken: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2b B21: single-call keygen ceremony (no MPC session yet).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .keygen) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     var error: NSError?
     let output = TssGenerateKeyPair(&error)
     resolve("eciesKeypair", output, error, resolver)
@@ -983,8 +989,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func nostrKeypair(
-    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    _ ceremonyToken: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2b B20: single-call keygen ceremony (no MPC session yet).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .keygen) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssNostrKeypair(&error)
@@ -1024,8 +1036,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   @objc func dklsMpcTssSetup(
     _ server: String, partyID: String, partiesCSV: String, sessionID: String,
     sessionKey: String, encKey: String, decKey: String, chaincode: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2b: gate FIRST — before runtime checks.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter(
@@ -1053,9 +1071,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   @objc func dklsNostrMpcTssSetup(
     _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, chaincode: String,
+    sessionKey: String, chaincode: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2b: gate FIRST — before runtime checks.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter(

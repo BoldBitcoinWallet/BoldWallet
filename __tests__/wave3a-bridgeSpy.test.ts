@@ -31,6 +31,11 @@ jest.mock('../native_modules', () => ({
     destroyKeyshareHandles: jest.fn(async () => true),
     ensureKeyshareEnveloped: jest.fn(),
     sha256: jest.fn(),
+    // 3b-2b: setup is keygen-token-gated; the spy records the
+    // token arg (share-free) like any other bridge traffic.
+    requestKeygenCeremonyToken: jest.fn(),
+    completeCeremonyToken: jest.fn(),
+    releaseCeremonyToken: jest.fn(),
   },
 }));
 
@@ -210,6 +215,11 @@ function stubResolve(name: string, _args: unknown[]): unknown {
       return {migrated: true};
     case 'hasKeyshareInSecureStorage':
     case 'destroyKeyshareHandles':
+      return true;
+    case 'requestKeygenCeremonyToken':
+      return 'tok-spy-keygen-1';
+    case 'completeCeremonyToken':
+    case 'releaseCeremonyToken':
       return true;
     default:
       return null;
