@@ -10,6 +10,7 @@
 package keyhandles
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -209,11 +210,16 @@ func RedactedStructure(fullJSON []byte) ([]byte, error) {
 	for k, v := range m {
 		out[k] = redactValue(k, v)
 	}
-	raw, err := json.Marshal(out)
-	if err != nil {
+	// No HTML escaping: the "<redacted ...>" markers must appear
+	// literally in the wire bytes (default Marshal would emit
+	// \u003c/\u003e). Consumer is JSON.parse, not HTML injection.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(out); err != nil {
 		return nil, fmt.Errorf("redact marshal: %w", err)
 	}
-	return raw, nil
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
 }
 
 // MetadataJSON projects full keyshare JSON onto the allowlist.
