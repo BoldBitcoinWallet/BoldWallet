@@ -891,7 +891,12 @@ class BBMTLibNativeModule: RCTEventEmitter {
   ) {
     var error: NSError?
     let output = TssGetDerivedPubKey(hexPubkey, hexChaincode, path, false, &error)
-    resolve("derivePubkey", output, error, resolver)
+    if let error = error {
+      sendLogEvent("derivePubkey", error.localizedDescription)
+      rejecter("DERIVE_PUBKEY_ERROR", "Failed to derive pubkey: \(error.localizedDescription)", error)
+      return
+    }
+    resolve("derivePubkey", output, nil, resolver)
   }
 
   @objc func encodeXpub(
@@ -926,21 +931,24 @@ class BBMTLibNativeModule: RCTEventEmitter {
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
     var error: NSError?
+    let output: String
     if addressType == "segwit-native" {
-      let segwitNative = TssPubToP2WPKH(compressedPubkey, network, &error)
-      resolve("btcAddress", segwitNative, error, resolver)
+      output = TssPubToP2WPKH(compressedPubkey, network, &error)
     } else if addressType == "segwit-compatible" {
-      let segwitCompatible = TssPubToP2SHP2WKH(compressedPubkey, network, &error)
-      resolve("btcAddress", segwitCompatible, error, resolver)
+      output = TssPubToP2SHP2WKH(compressedPubkey, network, &error)
     } else if addressType == "taproot" {
-      let taproot = TssPubToP2TR(compressedPubkey, network, &error)
-      resolve("btcAddress", taproot, error, resolver)
+      output = TssPubToP2TR(compressedPubkey, network, &error)
     } else if addressType == "legacy" {
-      let legacy = TssPubToP2KH(compressedPubkey, network, &error)
-      resolve("btcAddress", legacy, error, resolver)
+      output = TssPubToP2KH(compressedPubkey, network, &error)
     } else {
-      resolve("btcAddress", "", error, resolver)
+      output = ""
     }
+    if let error = error {
+      sendLogEvent("btcAddress", error.localizedDescription)
+      rejecter("BTC_ADDRESS_ERROR", "Failed to generate BTC address: \(error.localizedDescription)", error)
+      return
+    }
+    resolve("btcAddress", output, nil, resolver)
   }
 
   @objc func setFeePolicy(
