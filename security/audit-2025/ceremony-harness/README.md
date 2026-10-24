@@ -19,7 +19,8 @@ swiftc -o /tmp/ceremony-harness ios/CeremonyTokens.swift \
 
 Ends with `CEREMONY HARNESS PASSED`. Covers: mint→verify
 activation + multi-use, class/session binding with
-no-transition-on-failure, unknown-token fail, lazy expiry,
-complete→used, release→revoked (idempotent), cancel +
+no-transition-on-failure, unknown-token fail, start-bounded
+lazy expiry (active survives TTL), complete→used,
+release→revoked (idempotent), cancel +
 new-ceremony revocation, same-session remint supersede, strict
 wire parsing.

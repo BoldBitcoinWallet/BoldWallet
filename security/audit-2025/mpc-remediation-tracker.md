@@ -118,6 +118,12 @@ prepare/keygen/co-sign for minutes backgrounded
 (mpcKeepAlive.ts); revoke-on-background would break it.
 ≤10min expiry is the bound; mint implicitly requires
 foreground (OS prompt needs a live Activity/scene).
+TTL bounds start, not duration (3b-1c). Mint supersession =
+bounded DoS only (every mint needs user presence, so JS
+alone cannot revoke a live ceremony — not exploitable).
+androidx.biometric pinned 1.1.0 (cached; upgrade when
+online — 1.2.0 API unused). Verify is timing-flat
+pre-check (single false, no transition-then-rollback).
 
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms

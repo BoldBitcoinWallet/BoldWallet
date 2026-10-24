@@ -451,6 +451,11 @@ an ACTIVE ceremony is unaffected by granularity anyway
   cancel/complete (best-effort from JS) + 10-min expiry (§10:
   10 min wins; the earlier "30-min" here was a doc bug) +
   native wipe on A10. Stale tokens fail closed, never linger.
+  TTL bounds ceremony START, not duration (3b-1c): only
+  MINTED tokens can expire; a started ceremony never dies
+  mid-sign from token expiry. Duration bounded by
+  complete/release/cancel, single-live-session supersession,
+  and process death.
 - Tests: jest mocks the native module (no OS prompt); JVM/XCTest
   use a DEBUG-only `requestCeremonyTokenTest(op, sessionID)`
   (compile-gated: `BuildConfig.DEBUG` / `#if DEBUG`; absent in

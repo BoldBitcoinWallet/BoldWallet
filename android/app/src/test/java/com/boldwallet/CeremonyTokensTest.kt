@@ -63,11 +63,26 @@ class CeremonyTokensTest {
     @Test
     fun testF15b2_ExpiryLazilyTerminal() {
         val t = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "s1")
-        assertTrue(CeremonyTokens.verify(t, CeremonyTokens.OpClass.SIGN, "s1"))
+        // Unstarted token past TTL: fails, goes EXPIRED, stays failed.
         now += CeremonyTokens.TTL_MS + 1
         assertFalse(CeremonyTokens.verify(t, CeremonyTokens.OpClass.SIGN, "s1"))
         assertEquals(CeremonyTokens.State.EXPIRED, CeremonyTokens.stateOf(t))
-        // Terminal: stays failed, no resurrection.
+        assertFalse(CeremonyTokens.verify(t, CeremonyTokens.OpClass.SIGN, "s1"))
+    }
+
+    @Test
+    fun testF15b2_TtlBoundsStartNotDuration() {
+        val t = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "s1")
+        assertTrue(CeremonyTokens.verify(t, CeremonyTokens.OpClass.SIGN, "s1"))
+        // Started ceremony survives past TTL — never dies mid-sign.
+        now += CeremonyTokens.TTL_MS + 1
+        assertTrue(CeremonyTokens.verify(t, CeremonyTokens.OpClass.SIGN, "s1"))
+        assertEquals(CeremonyTokens.State.ACTIVE, CeremonyTokens.stateOf(t))
+        // …but class/session binding still enforced when active.
+        assertFalse(CeremonyTokens.verify(t, CeremonyTokens.OpClass.EXPORT, "s1"))
+        assertFalse(CeremonyTokens.verify(t, CeremonyTokens.OpClass.SIGN, "s2"))
+        // …and completion still retires.
+        CeremonyTokens.complete(t)
         assertFalse(CeremonyTokens.verify(t, CeremonyTokens.OpClass.SIGN, "s1"))
     }
 

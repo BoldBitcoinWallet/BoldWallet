@@ -51,14 +51,26 @@ reset()
 check(!CeremonyTokens.verify(token: "tok0000000000000000000000000099", opClass: .sign, sessionID: "s1"), "unknown fails")
 check(CeremonyTokens.stateOf(token: "nope") == nil, "unknown has no state")
 
-// Expiry lazily terminal.
+// Expiry lazily terminal (unstarted tokens only).
 reset()
 t = CeremonyTokens.mint(opClass: .sign, sessionID: "s1")
-check(CeremonyTokens.verify(token: t, opClass: .sign, sessionID: "s1"), "pre-expiry passes")
 now += CeremonyTokens.ttlMs + 1
-check(!CeremonyTokens.verify(token: t, opClass: .sign, sessionID: "s1"), "expired fails")
+check(!CeremonyTokens.verify(token: t, opClass: .sign, sessionID: "s1"), "unstarted expired fails")
 check(CeremonyTokens.stateOf(token: t) == .expired, "expiry terminal")
 check(!CeremonyTokens.verify(token: t, opClass: .sign, sessionID: "s1"), "expired stays failed")
+now -= CeremonyTokens.ttlMs + 1
+
+// TTL bounds start, not duration.
+reset()
+t = CeremonyTokens.mint(opClass: .sign, sessionID: "s1")
+check(CeremonyTokens.verify(token: t, opClass: .sign, sessionID: "s1"), "start passes")
+now += CeremonyTokens.ttlMs + 1
+check(CeremonyTokens.verify(token: t, opClass: .sign, sessionID: "s1"), "active survives past TTL")
+check(CeremonyTokens.stateOf(token: t) == .active, "stays active")
+check(!CeremonyTokens.verify(token: t, opClass: .export, sessionID: "s1"), "class still bound when active")
+check(!CeremonyTokens.verify(token: t, opClass: .sign, sessionID: "s2"), "session still bound when active")
+CeremonyTokens.complete(token: t)
+check(!CeremonyTokens.verify(token: t, opClass: .sign, sessionID: "s1"), "complete still retires")
 now -= CeremonyTokens.ttlMs + 1
 
 // Complete retires to used, idempotent.

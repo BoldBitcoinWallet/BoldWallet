@@ -21,9 +21,17 @@ import Foundation
 //
 // Validation (executed HERE at the bridge, never trusted from JS):
 //   exists && state ∈ {minted, active} && opClass match &&
-//   sessionID match && now ≤ expiresAt
+//   sessionID match && (active || now ≤ expiresAt).
+// TTL bounds ceremony START, not duration: an unstarted
+// (minted) token past TTL fails and goes expired, but a
+// started ceremony never dies mid-sign from token expiry
+// (that would be a state-consistency bug). Duration is
+// bounded by complete/release/cancel, single-live-session
+// supersession, and process death (in-memory map).
 // All failures return plain false — the bridge maps every
 // failure to one CEREMONY_AUTH_REQUIRED (no reason oracle).
+// Checks run pre-transition (flat single false); nothing
+// transitions-then-rolls-back.
 
 // NOTE: no transport case. Transport calls (fetchData/
 // publishData) verify against the PARENT ceremony token
@@ -107,7 +115,8 @@ enum CeremonyTokens {
     defer { lock.unlock() }
     guard var rec = tokens[token] else { return false }
     if isTerminal(rec.state) { return false }
-    if nowMs() > rec.expiresAtMs {
+    // TTL bounds START: only unstarted tokens can expire.
+    if rec.state == .minted && nowMs() > rec.expiresAtMs {
       rec.state = .expired
       tokens[token] = rec
       return false
