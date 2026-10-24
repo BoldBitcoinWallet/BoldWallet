@@ -723,7 +723,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	// Step 5: Use the agreed average fees instead of estimatedFee
 	agreedFee := preAgreement.averageFees
 
-	params := &chaincfg.TestNet3Params
+	params := &TestNet4Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 		Logln("Using mainnet parameters")
@@ -1214,7 +1214,7 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 		return "", err
 	}
 
-	params := &chaincfg.TestNet3Params
+	params := &TestNet4Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 	}

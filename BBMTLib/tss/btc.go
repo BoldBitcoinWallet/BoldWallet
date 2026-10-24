@@ -44,8 +44,8 @@ type UTXOWithPath struct {
 	Scriptpubkey   string `json:"scriptpubkey,omitempty"`
 }
 
-var _btc_net = "testnet3" // default to testnet
-var _api_url = "https://mempool.space/testnet/api"
+var _btc_net = "testnet4" // default to testnet
+var _api_url = "https://mempool.space/testnet4/api"
 var _api_urls = []string{"https://mempool.space/api", "https://benpool.space/api"}
 
 var _fee_set = "30m"
@@ -56,13 +56,14 @@ func UseFeeAPIs(urls string) (string, error) {
 }
 
 func SetNetwork(network string) (string, error) {
-	if network == "mainnet" || network == "testnet3" {
+	network = normalizeNetwork(network)
+	if network == "mainnet" || network == "testnet4" {
 		_btc_net = network
 		switch network {
 		case "mainnet":
 			_api_url = "https://mempool.space/api"
-		case "testnet3":
-			_api_url = "https://mempool.space/testnet/api"
+		case "testnet4":
+			_api_url = "https://mempool.space/testnet4/api"
 		}
 		return _api_url, nil
 	}
@@ -70,7 +71,8 @@ func SetNetwork(network string) (string, error) {
 }
 
 func UseAPI(network, base string) (string, error) {
-	if network == "mainnet" || network == "testnet3" {
+	network = normalizeNetwork(network)
+	if network == "mainnet" || network == "testnet4" {
 		_btc_net = network
 		_api_url = strings.TrimSuffix(base, "/")
 		return _api_url, nil
@@ -724,7 +726,7 @@ func MpcSendBTC(
 
 	Logln("BBMTLog", "invoking MpcSendBTC...")
 
-	params := &chaincfg.TestNet3Params
+	params := &TestNet4Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 		Logln("Using mainnet parameters")
@@ -1213,7 +1215,7 @@ func MpcSendBTCWithUTXOs(
 		return "", err
 	}
 
-	params := &chaincfg.TestNet3Params
+	params := &TestNet4Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 	}
@@ -1388,12 +1390,12 @@ func MpcSendBTCWithUTXOs(
 }
 
 func calculateFees(senderAddress string, utxos []UTXO, satoshiAmount int64, receiverAddress string) (int64, error) {
-	params := &chaincfg.TestNet3Params
+	params := &TestNet4Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 		Logln("Using MainNet parameters")
 	} else {
-		Logln("Using TestNet3 parameters")
+		Logln("Using TestNet4 parameters")
 	}
 
 	// Decode addresses
@@ -1580,7 +1582,7 @@ func SecP256k1Recover(r, s, v, h string) (result string, err error) {
 	return hex.EncodeToString(pubKey.SerializeCompressed()), nil
 }
 
-func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
+func PubToP2KH(pubKeyCompressed, network string) (result string, err error) {
 	defer RecoverAsError("PubToP2KH", &err, &result)
 
 	// Decode the hex string to bytes
@@ -1597,13 +1599,13 @@ func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err e
 	// Convert the public key to a P2PKH address
 	pubKeyHash := btcutil.Hash160(pubKeyBytes)
 	var address *btcutil.AddressPubKeyHash
-	switch mainnetORtestnet3 {
+	switch network {
 	case "mainnet":
 		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &chaincfg.MainNetParams)
-	case "testnet3":
-		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &chaincfg.TestNet3Params)
+	case "testnet", "testnet3", "testnet4":
+		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &TestNet4Params)
 	default:
-		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet4")
 	}
 	if err != nil {
 		return "", fmt.Errorf("failed to create Bech32 address: %w", err)
@@ -1611,7 +1613,7 @@ func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err e
 	return address.EncodeAddress(), nil
 }
 
-func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
+func PubToP2WPKH(pubKeyCompressed, network string) (result string, err error) {
 	defer RecoverAsError("PubToP2WPKH", &err, &result)
 
 	// Decode hex-encoded compressed public key
@@ -1625,13 +1627,13 @@ func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err
 
 	// Determine network parameters
 	var params *chaincfg.Params
-	switch mainnetORtestnet3 {
+	switch network {
 	case "mainnet":
 		params = &chaincfg.MainNetParams
-	case "testnet3":
-		params = &chaincfg.TestNet3Params
+	case "testnet", "testnet3", "testnet4":
+		params = &TestNet4Params
 	default:
-		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet4")
 	}
 
 	// Create native SegWit (P2WPKH) address
@@ -1644,7 +1646,7 @@ func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err
 	return address.EncodeAddress(), nil
 }
 
-func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
+func PubToP2SHP2WKH(pubKeyCompressed, network string) (result string, err error) {
 	defer RecoverAsError("PubToP2SHP2WKH", &err, &result)
 
 	// Decode hex-encoded compressed public key
@@ -1658,13 +1660,13 @@ func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, 
 
 	// Determine network parameters
 	var params *chaincfg.Params
-	switch mainnetORtestnet3 {
+	switch network {
 	case "mainnet":
 		params = &chaincfg.MainNetParams
-	case "testnet3":
-		params = &chaincfg.TestNet3Params
+	case "testnet", "testnet3", "testnet4":
+		params = &TestNet4Params
 	default:
-		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet4")
 	}
 
 	// Create nested SegWit (P2SH-P2WPKH) address
@@ -1687,7 +1689,7 @@ func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, 
 	return wrappedAddr.EncodeAddress(), nil
 }
 
-func PubToP2TR(pubKeyCompressedHex, mainnetORtestnet3 string) (result string, err error) {
+func PubToP2TR(pubKeyCompressedHex, network string) (result string, err error) {
 	defer RecoverAsError("PubToP2TR", &err, &result)
 
 	// Decode the compressed public key
@@ -1703,13 +1705,13 @@ func PubToP2TR(pubKeyCompressedHex, mainnetORtestnet3 string) (result string, er
 	xOnlyPubKey := pubKeyBytes[1:]
 
 	var params *chaincfg.Params
-	switch mainnetORtestnet3 {
+	switch network {
 	case "mainnet":
 		params = &chaincfg.MainNetParams
-	case "testnet3":
-		params = &chaincfg.TestNet3Params
+	case "testnet", "testnet3", "testnet4":
+		params = &TestNet4Params
 	default:
-		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet4")
 	}
 
 	taprootAddr, err := btcutil.NewAddressTaproot(xOnlyPubKey, params)

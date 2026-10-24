@@ -159,7 +159,7 @@ func HashToInt(hash []byte, c elliptic.Curve) *big.Int {
 // It derives to the BIP44 account level (m/44/0/0) so Sparrow can derive /0/x for addresses.
 // hexPubKey: compressed public key in hex (33 bytes / 66 chars) - the master public key
 // hexChainCode: chain code in hex (32 bytes / 64 chars) - the master chain code
-// network: "mainnet" or "testnet3"
+// network: "mainnet" or "testnet4" ("testnet"/"testnet3" accepted as aliases)
 // Returns: xpub (mainnet) or tpub (testnet) encoded string at account level m/44/0/0
 func EncodeXpub(hexPubKey, hexChainCode, network string) (result string, err error) {
 	defer RecoverAsError("EncodeXpub", &err, &result)
@@ -192,7 +192,7 @@ func EncodeXpub(hexPubKey, hexChainCode, network string) (result string, err err
 	if network == "mainnet" {
 		net = &chaincfg.MainNetParams
 	} else {
-		net = &chaincfg.TestNet3Params
+		net = &TestNet4Params
 	}
 
 	// Parse the master public key
@@ -213,7 +213,7 @@ func EncodeXpub(hexPubKey, hexChainCode, network string) (result string, err err
 	// Note: These are non-hardened because we're deriving from a public key
 	// The logical BIP44 path is 44'/coinType'/0' (hardened), but we derive non-hardened
 	coinType := uint32(0) // mainnet
-	if network == "testnet" || network == "testnet3" {
+	if network == "testnet" || network == "testnet3" || network == "testnet4" {
 		coinType = uint32(1) // testnet
 	}
 	accountPath := []uint32{44, coinType, 0}
@@ -474,7 +474,7 @@ func SecureRandom(length int) (string, error) {
 // GetOutputDescriptor generates a wallet output descriptor for watch-only wallet import (Sparrow, etc.)
 // hexPubKey: compressed master public key in hex (33 bytes / 66 chars)
 // hexChainCode: master chain code in hex (32 bytes / 64 chars)
-// network: "mainnet" or "testnet3"
+// network: "mainnet" or "testnet4" ("testnet"/"testnet3" accepted as aliases)
 // addressType: "legacy", "segwit-native", or "segwit-compatible"
 // Returns: checksummed output descriptor (pkh / wpkh / sh(wpkh) with #suffix per BIP 380)
 func GetOutputDescriptor(hexPubKey, hexChainCode, network, addressType string) (result string, err error) {
@@ -502,7 +502,7 @@ func GetOutputDescriptor(hexPubKey, hexChainCode, network, addressType string) (
 
 	// Determine coin type and BIP path based on network and address type
 	coinType := uint32(0) // mainnet
-	if network == "testnet" || network == "testnet3" {
+	if network == "testnet" || network == "testnet3" || network == "testnet4" {
 		coinType = uint32(1) // testnet
 	}
 
@@ -567,7 +567,7 @@ func GetOutputDescriptor(hexPubKey, hexChainCode, network, addressType string) (
 	if network == "mainnet" {
 		net = &chaincfg.MainNetParams
 	} else {
-		net = &chaincfg.TestNet3Params
+		net = &TestNet4Params
 	}
 
 	// Build the extended public key at account level

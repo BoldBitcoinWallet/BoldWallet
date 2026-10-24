@@ -57,7 +57,7 @@ func TestResolveInputDerivePathKeepsFullPath(t *testing.T) {
 }
 
 func TestPathCandidatesSparrowRelativeWithoutXPubs(t *testing.T) {
-	_btc_net = "testnet3"
+	_btc_net = "testnet4"
 	packet := &psbt.Packet{} // no XPubs — common in Sparrow PSBTs
 	candidates := pathCandidates(packet, []uint32{0, 1})
 	want := "m/84'/1'/0'/0/1"
@@ -74,7 +74,7 @@ func TestPathCandidatesSparrowRelativeWithoutXPubs(t *testing.T) {
 }
 
 func TestPathCandidatesSingleIndex(t *testing.T) {
-	_btc_net = "testnet3"
+	_btc_net = "testnet4"
 	packet := &psbt.Packet{}
 	candidates := pathCandidates(packet, []uint32{3})
 	if !containsPath(candidates, "m/84'/1'/0'/0/3") && !containsPath(candidates, "m/3") {
@@ -83,7 +83,7 @@ func TestPathCandidatesSingleIndex(t *testing.T) {
 }
 
 func TestPathCandidatesSparrowBIP44RelativeWithoutXPubs(t *testing.T) {
-	_btc_net = "testnet3"
+	_btc_net = "testnet4"
 	packet := &psbt.Packet{}
 	candidates := pathCandidates(packet, []uint32{0, 1})
 	want := "m/44'/1'/0'/0/1"
@@ -93,7 +93,7 @@ func TestPathCandidatesSparrowBIP44RelativeWithoutXPubs(t *testing.T) {
 }
 
 func TestEnumerateStandardWalletPathsIncludesBIP44(t *testing.T) {
-	_btc_net = "testnet3"
+	_btc_net = "testnet4"
 	paths := enumerateStandardWalletPaths(0)
 	if !containsPath(paths, "m/44'/1'/0'/0/0") {
 		t.Fatalf("expected BIP44 receive path in enumeration, got sample %v", paths[:min(6, len(paths))])
