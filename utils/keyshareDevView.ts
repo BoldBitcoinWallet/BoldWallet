@@ -67,7 +67,7 @@ export function formatKeyshareMetadataForCopy(
 export function prettyPrintKeyshareJson(data: Record<string, unknown>): string {
   // Spec v2: dev full-JSON copy strips chain_code_hex. The master chaincode
   // must not leave the phone via copy-paste; derive from the encrypted blob.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars — rest-pattern omit
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-pattern omit
   const {chain_code_hex: _stripped, ...rest} = data;
   // JSON doesn't support Infinity/NaN/BigInt. If they exist in-memory (or come
   // from native decoding), default JSON.stringify either turns them into null
