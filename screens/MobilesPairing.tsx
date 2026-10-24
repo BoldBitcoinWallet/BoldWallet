@@ -545,7 +545,11 @@ const MobilesPairing = ({navigation}: any) => {
             const sid = activeMpcSessionIdRef.current;
             if (sid) {
               try {
-                const cancelResult = await TssProvider.cancelMpcSession(sid);
+                // 3b-4 B19: class selects the stuck-cancel mint only.
+          const cancelResult = await TssProvider.cancelMpcSession(
+            sid,
+            isKeygen ? 'keygen' : 'sign',
+          );
                 dbg('MobilesPairing: cancelMpcSession', cancelResult.outcome);
               } catch (e) {
                 dbg('MobilesPairing: cancelMpcSession failed', e);

@@ -1,10 +1,13 @@
 import {Alert} from 'react-native';
 import {
   completeCeremonyToken,
+  isCeremonyAuthRejection,
   newCeremonySessionID,
   releaseCeremonyToken,
   requestConfigCeremonyToken,
 } from './ceremonyAuth';
+
+export {isCeremonyAuthRejection};
 import {resolveStoredMempoolApiBase} from './mempoolApiBase';
 import {TssProvider} from './TssProvider';
 
@@ -20,12 +23,6 @@ import {TssProvider} from './TssProvider';
  */
 
 export type ApiUrlConfirmFn = (urls: string[]) => Promise<boolean>;
-
-export function isCeremonyAuthRejection(error: unknown): boolean {
-  return (
-    (error as {code?: unknown} | null)?.code === 'CEREMONY_AUTH_REQUIRED'
-  );
-}
 
 /** In-app confirm showing the exact URLs (the OS prompt cannot). */
 export function defaultConfirmApiUrls(urls: string[]): Promise<boolean> {

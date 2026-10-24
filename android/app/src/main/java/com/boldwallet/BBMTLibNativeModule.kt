@@ -587,8 +587,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun cancelMpcSession(sessionID: String, promise: Promise) {
+    fun cancelMpcSession(sessionID: String, ceremonyToken: String, promise: Promise) {
         try {
+            // 3b-4 B19: cancel consumes the ceremony token (same
+            // op+session) and atomically revokes the session.
+            if (!CeremonyTokens.cancelConsume(ceremonyToken, sessionID)) {
+                rejectCeremonyUnauthorized(promise)
+                return
+            }
             if (rejectBbmtUnavailable(promise, "cancelMpcSession")) return
             val out = DklsNative.bbmtCancelMpcSessionNative(sessionID)
             promise.resolve(out)
@@ -598,8 +604,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun cancelNostrMpc(promise: Promise) {
+    fun cancelNostrMpc(ceremonyToken: String, promise: Promise) {
         try {
+            // 3b-4 B19: global cancel consumes a live ceremony
+            // token; the token's own session scopes revocation.
+            if (!CeremonyTokens.cancelConsume(ceremonyToken, null)) {
+                rejectCeremonyUnauthorized(promise)
+                return
+            }
             if (rejectBbmtUnavailable(promise, "cancelNostrMpc")) return
             val out = DklsNative.bbmtCancelNostrMpcNative()
             promise.resolve(out)
@@ -1795,9 +1807,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun dklsCancelMpcSession(sessionID: String, promise: Promise) {
+    fun dklsCancelMpcSession(sessionID: String, ceremonyToken: String, promise: Promise) {
         Thread {
             try {
+                // 3b-4 B19: cancel consumes the ceremony token (same
+                // op+session) and atomically revokes the session.
+                if (!CeremonyTokens.cancelConsume(ceremonyToken, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "dklsCancelMpcSession")) return@Thread
                 DklsNative.cancelMpcSessionNative(sessionID)
                 promise.resolve(null)
@@ -1808,9 +1826,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun dklsCancelNostrMpc(promise: Promise) {
+    fun dklsCancelNostrMpc(ceremonyToken: String, promise: Promise) {
         Thread {
             try {
+                // 3b-4 B19: global cancel consumes a live ceremony
+                // token; the token's own session scopes revocation.
+                if (!CeremonyTokens.cancelConsume(ceremonyToken, null)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "dklsCancelNostrMpc")) return@Thread
                 DklsNative.cancelNostrMpcNative()
                 promise.resolve(null)

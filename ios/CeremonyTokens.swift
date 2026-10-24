@@ -130,6 +130,35 @@ enum CeremonyTokens {
     verifyInner(token: token, allowedClasses: [.sign, .keygen], sessionID: sessionID)
   }
 
+  /// 3b-4 B19: authorize cancel AND atomically revoke the token's
+  /// session (false = reject, nothing revoked). Accepts live
+  /// sign|keygen tokens; when the call carries a session it must
+  /// match, else (nostr global cancel) the token's own session
+  /// scopes the revocation. Atomicity closes the
+  /// authorize→revoke TOCTOU (no concurrent verify can slip
+  /// through); revocation precedes the Go cancel broadcast, so a
+  /// failed broadcast still leaves the ceremony dead. Same
+  /// TTL-start rule as verify.
+  static func cancelConsume(token: String, sessionID: String?) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard var rec = tokens[token] else { return false }
+    if isTerminal(rec.state) { return false }
+    if rec.state == .minted && nowMs() > rec.expiresAtMs {
+      rec.state = .expired
+      tokens[token] = rec
+      return false
+    }
+    if rec.opClass != .sign && rec.opClass != .keygen {
+      return false
+    }
+    if let sessionID, !sessionID.isEmpty && rec.sessionID != sessionID {
+      return false
+    }
+    revokeSessionInner(rec.sessionID)
+    return true
+  }
+
   private static func verifyInner(token: String, allowedClasses: Set<CeremonyOpClass>, sessionID: String?) -> Bool {
     lock.lock()
     defer { lock.unlock() }
@@ -177,6 +206,12 @@ enum CeremonyTokens {
   static func revokeSession(sessionID: String) {
     lock.lock()
     defer { lock.unlock() }
+    revokeSessionInner(sessionID)
+  }
+
+  /// Lock-free inner revoke (NSLock is non-reentrant: callers
+  /// already holding the lock use this).
+  private static func revokeSessionInner(_ sessionID: String) {
     for id in tokens.keys {
       if var rec = tokens[id], rec.sessionID == sessionID, !isTerminal(rec.state) {
         rec.state = .revoked

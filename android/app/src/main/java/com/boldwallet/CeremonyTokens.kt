@@ -143,6 +143,36 @@ object CeremonyTokens {
         return verifyInner(token, setOf(OpClass.SIGN, OpClass.KEYGEN), sessionID)
     }
 
+    /**
+     * 3b-4 B19: authorize cancel AND atomically revoke the token's
+     * session (false = reject, nothing revoked). Accepts live
+     * sign|keygen tokens; when the call carries a session it must
+     * match, else (nostr global cancel) the token's own session
+     * scopes the revocation. Atomicity closes the
+     * authorize→revoke TOCTOU (no concurrent verify can slip
+     * through); revocation precedes the Go cancel broadcast, so a
+     * failed broadcast still leaves the ceremony dead. Same
+     * TTL-start rule as verify.
+     */
+    fun cancelConsume(token: String, sessionID: String?): Boolean {
+        synchronized(lock) {
+            val rec = tokens[token] ?: return false
+            if (isTerminal(rec.state)) return false
+            if (rec.state == State.MINTED && nowMs() > rec.expiresAtMs) {
+                tokens[token] = rec.copy(state = State.EXPIRED)
+                return false
+            }
+            if (rec.opClass != OpClass.SIGN && rec.opClass != OpClass.KEYGEN) {
+                return false
+            }
+            if (!sessionID.isNullOrEmpty() && rec.sessionID != sessionID) {
+                return false
+            }
+            revokeSession(rec.sessionID)
+            return true
+        }
+    }
+
     private fun verifyInner(
         token: String,
         allowedClasses: Set<OpClass>,

@@ -1,6 +1,9 @@
 import {BBMTLibNativeModule} from '../native_modules';
 import {
   completeCeremonyToken,
+  findLiveCeremonyToken,
+  getSessionToken,
+  isCeremonyAuthRejection,
   newCeremonySessionID,
   releaseCeremonyToken,
   requestExportCeremonyToken,
@@ -67,6 +70,57 @@ async function withCeremonyToken<T>(
       }
     }
     throw error;
+  }
+}
+
+/**
+ * 3b-4 B19: cancel token scope. Prefer the live session token
+ * (no new prompt on abort); on auth rejection (stale, expired,
+ * or GG18 with no ceremony) mint fresh for the same session —
+ * the B19 stuck-cancel re-auth (OS prompt). Native consumes the
+ * token and atomically revokes its session; JS evicts its entry
+ * afterwards (release is idempotent over the revoked state).
+ * ceremonyClass only selects the stuck-mint (prompt copy must
+ * match the doomed ceremony); live tokens pass through whole.
+ */
+async function withCancelToken<T>(
+  sessionID: string | null,
+  ceremonyClass: 'sign' | 'keygen',
+  invoke: (token: string) => Promise<T>,
+): Promise<T> {
+  const live =
+    sessionID !== null
+      ? getSessionToken(sessionID)?.token
+      : findLiveCeremonyToken()?.token;
+  if (live !== undefined) {
+    try {
+      const out = await invoke(live);
+      try {
+        await releaseCeremonyToken(live);
+      } catch {
+        /* logged in ceremonyAuth; cancel stands */
+      }
+      return out;
+    } catch (error) {
+      if (!isCeremonyAuthRejection(error)) {
+        throw error;
+      }
+      // Stale live entry → fall through to a fresh mint.
+    }
+  }
+  const freshSession = sessionID ?? (await newCeremonySessionID('cancel'));
+  const fresh =
+    ceremonyClass === 'keygen'
+      ? await requestKeygenCeremonyToken(freshSession)
+      : await requestSignCeremonyToken(freshSession);
+  try {
+    return await invoke(fresh);
+  } finally {
+    try {
+      await releaseCeremonyToken(fresh);
+    } catch {
+      /* logged in ceremonyAuth */
+    }
   }
 }
 
@@ -614,25 +668,31 @@ export const TssProvider = {
     );
   },
 
-  async cancelMpcSession(sessionID: string): Promise<MpcCancelResult> {
+  async cancelMpcSession(
+    sessionID: string,
+    // Stuck-mint class (live tokens pass through regardless).
+    ceremonyClass: 'sign' | 'keygen' = 'sign',
+  ): Promise<MpcCancelResult> {
     return safeCancelMpc('session', async () => {
       const backend = await resolveTssBackend();
-      if (backend === 'dkls23') {
-        await BBMTLibNativeModule.dklsCancelMpcSession(sessionID);
-        return;
-      }
-      await BBMTLibNativeModule.cancelMpcSession(sessionID);
+      await withCancelToken(sessionID, ceremonyClass, token =>
+        backend === 'dkls23'
+          ? BBMTLibNativeModule.dklsCancelMpcSession(sessionID, token)
+          : BBMTLibNativeModule.cancelMpcSession(sessionID, token),
+      );
     });
   },
 
-  async cancelNostrMpc(): Promise<MpcCancelResult> {
+  async cancelNostrMpc(
+    ceremonyClass: 'sign' | 'keygen' = 'sign',
+  ): Promise<MpcCancelResult> {
     return safeCancelMpc('nostr', async () => {
       const backend = await resolveTssBackend();
-      if (backend === 'dkls23') {
-        await BBMTLibNativeModule.dklsCancelNostrMpc();
-        return;
-      }
-      await BBMTLibNativeModule.cancelNostrMpc();
+      await withCancelToken(null, ceremonyClass, token =>
+        backend === 'dkls23'
+          ? BBMTLibNativeModule.dklsCancelNostrMpc(token)
+          : BBMTLibNativeModule.cancelNostrMpc(token),
+      );
     });
   },
 

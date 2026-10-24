@@ -241,6 +241,31 @@ harness PASSED (86 checks), assembleDebug (NDK) + iOS Debug
 green, JNI 65 symbols no dupes, tsc 32 pre-existing, eslint
 clean. Full jest 703 passed, same 6 pre-existing failures.
 
+3b-4 GREEN (B19 cancel gating + F4-auth): all 4 cancels take
+a ceremony token (same op+session) and natively ATOMICALLY
+revoke the session (cancelConsume: authorize+revoke under
+one lock — no authorize→revoke TOCTOU; revocation precedes
+the Go broadcast so a failed broadcast still leaves the
+ceremony dead; Swift needed a lock-free inner revoke,
+NSLock is non-reentrant). Sessioned cancels verify session
+equality; nostr global cancels scope revocation to the
+token's own session. JS prefers the live token (no prompt
+on abort; nostr finds the sole live ceremony) and falls
+back to a fresh same-session mint (B19 stuck-cancel,
+OS prompt; also covers GG18 flows which never minted).
+Stuck-mint class threaded from both abort sites (isKeygen;
+live tokens pass through regardless). F4-auth: verified
+(both prompts are biometric-or-device-credential with
+no-lock refuse, mint only on success) and pinned by
+f4CeremonyAuth source-text suite (single release mint per
+platform, 5 entries via promptAndMint, DEBUG mint stays
+eliminated). isCeremonyAuthRejection hoisted to ceremonyAuth
+(cycle-free; apiConfigApply re-exports). Evidence:
+tssCancelTokenGating 6/6, f4CeremonyAuth 8/8, JVM 23/23,
+harness PASSED (98 checks), iOS Debug + Android release
+green, tsc 32 pre-existing, eslint 0 errors. Full jest 717
+passed, same 6 pre-existing failures.
+
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
   arm64 emulator (pure-Go build; x/crypto/argon2 has amd64 asm only, so ARM

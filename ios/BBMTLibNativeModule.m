@@ -285,10 +285,12 @@ RCT_EXTERN_METHOD(dklsNostrMpcTssSetup:(NSString *)relaysCSV
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(dklsCancelMpcSession:(NSString *)sessionID
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-RCT_EXTERN_METHOD(dklsCancelNostrMpc:(RCTPromiseResolveBlock)resolve
+RCT_EXTERN_METHOD(dklsCancelNostrMpc:(NSString *)ceremonyToken
+                  resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(dklsMpcSignPSBT:(NSString *)server
@@ -362,11 +364,13 @@ RCT_EXTERN_METHOD(computeTxId:(NSString *)rawTxHex
 
 // Cancel server-based MPC session (sessionID prefix)
 RCT_EXTERN_METHOD(cancelMpcSession:(NSString *)sessionID
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Cancel active Nostr MPC operation (best-effort)
-RCT_EXTERN_METHOD(cancelNostrMpc:(RCTPromiseResolveBlock)resolve
+RCT_EXTERN_METHOD(cancelNostrMpc:(NSString *)ceremonyToken
+                  resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Minimal keyshare fields for Nostr UI/session prep (full blob never sent to JS)

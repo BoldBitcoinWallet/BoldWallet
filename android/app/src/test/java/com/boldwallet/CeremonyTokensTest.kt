@@ -188,6 +188,44 @@ class CeremonyTokensTest {
     }
 
     @Test
+    fun testF10bridge_CancelConsumeRevokesSession() {
+        // 3b-4 B19: authorize + atomic session revoke.
+        val s = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "cx-1")
+        assertTrue(CeremonyTokens.cancelConsume(s, "cx-1"))
+        assertEquals(CeremonyTokens.State.REVOKED, CeremonyTokens.stateOf(s))
+        // Consumed token cannot authorize again.
+        assertFalse(CeremonyTokens.cancelConsume(s, "cx-1"))
+        assertFalse(CeremonyTokens.verify(s, CeremonyTokens.OpClass.SIGN, "cx-1"))
+    }
+
+    @Test
+    fun testF10bridge_CancelConsumeSessionRules() {
+        val k = CeremonyTokens.mint(CeremonyTokens.OpClass.KEYGEN, "cx-2")
+        // Nostr path: no session carried, token's own session revoked.
+        assertTrue(CeremonyTokens.cancelConsume(k, null))
+        assertEquals(CeremonyTokens.State.REVOKED, CeremonyTokens.stateOf(k))
+        val s = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "cx-3")
+        // Carried session must match; mismatch revokes nothing.
+        assertFalse(CeremonyTokens.cancelConsume(s, "cx-4"))
+        assertEquals(CeremonyTokens.State.MINTED, CeremonyTokens.stateOf(s))
+        assertTrue(CeremonyTokens.verify(s, CeremonyTokens.OpClass.SIGN, "cx-3"))
+    }
+
+    @Test
+    fun testF10bridge_CancelConsumeRejectsOtherClasses() {
+        val e = CeremonyTokens.mint(CeremonyTokens.OpClass.EXPORT, "cx-1")
+        assertFalse(CeremonyTokens.cancelConsume(e, "cx-1"))
+        val c = CeremonyTokens.mint(CeremonyTokens.OpClass.CONFIG, "cx-1")
+        assertFalse(CeremonyTokens.cancelConsume(c, null))
+        val i = CeremonyTokens.mint(CeremonyTokens.OpClass.IMPORT, "cx-1")
+        assertFalse(CeremonyTokens.cancelConsume(i, null))
+        assertFalse(CeremonyTokens.cancelConsume("tok0000000000000000000000000099", "cx-1"))
+        val s = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "cx-9")
+        CeremonyTokens.release(s)
+        assertFalse(CeremonyTokens.cancelConsume(s, "cx-9"))
+    }
+
+    @Test
     fun testF15b2_ExportSingleCallRoundTrip() {
         // 3b-3 A12: backup export mints export, verifies single-call.
         val t = CeremonyTokens.mint(CeremonyTokens.OpClass.EXPORT, "exp-1")

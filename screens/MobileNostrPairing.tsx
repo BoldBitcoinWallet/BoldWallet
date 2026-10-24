@@ -715,7 +715,10 @@ const MobileNostrPairing = ({navigation}: any) => {
               setSpendSignOutcome('aborted');
             }
             try {
-              const cancelResult = await TssProvider.cancelNostrMpc();
+              // 3b-4 B19: class selects the stuck-cancel mint only.
+              const cancelResult = await TssProvider.cancelNostrMpc(
+                isKeygen ? 'keygen' : 'sign',
+              );
               dbg('MobileNostrPairing: cancelNostrMpc', cancelResult.outcome);
             } catch (e) {
               dbg('MobileNostrPairing: cancelNostrMpc failed', e);

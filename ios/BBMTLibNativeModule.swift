@@ -1172,9 +1172,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsCancelMpcSession(
-    _ sessionID: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ sessionID: String, ceremonyToken: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-4 B19: cancel consumes the ceremony token (same
+    // op+session) and atomically revokes the session.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     if BbmtBridge.isAvailable() {
       BbmtBridge.cancelMpcSession(sessionID)
     }
@@ -1182,8 +1188,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsCancelNostrMpc(
-    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    _ ceremonyToken: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-4 B19: global cancel consumes a live ceremony
+    // token; the token's own session scopes revocation.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: nil) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     if BbmtBridge.isAvailable() {
       BbmtBridge.cancelNostrMpc()
     }
@@ -1376,10 +1389,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func cancelMpcSession(
-    _ sessionID: String,
+    _ sessionID: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-4 B19: cancel consumes the ceremony token (same
+    // op+session) and atomically revokes the session.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async {
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -1396,9 +1415,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func cancelNostrMpc(
-    _ resolver: @escaping RCTPromiseResolveBlock,
+    _ ceremonyToken: String,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-4 B19: global cancel consumes a live ceremony
+    // token; the token's own session scopes revocation.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: nil) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async {
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)

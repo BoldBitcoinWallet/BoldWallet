@@ -50,6 +50,23 @@ export function getSessionToken(
   return sessionTokens.get(sessionID);
 }
 
+/**
+ * 3b-4 B19: first live (sign|keygen) ceremony for session-less
+ * cancels (nostr). Single-live-session keeps ≤1 non-terminal
+ * entry; a stale entry fails natively and the cancel path
+ * falls back to a fresh mint (B19 stuck-cancel).
+ */
+export function findLiveCeremonyToken():
+  | {sessionID: string; token: string; op: CeremonyOpClass}
+  | undefined {
+  for (const [sessionID, entry] of sessionTokens) {
+    if (entry.op === 'sign' || entry.op === 'keygen') {
+      return {sessionID, token: entry.token, op: entry.op};
+    }
+  }
+  return undefined;
+}
+
 function evictSessionTokenByValue(token: string): void {
   for (const [sessionID, entry] of sessionTokens) {
     if (entry.token === token) {
@@ -66,6 +83,13 @@ function evictSessionTokenByValue(token: string): void {
 export async function newCeremonySessionID(purpose: string): Promise<string> {
   return BBMTLibNativeModule.sha256(
     `ceremony/${purpose}/${Date.now()}/${Math.random()}`,
+  );
+}
+
+/** True when a native call was rejected for missing/invalid ceremony auth. */
+export function isCeremonyAuthRejection(error: unknown): boolean {
+  return (
+    (error as {code?: unknown} | null)?.code === 'CEREMONY_AUTH_REQUIRED'
   );
 }
 
