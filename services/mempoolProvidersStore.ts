@@ -110,7 +110,7 @@ export function primaryProviderUrl(list: MempoolProviderEntry[]): string {
 
 /**
  * Compact host for the header pill.
- * Mainnet: `mempool.space`. Testnet: `mempool.space/testnet` (path kept so it
+ * Mainnet: `mempool.space`. Testnet: `mempool.space/testnet4` (path kept so it
  * does not look like the mainnet mirror of the same host).
  */
 export function hostnameFromMempoolApiBase(apiBase: string): string {
@@ -127,6 +127,9 @@ export function hostnameFromMempoolApiBase(apiBase: string): string {
   }
   const host = cleaned.slice(0, slash);
   const path = cleaned.slice(slash + 1).toLowerCase();
+  if (path === 'testnet4' || path.startsWith('testnet4/')) {
+    return `${host}/testnet4`;
+  }
   if (path === 'testnet' || path.startsWith('testnet/')) {
     return `${host}/testnet`;
   }
@@ -146,7 +149,7 @@ export type HeaderProviderDisplay = {
 };
 
 function isTestnetMempoolApiBase(apiBase: string): boolean {
-  return /\/testnet(\/|$)/i.test(apiBase || '');
+  return /\/testnet4?(\/|$)/i.test(apiBase || '');
 }
 
 /**

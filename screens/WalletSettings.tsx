@@ -704,7 +704,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           appConfigRepository.get('api') ||
           (network === 'mainnet'
             ? 'https://mempool.space/api'
-            : 'https://mempool.space/testnet/api');
+            : 'https://mempool.space/testnet4/api');
 
         // ── Step 2: flush in-memory caches before discovery ───────────────
         // Every isAddressUsed call inside discoverHdIndexesForNetwork must
@@ -827,7 +827,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         appConfigRepository.get('api') ||
         (network === 'mainnet'
           ? 'https://mempool.space/api'
-          : 'https://mempool.space/testnet/api');
+          : 'https://mempool.space/testnet4/api');
 
       appConfigRepository.set(CONFIG_KEYS.NETWORK, network);
       appConfigRepository.set('api', apiUrl);
@@ -970,7 +970,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         resolvedApi =
           net === 'mainnet'
             ? 'https://mempool.space/api'
-            : 'https://mempool.space/testnet/api';
+            : 'https://mempool.space/testnet4/api';
         appConfigRepository.set('api', resolvedApi);
         if (net) appConfigRepository.set(`api_${net}`, resolvedApi);
       }
@@ -995,8 +995,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     options?: {silent?: boolean},
   ): Promise<boolean> => {
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
-    const previousNetwork = value ? 'mainnet' : 'testnet3';
-    const newNetwork = value ? 'testnet3' : 'mainnet';
+    const previousNetwork = value ? 'mainnet' : 'testnet4';
+    const newNetwork = value ? 'testnet4' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
     setIsTestnet(value);
     await setActiveNetwork(newNetwork);
@@ -2825,7 +2825,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   activeApiProvider ||
                   (activeNetwork === 'mainnet'
                     ? 'https://mempool.space/api'
-                    : 'https://mempool.space/testnet/api');
+                    : 'https://mempool.space/testnet4/api');
                 try {
                   await runRestoreIndexing(
                     activeNetwork,
@@ -3813,7 +3813,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     style={styles.networkIcon}
                     resizeMode="contain"
                   />
-                  <Text style={styles.toggleLabel}>Testnet3</Text>
+                  <Text style={styles.toggleLabel}>Testnet4</Text>
                 </View>
               </View>
               {/* Debug Logging — Android only (logcat) */}

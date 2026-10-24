@@ -13,7 +13,7 @@ Usage:
     --to-address <address> \\
     --amount-sats <amount> \\
     --fee-sats <fee> \\
-    --network <mainnet|testnet3> \\
+    --network <mainnet|testnet4> \\
     --mempool-url <url> \\
     [--derivation-path <path>] \\
     [--address-type <p2pkh|p2wpkh|p2sh-p2wpkh|p2tr>] \\
@@ -26,8 +26,8 @@ Examples:
     --to-address tb1qdest... \\
     --amount-sats 10000 \\
     --fee-sats 300 \\
-    --network testnet3 \\
-    --mempool-url https://mempool.space/testnet/api \\
+    --network testnet4 \\
+    --mempool-url https://mempool.space/testnet4/api \\
     --derivation-path "m/84'/1'/0'/0/0" \\
     --address-type p2wpkh \\
     --passphrase1 "party1 secret" \\
@@ -69,11 +69,11 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     --network)
-      NETWORK="$2"   # mainnet | testnet3
+      NETWORK="$2"   # mainnet | testnet4
       shift 2
       ;;
     --mempool-url)
-      MEMPOOL_URL="$2"  # e.g. https://mempool.space/testnet/api
+      MEMPOOL_URL="$2"  # e.g. https://mempool.space/testnet4/api
       shift 2
       ;;
     --derivation-path)

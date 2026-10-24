@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useCallback, useEffect } fr
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {
   CANONICAL_TESTNET_MEMPOOL_API_BASE,
+  getStoredNetworkKey,
   resolveStoredMempoolApiBase,
 } from '../services/mempoolApiBase';
 import {
@@ -45,7 +46,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const refreshFromCache = useCallback(async () => {
     try {
       dbg('=== NetworkContext: Refreshing from cache');
-      const net = appConfigRepository.get(CONFIG_KEYS.NETWORK);
+      const net = getStoredNetworkKey();
       dbg('NetworkContext: Network from cache:', net);
       if (net) {
         setNetwork(net);
@@ -107,7 +108,7 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
   useEffect(() => {
     const initializeContext = async () => {
       try {
-        const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+        const net = getStoredNetworkKey();
         setNetwork(net);
         let api = appConfigRepository.get(`api_${net}`) || appConfigRepository.get('api');
         if (!api) {

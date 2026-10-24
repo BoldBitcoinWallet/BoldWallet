@@ -26,7 +26,8 @@ const PairingSpendStickyFooter: React.FC<PairingSpendStickyFooterProps> = ({
 }) => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
-  const isTestnet = network === 'testnet3' || network === 'testnet';
+  const isTestnet =
+    network === 'testnet4' || network === 'testnet' || network === 'testnet3';
 
   const styles = StyleSheet.create({
     wrap: {

@@ -15,7 +15,7 @@ import Foundation
 enum CeremonyApiAllowlist {
   static let seeds: Set<String> = [
     "https://mempool.space/api",
-    "https://mempool.space/testnet/api",
+    "https://mempool.space/testnet4/api",
   ]
 
   /// Trim + strip trailing slashes. Compared and stored normalized.

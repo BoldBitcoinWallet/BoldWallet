@@ -1,6 +1,6 @@
 jest.mock('../services/mempoolApiBase', () => ({
-  normalizeNetworkKey: (n: string) => (n === 'testnet' ? 'testnet3' : n),
-  resolveStoredMempoolApiBase: () => 'https://mempool.space/testnet/api',
+  normalizeNetworkKey: (n: string) => (n === 'testnet' || n === 'testnet3' ? 'testnet4' : n),
+  resolveStoredMempoolApiBase: () => 'https://mempool.space/testnet4/api',
 }));
 
 jest.mock('../services/repositories/UtxoRepository', () => ({
@@ -57,7 +57,7 @@ describe('prepareSendBtcMultiPathInputs', () => {
       },
     ]);
     const result = await prepareSendBtcMultiPathInputs({
-      network: 'testnet',
+      network: 'testnet4',
       addressType: 'segwit-native',
       utxosJsonFromRoute: utxosJson,
       changeAddressFromRoute: 'tb1qchg',
@@ -76,7 +76,7 @@ describe('prepareSendBtcMultiPathInputs', () => {
 
   it('derives scriptpubkey from compact QR addresses without network hydrate', async () => {
     const result = await prepareSendBtcMultiPathInputs({
-      network: 'testnet',
+      network: 'testnet4',
       addressType: 'segwit-native',
       utxosJsonFromRoute: JSON.stringify([compactRouteUtxo]),
       changeAddressFromRoute: 'tb1qchg',
@@ -97,7 +97,7 @@ describe('prepareSendBtcMultiPathInputs', () => {
         txid: compactRouteUtxo.txid,
         vout: 0,
         address: compactRouteUtxo.address,
-        network: 'testnet3',
+        network: 'testnet4',
         valueSats: 100000,
         scriptPubkey: '0014fromdb',
         derivationPath: "m/84'/1'/0'/0/0",
@@ -108,7 +108,7 @@ describe('prepareSendBtcMultiPathInputs', () => {
       },
     ]);
     const result = await prepareSendBtcMultiPathInputs({
-      network: 'testnet',
+      network: 'testnet4',
       addressType: 'segwit-native',
       utxosJsonFromRoute: JSON.stringify([compactRouteUtxo]),
       changeAddressFromRoute: 'tb1qchg',
@@ -134,7 +134,7 @@ describe('prepareSendBtcMultiPathInputs', () => {
       },
     ]);
     const result = await prepareSendBtcMultiPathInputs({
-      network: 'testnet3',
+      network: 'testnet3', // legacy alias input: still routes to testnet4
       addressType: 'segwit-native',
       senderDerivationPath: "m/84'/1'/0'/0/0",
     });
@@ -151,7 +151,7 @@ describe('prepareSendBtcMultiPathInputs', () => {
     mockWs.fetchUtxosAtPath.mockResolvedValue([]);
     await expect(
       prepareSendBtcMultiPathInputs({
-        network: 'testnet3',
+        network: 'testnet', // legacy alias input: still routes to testnet4
         addressType: 'segwit-native',
         senderDerivationPath: "m/84'/1'/0'/0/0",
       }),
@@ -181,7 +181,7 @@ describe('prepareSendBtcMultiPathInputs', () => {
         txid: compactRouteUtxo.txid,
         vout: 0,
         address: compactRouteUtxo.address,
-        network: 'testnet3',
+        network: 'testnet4',
         valueSats: 100000,
         scriptPubkey: '0014fromdb',
         derivationPath: compactRouteUtxo.derivation_path,
@@ -194,7 +194,7 @@ describe('prepareSendBtcMultiPathInputs', () => {
         txid: 'bb'.repeat(32),
         vout: 1,
         address: compactRouteUtxo.address,
-        network: 'testnet3',
+        network: 'testnet4',
         valueSats: 50000,
         scriptPubkey: '0014extra',
         derivationPath: "m/84'/1'/0'/0/1",
@@ -205,7 +205,7 @@ describe('prepareSendBtcMultiPathInputs', () => {
       },
     ]);
     const result = await prepareSendBtcMultiPathInputs({
-      network: 'testnet',
+      network: 'testnet4',
       addressType: 'segwit-native',
       utxosJsonFromRoute: JSON.stringify([compactRouteUtxo]),
       changeAddressFromRoute: 'tb1qchg',

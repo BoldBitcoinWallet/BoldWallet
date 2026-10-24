@@ -39,16 +39,16 @@ The binary has the same interface as `spend-bitcoin.sh`:
 ```bash
 # Preview fee estimate
 ./bold-spend --to-address tb1q... --amount-sats 10000 \
-  --network testnet3 --mempool-url https://mempool.space/testnet/api --preview
+  --network testnet4 --mempool-url https://mempool.space/testnet4/api --preview
 
 # Send transaction
 ./bold-spend --to-address tb1q... --amount-sats 10000 --fee-sats 226 \
-  --network testnet3 --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/84'/1'/0'/0/0" --address-type p2wpkh
 
 # With encrypted keyshares
 ./bold-spend --to-address tb1q... --amount-sats 10000 --fee-sats 226 \
-  --network testnet3 --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 --mempool-url https://mempool.space/testnet4/api \
   --passphrase1 "secret1" --passphrase2 "secret2"
 ```
 

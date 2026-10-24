@@ -302,7 +302,7 @@ class MempoolClient {
    */
   private _getUrlsToTry(url: string): string[] | null {
     if (this._enabledHosts.length === 0) return null;
-    if (url.includes('/testnet/')) return null;
+    if (/\/testnet4?\//.test(url)) return null;
 
     const host = extractHost(url);
     const path = host ? url.slice(host.length) : url.startsWith('/') ? url : `/${url}`;

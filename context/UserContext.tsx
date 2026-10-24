@@ -8,7 +8,10 @@ import React, {
 } from 'react';
 import {DeviceEventEmitter} from 'react-native';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
-import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {
+  getStoredNetworkKey,
+  resolveStoredMempoolApiBase,
+} from '../services/mempoolApiBase';
 import {BBMTLibNativeModule} from '../native_modules';
 import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {
@@ -182,7 +185,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   useEffect(() => {
     const initializeNetwork = async () => {
       try {
-        const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+        const net = getStoredNetworkKey();
         setNetwork(net);
         const api = resolveStoredMempoolApiBase(net);
         const apiKey = `api_${net}`;
@@ -331,7 +334,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         await deriveAllAddressesForNetwork(pub, actualNet);
         // For the other network, we need to derive a separate btcPub with that network's path
         // because btcPub is network-specific (derivation path includes coin type: 0' for mainnet, 1' for testnet)
-        const otherNet = actualNet === 'mainnet' ? 'testnet3' : 'mainnet';
+        const otherNet = actualNet === 'mainnet' ? 'testnet4' : 'mainnet';
         const useLegacyPathOther = resolveUseLegacyDerivationPaths(ks);
         const otherExternalIndex = await getExternalIndex(otherNet, currentAddressType);
         const otherPath = getReceivePath(

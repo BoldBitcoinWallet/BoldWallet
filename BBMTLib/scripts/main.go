@@ -177,7 +177,7 @@ func main() {
 				fmt.Printf("Failed to generate btc pubkey for %s: %v\n", party, err)
 			} else {
 				fmt.Printf("%s BTC Public Key: %s\n", party, btcPub)
-				btcP2Pkh, err := tss.PubToP2KH(btcPub, "testnet3")
+				btcP2Pkh, err := tss.PubToP2KH(btcPub, "testnet4")
 				if err != nil {
 					fmt.Printf("Failed to generate btc address for %s: %v\n", party, err)
 				} else {
@@ -262,8 +262,8 @@ func main() {
 		// 11: destination address (receiver)
 		// 12: amount in satoshis
 		// 13: fee in satoshis (already estimated/negotiated)
-		// 14: network (mainnet | testnet3)
-		// 15: mempool URL base (e.g. https://mempool.space/testnet/api)
+		// 14: network (mainnet | testnet4)
+		// 15: mempool URL base (e.g. https://mempool.space/testnet4/api)
 
 		if len(os.Args) < 16 {
 			fmt.Fprintf(os.Stderr, "Usage: %s spend <server> <session_id> <party_id> <parties_csv> <enc_key> <dec_key> <keyshare_json_or_b64> <derivation_path> <address_type> <to_address> <amount_sats> <fee_sats> <network> <mempool_url>\n", os.Args[0])
@@ -596,7 +596,7 @@ func main() {
 		fmt.Printf("%s BTC Public Key: %s\n", partyName, btcPub)
 
 		// Generate BTC address
-		btcP2Pkh, err := tss.PubToP2KH(btcPub, "testnet3")
+		btcP2Pkh, err := tss.PubToP2KH(btcPub, "testnet4")
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Failed to generate btc address for %s: %v\n", partyName, err)
 			os.Exit(1)

@@ -665,7 +665,7 @@ func PsbtIdentityHash(psbtBase64 string) (string, error) {
 func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
 	defer RecoverAsError("ParsePSBTDetails", &err, &result)
 
-	params := &chaincfg.TestNet3Params
+	params := &TestNet4Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 	}

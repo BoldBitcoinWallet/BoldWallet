@@ -32,7 +32,7 @@ class CeremonyApiAllowlistTest {
     @Test
     fun testF10bridge_SeedsMatchJsDefaults() {
         assertTrue(CeremonyApiAllowlist.SEEDS.contains("https://mempool.space/api"))
-        assertTrue(CeremonyApiAllowlist.SEEDS.contains("https://mempool.space/testnet/api"))
+        assertTrue(CeremonyApiAllowlist.SEEDS.contains("https://mempool.space/testnet4/api"))
     }
 
     @Test

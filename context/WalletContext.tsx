@@ -11,7 +11,10 @@ import {
 } from '../utils';
 import {chaincodeHexFromBlob} from '../services/chaincodeReader';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
-import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {
+  getStoredNetworkKey,
+  resolveStoredMempoolApiBase,
+} from '../services/mempoolApiBase';
 import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {getExternalIndex} from '../services/HdIndexService';
 const {BBMTLibNativeModule} = NativeModules;
@@ -53,7 +56,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
         dbg('WalletContext: No keyshare found, skipping wallet refresh');
         return;
       }
-      let net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+      let net = getStoredNetworkKey();
       if (!appConfigRepository.get(CONFIG_KEYS.NETWORK)) {
         appConfigRepository.set(CONFIG_KEYS.NETWORK, net);
       }

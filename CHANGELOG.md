@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+- **Testnet3 → Testnet4** — the testnet network now uses Bitcoin Testnet4 parameters (chain params, address prefixes, default port 48333) and `https://mempool.space/testnet4/api` as the canonical mempool endpoint, following the public deprecation of Testnet3 (reset/exploit, sunset by mempool.space). Legacy `testnet` / `testnet3` network keys and stored provider URLs are accepted as aliases and normalized to `testnet4` on read; v2 address/UTXO cache rows keyed under `testnet3` are purged on first launch, v1 history preserved. Regtest and mainnet are unchanged.
+
 ## [4.0.6] - 2026-08-25
 
 > **Patch release:** Explorer traffic is now observable as a slow/fail hint instead of silent hangs; Send no longer treats a timeout as a zero balance. Mempool REST hosts are a checkable list (like Nostr relays) with ranked failover over enabled URLs only; the header shows `host +N` when a pool is active. A keyshare can move airgap via encrypted animated QR (Settings two-step PIN-then-QR export, Welcome restore) locked with a CSPRNG 6-digit PIN. Dimmed modals use a shared frosted glass blur backdrop. Android Play packaging is camera/GPS-optional, LAN pairing uses Nearby Wi-Fi on Android 13+, and sharing a keyshare from WhatsApp/Telegram actually opens Bold. Branta merchant verify is **opt-in (default off)** with SDK **3.2.1** address-mismatch / tamper detection; history shows the merchant name (not “Paying undefined”). MPC on LAN/Nostr queues round payloads so a fast peer cannot poison the current round, and pairing shows a live connection-quality chip. Home-screen camouflage uses bundled launcher identities (QuickCalc, Notes, Weather, Files) without duplicating the Bold tile; settings show the real launcher artwork, and when camouflage is on the lock screen hides Bold branding.

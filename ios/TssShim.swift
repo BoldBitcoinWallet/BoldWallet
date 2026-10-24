@@ -165,17 +165,17 @@ func TssGetOutputDescriptor(_ hexPubKey: String, _ hexChainCode: String, _ netwo
 func TssAppendOutputDescriptorChecksum(_ descriptorBody: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.appendOutputDescriptorChecksum(descriptorBody), error)
 }
-func TssPubToP2WPKH(_ pubKeyCompressed: String, _ mainnetORtestnet3: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.pub(toP2WPKH: pubKeyCompressed, network: mainnetORtestnet3), error)
+func TssPubToP2WPKH(_ pubKeyCompressed: String, _ mainnetORtestnet4: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.pub(toP2WPKH: pubKeyCompressed, network: mainnetORtestnet4), error)
 }
-func TssPubToP2SHP2WKH(_ pubKeyCompressed: String, _ mainnetORtestnet3: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.pub(toP2SHP2WKH: pubKeyCompressed, network: mainnetORtestnet3), error)
+func TssPubToP2SHP2WKH(_ pubKeyCompressed: String, _ mainnetORtestnet4: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.pub(toP2SHP2WKH: pubKeyCompressed, network: mainnetORtestnet4), error)
 }
-func TssPubToP2TR(_ pubKeyCompressedHex: String, _ mainnetORtestnet3: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.pub(toP2TR: pubKeyCompressedHex, network: mainnetORtestnet3), error)
+func TssPubToP2TR(_ pubKeyCompressedHex: String, _ mainnetORtestnet4: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.pub(toP2TR: pubKeyCompressedHex, network: mainnetORtestnet4), error)
 }
-func TssPubToP2KH(_ pubKeyCompressed: String, _ mainnetORtestnet3: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.pub(toP2KH: pubKeyCompressed, network: mainnetORtestnet3), error)
+func TssPubToP2KH(_ pubKeyCompressed: String, _ mainnetORtestnet4: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.pub(toP2KH: pubKeyCompressed, network: mainnetORtestnet4), error)
 }
 func TssLocalPreParams(_ ppmFile: String, _ timeoutMinutes: Int, _ result: UnsafeMutablePointer<ObjCBool>, _ error: NSErrorPointer) -> String {
   let out = BbmtBridge.localPreParams(ppmFile, timeoutMinutes: timeoutMinutes)

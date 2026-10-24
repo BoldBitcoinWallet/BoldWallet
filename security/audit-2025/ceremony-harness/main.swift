@@ -198,7 +198,7 @@ let allowStore = CeremonyApiAllowlist.Store(
   save: { memStore.urls = $0 }
 )
 check(CeremonyApiAllowlist.seeds.contains("https://mempool.space/api"), "seeds match JS mainnet default")
-check(CeremonyApiAllowlist.seeds.contains("https://mempool.space/testnet/api"), "seeds match JS testnet default")
+check(CeremonyApiAllowlist.seeds.contains("https://mempool.space/testnet4/api"), "seeds match JS testnet default")
 check(CeremonyApiAllowlist.normalize("  https://h/api// ") == "https://h/api", "normalize trims + strips slashes")
 check(CeremonyApiAllowlist.parseCsv(" https://a/api/, ,https://b/api ") == ["https://a/api", "https://b/api"], "parseCsv drops empties")
 check(CeremonyApiAllowlist.decide(urls: ["https://mempool.space/api"], token: "", sessionID: "", store: allowStore) == .apply, "seed applies silently")

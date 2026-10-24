@@ -24,7 +24,7 @@ export function computeChangeSats(
 }
 
 export function isTestnetNetwork(net?: string): boolean {
-  return net === 'testnet3' || net === 'testnet';
+  return net === 'testnet4' || net === 'testnet' || net === 'testnet3';
 }
 
 export function networkLabel(net?: string): string {
@@ -33,7 +33,7 @@ export function networkLabel(net?: string): string {
 
 export function networkForApi(net?: string): string {
   if (isTestnetNetwork(net)) {
-    return 'testnet3';
+    return 'testnet4';
   }
   if (net === 'mainnet') {
     return 'mainnet';

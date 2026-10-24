@@ -25,6 +25,7 @@ import {
   ensureMempoolProvidersSeeded,
 } from './mempoolProvidersStore';
 import {
+  getStoredNetworkKey,
   normalizeNetworkKey,
   resolveStoredMempoolApiBase,
 } from './mempoolApiBase';
@@ -136,8 +137,14 @@ export const validateBitcoinAddressEnhanced = (
       dbg('WalletService: Bitcoin address validation failed - invalid format');
       return false;
     }
-    // Additional network-specific validation
-    const isTestnet = network === 'testnet';
+    // Additional network-specific validation. Accepts every testnet
+    // spelling so callers pass keys through (testnet4 canonical;
+    // 'testnet'/'testnet3' legacy aliases) — address prefixes are
+    // identical across testnets.
+    const isTestnet =
+      network === 'testnet' ||
+      network === 'testnet3' ||
+      network === 'testnet4';
     // Check address type based on network
     if (isTestnet) {
       // Testnet addresses: m, n, 2, tb1 prefixes
@@ -361,7 +368,7 @@ export class WalletService {
   }
   private async getStoredState() {
     try {
-      const network = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+      const network = getStoredNetworkKey();
       const addressType =
         appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'legacy';
       const api = resolveStoredMempoolApiBase(network);
@@ -654,7 +661,7 @@ export class WalletService {
   ): Promise<UtxoWithPath[]> {
     const baseUrl = apiUrl.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const fullApiUrl = `${baseUrl}/api`;
-    const isTestnetApi = /\/testnet(\/|$)/.test(fullApiUrl);
+    const isTestnetApi = /\/testnet4?(\/|$)/.test(fullApiUrl);
     const skipEmptyCache = options?.skipEmptyCache === true;
 
     const merged: UtxoWithPath[] = [];
@@ -1545,7 +1552,7 @@ export class WalletService {
         try {
           // Always use mainnet price endpoint (remove any testnet suffix)
           const priceUrl =
-            baseApiUrl.replace(/\/testnet\/?$/, '') + '/v1/prices';
+            baseApiUrl.replace(/\/testnet4?\/?$/, '') + '/v1/prices';
           dbg('WalletService: Trying price API URL:', priceUrl);
           const response = await this.withTimeout('price', signal =>
             mempoolClient.get(priceUrl, {signal}),
@@ -1749,10 +1756,7 @@ export class WalletService {
         'force:',
         force,
       );
-      // Normalize network parameter for validation (testnet3 -> testnet)
-      const normalizedNetwork =
-        this.currentNetwork === 'testnet3' ? 'testnet' : this.currentNetwork;
-      if (!validateBitcoinAddressEnhanced(address, normalizedNetwork)) {
+      if (!validateBitcoinAddressEnhanced(address, this.currentNetwork)) {
         dbg(
           'WalletService: Invalid Bitcoin address format:',
           address,

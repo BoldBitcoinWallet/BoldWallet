@@ -1,6 +1,6 @@
 jest.mock('../services/mempoolApiBase', () => ({
-  normalizeNetworkKey: (n: string) => (n === 'testnet' ? 'testnet3' : n),
-  resolveStoredMempoolApiBase: () => 'https://mempool.space/testnet/api',
+  normalizeNetworkKey: (n: string) => (n === 'testnet' || n === 'testnet3' ? 'testnet4' : n),
+  resolveStoredMempoolApiBase: () => 'https://mempool.space/testnet4/api',
 }));
 
 jest.mock('../services/WalletService', () => ({
@@ -46,7 +46,7 @@ describe('resolveChangeAddressDisplayPath', () => {
     ]);
     await expect(
       resolveChangeAddressDisplayPath(
-        'testnet3',
+        'testnet4',
         'segwit-native',
         'tb1qchange2',
       ),
@@ -58,7 +58,7 @@ describe('resolveChangeAddressDisplayPath', () => {
     mockWs.getHdAddressesWithPaths.mockResolvedValue([]);
     await expect(
       resolveChangeAddressDisplayPath(
-        'testnet3',
+        'testnet4',
         'segwit-native',
         'tb1qunknown',
       ),
