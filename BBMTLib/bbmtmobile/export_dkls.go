@@ -16,19 +16,30 @@ func DklsVersion() *C.char {
 
 //export DklsLanJoinKeygen
 func DklsLanJoinKeygen(key, parties, session, server, chaincode, sessionKey, encKey, decKey *C.char) *C.char {
-	return cString(dkls.JoinKeygen(
+	// F15b-1: DKG output is staged natively; JS receives
+	// {handle, metadata} only — never the keyshare JSON.
+	ksJSON, err := dkls.JoinKeygen(
 		C.GoString(key), C.GoString(parties), C.GoString(session),
 		C.GoString(server), C.GoString(chaincode), C.GoString(sessionKey),
 		C.GoString(encKey), C.GoString(decKey),
-	))
+	)
+	if err != nil {
+		return cString("", err)
+	}
+	return cString(dkls.StageKeygenOutput(ksJSON))
 }
 
 //export DklsNostrJoinKeygen
 func DklsNostrJoinKeygen(relays, nsec, peers, session, sessionKey, chaincode *C.char) *C.char {
-	return cString(dkls.NostrJoinKeygen(
+	// F15b-1: staged natively; JS receives {handle, metadata}.
+	ksJSON, err := dkls.NostrJoinKeygen(
 		C.GoString(relays), C.GoString(nsec), C.GoString(peers),
 		C.GoString(session), C.GoString(sessionKey), C.GoString(chaincode),
-	))
+	)
+	if err != nil {
+		return cString("", err)
+	}
+	return cString(dkls.StageKeygenOutput(ksJSON))
 }
 
 //export DklsNostrJoinKeysign
