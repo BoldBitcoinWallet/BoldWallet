@@ -1151,7 +1151,16 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				if len(sessionKey) > 0 {
 					body, err = AesDecrypt(message.Body, sessionKey)
 					if err != nil {
+						// F6: uniform observable outcome. A decrypt failure
+						// must delete on the same poll as a tag mismatch,
+						// else the relay gets a keep/delete padding oracle.
+						// The h1 tag covers plaintext by wire design, so true
+						// verify-before-decrypt would break cross-version
+						// ceremonies; the dummy tag keeps the work (and
+						// timing) equivalent instead.
 						Logln("BBMTLog", "Failed to decrypt message:", err)
+						_, _ = computePayloadAuthTag(message.Body, sessionKey)
+						deleteMessage(server, session, key, message.Hash)
 						continue
 					}
 				} else {
@@ -1161,7 +1170,12 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					if len(decKey) > 0 {
 						body, err = EciesDecrypt(message.Body, decKey)
 						if err != nil {
+							// F6: same uniform-outcome rule as the AES path;
+							// the digest stands in for tag work (no session
+							// key on the ECIES path).
 							Logln("BBMTLog", "Failed to decrypt ECIES message:", err)
+							_ = computePayloadDigest(message.Body)
+							deleteMessage(server, session, key, message.Hash)
 							continue
 						}
 					}
@@ -1176,7 +1190,10 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 						}
 						expectedTag, tagErr := computePayloadAuthTag(body, sessionKey)
 						if tagErr != nil {
+							// F6: delete like every other reject class (only
+							// reachable with a malformed local session key).
 							Logln("BBMTLog", "Failed to verify payload auth tag:", tagErr)
+							deleteMessage(server, session, key, message.Hash)
 							continue
 						}
 						if !hmac.Equal([]byte(expectedTag), []byte(message.Hash)) {
@@ -1226,14 +1243,21 @@ func deleteMessage(server, session, key, messageHash string) {
 
 	req, err := http.NewRequest("DELETE", delURL, nil)
 	if err != nil {
+		// F6: never Do(nil); a malformed URL fails closed here.
 		Logln("BBMTLog", "HTTP_DELETE Request Error", err)
+		return
 	}
 
 	resp, rspErr := http.DefaultClient.Do(req)
 	if rspErr != nil {
 		Logln("BBMTLog", "HTTP_DELETE Error", rspErr)
+		return
 	}
-	Logln("BBMTLog", "deleted message", messageHash)
-
+	if resp == nil || resp.Body == nil {
+		// F6: defensive; a nil response must never reach Body.Close.
+		Logln("BBMTLog", "HTTP_DELETE empty response for", messageHash)
+		return
+	}
 	defer resp.Body.Close()
+	Logln("BBMTLog", "deleted message", messageHash)
 }
