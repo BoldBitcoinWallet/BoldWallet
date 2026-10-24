@@ -13,8 +13,8 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F16b | Airgap export PIN is 6 digits + SHA-256 + CBC | Med | services/airgapPin.ts:3; components/AirgapKeyshareExportModal.tsx:86 | Longer PIN or PAKE; GCM; warn on screen-record | TBD | Open |
 | F15 | ExportKeyShare plaintext despite SecureBytes | High | BBMTLib/dkls/keyshare.go:31 | PARTIAL (Wave 2): SecureBytes-at-export + Destroy/wipe + BbmtFree memset + theater-wrapper removal + backup-export opacity. share_b64 still crosses JS on persist/import/read → F15b | TBD | Partial |
 | F15b-1 | Native-held shares: storage flows (3a) | Critical | persistWalletKeyshare; getKeyshare; backupDecrypt; RNES keyshare value | Go registry + at-rest envelope + native persist/staged-import/metadata getters; GG18 setup carved to F19 | TBD | Green (3a-5 evidence below; unmerged on security/wave3a-f15b1-f10clip) |
-| F15b-2 | Native-held shares: ceremony flows (3b) | Critical | signing methods; nostrJoinKeysign ×2 | DONE (3b): per-ceremony tokens (sign/keygen/export/import/config, ≤10min TTL-start, OS prompt, no-lock refuse) gate all DKLs sign/setup/keypair/transport/import/export/cancel; F18 removed; GG18 carved to F19; evidence 3b-5 | TBD | Done (security/wave3b-f15b2-f18-f10, unmerged) |
-| F18 | nostrJoinKeysign takes keyshare JSON from JS on BOTH platforms; dead from JS | High | BBMTLibNativeModule.kt:741; BBMTLibNativeModule.swift:927 | DONE (3b-3): REMOVED both bridge methods + JNI/shim layers after zero-caller re-verification (static/dynamic/WebView/reflection); Go core stays native-only; f18Removal 6/6 pins | TBD | Done (security/wave3b-f15b2-f18-f10, unmerged) |
+| F15b-2 | Native-held shares: ceremony flows (3b) | Critical | signing methods; nostrJoinKeysign ×2 | Implemented (3b): per-ceremony tokens (sign/keygen/export/import/config, ≤10min TTL-start, OS prompt, no-lock refuse) gate all DKLs sign/setup/keypair/transport/import/export/cancel; F18 removed; GG18 carved to F19; evidence 3b-5 | TBD | Implemented, pending QA/merge (security/wave3b-f15b2-f18-f10) |
+| F18 | nostrJoinKeysign takes keyshare JSON from JS on BOTH platforms; dead from JS | High | BBMTLibNativeModule.kt:741; BBMTLibNativeModule.swift:927 | Implemented (3b-3): REMOVED both bridge methods + JNI/shim layers after zero-caller re-verification (static/dynamic/WebView/reflection); Go core stays native-only; f18Removal 6/6 pins | TBD | Implemented, pending QA/merge (security/wave3b-f15b2-f18-f10) |
 | F19 | GG18 protocol-variant decision (deferred, post-Wave-3) | High | mpcTssSetup; nostrMpcTssSetup; GG18 signing ×4 | Decide: migrate GG18 (setup A1/A2 plaintext reachable via opt-out pref; signing untokenized) to handles, or deprecate new GG18 keygen. A6/A7/envelope stay backend-agnostic (no GG18 import regression) | TBD | Open (deferred) |
 | F20 | No native PSBT-confirmation screen (ceremony prompt summary is JS-supplied/spoofable) | High | §6.4 wave3-design | Native screen parsing destination/amount from PSBT bytes at signing time | TBD | Open (post-Wave-3) |
 | F21 | Pairing nsec returned to JS in full, retained in state after finalize (not the MPC share; separate from F15b) | Med | screens/MobileNostrPairing.tsx:1240,478,1242,1891 | Clear localNsec state + pendingKeyshareRef.partyNsec after ensureNostrKeyshareStored succeeds; long-term native-held nsec handle (F5 scope) | TBD | Done (3b first commit; guardrail __tests__/f21PairingNsec.test.ts 3/3; dereference, not heap wipe — disclosed) |
@@ -24,14 +24,15 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F8 | Global Android cleartext + ws/http allowed | High | network_security_config.xml:3 | Scope cleartext to loopback/link-local; block non-LAN ws/http | TBD | Open |
 | F9 | Secrets cross bridge as strings; no zeroization | High | BBMTLibNativeModule.kt:160; BbmtBridge.mm:13 | Opaque handles; SecureBytes/memset+mlock; minimize copies | TBD | Open |
 | F10-clipboard | Secret clipboard writes (full keyshare JSON, dice rolls) | High | KeyshareInfoContent.tsx:605; DiceEntropySheet.tsx:604 | Metadata-only copy (npub/pub_key/suite); dice copyDisabled; clipboard-after-export tests | TBD | Green (3a-5 evidence below; unmerged on security/wave3a-f15b1-f10clip) |
-| F10-bridge | Bridge sign/decrypt callable from any JS | High | services/TssProvider.ts:116 (62 native methods) | DONE (3b): Table B fully gated (B5–B21 + A12 + B19 cancel-consume); setAPI/fee allowlist-or-token; keypair generators retained + gated (OS prompt); L5 malicious-JS suite 11/11 | TBD | Done (security/wave3b-f15b2-f18-f10, unmerged) |
+| F10-bridge | Bridge sign/decrypt callable from any JS | High | services/TssProvider.ts:116 (62 native methods) | Partial (3b): Table B fully gated for DKLs (B5–B21 + A12 + B19 cancel-consume incl. GG18 cancels); setAPI/fee allowlist-or-token; keypair generators retained + gated (OS prompt); L5 malicious-JS suite 11/11. GG18 sign/setup carve-out OPEN as F10-GG18 Critical | TBD | Partial, pending F19 (security/wave3b-f15b2-f18-f10, unmerged) |
+| F10-GG18 | F10-bridge carve-out: GG18 sign/setup callable from any JS without a token | Critical | mpcSignPSBT; mpcSendBTCWithUTXOs; nostrMpcSendBTC; nostrMpcSignPSBT; mpcTssSetup; nostrMpcTssSetup (GG18 branches) | GG18 is LIVE (Welcome TssBackendSelector opt-out + legacy keyshares resolve gg18; verified 3b-review). Pin tests assert the bypass shape, not authorization. Close by tokenizing GG18 branches or deprecating GG18 (F19 decision) | TBD | Open |
 | F11 | No input validation at JNI/Go seams; FFI crashes | High | bbmtmobile/export_dkls.go:17; tss/common.go:465; mpc.go:1238 | Nil/length/caps checks; bound SecureRandom; nil-guard resp/req. Wave-3 scope MUST include new BbmtBackupEncrypt/Decrypt + JNI trampolines (added guard-less in B1) | TBD | Open |
 | F6 | LAN decrypt-before-verify padding oracle | Med-High | BBMTLib/tss/mpc.go:1149 | Verify-then-decrypt; uniform observable; AEAD | TBD | Open |
 | F12 | Prefix-match cancel + 15-min poison; no-confirm bridge cancel | High | tss/cancel.go:29,103; BBMTLibNativeModule.kt:505 | Exact-match cancel; per-session contexts/keys; confirm token | TBD | Open |
 | F14 | SessionKeyHex inert; secrecy rests on long-term nsec | Med | tss/nostrtransport/config.go:49 | HKDF session key into AEAD or remove field (allowlist is DKG-pinned: signing_resolve.go:57) | TBD | Open |
 | F13 | Background/kill: warning-only; replay memory is RAM-only | Med | services/mpcKeepAlive.ts:200 | Ceremony epoch or fresh session IDs post-death; persist seen-IDs | TBD | Open |
 
-Fix waves: (1) F7+sweep done. (2) B1 done. (3) F15(partial→F15b),F3,F4 done. Wave 3a = F15b-1+F10-clip (GREEN, unmerged); Wave 3b = F15b-2+F18+F10-bridge+F4-auth (GREEN, unmerged); Wave 4 = F11+F6; then F12,F14; F13. F19/F20 deferred; F21 Done (3b first commit).
+Fix waves: (1) F7+sweep done. (2) B1 done. (3) F15(partial→F15b),F3,F4 done. Wave 3a = F15b-1+F10-clip (GREEN, unmerged); Wave 3b = F15b-2+F18+F10-bridge+F4-auth (implemented, pending QA/merge); Wave 4 = F11+F6; then F12,F14; F13. F19/F20 deferred; F21 Done (3b first commit). F10-GG18 Critical open (GG18 live).
 Still owner-side: govulncheck, npm audit, gitleaks/trufflehog history, FROST/DKLs23 fork diff.
 
 ## Wave 1 — B1 (F1+F2+F16): DONE (merged c6d2613f). F7-residual fail-closed build: done.
@@ -90,11 +91,15 @@ PSBT-screen to F20.
   (native loads creds). Fix is a post-finalize clear, tracked
   separately — nsec isn't the MPC share.
 
-## Wave 3b — F15b-2 + F18 + F10-bridge + F4-auth: GREEN (unmerged) on `security/wave3b-f15b2-f18-f10`.
+## Wave 3b — F15b-2 + F18 + F10-bridge + F4-auth: Implemented, pending QA/merge on `security/wave3b-f15b2-f18-f10`.
 
 Sequence: F21 (Done, first commit) → 3b-1 token core →
 Table B gating → F18 + A12 → cancel/F4 → L5 tests. All
-slices green; F15b-2/F18/F10-bridge Done pending merge.
+slices green; F15b-2/F18 implemented pending QA/merge;
+F10-bridge Partial pending F19 (F10-GG18 Critical open).
+Real-device QA (8-item checklist) is a MERGE GATE — run
+before merge, record "QA passed" here. Merge after QA:
+3a → main (--no-ff), then 3b → main (--no-ff).
 Doc reconciliations at kickoff (design §6/Table B–D):
 (1) token expiry 10 min wins (§6.2 "30-min" was a doc bug);
 (2) Table C dead-oracle removals actually landed in 3a,
@@ -299,6 +304,30 @@ orphan state, re-sign works.
 7. No-lock device: every ceremony refuses with the screen-lock
 message (never a raw keychain error).
 8. Cancel lands with the ceremony dead (no late signature).
+
+3b-review response (pre-merge items):
+1. GG18 verdict: LIVE — do NOT remove. Evidence: production
+Welcome screen (App.tsx "Welcome" → ShowcaseScreen) offers
+TssBackendSelector for new keygen (dkls23 default, gg18 via
+DKLS23_OPTED_OUT pref); legacy keyshares without
+tss_backend infer gg18 in detectKeyshareTssBackend with no
+forced migration. No 3b-6 removal commit. F10-bridge is
+Partial; F10-GG18 Critical open names the 6 untokenized GG18
+sign/setup branches (GG18 cancels ARE gated). Pin tests
+assert the bypass shape, not authorization.
+2. Real-device QA is a merge gate (8 items, Android
+fingerprint + iOS Face ID). Not run by the agent — record
+"QA passed" here before merging.
+3. Status wording corrected: F15b-2/F18 "Implemented,
+pending QA/merge"; F10-bridge "Partial, pending F19".
+Config-allowlist seed spot-check (both entries read-only):
+Kotlin `val SEEDS` + Swift `static let seeds` are immutable
+consts referenced only by isAllowed reads; persist() merges
+store.load() only — seeds never written or persisted.
+Notes: ceremony tokens are ephemeral (memory-only); process
+kill = re-auth on next ceremony (no recovery, no orphans).
+Dead dkls-side nostrJoinKeysignJni decl + impl deferred as
+Low cleanup (unreachable, zero Kotlin callers) — not Wave 4.
 
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
