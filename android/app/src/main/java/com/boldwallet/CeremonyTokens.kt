@@ -120,6 +120,24 @@ object CeremonyTokens {
      * NATIVE method requires — never a class supplied by JS.
      */
     fun verify(token: String, opClass: OpClass, sessionID: String): Boolean {
+        return verifyInner(token, opClass, sessionID)
+    }
+
+    /**
+     * 3b-2a: single-call ceremonies without an MPC session (sends,
+     * nostr). Enforces op-class + TTL-start + revocation; session
+     * equality is inapplicable (nothing to match). Call sites that
+     * HAVE a session must use verify(), not this.
+     */
+    fun verifySingleCall(token: String, opClass: OpClass): Boolean {
+        return verifyInner(token, opClass, null)
+    }
+
+    private fun verifyInner(
+        token: String,
+        opClass: OpClass,
+        sessionID: String?,
+    ): Boolean {
         synchronized(lock) {
             val rec = tokens[token] ?: return false
             if (isTerminal(rec.state)) return false
@@ -128,7 +146,10 @@ object CeremonyTokens {
                 tokens[token] = rec.copy(state = State.EXPIRED)
                 return false
             }
-            if (rec.opClass != opClass || rec.sessionID != sessionID) {
+            if (rec.opClass != opClass) {
+                return false
+            }
+            if (sessionID != null && rec.sessionID != sessionID) {
                 return false
             }
             tokens[token] = rec.copy(

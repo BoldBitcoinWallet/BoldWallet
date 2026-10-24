@@ -26,6 +26,49 @@ export class CeremonyNoLockError extends Error {
   }
 }
 
+/**
+ * Live ceremony tokens by sessionID. Populated at every mint
+ * (wrapper- or owner-initiated), evicted on complete/release.
+ * Lets cancel paths retrieve the ceremony token without the
+ * screens threading it through every abort branch. Same-context
+ * JS can read this map — disclosed piggyback residual (§6.4):
+ * it grants nothing beyond calling the bridge directly.
+ */
+const sessionTokens = new Map<string, {token: string; op: CeremonyOpClass}>();
+
+export function registerSessionToken(
+  sessionID: string,
+  op: CeremonyOpClass,
+  token: string,
+): void {
+  sessionTokens.set(sessionID, {token, op});
+}
+
+export function getSessionToken(
+  sessionID: string,
+): {token: string; op: CeremonyOpClass} | undefined {
+  return sessionTokens.get(sessionID);
+}
+
+function evictSessionTokenByValue(token: string): void {
+  for (const [sessionID, entry] of sessionTokens) {
+    if (entry.token === token) {
+      sessionTokens.delete(sessionID);
+    }
+  }
+}
+
+/**
+ * Fresh ceremony session ID. Uniqueness (not secrecy) is the
+ * requirement — the token is the secret; LAN precedent derives
+ * session IDs from public data the same way.
+ */
+export async function newCeremonySessionID(purpose: string): Promise<string> {
+  return BBMTLibNativeModule.sha256(
+    `ceremony/${purpose}/${Date.now()}/${Math.random()}`,
+  );
+}
+
 function mapCeremonyError(error: unknown): Error {
   const code = (error as {code?: unknown} | null)?.code;
   const message = error instanceof Error ? error.message : String(error ?? '');
@@ -43,6 +86,7 @@ function mapCeremonyError(error: unknown): Error {
 
 async function requestToken(
   method: string,
+  op: CeremonyOpClass,
   sessionID: string,
 ): Promise<string> {
   try {
@@ -56,6 +100,7 @@ async function requestToken(
     if (!token || typeof token !== 'string') {
       throw new CeremonyAuthRequiredError();
     }
+    registerSessionToken(sessionID, op, token);
     return token;
   } catch (error) {
     if (
@@ -76,35 +121,35 @@ async function requestToken(
  * CeremonyAuthRequiredError (cancel/failure).
  */
 export function requestSignCeremonyToken(sessionID: string): Promise<string> {
-  return requestToken('requestSignCeremonyToken', sessionID);
+  return requestToken('requestSignCeremonyToken', 'sign', sessionID);
 }
 
 /** Mint a KEYGEN token (wallet setup + pairing identity). */
 export function requestKeygenCeremonyToken(
   sessionID: string,
 ): Promise<string> {
-  return requestToken('requestKeygenCeremonyToken', sessionID);
+  return requestToken('requestKeygenCeremonyToken', 'keygen', sessionID);
 }
 
 /** Mint an EXPORT token (backup export). */
 export function requestExportCeremonyToken(
   sessionID: string,
 ): Promise<string> {
-  return requestToken('requestExportCeremonyToken', sessionID);
+  return requestToken('requestExportCeremonyToken', 'export', sessionID);
 }
 
 /** Mint an IMPORT token (backup import: stage + persist). */
 export function requestImportCeremonyToken(
   sessionID: string,
 ): Promise<string> {
-  return requestToken('requestImportCeremonyToken', sessionID);
+  return requestToken('requestImportCeremonyToken', 'import', sessionID);
 }
 
 /** Mint a CONFIG token (network settings changes). */
 export function requestConfigCeremonyToken(
   sessionID: string,
 ): Promise<string> {
-  return requestToken('requestConfigCeremonyToken', sessionID);
+  return requestToken('requestConfigCeremonyToken', 'config', sessionID);
 }
 
 /** Retire a token after ceremony success (→ USED). */
@@ -114,6 +159,8 @@ export async function completeCeremonyToken(token: string): Promise<void> {
   } catch (error) {
     dbg('completeCeremonyToken failed (non-fatal)', error);
     throw mapCeremonyError(error);
+  } finally {
+    evictSessionTokenByValue(token);
   }
 }
 
@@ -124,5 +171,7 @@ export async function releaseCeremonyToken(token: string): Promise<void> {
   } catch (error) {
     dbg('releaseCeremonyToken failed (non-fatal)', error);
     throw mapCeremonyError(error);
+  } finally {
+    evictSessionTokenByValue(token);
   }
 }

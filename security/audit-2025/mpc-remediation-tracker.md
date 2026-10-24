@@ -130,6 +130,22 @@ release classes verified absent; iOS #if DEBUG, Release
 build green). Mint entry is per-ceremony only (3b-1b, no
 generic minter); TTL bounds start (3b-1c).
 
+3b-2a sign slice GREEN: 4 DKLs sign wrappers
+(mpcSignPSBT, mpcSendBTCWithUTXOs, nostrMpcSendBTC,
+nostrMpcSignPSBT) mint-or-receive a sign token via
+withSignToken (complete on success, release on throw,
+owner tokens pass through untouched); native gates both
+platforms (Kotlin verify/verifySingleCall + reject helper,
+Swift guard + .m ceremonyToken params — gate FIRST,
+before runtime/storage checks). Session-less calls (sends,
+nostr) use verifySingleCall (opClass + TTL-start +
+revocation; session equality inapplicable — documented at
+both call sites). GG18 branch untokenized (F19 gap,
+tested). Evidence: tssSignTokenGating 8/8, JVM 15/15,
+ceremony-harness PASSED, tsc 32 pre-existing, eslint
+clean. complete/release evict the JS session map in
+finally (no stale reuse after native failure).
+
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
   arm64 emulator (pure-Go build; x/crypto/argon2 has amd64 asm only, so ARM

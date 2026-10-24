@@ -1,5 +1,11 @@
 import {BBMTLibNativeModule} from '../native_modules';
 import {
+  completeCeremonyToken,
+  newCeremonySessionID,
+  releaseCeremonyToken,
+  requestSignCeremonyToken,
+} from './ceremonyAuth';
+import {
   markMpcInProgress,
   resetMpcCancelState,
   safeCancelMpc,
@@ -15,6 +21,46 @@ import {
 } from './tssBackend';
 
 export type {TssBackend};
+
+/**
+ * 3b-2a: sign-ceremony token scope. Owner-provided tokens pass
+ * through untouched (owner owns lifecycle); otherwise mint here
+ * (OS prompt), complete on success, release on throw.
+ * Calls without an MPC session (sends, nostr) get a fresh
+ * single-call ceremony ID; session equality then binds the token
+ * to this call only (opClass + TTL + revocation still enforced).
+ */
+async function withSignToken<T>(
+  sessionID: string | undefined,
+  ceremonyToken: string | undefined,
+  fn: (token: string) => Promise<T>,
+): Promise<T> {
+  const ceremonyID = sessionID ?? (await newCeremonySessionID('sign'));
+  const token =
+    ceremonyToken ?? (await requestSignCeremonyToken(ceremonyID));
+  const owned = ceremonyToken === undefined;
+  try {
+    const out = await fn(token);
+    if (owned) {
+      try {
+        await completeCeremonyToken(token);
+      } catch {
+        /* logged in ceremonyAuth; success stands */
+      }
+    }
+    return out;
+  } catch (error) {
+    if (owned) {
+      try {
+        await releaseCeremonyToken(token);
+      } catch {
+        /* logged in ceremonyAuth */
+      }
+    }
+    throw error;
+  }
+}
+
 export {
   detectKeyshareTssBackend,
   resolveTssBackend,
@@ -163,20 +209,25 @@ export const TssProvider = {
     encKey: string,
     decKey: string,
     psbtBase64: string,
+    ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
     if (backend === 'dkls23') {
-      return BBMTLibNativeModule.dklsMpcSignPSBT(
-        server,
-        partyID,
-        partiesCSV,
-        sessionID,
-        sessionKey,
-        encKey,
-        decKey,
-        psbtBase64,
+      return withSignToken(sessionID, ceremonyToken, token =>
+        BBMTLibNativeModule.dklsMpcSignPSBT(
+          server,
+          partyID,
+          partiesCSV,
+          sessionID,
+          sessionKey,
+          encKey,
+          decKey,
+          psbtBase64,
+          token,
+        ),
       );
     }
+    // F19: GG18 branch stays untokenized (disclosed gap).
     return BBMTLibNativeModule.mpcSignPSBT(
       server,
       partyID,
@@ -203,25 +254,30 @@ export const TssProvider = {
     satoshiFees: string,
     utxosWithPathsJSON: string,
     changeAddress: string,
+    ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
     if (backend === 'dkls23') {
-      return BBMTLibNativeModule.dklsMpcSendBTCWithUTXOs(
-        server,
-        partyID,
-        partiesCSV,
-        sessionID,
-        sessionKey,
-        encKey,
-        decKey,
-        btcPub,
-        toAddress,
-        satoshiAmount,
-        satoshiFees,
-        utxosWithPathsJSON,
-        changeAddress,
+      return withSignToken(sessionID, ceremonyToken, token =>
+        BBMTLibNativeModule.dklsMpcSendBTCWithUTXOs(
+          server,
+          partyID,
+          partiesCSV,
+          sessionID,
+          sessionKey,
+          encKey,
+          decKey,
+          btcPub,
+          toAddress,
+          satoshiAmount,
+          satoshiFees,
+          utxosWithPathsJSON,
+          changeAddress,
+          token,
+        ),
       );
     }
+    // F19: GG18 branch stays untokenized (disclosed gap).
     return BBMTLibNativeModule.mpcSendBTCWithUTXOs(
       server,
       partyID,
@@ -249,21 +305,26 @@ export const TssProvider = {
     satoshiFees: string,
     utxosWithPathsJSON: string,
     changeAddress: string,
+    ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
     if (backend === 'dkls23') {
-      return BBMTLibNativeModule.dklsNostrMpcSendBTC(
-        relaysCSV,
-        partiesNpubsCSV,
-        npubsSorted,
-        balanceSats,
-        toAddress,
-        satoshiAmount,
-        satoshiFees,
-        utxosWithPathsJSON,
-        changeAddress,
+      return withSignToken(undefined, ceremonyToken, token =>
+        BBMTLibNativeModule.dklsNostrMpcSendBTC(
+          relaysCSV,
+          partiesNpubsCSV,
+          npubsSorted,
+          balanceSats,
+          toAddress,
+          satoshiAmount,
+          satoshiFees,
+          utxosWithPathsJSON,
+          changeAddress,
+          token,
+        ),
       );
     }
+    // F19: GG18 branch stays untokenized (disclosed gap).
     return BBMTLibNativeModule.nostrMpcSendBTC(
       relaysCSV,
       partiesNpubsCSV,
@@ -282,16 +343,21 @@ export const TssProvider = {
     partiesNpubsCSV: string,
     npubsSorted: string,
     psbtBase64: string,
+    ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
     if (backend === 'dkls23') {
-      return BBMTLibNativeModule.dklsNostrMpcSignPSBT(
-        relaysCSV,
-        partiesNpubsCSV,
-        npubsSorted,
-        psbtBase64,
+      return withSignToken(undefined, ceremonyToken, token =>
+        BBMTLibNativeModule.dklsNostrMpcSignPSBT(
+          relaysCSV,
+          partiesNpubsCSV,
+          npubsSorted,
+          psbtBase64,
+          token,
+        ),
       );
     }
+    // F19: GG18 branch stays untokenized (disclosed gap).
     return BBMTLibNativeModule.nostrMpcSignPSBT(
       relaysCSV,
       partiesNpubsCSV,

@@ -1103,8 +1103,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   @objc func dklsMpcSignPSBT(
     _ server: String, partyID: String, partiesCSV: String, sessionID: String,
     sessionKey: String, encKey: String, decKey: String, psbtBase64: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2a: gate FIRST — before runtime checks or storage reads.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -1130,9 +1136,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     _ server: String, partyID: String, partiesCSV: String, sessionID: String,
     sessionKey: String, encKey: String, decKey: String, btcPub: String,
     toAddress: String, satoshiAmount: String, satoshiFees: String,
-    utxosWithPathsJSON: String, changeAddress: String,
+    utxosWithPathsJSON: String, changeAddress: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2a: gate FIRST — before runtime checks or storage reads.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -1159,8 +1170,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
     balanceSats: String, toAddress: String, satoshiAmount: String,
     satoshiFees: String, utxosWithPathsJSON: String, changeAddress: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2a: gate FIRST — single-call ceremony, no MPC session.
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -1187,9 +1204,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   @objc func dklsNostrMpcSignPSBT(
     _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
-    psbtBase64: String,
+    psbtBase64: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2a: gate FIRST — single-call ceremony, no MPC session.
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)

@@ -147,6 +147,39 @@ class CeremonyTokensTest {
     }
 
     @Test
+    fun testF15b2_SingleCall_AcceptsRightClass_AnySession() {
+        val t = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "nostr-single-call")
+        assertTrue(CeremonyTokens.verifySingleCall(t, CeremonyTokens.OpClass.SIGN))
+        assertEquals(CeremonyTokens.State.ACTIVE, CeremonyTokens.stateOf(t))
+    }
+
+    @Test
+    fun testF15b2_SingleCall_RejectsWrongClass() {
+        val t = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "s1")
+        assertFalse(CeremonyTokens.verifySingleCall(t, CeremonyTokens.OpClass.EXPORT))
+        assertFalse(CeremonyTokens.verifySingleCall(t, CeremonyTokens.OpClass.KEYGEN))
+        // Failed checks do not activate.
+        assertEquals(CeremonyTokens.State.MINTED, CeremonyTokens.stateOf(t))
+    }
+
+    @Test
+    fun testF15b2_SingleCall_RejectsUnknownRevokedExpired() {
+        assertFalse(
+            CeremonyTokens.verifySingleCall(
+                "tok0000000000000000000000000099",
+                CeremonyTokens.OpClass.SIGN,
+            ),
+        )
+        val revoked = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "s1")
+        CeremonyTokens.release(revoked)
+        assertFalse(CeremonyTokens.verifySingleCall(revoked, CeremonyTokens.OpClass.SIGN))
+        val stale = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "s2")
+        now += CeremonyTokens.TTL_MS + 1
+        assertFalse(CeremonyTokens.verifySingleCall(stale, CeremonyTokens.OpClass.SIGN))
+        assertEquals(CeremonyTokens.State.EXPIRED, CeremonyTokens.stateOf(stale))
+    }
+
+    @Test
     fun testF15b2_OpClassWireParsing() {
         assertEquals(
             CeremonyTokens.OpClass.SIGN,

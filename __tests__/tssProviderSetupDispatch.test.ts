@@ -19,6 +19,11 @@ jest.mock('../services/mpcCancel', () => ({
   safeCancelMpc: jest.fn(),
 }));
 
+// 3b-2a: TssProvider -> ceremonyAuth -> utils (op-sqlite); stub the logger.
+jest.mock('../utils', () => ({
+  dbg: jest.fn(),
+}));
+
 import {BBMTLibNativeModule} from '../native_modules';
 import {resolveTssBackendForKeygen} from '../services/tssBackend';
 import {parseStagedSetupResult, TssProvider} from '../services/TssProvider';

@@ -110,6 +110,24 @@ check(CeremonyTokens.stateOf(token: first) == .revoked, "remint revokes first")
 check(CeremonyTokens.verify(token: second, opClass: .config, sessionID: "s1"), "remint verifies")
 check(!CeremonyTokens.verify(token: first, opClass: .config, sessionID: "s1"), "first stays failed")
 
+// 3b-2a: single-call verify (session-less ceremonies).
+reset()
+let sc = CeremonyTokens.mint(opClass: .sign, sessionID: "nostr-single-call")
+check(CeremonyTokens.verifySingleCall(token: sc, opClass: .sign), "single-call accepts right class")
+check(CeremonyTokens.stateOf(token: sc) == .active, "single-call activates")
+reset()
+let scw = CeremonyTokens.mint(opClass: .sign, sessionID: "s1")
+check(!CeremonyTokens.verifySingleCall(token: scw, opClass: .export), "single-call rejects wrong class")
+check(!CeremonyTokens.verifySingleCall(token: scw, opClass: .keygen), "single-call rejects wrong class 2")
+check(CeremonyTokens.stateOf(token: scw) == .minted, "single-call failure keeps minted")
+check(!CeremonyTokens.verifySingleCall(token: "tok0000000000000000000000000099", opClass: .sign), "single-call rejects unknown")
+CeremonyTokens.release(token: scw)
+check(!CeremonyTokens.verifySingleCall(token: scw, opClass: .sign), "single-call rejects revoked")
+let sce = CeremonyTokens.mint(opClass: .sign, sessionID: "s9")
+now += CeremonyTokens.ttlMs + 1
+check(!CeremonyTokens.verifySingleCall(token: sce, opClass: .sign), "single-call rejects expired")
+check(CeremonyTokens.stateOf(token: sce) == .expired, "single-call expiry terminal")
+
 // Wire parsing strict.
 check(CeremonyOpClass.parse("sign") == .sign, "parse sign")
 check(CeremonyOpClass.parse("keygen") == .keygen, "parse keygen")

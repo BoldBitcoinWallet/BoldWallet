@@ -1178,6 +1178,19 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      * spoof the action label. Transport rides the parent
      * ceremony token (sign|keygen) — no transport mint exists.
      */
+    /**
+     * 3b-2a: shared gate rejection. Every gated method verifies its
+     * token FIRST (before runtime checks or storage reads) so an
+     * unauthorized caller learns nothing except auth-required.
+     */
+    private fun rejectCeremonyUnauthorized(promise: Promise) {
+        promise.reject(
+            "CEREMONY_AUTH_REQUIRED",
+            "Ceremony authorization required for this call",
+            null,
+        )
+    }
+
     @ReactMethod
     fun requestSignCeremonyToken(sessionID: String, promise: Promise) {
         promptAndMint(
@@ -1717,10 +1730,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         encKey: String,
         decKey: String,
         psbtBase64: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread
@@ -1756,10 +1774,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         satoshiFees: String,
         utxosWithPathsJSON: String,
         changeAddress: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread
@@ -1792,10 +1815,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         satoshiFees: String,
         utxosWithPathsJSON: String,
         changeAddress: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread
@@ -1818,10 +1846,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         partiesNpubsCSV: String,
         npubsSorted: String,
         psbtBase64: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread

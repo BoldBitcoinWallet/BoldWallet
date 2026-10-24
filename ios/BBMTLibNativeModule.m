@@ -299,6 +299,7 @@ RCT_EXTERN_METHOD(dklsMpcSignPSBT:(NSString *)server
                   encKey:(NSString *)encKey
                   decKey:(NSString *)decKey
                   psbtBase64:(NSString *)psbtBase64
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -315,6 +316,7 @@ RCT_EXTERN_METHOD(dklsMpcSendBTCWithUTXOs:(NSString *)server
                   satoshiFees:(NSString *)satoshiFees
                   utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
                   changeAddress:(NSString *)changeAddress
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -327,6 +329,7 @@ RCT_EXTERN_METHOD(dklsNostrMpcSendBTC:(NSString *)relaysCSV
                   satoshiFees:(NSString *)satoshiFees
                   utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
                   changeAddress:(NSString *)changeAddress
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -334,6 +337,7 @@ RCT_EXTERN_METHOD(dklsNostrMpcSignPSBT:(NSString *)relaysCSV
                   partiesNpubsCSV:(NSString *)partiesNpubsCSV
                   npubsSorted:(NSString *)npubsSorted
                   psbtBase64:(NSString *)psbtBase64
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

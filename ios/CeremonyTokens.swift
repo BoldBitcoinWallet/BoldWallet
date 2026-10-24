@@ -111,6 +111,18 @@ enum CeremonyTokens {
   /// Native-side authorization check. Call with the op class the
   /// NATIVE method requires — never a class supplied by JS.
   static func verify(token: String, opClass: CeremonyOpClass, sessionID: String) -> Bool {
+    verifyInner(token: token, opClass: opClass, sessionID: sessionID)
+  }
+
+  /// 3b-2a: single-call ceremonies without an MPC session (sends,
+  /// nostr). Enforces op-class + TTL-start + revocation; session
+  /// equality is inapplicable (nothing to match). Call sites that
+  /// HAVE a session must use verify(), not this.
+  static func verifySingleCall(token: String, opClass: CeremonyOpClass) -> Bool {
+    verifyInner(token: token, opClass: opClass, sessionID: nil)
+  }
+
+  private static func verifyInner(token: String, opClass: CeremonyOpClass, sessionID: String?) -> Bool {
     lock.lock()
     defer { lock.unlock() }
     guard var rec = tokens[token] else { return false }
@@ -121,7 +133,10 @@ enum CeremonyTokens {
       tokens[token] = rec
       return false
     }
-    if rec.opClass != opClass || rec.sessionID != sessionID {
+    if rec.opClass != opClass {
+      return false
+    }
+    if let sessionID, rec.sessionID != sessionID {
       return false
     }
     rec.state = .active
