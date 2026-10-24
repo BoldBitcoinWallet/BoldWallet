@@ -132,6 +132,12 @@ reset()
 let kg = CeremonyTokens.mint(opClass: .keygen, sessionID: "pairing-1")
 check(CeremonyTokens.verifySingleCall(token: kg, opClass: .keygen), "single-call keygen round-trip")
 check(!CeremonyTokens.verifySingleCall(token: kg, opClass: .sign), "single-call keygen not sign")
+// 3b-3 A12: backup export mints export, verifies single-call.
+reset()
+let ex = CeremonyTokens.mint(opClass: .export, sessionID: "exp-1")
+check(CeremonyTokens.verifySingleCall(token: ex, opClass: .export), "single-call export round-trip")
+check(!CeremonyTokens.verifySingleCall(token: ex, opClass: .sign), "single-call export not sign")
+
 // 3b-2e B17/B18: stage+persist share a strict import ceremony.
 reset()
 let im = CeremonyTokens.mint(opClass: .import, sessionID: "imp-1")

@@ -116,7 +116,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)nostrKeypair;
 + (NSString *)hexToNpub:(NSString *)hexKey;
 + (NSString *)nostrJoinKeygen:(NSString *)relays nsec:(NSString *)nsec peers:(NSString *)peers session:(NSString *)session sessionKey:(NSString *)sessionKey chaincode:(NSString *)chaincode ppmPath:(NSString *)ppmPath;
-+ (NSString *)nostrJoinKeysign:(NSString *)relays nsec:(NSString *)nsec peers:(NSString *)peers session:(NSString *)session sessionKey:(NSString *)sessionKey keyshare:(NSString *)keyshare derivePath:(NSString *)derivePath message:(NSString *)message;
+// F18 (3b-3): nostrJoinKeysign REMOVED with its sole caller.
 + (NSString *)postTx:(NSString *)rawTx;
 + (NSString *)computeTxId:(NSString *)rawTx;
 + (void)disableLogs;

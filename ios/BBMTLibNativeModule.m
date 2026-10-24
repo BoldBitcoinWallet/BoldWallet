@@ -20,7 +20,7 @@ RCT_EXTERN_METHOD(eciesKeypair:(NSString *)ceremonyToken resolver:(RCTPromiseRes
 // externs removed with their dead implementations — no JS-callable oracle remains.
 
 // F1: versioned backup export (Argon2id + AES-GCM in Go) and import (v2 + legacy envelope)
-RCT_EXTERN_METHOD(backupEncryptStoredKeyshare:(NSString *)password resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(backupEncryptStoredKeyshare:(NSString *)password ceremonyToken:(NSString *)ceremonyToken resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // Pre-Params Method
 RCT_EXTERN_METHOD(preparams:(NSString *)outFile timeout:(NSString *)timeout resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
@@ -224,17 +224,7 @@ RCT_EXTERN_METHOD(nostrMpcTssSetup:(NSString *)relaysCSV
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-// Nostr Join Keysign
-RCT_EXTERN_METHOD(nostrJoinKeysign:(NSString *)relaysCSV
-                  partyNsec:(NSString *)partyNsec
-                  partiesNpubsCSV:(NSString *)partiesNpubsCSV
-                  sessionID:(NSString *)sessionID
-                  sessionKey:(NSString *)sessionKey
-                  keyshareJSON:(NSString *)keyshareJSON
-                  derivationPath:(NSString *)derivationPath
-                  message:(NSString *)message
-                  resolver:(RCTPromiseResolveBlock)resolve
-                  rejecter:(RCTPromiseRejectBlock)reject)
+// F18 (3b-3): nostrJoinKeysign export REMOVED (dead from JS).
 
 // Nostr MPC Send BTC (UTXO multi-path only); nsec read from stored keyshare in native
 RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV

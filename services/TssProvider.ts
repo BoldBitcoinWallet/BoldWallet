@@ -3,6 +3,7 @@ import {
   completeCeremonyToken,
   newCeremonySessionID,
   releaseCeremonyToken,
+  requestExportCeremonyToken,
   requestImportCeremonyToken,
   requestKeygenCeremonyToken,
   requestSignCeremonyToken,
@@ -399,6 +400,26 @@ export const TssProvider = {
           token,
           ceremonyID,
         ),
+    );
+  },
+
+  /**
+   * 3b-3 A12: encrypted backup export. Single-call `export`
+   * ceremony (no MPC session, no sharing): mint-or-receive via
+   * the wrapper, OS prompt on mint. Enforced ceremony auth —
+   * strictly stronger than any JS-layer gate.
+   */
+  async backupEncryptStoredKeyshare(
+    password: string,
+    ceremonyToken?: string,
+  ): Promise<string> {
+    return withCeremonyToken(
+      undefined,
+      ceremonyToken,
+      requestExportCeremonyToken,
+      'export',
+      token =>
+        BBMTLibNativeModule.backupEncryptStoredKeyshare(password, token),
     );
   },
 

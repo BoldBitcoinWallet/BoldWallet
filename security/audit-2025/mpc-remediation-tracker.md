@@ -223,6 +223,24 @@ Debug + Android release green, tsc 32 pre-existing, eslint 0
 errors (fixed one pre-existing unused import in the touched
 file). Full jest 693 passed, same 6 pre-existing failures.
 
+3b-3 GREEN (F18 removal + A12 export token): nostrJoinKeysign
+REMOVED both platforms — zero-caller re-verified (static JS
+scan, WebView/eval/computed-dispatch/reflection all absent;
+both twins took keyshareJSON plaintext). Removed: bridge
+methods + .m export + DklsNative wrapper/decl + JNI impl
+(Android) + TssShim + BbmtBridge mm/h (iOS). Go
+BbmtNostrJoinKeysign stays (native-only, harmless, still
+drives in-Go signing). Already-dead dkls-side
+nostrJoinKeysignJni decl left untouched (out of scope,
+unreachable). A12: backupEncryptStoredKeyshare takes a
+single-call `export` token both platforms; both modals route
+via TssProvider (no JS biometric gate existed — enforced
+ceremony auth is strictly stronger). Evidence: f18Removal
+6/6 source-text pins, tssExportTokenGating 4/4, JVM 20/20,
+harness PASSED (86 checks), assembleDebug (NDK) + iOS Debug
+green, JNI 65 symbols no dupes, tsc 32 pre-existing, eslint
+clean. Full jest 703 passed, same 6 pre-existing failures.
+
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
   arm64 emulator (pure-Go build; x/crypto/argon2 has amd64 asm only, so ARM

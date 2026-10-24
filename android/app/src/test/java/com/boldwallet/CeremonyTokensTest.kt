@@ -188,6 +188,14 @@ class CeremonyTokensTest {
     }
 
     @Test
+    fun testF15b2_ExportSingleCallRoundTrip() {
+        // 3b-3 A12: backup export mints export, verifies single-call.
+        val t = CeremonyTokens.mint(CeremonyTokens.OpClass.EXPORT, "exp-1")
+        assertTrue(CeremonyTokens.verifySingleCall(t, CeremonyTokens.OpClass.EXPORT))
+        assertFalse(CeremonyTokens.verifySingleCall(t, CeremonyTokens.OpClass.SIGN))
+    }
+
+    @Test
     fun testF15b2_ImportClassRoundTrip() {
         // 3b-2e B17/B18: stage+persist share a strict import ceremony.
         val t = CeremonyTokens.mint(CeremonyTokens.OpClass.IMPORT, "imp-1")

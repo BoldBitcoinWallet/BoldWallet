@@ -1340,24 +1340,9 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
   }
 
-  @objc func nostrJoinKeysign(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, keyshareJSON: String, derivationPath: String, message: String,
-    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    DispatchQueue.global(qos: .background).async { [weak self] in
-      guard let self = self else {
-        resolver("")
-        return
-      }
-      var error: NSError?
-      let output = TssNostrJoinKeysign(
-        relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON,
-        derivationPath, message, &error)
-      self.sendLogEvent("nostrJoinKeysign", output)
-      resolver(error == nil ? output : error!.localizedDescription)
-    }
-  }
+  // F18 (3b-3): nostrJoinKeysign REMOVED (dead from JS — zero
+  // static/dynamic/WebView/reflection callers). Go
+  // BbmtNostrJoinKeysign stays (native-only, harmless).
 
   @objc func postTx(
     _ rawTxHex: String,
@@ -1642,10 +1627,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// F1: versioned backup export. Password goes to Go (Argon2id + AES-GCM);
   /// JS never sees a derived key. Emits v2 format only.
   @objc func backupEncryptStoredKeyshare(
-    _ password: String,
+    _ password: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-3 A12: single-call export ceremony (no MPC session).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .export) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)

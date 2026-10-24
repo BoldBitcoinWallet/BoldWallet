@@ -865,39 +865,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
-    @ReactMethod
-    fun nostrJoinKeysign(
-        relaysCSV: String,
-        partyNsec: String,
-        partiesNpubsCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        keyshareJSON: String,
-        derivationPath: String,
-        message: String,
-        promise: Promise
-    ) {
-        Thread {
-            try {
-                if (rejectBbmtUnavailable(promise, "nostrJoinKeysign")) return@Thread
-                val result = DklsNative.bbmtNostrJoinKeysignNative(
-                    relaysCSV,
-                    partyNsec,
-                    partiesNpubsCSV,
-                    sessionID,
-                    sessionKey,
-                    keyshareJSON,
-                    derivationPath,
-                    message,
-                )
-                ld("nostrJoinKeysign", result)
-                promise.resolve(result)
-            } catch (e: Throwable) {
-                ld("nostrJoinKeysign", "error: ${e.stackTraceToString()}")
-                promise.reject("NOSTR_JOIN_KEYSIGN_ERROR", "Failed to join keysign via Nostr: ${e.message}", e)
-            }
-        }.start()
-    }
+    // F18 (3b-3): nostrJoinKeysign REMOVED (dead from JS — zero
+    // static/dynamic/WebView/reflection callers; took keyshareJSON
+    // plaintext from JS). Go BbmtNostrJoinKeysign stays (native-only).
 
     // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
     // variant decision deferred). DKLs twins stage natively.
@@ -1087,9 +1057,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      * JS passes the password, never a derived key. Emits v2 format only.
      */
     @ReactMethod
-    fun backupEncryptStoredKeyshare(password: String, promise: Promise) {
+    fun backupEncryptStoredKeyshare(password: String, ceremonyToken: String, promise: Promise) {
         Thread {
             try {
+                // 3b-3 A12: single-call export ceremony (no MPC session).
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.EXPORT)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 val data = loadKeyshareJSONFromRNES()
                 if (data == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)

@@ -54,17 +54,23 @@ jest.mock('react-native-fs', () => ({
   writeFile: jest.fn(),
 }));
 jest.mock('../services/rnfsSafe', () => ({safeUnlink: jest.fn()}));
+// 3b-3 A12: export routes via TssProvider (token plumbing pinned
+// in tssExportTokenGating; this suite pins modal opacity).
+jest.mock('../services/TssProvider', () => ({
+  TssProvider: {backupEncryptStoredKeyshare: jest.fn()},
+}));
 
 import {getKeyshareLabel, getKeyshareMetadata} from '../utils';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
+import {TssProvider} from '../services/TssProvider';
 
 const nativeMocks = {
-  backupEncryptStoredKeyshare: jest.fn(),
   aesEncryptStoredKeyshare: jest.fn(),
   sha256: jest.fn(),
 };
 (NativeModules as any).BBMTLibNativeModule = nativeMocks;
+const exportEncrypt = TssProvider.backupEncryptStoredKeyshare as jest.Mock;
 
 const BackupKeyshareModal = require('../components/BackupKeyshareModal').default;
 
@@ -82,7 +88,7 @@ describe('BackupKeyshareModal export opacity (F15)', () => {
     jest.spyOn(Alert, 'alert').mockImplementation(() => {});
     (getKeyshareMetadata as jest.Mock).mockResolvedValue(META);
     (getKeyshareLabel as jest.Mock).mockReturnValue('KeyShare1');
-    nativeMocks.backupEncryptStoredKeyshare.mockResolvedValue(V2_BLOB);
+    exportEncrypt.mockResolvedValue(V2_BLOB);
     nativeMocks.sha256.mockResolvedValue('abcdef123456');
     (RNFS.writeFile as jest.Mock).mockResolvedValue(undefined);
     (Share.open as jest.Mock).mockResolvedValue(undefined);
@@ -122,10 +128,8 @@ describe('BackupKeyshareModal export opacity (F15)', () => {
 
   it('F15: export passes the password to native, never a derived key', async () => {
     await renderAndExport('Correct-Horse-12!');
-    expect(nativeMocks.backupEncryptStoredKeyshare).toHaveBeenCalledTimes(1);
-    expect(nativeMocks.backupEncryptStoredKeyshare).toHaveBeenCalledWith(
-      'Correct-Horse-12!',
-    );
+    expect(exportEncrypt).toHaveBeenCalledTimes(1);
+    expect(exportEncrypt).toHaveBeenCalledWith('Correct-Horse-12!');
     expect(nativeMocks.aesEncryptStoredKeyshare).not.toHaveBeenCalled();
   });
 
@@ -151,7 +155,7 @@ describe('BackupKeyshareModal export opacity (F15)', () => {
       }
     };
     [
-      nativeMocks.backupEncryptStoredKeyshare.mock.calls,
+      exportEncrypt.mock.calls,
       nativeMocks.sha256.mock.calls,
       (RNFS.writeFile as jest.Mock).mock.calls,
       (Share.open as jest.Mock).mock.calls,

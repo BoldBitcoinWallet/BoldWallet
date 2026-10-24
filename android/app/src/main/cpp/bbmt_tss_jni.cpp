@@ -389,32 +389,8 @@ Java_com_boldwallet_DklsNative_bbmtNostrJoinKeygenJni(
   return to_jstring(env, out);
 }
 
-JNIEXPORT jstring JNICALL
-Java_com_boldwallet_DklsNative_bbmtNostrJoinKeysignJni(
-    JNIEnv *env, jclass, jstring relays, jstring nsec, jstring peers, jstring session,
-    jstring sessionKey, jstring keyshare, jstring derivePath, jstring message) {
-  const char *r = env->GetStringUTFChars(relays, nullptr);
-  const char *n = env->GetStringUTFChars(nsec, nullptr);
-  const char *p = env->GetStringUTFChars(peers, nullptr);
-  const char *s = env->GetStringUTFChars(session, nullptr);
-  const char *sk = env->GetStringUTFChars(sessionKey, nullptr);
-  const char *ks = env->GetStringUTFChars(keyshare, nullptr);
-  const char *dp = env->GetStringUTFChars(derivePath, nullptr);
-  const char *m = env->GetStringUTFChars(message, nullptr);
-  char *out = BbmtNostrJoinKeysign(
-      const_cast<char *>(r), const_cast<char *>(n), const_cast<char *>(p),
-      const_cast<char *>(s), const_cast<char *>(sk), const_cast<char *>(ks),
-      const_cast<char *>(dp), const_cast<char *>(m));
-  env->ReleaseStringUTFChars(relays, r);
-  env->ReleaseStringUTFChars(nsec, n);
-  env->ReleaseStringUTFChars(peers, p);
-  env->ReleaseStringUTFChars(session, s);
-  env->ReleaseStringUTFChars(sessionKey, sk);
-  env->ReleaseStringUTFChars(keyshare, ks);
-  env->ReleaseStringUTFChars(derivePath, dp);
-  env->ReleaseStringUTFChars(message, m);
-  return to_jstring(env, out);
-}
+// F18 (3b-3): bbmtNostrJoinKeysignJni REMOVED with its sole
+// caller chain (the deleted bridge method).
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtMpcSignPSBTJni(

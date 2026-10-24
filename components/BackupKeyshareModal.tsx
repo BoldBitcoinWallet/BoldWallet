@@ -24,6 +24,7 @@ import {
   evaluateBackupPassword,
   isBackupExportAllowed,
 } from '../services/backupPassword';
+import {TssProvider} from '../services/TssProvider';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -126,8 +127,9 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
       if (meta) {
         // Keyshare loaded and encrypted in native (RNES storage); file/share receives ciphertext only.
         // F1: v2 format (Argon2id + AES-GCM in Go). Password goes to native; no derived key in JS.
+        // 3b-3 A12: token-gated export (OS-visible prompt).
         const encryptedKeyshare =
-          await BBMTLibNativeModule.backupEncryptStoredKeyshare(password);
+          await TssProvider.backupEncryptStoredKeyshare(password);
 
         // Create filename based on pub_key hash and keyshare number
         if (!meta.pub_key) {
