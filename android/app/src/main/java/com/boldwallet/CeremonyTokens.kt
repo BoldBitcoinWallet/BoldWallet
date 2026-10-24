@@ -37,12 +37,17 @@ import java.security.SecureRandom
 object CeremonyTokens {
     const val TTL_MS: Long = 10 * 60 * 1000L
 
+    // NOTE: no TRANSPORT class. Transport calls (fetchData/
+    // publishData) verify against the PARENT ceremony token
+    // (sign|keygen) + session — the ceremony's own channel needs
+    // no separate mint, and one token per ceremony removes a JS
+    // token-confusion failure mode. The strict rule stands for
+    // sign/export/import/config: never interchanged.
     enum class OpClass(val wire: String) {
         SIGN("sign"),
         KEYGEN("keygen"),
         EXPORT("export"),
         IMPORT("import"),
-        TRANSPORT("transport"),
         CONFIG("config"),
         ;
 

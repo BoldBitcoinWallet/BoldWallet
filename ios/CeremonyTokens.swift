@@ -25,12 +25,17 @@ import Foundation
 // All failures return plain false — the bridge maps every
 // failure to one CEREMONY_AUTH_REQUIRED (no reason oracle).
 
+// NOTE: no transport case. Transport calls (fetchData/
+// publishData) verify against the PARENT ceremony token
+// (sign|keygen) + session — the ceremony's own channel needs
+// no separate mint, and one token per ceremony removes a JS
+// token-confusion failure mode. The strict rule stands for
+// sign/export/import/config: never interchanged.
 enum CeremonyOpClass: String {
   case sign
   case keygen
   case export
   case `import`
-  case transport
   case config
 
   static func parse(_ wire: String) -> CeremonyOpClass? {

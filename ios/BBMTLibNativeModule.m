@@ -385,8 +385,13 @@ RCT_EXTERN_METHOD(getKeyshareStructureRedacted:(RCTPromiseResolveBlock)resolve r
 RCT_EXTERN_METHOD(destroyKeyshareHandles:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(ensureKeyshareEnveloped:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
-// 3b-1 ceremony tokens (mint requires OS-visible LAContext auth)
-RCT_EXTERN_METHOD(requestCeremonyToken:(NSString *)op sessionID:(NSString *)sessionID title:(NSString *)title detail:(NSString *)detail resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+// 3b-1 ceremony tokens: per-ceremony mint ONLY (hardcoded class +
+// prompt copy each). No generic mint exists by design.
+RCT_EXTERN_METHOD(requestSignCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(requestKeygenCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(requestExportCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(requestImportCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(requestConfigCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(completeCeremonyToken:(NSString *)token resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(releaseCeremonyToken:(NSString *)token resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 #if DEBUG

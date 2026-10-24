@@ -92,11 +92,11 @@ check(!CeremonyTokens.verify(token: b, opClass: .sign, sessionID: "sB"), "cancel
 
 // Same-session remint supersedes.
 reset()
-let first = CeremonyTokens.mint(opClass: .transport, sessionID: "s1")
-let second = CeremonyTokens.mint(opClass: .transport, sessionID: "s1")
+let first = CeremonyTokens.mint(opClass: .config, sessionID: "s1")
+let second = CeremonyTokens.mint(opClass: .config, sessionID: "s1")
 check(CeremonyTokens.stateOf(token: first) == .revoked, "remint revokes first")
-check(CeremonyTokens.verify(token: second, opClass: .transport, sessionID: "s1"), "remint verifies")
-check(!CeremonyTokens.verify(token: first, opClass: .transport, sessionID: "s1"), "first stays failed")
+check(CeremonyTokens.verify(token: second, opClass: .config, sessionID: "s1"), "remint verifies")
+check(!CeremonyTokens.verify(token: first, opClass: .config, sessionID: "s1"), "first stays failed")
 
 // Wire parsing strict.
 check(CeremonyOpClass.parse("sign") == .sign, "parse sign")
@@ -104,6 +104,7 @@ check(CeremonyOpClass.parse("keygen") == .keygen, "parse keygen")
 check(CeremonyOpClass.parse("Sign") == nil, "parse rejects case")
 check(CeremonyOpClass.parse("admin") == nil, "parse rejects unknown")
 check(CeremonyOpClass.parse("") == nil, "parse rejects empty")
+check(CeremonyOpClass.parse("transport") == nil, "no transport class (rides parent)")
 
 if failures == 0 {
   print("CEREMONY HARNESS PASSED")

@@ -679,15 +679,72 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
   }
 
-  /// 3b-1 ceremony-token mint: OS-visible auth FIRST (LAContext,
+  /// 3b-1 ceremony mint, per-ceremony methods ONLY. There is
+  /// deliberately NO generic "request token for class X" bridge
+  /// method: each entry point below hardcodes its op class and
+  /// its prompt copy, so JS can neither choose the class nor
+  /// spoof the action label. Transport rides the parent
+  /// ceremony token (sign|keygen) — no transport mint exists.
+  @objc func requestSignCeremonyToken(
+    _ sessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    promptAndMint(
+      opClass: .sign, sessionID: sessionID,
+      title: "Authenticate to sign", subtitle: "Approve the signing ceremony",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestKeygenCeremonyToken(
+    _ sessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    promptAndMint(
+      opClass: .keygen, sessionID: sessionID,
+      title: "Authenticate to generate keys", subtitle: "Approve the wallet setup ceremony",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestExportCeremonyToken(
+    _ sessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    promptAndMint(
+      opClass: .export, sessionID: sessionID,
+      title: "Authenticate to export backup", subtitle: "Approve the backup export",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestImportCeremonyToken(
+    _ sessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    promptAndMint(
+      opClass: .import, sessionID: sessionID,
+      title: "Authenticate to import backup", subtitle: "Approve the backup import",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestConfigCeremonyToken(
+    _ sessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    promptAndMint(
+      opClass: .config, sessionID: sessionID,
+      title: "Authenticate to change settings", subtitle: "Approve the network settings change",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  /// Shared mint worker. PRIVATE — not a bridge method, not
+  /// JS-reachable. OS-visible auth FIRST (LAContext,
   /// biometric-or-device-passcode), mint ONLY on success. No
   /// screen lock → CEREMONY_AUTH_NO_LOCK refuse (Q3). Every other
   /// failure → CEREMONY_AUTH_REQUIRED (no reason oracle).
-  @objc func requestCeremonyToken(
-    _ op: String, sessionID: String, title: String, detail: String,
+  private func promptAndMint(
+    opClass: CeremonyOpClass, sessionID: String, title: String, subtitle: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
-    guard let opClass = CeremonyOpClass.parse(op), !sessionID.isEmpty else {
+    guard !sessionID.isEmpty else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
       return
     }
@@ -702,13 +759,12 @@ class BBMTLibNativeModule: RCTEventEmitter {
       return
     }
     // LAContext takes a single reason string (Android uses
-    // title+subtitle); combine for parity. JS-supplied summary
-    // is a disclosed residual per §6.4; F20 owns the native
-    // screen. The prompt itself is always OS-rendered.
-    var reason = title.isEmpty ? "Confirm to continue" : title
-    if !detail.isEmpty {
-      reason += " — " + detail
-    }
+    // title+subtitle); combine for parity. Copy is hardcoded
+    // per ceremony above — JS supplies nothing, so the action
+    // label is unspoofable (the per-transaction WHAT remains a
+    // disclosed residual per §6.4; F20 owns the native screen).
+    // The prompt itself is always OS-rendered.
+    let reason = title + " — " + subtitle
     context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
       if success {
         resolver(CeremonyTokens.mint(opClass: opClass, sessionID: sessionID))

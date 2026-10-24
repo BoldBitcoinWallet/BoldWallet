@@ -1171,22 +1171,69 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * 3b-1 ceremony-token mint: OS-visible auth FIRST
-     * (BiometricPrompt, biometric-or-device-credential), mint ONLY
-     * on success. No screen lock → CEREMONY_AUTH_NO_LOCK refuse
-     * (Q3). Every other failure → CEREMONY_AUTH_REQUIRED (no
-     * reason oracle). Mint itself enforces single-live-session.
+     * 3b-1 ceremony mint, per-ceremony methods ONLY. There is
+     * deliberately NO generic "request token for class X" bridge
+     * method: each entry point below hardcodes its op class and
+     * its prompt copy, so JS can neither choose the class nor
+     * spoof the action label. Transport rides the parent
+     * ceremony token (sign|keygen) — no transport mint exists.
      */
     @ReactMethod
-    fun requestCeremonyToken(
-        op: String,
+    fun requestSignCeremonyToken(sessionID: String, promise: Promise) {
+        promptAndMint(
+            CeremonyTokens.OpClass.SIGN, sessionID,
+            "Authenticate to sign", "Approve the signing ceremony", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestKeygenCeremonyToken(sessionID: String, promise: Promise) {
+        promptAndMint(
+            CeremonyTokens.OpClass.KEYGEN, sessionID,
+            "Authenticate to generate keys", "Approve the wallet setup ceremony", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestExportCeremonyToken(sessionID: String, promise: Promise) {
+        promptAndMint(
+            CeremonyTokens.OpClass.EXPORT, sessionID,
+            "Authenticate to export backup", "Approve the backup export", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestImportCeremonyToken(sessionID: String, promise: Promise) {
+        promptAndMint(
+            CeremonyTokens.OpClass.IMPORT, sessionID,
+            "Authenticate to import backup", "Approve the backup import", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestConfigCeremonyToken(sessionID: String, promise: Promise) {
+        promptAndMint(
+            CeremonyTokens.OpClass.CONFIG, sessionID,
+            "Authenticate to change settings", "Approve the network settings change", promise,
+        )
+    }
+
+    /**
+     * Shared mint worker. PRIVATE — not a bridge method, not
+     * JS-reachable. OS-visible auth FIRST (BiometricPrompt,
+     * biometric-or-device-credential), mint ONLY on success. No
+     * screen lock → CEREMONY_AUTH_NO_LOCK refuse (Q3). Every
+     * other failure → CEREMONY_AUTH_REQUIRED (no reason oracle).
+     * Mint itself enforces single-live-session.
+     */
+    private fun promptAndMint(
+        opClass: CeremonyTokens.OpClass,
         sessionID: String,
         title: String,
-        detail: String,
+        subtitle: String,
         promise: Promise,
     ) {
-        val opClass = CeremonyTokens.OpClass.parse(op)
-        if (opClass == null || sessionID.isEmpty()) {
+        if (sessionID.isEmpty()) {
             promise.reject(
                 "CEREMONY_AUTH_REQUIRED",
                 "Confirm to continue — authenticate in the prompt.",
@@ -1245,14 +1292,12 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     }
                 }
                 val infoBuilder = BiometricPrompt.PromptInfo.Builder()
-                    .setTitle(title.ifEmpty { "Confirm to continue" })
+                    .setTitle(title)
+                    .setSubtitle(subtitle)
                     .setAllowedAuthenticators(
                         BiometricManager.Authenticators.BIOMETRIC_STRONG or
                             BiometricManager.Authenticators.DEVICE_CREDENTIAL,
                     )
-                if (detail.isNotEmpty()) {
-                    infoBuilder.setSubtitle(detail)
-                }
                 // NOTE: no negative button — forbidden with DEVICE_CREDENTIAL.
                 BiometricPrompt(activity, executor, callback).authenticate(infoBuilder.build())
             } catch (e: Exception) {

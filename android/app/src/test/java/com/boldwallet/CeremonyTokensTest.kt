@@ -110,14 +110,14 @@ class CeremonyTokensTest {
 
     @Test
     fun testF15b2_SameSessionRemintSupersedes() {
-        val first = CeremonyTokens.mint(CeremonyTokens.OpClass.TRANSPORT, "s1")
-        val second = CeremonyTokens.mint(CeremonyTokens.OpClass.TRANSPORT, "s1")
+        val first = CeremonyTokens.mint(CeremonyTokens.OpClass.CONFIG, "s1")
+        val second = CeremonyTokens.mint(CeremonyTokens.OpClass.CONFIG, "s1")
         assertEquals(CeremonyTokens.State.REVOKED, CeremonyTokens.stateOf(first))
         assertTrue(
-            CeremonyTokens.verify(second, CeremonyTokens.OpClass.TRANSPORT, "s1"),
+            CeremonyTokens.verify(second, CeremonyTokens.OpClass.CONFIG, "s1"),
         )
         assertFalse(
-            CeremonyTokens.verify(first, CeremonyTokens.OpClass.TRANSPORT, "s1"),
+            CeremonyTokens.verify(first, CeremonyTokens.OpClass.CONFIG, "s1"),
         )
     }
 
@@ -144,6 +144,8 @@ class CeremonyTokensTest {
         assertNull(CeremonyTokens.OpClass.parse("Sign"))
         assertNull(CeremonyTokens.OpClass.parse("admin"))
         assertNull(CeremonyTokens.OpClass.parse(""))
+        // No TRANSPORT class: transport rides the parent token.
+        assertNull(CeremonyTokens.OpClass.parse("transport"))
     }
 
     @Test
