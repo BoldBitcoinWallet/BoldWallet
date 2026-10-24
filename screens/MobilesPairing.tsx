@@ -1435,9 +1435,12 @@ const MobilesPairing = ({navigation}: any) => {
           throw new Error('Fees are required in route params');
         }
         // Extract all params from route
-        // CRITICAL: Normalize network to native format ('testnet3' not 'testnet') for BBMTLib
+        // CRITICAL: Normalize network to native format (canonical 'testnet4') for BBMTLib
         const networkFromParams = route.params.network.trim();
-        net = networkFromParams === 'testnet' ? 'testnet3' : networkFromParams;
+        net =
+          networkFromParams === 'testnet' || networkFromParams === 'testnet3'
+            ? 'testnet4'
+            : networkFromParams;
         addressTypeToUse = route.params.addressType.trim();
         path = route.params.derivationPath.trim();
         toAddress = route.params.toAddress.trim();

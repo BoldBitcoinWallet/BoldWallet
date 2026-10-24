@@ -17,14 +17,22 @@ import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigReposito
 import walletRepository from './repositories/WalletRepository';
 import balanceRepository from './repositories/BalanceRepository';
 import transactionRepository, {type PendingTxData} from './repositories/TransactionRepository';
+import {normalizeNetworkKey} from './mempoolApiBase';
 import priceRepository from './repositories/PriceRepository';
 import database from './Database';
 import {dbg} from '../utils';
 
 const MIGRATION_VERSION = 'v1';
 
-// All network+addressType combinations to scan for HD index keys
+// Pre-migration key namespaces to scan (read-only legacy: old installs
+// stored keys under 'testnet3'). Rows are written under the canonical
+// key via rowNetwork() below; testnet3 data is preserved, not dropped.
 const NETWORKS = ['mainnet', 'testnet3'];
+
+/** Canonical row-network for migrated data (legacy testnet3 → testnet4). */
+function rowNetwork(net: string): string {
+  return net === 'testnet3' ? 'testnet4' : net;
+}
 const ADDRESS_TYPES = ['legacy', 'segwit-native', 'segwit-compatible'];
 
 // Mapping from old LocalCache key → new app_config key
@@ -59,8 +67,11 @@ export async function runMigrationIfNeeded(): Promise<void> {
     // ── 1. Simple preference keys → app_config ───────────────────────────
     for (const [oldKey, newKey] of Object.entries(SIMPLE_KEY_MAP)) {
       try {
-        const value = await LocalCache.getItem(oldKey);
-        if (value != null) {
+        const stored = await LocalCache.getItem(oldKey);
+        if (stored != null) {
+          // Normalize persisted network prefs (testnet/testnet3 → testnet4).
+          const value =
+            oldKey === 'network' ? normalizeNetworkKey(stored) : stored;
           appConfigRepository.set(newKey, value);
           dbg('LocalCacheMigration: migrated', oldKey, '→', newKey, '=', value);
         }
@@ -74,11 +85,15 @@ export async function runMigrationIfNeeded(): Promise<void> {
       try {
         const api = await LocalCache.getItem(`api_${net}`);
         if (api) {
-          const isActive = (appConfigRepository.get(CONFIG_KEYS.NETWORK) ?? 'mainnet') === net ? 1 : 0;
+          const rowNet = rowNetwork(net);
+          const activeNet = normalizeNetworkKey(
+            appConfigRepository.get(CONFIG_KEYS.NETWORK) ?? 'mainnet',
+          );
+          const isActive = activeNet === rowNet ? 1 : 0;
           database.execute(
             `INSERT OR IGNORE INTO network_providers (network, api_url, is_active, updated_at)
              VALUES (?, ?, ?, ?)`,
-            [net, api, isActive, Date.now()],
+            [rowNet, api, isActive, Date.now()],
           );
           dbg('LocalCacheMigration: migrated api_' + net, '=', api);
         }
@@ -128,7 +143,7 @@ export async function runMigrationIfNeeded(): Promise<void> {
             const discoveryLastAt = lastAtRaw != null ? parseInt(lastAtRaw, 10) || null : null;
 
             walletRepository.setHdState({
-              network: net,
+              network: rowNetwork(net),
               addressType: addrType,
               externalIndex,
               changeIndex,

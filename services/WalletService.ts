@@ -136,8 +136,14 @@ export const validateBitcoinAddressEnhanced = (
       dbg('WalletService: Bitcoin address validation failed - invalid format');
       return false;
     }
-    // Additional network-specific validation
-    const isTestnet = network === 'testnet';
+    // Additional network-specific validation. Accepts every testnet
+    // spelling so callers pass keys through (testnet4 canonical;
+    // 'testnet'/'testnet3' legacy aliases) — address prefixes are
+    // identical across testnets.
+    const isTestnet =
+      network === 'testnet' ||
+      network === 'testnet3' ||
+      network === 'testnet4';
     // Check address type based on network
     if (isTestnet) {
       // Testnet addresses: m, n, 2, tb1 prefixes
@@ -1749,10 +1755,7 @@ export class WalletService {
         'force:',
         force,
       );
-      // Normalize network parameter for validation (testnet3 -> testnet)
-      const normalizedNetwork =
-        this.currentNetwork === 'testnet3' ? 'testnet' : this.currentNetwork;
-      if (!validateBitcoinAddressEnhanced(address, normalizedNetwork)) {
+      if (!validateBitcoinAddressEnhanced(address, this.currentNetwork)) {
         dbg(
           'WalletService: Invalid Bitcoin address format:',
           address,

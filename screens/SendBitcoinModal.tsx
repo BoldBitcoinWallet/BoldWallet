@@ -489,10 +489,8 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       opacity: 0.5,
     },
   });
-  const currentNetworkForValidation =
-    activeNetwork === 'testnet' || activeNetwork === 'testnet3'
-      ? 'testnet'
-      : 'mainnet';
+  // Validator accepts every testnet spelling; pass through (undefined → default mainnet inside).
+  const currentNetworkForValidation = activeNetwork;
   const validateAddressForCurrentNetwork = useCallback(
     (addr: string) =>
       validateBitcoinAddressEnhanced(addr, currentNetworkForValidation),

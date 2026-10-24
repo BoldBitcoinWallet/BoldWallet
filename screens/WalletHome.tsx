@@ -1583,14 +1583,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         if (keyshare) {
           const useLegacyPath = resolveUseLegacyDerivationPaths(keyshare);
           const currentAddressType = addressType || 'segwit-native';
-          const normalizedNetwork =
-            network === 'testnet3' ? 'testnet' : network;
           const externalIndex = await getExternalIndex(
             network || 'mainnet',
             currentAddressType,
           );
           derivationPath = getReceivePath(
-            normalizedNetwork,
+            network,
             currentAddressType,
             useLegacyPath,
             externalIndex,
@@ -1601,7 +1599,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             await resolveChaincodeHex(),
             derivationPath,
           );
-          // Compute from address using native network format (requires 'testnet3' not 'testnet')
+          // Compute from address using native network format (canonical 'testnet4')
           const nativeNetwork = network || 'mainnet'; // Keep native format
           fromAddress = await BBMTLibNativeModule.btcAddress(
             publicKey,
@@ -1612,7 +1610,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             '=== WalletHome: Computed derivation path and from address for sender device ===',
             {
               network: nativeNetwork,
-              normalizedNetwork,
               addressType: currentAddressType,
               derivationPath,
               fromAddress,
@@ -1867,8 +1864,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         dbg('Error checking Branta params', brantaCheckErr);
       }
 
-      const networkForValidation =
-        network === 'testnet3' ? 'testnet' : network || 'mainnet';
+      const networkForValidation = network || 'mainnet';
       if (
         addressCandidate &&
         validateBitcoinAddressEnhanced(addressCandidate, networkForValidation)
@@ -1968,7 +1964,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         );
       }
       if (decoded.network) {
-        // Keep native format from QR code (native module requires 'testnet3' not 'testnet')
+        // Keep native format from QR code (canonical 'testnet4'; legacy aliases accepted)
         setScannedNetwork(decoded.network);
         dbg('WalletHome: Network from QR code:', decoded.network);
       }

@@ -20,7 +20,7 @@ const SCHEMA_STATEMENTS = [
     updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
   )`,
 
-  // ── Network Providers (replaces api, api_mainnet, api_testnet3 keys) ─────────
+  // ── Network Providers (replaces api, api_mainnet, api_testnet3/4 keys) ─────────
   `CREATE TABLE IF NOT EXISTS network_providers (
     network    TEXT NOT NULL,
     api_url    TEXT NOT NULL,

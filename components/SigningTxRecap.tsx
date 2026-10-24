@@ -27,7 +27,8 @@ export type SigningTxRecapProps = SendRecapProps | PsbtRecapProps;
 const SigningTxRecap: React.FC<SigningTxRecapProps> = props => {
   const {theme} = useTheme();
   const net = props.network;
-  const isTestnet = net === 'testnet3' || net === 'testnet';
+  const isTestnet =
+    net === 'testnet4' || net === 'testnet' || net === 'testnet3';
 
   const line =
     props.mode === 'send'

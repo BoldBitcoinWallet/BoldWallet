@@ -331,7 +331,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         await deriveAllAddressesForNetwork(pub, actualNet);
         // For the other network, we need to derive a separate btcPub with that network's path
         // because btcPub is network-specific (derivation path includes coin type: 0' for mainnet, 1' for testnet)
-        const otherNet = actualNet === 'mainnet' ? 'testnet3' : 'mainnet';
+        const otherNet = actualNet === 'mainnet' ? 'testnet4' : 'mainnet';
         const useLegacyPathOther = resolveUseLegacyDerivationPaths(ks);
         const otherExternalIndex = await getExternalIndex(otherNet, currentAddressType);
         const otherPath = getReceivePath(

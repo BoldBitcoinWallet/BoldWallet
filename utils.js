@@ -149,7 +149,7 @@ export const shortenAddress = addr =>
  * @param {Object} nativeModule - The BBMTLibNativeModule instance
  * @param {string} pubKey - Compressed master public key in hex
  * @param {string} chainCode - Master chain code in hex
- * @param {string} network - Network: 'mainnet' or 'testnet3'
+ * @param {string} network - Network: 'mainnet' or 'testnet4' ('testnet'/'testnet3' accepted as aliases)
  * @param {import('./types/keyshare').KeyshareMetadata|number|null|undefined} keyshareMeta - Metadata (preferred) or legacy created_at only
  * @param {string} addressType - Optional: current address type for primary descriptor selection
  * @returns {Promise<{legacy: string, segwitNative: string, segwitCompatible: string, primary: string}>}
@@ -349,7 +349,7 @@ export const formatKeyshareCreatedAtLong = createdAt => {
 
 /**
  * Get the default derivation path for a given network and address type
- * @param {string} network - Network: 'mainnet' or 'testnet3'
+ * @param {string} network - Network: 'mainnet' or 'testnet4' ('testnet'/'testnet3' accepted as aliases)
  * @param {string} addressType - Address type: 'legacy', 'segwit-native', or 'segwit-compatible' (defaults to 'legacy' for backward compatibility)
  * @param {boolean} useLegacyPath - If true, always use BIP44 regardless of address type (for backward compatibility)
  * @param {number} account - Account index (default: 0)
@@ -396,7 +396,7 @@ export const getDerivePathForNetwork = (
 
 /**
  * Derivation path for receive (external) address at given index.
- * @param {string} network - 'mainnet' or 'testnet3'
+ * @param {string} network - 'mainnet' or 'testnet4' ('testnet'/'testnet3' accepted as aliases)
  * @param {string} addressType - 'legacy' | 'segwit-native' | 'segwit-compatible'
  * @param {boolean} useLegacyPath - legacy wallet path
  * @param {number} index - address index (default 0)
@@ -410,7 +410,7 @@ export const getReceivePath = (
 
 /**
  * Derivation path for change (internal) address at given index.
- * @param {string} network - 'mainnet' or 'testnet3'
+ * @param {string} network - 'mainnet' or 'testnet4' ('testnet'/'testnet3' accepted as aliases)
  * @param {string} addressType - 'legacy' | 'segwit-native' | 'segwit-compatible'
  * @param {boolean} useLegacyPath - legacy wallet path
  * @param {number} index - change address index (default 0)
@@ -1099,7 +1099,7 @@ export const getKeyshareDisplayLabel = keyshare => {
  * @param {string} spendingHash - Spending hash (can be empty)
  * @param {string} addressType - Address type (e.g., 'segwit-native', 'legacy', 'segwit-compatible')
  * @param {string} derivationPath - Derivation path (e.g., "m/84'/0'/0'/0/0")
- * @param {string} network - Network identifier (e.g., 'mainnet', 'testnet3')
+ * @param {string} network - Network identifier (e.g., 'mainnet', 'testnet4')
  * @param {string} utxosJson - Optional JSON string of utxosWithPaths used for spending/fee (may be large)
  * @param {string} changeAddress - Optional pre-computed change address (ensures both devices use the same change output)
  * @returns {string} - Encoded QR data string

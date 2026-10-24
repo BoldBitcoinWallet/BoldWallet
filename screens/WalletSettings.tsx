@@ -995,8 +995,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     options?: {silent?: boolean},
   ): Promise<boolean> => {
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
-    const previousNetwork = value ? 'mainnet' : 'testnet3';
-    const newNetwork = value ? 'testnet3' : 'mainnet';
+    const previousNetwork = value ? 'mainnet' : 'testnet4';
+    const newNetwork = value ? 'testnet4' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
     setIsTestnet(value);
     await setActiveNetwork(newNetwork);
@@ -3813,7 +3813,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     style={styles.networkIcon}
                     resizeMode="contain"
                   />
-                  <Text style={styles.toggleLabel}>Testnet3</Text>
+                  <Text style={styles.toggleLabel}>Testnet4</Text>
                 </View>
               </View>
               {/* Debug Logging — Android only (logcat) */}
