@@ -8,15 +8,16 @@
  * - Historical prices are always fetched from mainnet API (even in testnet mode).
  */
 
+import {getStoredNetworkKey} from './mempoolApiBase';
 import mempoolClient from './MempoolClient';
 import priceRepository, {toDayTimestamp} from './repositories/PriceRepository';
-import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigRepository';
+import appConfigRepository from './repositories/AppConfigRepository';
 import {dbg} from '../utils';
 
 const DEFAULT_MAINNET_API = 'https://mempool.space/api';
 
 function getMainnetBaseForPrice(): string {
-  const network = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+  const network = getStoredNetworkKey();
   return (
     appConfigRepository.get('api_mainnet') ||
     (network === 'mainnet' ? appConfigRepository.get('api') : null) ||

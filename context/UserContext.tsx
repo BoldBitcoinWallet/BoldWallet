@@ -8,7 +8,10 @@ import React, {
 } from 'react';
 import {DeviceEventEmitter} from 'react-native';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
-import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {
+  getStoredNetworkKey,
+  resolveStoredMempoolApiBase,
+} from '../services/mempoolApiBase';
 import {BBMTLibNativeModule} from '../native_modules';
 import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {
@@ -182,7 +185,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   useEffect(() => {
     const initializeNetwork = async () => {
       try {
-        const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+        const net = getStoredNetworkKey();
         setNetwork(net);
         const api = resolveStoredMempoolApiBase(net);
         const apiKey = `api_${net}`;

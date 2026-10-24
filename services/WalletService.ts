@@ -25,6 +25,7 @@ import {
   ensureMempoolProvidersSeeded,
 } from './mempoolProvidersStore';
 import {
+  getStoredNetworkKey,
   normalizeNetworkKey,
   resolveStoredMempoolApiBase,
 } from './mempoolApiBase';
@@ -367,7 +368,7 @@ export class WalletService {
   }
   private async getStoredState() {
     try {
-      const network = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+      const network = getStoredNetworkKey();
       const addressType =
         appConfigRepository.get(CONFIG_KEYS.ADDRESS_TYPE) || 'legacy';
       const api = resolveStoredMempoolApiBase(network);
@@ -660,7 +661,7 @@ export class WalletService {
   ): Promise<UtxoWithPath[]> {
     const baseUrl = apiUrl.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const fullApiUrl = `${baseUrl}/api`;
-    const isTestnetApi = /\/testnet(\/|$)/.test(fullApiUrl);
+    const isTestnetApi = /\/testnet4?(\/|$)/.test(fullApiUrl);
     const skipEmptyCache = options?.skipEmptyCache === true;
 
     const merged: UtxoWithPath[] = [];
@@ -1551,7 +1552,7 @@ export class WalletService {
         try {
           // Always use mainnet price endpoint (remove any testnet suffix)
           const priceUrl =
-            baseApiUrl.replace(/\/testnet\/?$/, '') + '/v1/prices';
+            baseApiUrl.replace(/\/testnet4?\/?$/, '') + '/v1/prices';
           dbg('WalletService: Trying price API URL:', priceUrl);
           const response = await this.withTimeout('price', signal =>
             mempoolClient.get(priceUrl, {signal}),

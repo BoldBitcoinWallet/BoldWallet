@@ -1,4 +1,6 @@
-import appConfigRepository from './repositories/AppConfigRepository';
+import appConfigRepository, {
+  CONFIG_KEYS,
+} from './repositories/AppConfigRepository';
 import {dbg, getMainnetAPIList} from '../utils';
 import {isWalletOnline} from './walletOnlineStore';
 
@@ -131,6 +133,17 @@ export function normalizeNetworkKey(network: string): string {
     return 'testnet4';
   }
   return network;
+}
+
+/**
+ * Stored active-network pref, normalized (legacy testnet/testnet3 →
+ * testnet4; missing → mainnet). All state init reads the network
+ * through here so no caller ever observes a retired key.
+ */
+export function getStoredNetworkKey(): string {
+  return normalizeNetworkKey(
+    appConfigRepository.get(CONFIG_KEYS.NETWORK) || '',
+  );
 }
 
 /**
