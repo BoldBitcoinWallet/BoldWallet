@@ -164,6 +164,42 @@ Java_com_boldwallet_DklsNative_bbmtBackupDecryptJni(JNIEnv *env, jclass, jstring
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtImportBackupStagedJni(JNIEnv *env, jclass, jstring blob, jstring password) {
+  const char *b = env->GetStringUTFChars(blob, nullptr);
+  const char *w = env->GetStringUTFChars(password, nullptr);
+  jstring out = to_jstring(env, BbmtImportBackupStaged(const_cast<char *>(b), const_cast<char *>(w)));
+  env->ReleaseStringUTFChars(blob, b);
+  env->ReleaseStringUTFChars(password, w);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtFinalizeStagedForPersistJni(JNIEnv *env, jclass, jstring handle, jstring nsec, jstring npub) {
+  const char *h = env->GetStringUTFChars(handle, nullptr);
+  const char *n = env->GetStringUTFChars(nsec, nullptr);
+  const char *u = env->GetStringUTFChars(npub, nullptr);
+  jstring out = to_jstring(env, BbmtFinalizeStagedForPersist(const_cast<char *>(h), const_cast<char *>(n), const_cast<char *>(u)));
+  env->ReleaseStringUTFChars(handle, h);
+  env->ReleaseStringUTFChars(nsec, n);
+  env->ReleaseStringUTFChars(npub, u);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtDestroyStagedJni(JNIEnv *env, jclass, jstring handle) {
+  const char *h = env->GetStringUTFChars(handle, nullptr);
+  jstring out = to_jstring(env, BbmtDestroyStaged(const_cast<char *>(h)));
+  env->ReleaseStringUTFChars(handle, h);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtDestroyAllStagedJni(JNIEnv *env, jclass) {
+  jstring out = to_jstring(env, BbmtDestroyAllStaged());
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtSecP256k1RecoverJni(
     JNIEnv *env, jclass, jstring r, jstring s, jstring v, jstring h) {
   const char *rs = env->GetStringUTFChars(r, nullptr);
