@@ -115,6 +115,10 @@ Java_com_boldwallet_DklsNative_bbmtGenerateKeyPairJni(JNIEnv *env, jclass) {
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtSha256Jni(JNIEnv *env, jclass, jstring msg) {
+  if (!bbmt_jni_check_strings(env, {msg})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *m = env->GetStringUTFChars(msg, nullptr);
   jstring out = to_jstring(env, BbmtSha256(const_cast<char *>(m)));
   env->ReleaseStringUTFChars(msg, m);
@@ -129,6 +133,10 @@ Java_com_boldwallet_DklsNative_bbmtSecureRandomJni(JNIEnv *env, jclass, jint len
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtFetchDataJni(
     JNIEnv *env, jclass, jstring url, jstring decKey, jstring payload) {
+  if (!bbmt_jni_check_strings(env, {url, decKey, payload})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *u = env->GetStringUTFChars(url, nullptr);
   const char *d = env->GetStringUTFChars(decKey, nullptr);
   const char *p = env->GetStringUTFChars(payload, nullptr);
@@ -144,6 +152,10 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtPublishDataJni(
     JNIEnv *env, jclass, jstring port, jstring timeout, jstring encKey,
     jstring data, jstring mode) {
+  if (!bbmt_jni_check_strings(env, {port, timeout, encKey, data, mode})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *po = env->GetStringUTFChars(port, nullptr);
   const char *to = env->GetStringUTFChars(timeout, nullptr);
   const char *ek = env->GetStringUTFChars(encKey, nullptr);
@@ -164,6 +176,10 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtListenForPeersJni(
     JNIEnv *env, jclass, jstring id, jstring pubkey, jstring port,
     jstring timeout, jstring mode) {
+  if (!bbmt_jni_check_strings(env, {id, pubkey, port, timeout, mode})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *i = env->GetStringUTFChars(id, nullptr);
   const char *pk = env->GetStringUTFChars(pubkey, nullptr);
   const char *po = env->GetStringUTFChars(port, nullptr);
@@ -184,6 +200,10 @@ extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtDiscoverPeersJni(
     JNIEnv *env, jclass, jstring id, jstring pubkey, jstring localIP,
     jstring remoteIP, jstring port, jstring timeout, jstring mode) {
+  if (!bbmt_jni_check_strings(env, {id, pubkey, localIP, remoteIP, port, timeout, mode})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *i = env->GetStringUTFChars(id, nullptr);
   const char *pk = env->GetStringUTFChars(pubkey, nullptr);
   const char *lip = env->GetStringUTFChars(localIP, nullptr);
@@ -207,6 +227,10 @@ Java_com_boldwallet_DklsNative_bbmtDiscoverPeersJni(
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtRunRelayJni(JNIEnv *env, jclass, jstring port) {
+  if (!bbmt_jni_check_strings(env, {port})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *p = env->GetStringUTFChars(port, nullptr);
   jstring out = to_jstring(env, BbmtRunRelay(const_cast<char *>(p)));
   env->ReleaseStringUTFChars(port, p);
@@ -230,6 +254,10 @@ Java_com_boldwallet_DklsNative_lanJoinKeygenJni(
     jstring sessionKey,
     jstring encKey,
     jstring decKey) {
+  if (!bbmt_jni_check_strings(env, {key, parties, session, server, chaincode, sessionKey, encKey, decKey})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *k = env->GetStringUTFChars(key, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
   const char *s = env->GetStringUTFChars(session, nullptr);
@@ -263,6 +291,10 @@ Java_com_boldwallet_DklsNative_nostrJoinKeygenJni(
     jstring session,
     jstring sessionKey,
     jstring chaincode) {
+  if (!bbmt_jni_check_strings(env, {relays, nsec, peers, session, sessionKey, chaincode})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *r = env->GetStringUTFChars(relays, nullptr);
   const char *n = env->GetStringUTFChars(nsec, nullptr);
   const char *p = env->GetStringUTFChars(peers, nullptr);
@@ -292,6 +324,10 @@ Java_com_boldwallet_DklsNative_nostrJoinKeysignJni(
     jstring sessionKey,
     jstring keyshare,
     jstring message) {
+  if (!bbmt_jni_check_strings(env, {relays, nsec, peers, session, sessionKey, keyshare, message})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *r = env->GetStringUTFChars(relays, nullptr);
   const char *n = env->GetStringUTFChars(nsec, nullptr);
   const char *p = env->GetStringUTFChars(peers, nullptr);
@@ -326,6 +362,10 @@ Java_com_boldwallet_DklsNative_mpcSignPsbtJni(
     jstring decKey,
     jstring keyshare,
     jstring psbt) {
+  if (!bbmt_jni_check_strings(env, {server, key, parties, session, sessionKey, encKey, decKey, keyshare, psbt})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *sv = env->GetStringUTFChars(server, nullptr);
   const char *k = env->GetStringUTFChars(key, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
@@ -361,6 +401,10 @@ Java_com_boldwallet_DklsNative_nostrMpcSignPsbtJni(
     jstring npubsSorted,
     jstring keyshare,
     jstring psbt) {
+  if (!bbmt_jni_check_strings(env, {relays, nsec, parties, npubsSorted, keyshare, psbt})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *r = env->GetStringUTFChars(relays, nullptr);
   const char *n = env->GetStringUTFChars(nsec, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
@@ -397,6 +441,10 @@ Java_com_boldwallet_DklsNative_mpcSendBtcWithUtxosJni(
     jstring fees,
     jstring utxos,
     jstring change) {
+  if (!bbmt_jni_check_strings(env, {server, key, parties, session, sessionKey, encKey, decKey, keyshare, btcPub, toAddress, amount, fees, utxos, change})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *sv = env->GetStringUTFChars(server, nullptr);
   const char *k = env->GetStringUTFChars(key, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
@@ -449,6 +497,10 @@ Java_com_boldwallet_DklsNative_nostrMpcSendBtcWithUtxosJni(
     jstring fees,
     jstring utxos,
     jstring change) {
+  if (!bbmt_jni_check_strings(env, {relays, nsec, parties, npubsSorted, balance, keyshare, toAddress, amount, fees, utxos, change})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *r = env->GetStringUTFChars(relays, nullptr);
   const char *n = env->GetStringUTFChars(nsec, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
@@ -481,6 +533,10 @@ Java_com_boldwallet_DklsNative_nostrMpcSendBtcWithUtxosJni(
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_cancelMpcSessionJni(JNIEnv *env, jclass, jstring sessionID) {
+  if (!bbmt_jni_check_strings(env, {sessionID})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *s = env->GetStringUTFChars(sessionID, nullptr);
   jstring out = to_jstring(env, DklsCancelMpcSession(const_cast<char *>(s)));
   env->ReleaseStringUTFChars(sessionID, s);
@@ -520,6 +576,10 @@ Java_com_boldwallet_DklsNative_clearBbmtHookListenerJni(JNIEnv *env, jclass) {
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtParsePSBTDetailsJni(JNIEnv *env, jclass, jstring psbt) {
+  if (!bbmt_jni_check_strings(env, {psbt})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *p = env->GetStringUTFChars(psbt, nullptr);
   jstring out = to_jstring(env, BbmtParsePSBTDetails(const_cast<char *>(p)));
   env->ReleaseStringUTFChars(psbt, p);
@@ -528,6 +588,10 @@ Java_com_boldwallet_DklsNative_bbmtParsePSBTDetailsJni(JNIEnv *env, jclass, jstr
 
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtPsbtIdentityHashJni(JNIEnv *env, jclass, jstring psbt) {
+  if (!bbmt_jni_check_strings(env, {psbt})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *p = env->GetStringUTFChars(psbt, nullptr);
   jstring out = to_jstring(env, BbmtPsbtIdentityHash(const_cast<char *>(p)));
   env->ReleaseStringUTFChars(psbt, p);
