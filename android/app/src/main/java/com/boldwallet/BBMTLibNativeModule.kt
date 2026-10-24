@@ -943,51 +943,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
-    @ReactMethod
-    fun aesEncrypt(data: String, key: String, promise: Promise) {
-        try {
-            if (rejectBbmtUnavailable(promise, "aesEncrypt")) return
-            val result = DklsNative.bbmtAesEncryptNative(data, key)
-            ld("aesEncrypt", result)
-            promise.resolve(result)
-        } catch (e: Exception) {
-            ld("aesEncrypt", "error: ${e.stackTraceToString()}")
-            promise.resolve(e.message)
-        }
-    }
-
-    @ReactMethod
-    fun aesDecrypt(data: String, key: String, promise: Promise) {
-        try {
-            if (rejectBbmtUnavailable(promise, "aesDecrypt")) return
-            val result = DklsNative.bbmtAesDecryptNative(data, key)
-            ld("aesDecrypt", result)
-            promise.resolve(result)
-        } catch (e: Exception) {
-            ld("aesDecrypt", "error: ${e.stackTraceToString()}")
-            promise.resolve(e.message)
-        }
-    }
-
-    @ReactMethod
-    fun aesEncryptStoredKeyshare(key: String, promise: Promise) {
-        Thread {
-            try {
-                val data = loadKeyshareJSONFromRNES()
-                if (data == null) {
-                    promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
-                    return@Thread
-                }
-                if (rejectBbmtUnavailable(promise, "aesEncryptStoredKeyshare")) return@Thread
-                val result = DklsNative.bbmtAesEncryptNative(data, key)
-                ld("aesEncryptStoredKeyshare", result)
-                promise.resolve(result)
-            } catch (e: Exception) {
-                ld("aesEncryptStoredKeyshare", "error: ${e.stackTraceToString()}")
-                promise.resolve(e.message)
-            }
-        }.start()
-    }
+    // F10 (3a): dead oracle methods aesEncrypt / aesDecrypt /
+    // aesEncryptStoredKeyshare REMOVED (zero callers repo-wide, no
+    // WebView/eval/reflection path; Go BbmtAes* stays for native use).
 
     /**
      * F1: versioned backup export. KDF (Argon2id) + AEAD (AES-GCM) run in Go;

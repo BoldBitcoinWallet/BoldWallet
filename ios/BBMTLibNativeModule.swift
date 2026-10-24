@@ -504,24 +504,9 @@ class BBMTLibNativeModule: RCTEventEmitter {
     resolve("eciesKeypair", output, error, resolver)
   }
 
-  @objc func aesEncrypt(
-    _ data: String, key: String, resolver: @escaping RCTPromiseResolveBlock,
-    rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    var error: NSError?
-    let output = TssAesEncrypt(data, key, &error)
-    resolve("aesEncrypt", output, error, resolver)
-  }
-
-  @objc func aesDecrypt(
-    _ data: String, key: String, resolver: @escaping RCTPromiseResolveBlock,
-    rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    var error: NSError?
-    let output = TssAesDecrypt(data, key, &error)
-    resolve("aesDecrypt", output, error, resolver)
-  }
-
+  // F10 (3a): dead oracle methods aesEncrypt / aesDecrypt /
+  // aesEncryptStoredKeyshare REMOVED (zero callers repo-wide, no
+  // WebView/eval/reflection path; Go TssAes* stays for native use).
   /// F1: versioned backup import. Resolves {"format":"v2"|"legacy","plaintext":"..."}.
   @objc func backupDecrypt(
     _ blob: String, password: String, resolver: @escaping RCTPromiseResolveBlock,
@@ -1222,31 +1207,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
   }
 
-  @objc func aesEncryptStoredKeyshare(
-    _ key: String,
-    resolver: @escaping RCTPromiseResolveBlock,
-    rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    DispatchQueue.global(qos: .background).async { [weak self] in
-      guard let self = self else {
-        rejecter("MODULE_GONE", "Native module released", nil)
-        return
-      }
-      guard let data = self.loadKeyshareJSONFromRNES() else {
-        rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
-        return
-      }
-      var error: NSError?
-      let output = TssAesEncrypt(data, key, &error)
-      self.sendLogEvent("aesEncryptStoredKeyshare", output)
-      if error == nil {
-        resolver(output)
-      } else {
-        resolver(error!.localizedDescription)
-      }
-    }
-  }
-
+  // (aesEncryptStoredKeyshare removed here — see note at aesEncrypt.)
   /// F1: versioned backup export. Password goes to Go (Argon2id + AES-GCM);
   /// JS never sees a derived key. Emits v2 format only.
   @objc func backupEncryptStoredKeyshare(
