@@ -25,6 +25,7 @@ import {
   isBackupExportAllowed,
 } from '../services/backupPassword';
 import {TssProvider} from '../services/TssProvider';
+import {clearBackupNudge} from '../services/backupNudge';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -193,6 +194,9 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
 
         await safeUnlink(filePath);
 
+        // 3b-6e: fresh backup exported — clear the persistent nudge
+        // for every modal user (fail-safe, never throws).
+        clearBackupNudge();
         clearModal();
         if (onBackupComplete) {
           onBackupComplete();

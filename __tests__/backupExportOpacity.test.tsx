@@ -60,11 +60,15 @@ jest.mock('../services/rnfsSafe', () => ({safeUnlink: jest.fn()}));
 jest.mock('../services/TssProvider', () => ({
   TssProvider: {backupEncryptStoredKeyshare: jest.fn()},
 }));
+jest.mock('../services/backupNudge', () => ({
+  clearBackupNudge: jest.fn(),
+}));
 
 import {getKeyshareLabel, getKeyshareMetadata} from '../utils';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import {TssProvider} from '../services/TssProvider';
+import {clearBackupNudge} from '../services/backupNudge';
 
 const nativeMocks = {
   aesEncryptStoredKeyshare: jest.fn(),
@@ -147,6 +151,11 @@ describe('BackupKeyshareModal export opacity (F15)', () => {
     expect(Share.open).toHaveBeenCalledTimes(1);
   });
 
+  it('3b-6e: successful export clears the backup nudge', async () => {
+    await renderAndExport('Correct-Horse-12!');
+    expect(clearBackupNudge).toHaveBeenCalledTimes(1);
+  });
+
   it('F23: empty backup file is never shared (fail-closed stat guard)', async () => {
     (RNFS.stat as jest.Mock).mockResolvedValueOnce({size: 0});
     await renderAndExport('Correct-Horse-12!');
@@ -155,6 +164,7 @@ describe('BackupKeyshareModal export opacity (F15)', () => {
       'Error',
       expect.stringContaining('could not be written'),
     );
+    expect(clearBackupNudge).not.toHaveBeenCalled();
   });
 
   it('F15: no share bytes cross any JS-handled value on export', async () => {

@@ -12,6 +12,7 @@ import {
   requestImportCeremonyToken,
 } from './ceremonyAuth';
 import {TssProvider} from './TssProvider';
+import {setBackupNudgeActive} from './backupNudge';
 import {
   dbg,
   detectKeyshareTssBackend,
@@ -207,11 +208,11 @@ export async function importKeyshareFromBase64(
       /* logged in ceremonyAuth; import stands */
     }
     if (legacy) {
-      Alert.alert(
-        'Legacy Backup Imported',
-        'This backup uses an older, less secure encryption format. ' +
-          'Please create a new backup from Settings to re-encrypt it with the current format.',
-      );
+      // 3b-6e: silent import — no blocking alert. The persistent
+      // "backup recommended" nudge (Wallet home + Settings) carries
+      // the re-export reminder until a fresh backup is made.
+      dbg('keyshareImport: legacy backup imported, nudge set');
+      setBackupNudgeActive();
     }
     return;
   } catch (error) {
