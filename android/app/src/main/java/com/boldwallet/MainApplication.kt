@@ -30,6 +30,18 @@ class MainApplication : Application(), ReactApplication {
                 add(RNSharePackage())
                 add(ReactNativeBiometricsPackage())
                 add(BarcodeZxingScanPackage())
+                // 3b-1d: DEBUG-only ceremony test mint. Reflective
+                // load because CeremonyTestPackage exists ONLY in
+                // the debug source set — absent from release
+                // binaries (mirrors Swift #if DEBUG strip).
+                try {
+                    val testPkg = Class.forName(
+                        "com.boldwallet.CeremonyTestPackage",
+                    ).getDeclaredConstructor().newInstance() as ReactPackage
+                    add(testPkg)
+                } catch (_: ClassNotFoundException) {
+                    // Release: no test mint. Expected, not an error.
+                }
             },
         )
     }

@@ -31,10 +31,18 @@ jest.mock('../App', () => ({
 }));
 jest.mock('../native_modules', () => ({
   BBMTLibNativeModule: {
-    importBackupToStagedHandle: jest.fn(),
     sha256: jest.fn(),
     hasKeyshareInSecureStorage: jest.fn(),
+    // 3b-2e: import-flow owner ceremony (real ceremonyAuth).
+    requestImportCeremonyToken: jest.fn(),
+    completeCeremonyToken: jest.fn(),
+    releaseCeremonyToken: jest.fn(),
   },
+}));
+// 3b-2e: stage routes via TssProvider (token plumbing pinned in
+// tssImportTokenGating; this suite pins mapping + owner flow).
+jest.mock('../services/TssProvider', () => ({
+  TssProvider: {importBackupToStagedHandle: jest.fn()},
 }));
 jest.mock('../services/walletSetupOrchestrator', () => ({
   persistStagedKeyshare: jest.fn(),
@@ -52,13 +60,18 @@ jest.mock('../services/repositories/AppConfigRepository', () => ({
   },
 }));
 
+import {Alert} from 'react-native';
+import RNFS from 'react-native-fs';
 import {BBMTLibNativeModule} from '../native_modules';
 import {
   decryptAndValidateKeyshare,
   finalizeKeyshareImport,
+  importKeyshareFromBase64,
   InvalidKeyshareError,
+  readBackupBlobFromUri,
   WrongKeysharePasswordError,
 } from '../services/keyshareImport';
+import {TssProvider} from '../services/TssProvider';
 import {persistStagedKeyshare} from '../services/walletSetupOrchestrator';
 import {
   bufferToUr,
@@ -67,7 +80,9 @@ import {
   urAllSequentialParts,
 } from '../utils/urBytesQr';
 
-const stagedImport = BBMTLibNativeModule.importBackupToStagedHandle as jest.Mock;
+const stagedImport = (TssProvider as any)
+  .importBackupToStagedHandle as jest.Mock;
+const native = BBMTLibNativeModule as any;
 const sha256 = BBMTLibNativeModule.sha256 as jest.Mock;
 
 const staged = (metadata: object, legacy = false) =>
@@ -89,7 +104,12 @@ describe('keyshareImport (F1 mapping, F15b-1 staged)', () => {
       parsed: {pub_key: 'abc', local_party_key: 'KeyShare1'},
       legacy: false,
     });
-    expect(stagedImport).toHaveBeenCalledWith('blob', 'password');
+    expect(stagedImport).toHaveBeenCalledWith(
+      'blob',
+      'password',
+      undefined,
+      undefined,
+    );
   });
 
   it('F15b-1: legacy success returns legacy=true', async () => {
@@ -181,9 +201,101 @@ describe('keyshareImport (F1 mapping, F15b-1 staged)', () => {
       {pub_key: 'abc', local_party_key: 'KeyShare1'},
       {setActiveNetwork, navigate},
     );
-    expect(persistStagedKeyshare).toHaveBeenCalledWith('ab'.repeat(16));
+    // No owner ceremony: finalize passes opts through as undefined.
+    expect(persistStagedKeyshare).toHaveBeenCalledWith(
+      'ab'.repeat(16),
+      undefined,
+    );
     expect(setActiveNetwork).toHaveBeenCalledWith('mainnet');
     expect(navigate).toHaveBeenCalled();
+  });
+
+  it('3b-2e B17/B18: import shares one ceremony across stage+persist', async () => {
+    native.sha256.mockResolvedValue('sess-imp-owner');
+    native.requestImportCeremonyToken.mockResolvedValue('tok-imp-owner');
+    native.completeCeremonyToken.mockResolvedValue(true);
+    stagedImport.mockResolvedValue(
+      staged({pub_key: 'abc', local_party_key: 'KeyShare1'}),
+    );
+    const navigate = jest.fn();
+    const setActiveNetwork = jest.fn(async () => {});
+    await importKeyshareFromBase64('blob', 'password', {
+      setActiveNetwork,
+      navigate,
+    });
+    // One mint, threaded through stage AND persist, completed once.
+    expect(native.requestImportCeremonyToken).toHaveBeenCalledTimes(1);
+    expect(native.requestImportCeremonyToken).toHaveBeenCalledWith(
+      'sess-imp-owner',
+    );
+    expect(stagedImport).toHaveBeenCalledWith(
+      'blob',
+      'password',
+      'tok-imp-owner',
+      'sess-imp-owner',
+    );
+    expect(persistStagedKeyshare).toHaveBeenCalledWith('ab'.repeat(16), {
+      ceremonyToken: 'tok-imp-owner',
+      ceremonySessionID: 'sess-imp-owner',
+    });
+    expect(native.completeCeremonyToken).toHaveBeenCalledWith('tok-imp-owner');
+    expect(native.releaseCeremonyToken).not.toHaveBeenCalled();
+  });
+
+  it('3b-6f: legacy import is silent (no alert, internal realign only)', async () => {
+    native.sha256.mockResolvedValue('sess-imp-legacy');
+    native.requestImportCeremonyToken.mockResolvedValue('tok-imp-legacy');
+    native.completeCeremonyToken.mockResolvedValue(true);
+    stagedImport.mockResolvedValue(
+      staged({pub_key: 'abc', local_party_key: 'KeyShare1'}, true),
+    );
+    const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    try {
+      await importKeyshareFromBase64('blob', 'password', {
+        setActiveNetwork: jest.fn(async () => {}),
+        navigate: jest.fn(),
+      });
+    } finally {
+      alertSpy.mockRestore();
+    }
+    expect(alertSpy).not.toHaveBeenCalled();
+  });
+
+  it('3b-2e B17/B18: stage failure releases, persist never runs', async () => {
+    native.sha256.mockResolvedValue('sess-imp-fail');
+    native.requestImportCeremonyToken.mockResolvedValue('tok-imp-fail');
+    native.releaseCeremonyToken.mockResolvedValue(true);
+    stagedImport.mockRejectedValue(new Error('backup authentication failed'));
+    const navigate = jest.fn();
+    const setActiveNetwork = jest.fn(async () => {});
+    await expect(
+      importKeyshareFromBase64('blob', 'wrong', {
+        setActiveNetwork,
+        navigate,
+      }),
+    ).rejects.toBeInstanceOf(WrongKeysharePasswordError);
+    expect(native.releaseCeremonyToken).toHaveBeenCalledWith('tok-imp-fail');
+    expect(native.completeCeremonyToken).not.toHaveBeenCalled();
+    expect(persistStagedKeyshare).not.toHaveBeenCalled();
+  });
+
+  it('3b-2e B17/B18: mint failure never reaches stage', async () => {
+    native.sha256.mockResolvedValue('sess-imp-cancel');
+    native.requestImportCeremonyToken.mockRejectedValue(
+      Object.assign(new Error('cancelled'), {
+        code: 'CEREMONY_AUTH_REQUIRED',
+      }),
+    );
+    const navigate = jest.fn();
+    const setActiveNetwork = jest.fn(async () => {});
+    await expect(
+      importKeyshareFromBase64('blob', 'password', {
+        setActiveNetwork,
+        navigate,
+      }),
+    ).rejects.toThrow();
+    expect(stagedImport).not.toHaveBeenCalled();
+    expect(persistStagedKeyshare).not.toHaveBeenCalled();
   });
 
   it('decryptAndValidateKeyshare accepts ciphertext recovered from airgap UR frames', async () => {
@@ -210,5 +322,58 @@ describe('keyshareImport (F1 mapping, F15b-1 staged)', () => {
     ).resolves.toMatchObject({
       parsed: {pub_key: 'abc'},
     });
+  });
+});
+
+describe('readBackupBlobFromUri (3b-6d file compat, F23)', () => {
+  const fs = RNFS as any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    fs.copyFile.mockResolvedValue(undefined);
+  });
+
+  it('passes fixed v2 ASCII files through verbatim (no base64 read)', async () => {
+    fs.readFile.mockResolvedValueOnce('BW2$QUJDREVG');
+    await expect(readBackupBlobFromUri('file:///x/a.share')).resolves.toBe(
+      'BW2$QUJDREVG',
+    );
+    expect(fs.readFile).toHaveBeenCalledTimes(1);
+    expect(fs.readFile).toHaveBeenCalledWith(expect.any(String), 'utf8');
+  });
+
+  it('trims surrounding whitespace on v2 files', async () => {
+    fs.readFile.mockResolvedValueOnce('  BW2$QUJD\n');
+    await expect(readBackupBlobFromUri('file:///x/a.share')).resolves.toBe(
+      'BW2$QUJD',
+    );
+  });
+
+  it('falls back to base64 for legacy raw-byte files (utf8 reject)', async () => {
+    fs.readFile
+      .mockRejectedValueOnce(new Error('invalid utf8'))
+      .mockResolvedValueOnce('aGk=');
+    await expect(readBackupBlobFromUri('file:///x/a.share')).resolves.toBe(
+      'aGk=',
+    );
+    expect(fs.readFile).toHaveBeenNthCalledWith(2, expect.any(String), 'base64');
+  });
+
+  it('falls back to base64 when utf8 yields non-envelope text', async () => {
+    fs.readFile
+      .mockResolvedValueOnce('not-a-backup')
+      .mockResolvedValueOnce('bGVnYWN5');
+    await expect(readBackupBlobFromUri('file:///x/a.share')).resolves.toBe(
+      'bGVnYWN5',
+    );
+  });
+
+  it('empty file (B1 iOS silent-empty) fails Invalid, not wrong-password', async () => {
+    fs.readFile
+      .mockResolvedValueOnce('')
+      .mockResolvedValueOnce('');
+    await expect(
+      readBackupBlobFromUri('file:///x/empty.share'),
+    ).rejects.toBeInstanceOf(InvalidKeyshareError);
   });
 });

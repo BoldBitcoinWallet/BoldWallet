@@ -58,6 +58,7 @@ import {
   shortenAddress,
 } from '../utils';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
 import EncryptedStorage from 'react-native-encrypted-storage';
 import {guardOnlineAction} from '../services/walletOnlineStore';
@@ -714,7 +715,10 @@ const MobileNostrPairing = ({navigation}: any) => {
               setSpendSignOutcome('aborted');
             }
             try {
-              const cancelResult = await TssProvider.cancelNostrMpc();
+              // 3b-4 B19: class selects the stuck-cancel mint only.
+              const cancelResult = await TssProvider.cancelNostrMpc(
+                isKeygen ? 'keygen' : 'sign',
+              );
               dbg('MobileNostrPairing: cancelNostrMpc', cancelResult.outcome);
             } catch (e) {
               dbg('MobileNostrPairing: cancelNostrMpc failed', e);
@@ -1237,7 +1241,8 @@ const MobileNostrPairing = ({navigation}: any) => {
   ]);
   const generateLocalKeypair = async () => {
     try {
-      const keypairJSON = await BBMTLibNativeModule.nostrKeypair();
+      // 3b-2b B20: token-gated via TssProvider (OS-visible prompt).
+      const keypairJSON = await TssProvider.nostrKeypair();
       const keypair = JSON.parse(keypairJSON);
       setLocalNsec(keypair.nsec);
       setLocalNpub(keypair.npub);
@@ -2031,7 +2036,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       // Use normalized network (native format) for API lookup and BBMTLib
       const apiUrl = resolveStoredMempoolApiBase(net);
       await BBMTLibNativeModule.setBtcNetwork(net);
-      await BBMTLibNativeModule.setAPI(net, apiUrl);
+      await ensureMempoolApiApplied(net, apiUrl);
       // CRITICAL: Update LocalCache 'api' key so WalletService.getWalletBalance uses correct API
       // This ensures balance fetch uses the network from route params, not device's current network
       appConfigRepository.set('api', apiUrl);
@@ -2369,7 +2374,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (originalNetwork && originalApiUrl) {
         try {
           await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
-          await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
+          await ensureMempoolApiApplied(originalNetwork, originalApiUrl);
           appConfigRepository.set('api', originalApiUrl);
           if (originalWalletServiceNetwork && originalWalletServiceApiUrl) {
             const walletService = WalletService.getInstance();
@@ -2702,6 +2707,17 @@ const MobileNostrPairing = ({navigation}: any) => {
         rememberNostrLegacyFlag(JSON.parse(persisted));
       }
       keysharePersistedRef.current = true;
+      // F21: the pairing nsec's JS job is done (DKG + finalize
+      // consumed it; signing takes no nsec). Drop both JS
+      // references; unmount/GC reclaims the heap copies. JS
+      // strings are immutable — this dereferences, not wipes.
+      setLocalNsec('');
+      if (pendingKeyshareRef.current) {
+        pendingKeyshareRef.current = {
+          ...pendingKeyshareRef.current,
+          partyNsec: undefined,
+        };
+      }
       return true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
@@ -6551,7 +6567,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               if (p.originalNetwork && p.originalApiUrl) {
                 try {
                   await BBMTLibNativeModule.setBtcNetwork(p.originalNetwork);
-                  await BBMTLibNativeModule.setAPI(
+                  await ensureMempoolApiApplied(
                     p.originalNetwork,
                     p.originalApiUrl,
                   );

@@ -1,7 +1,13 @@
 package com.boldwallet
 
+import android.app.KeyguardManager
+import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -385,9 +391,70 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
 
+    /**
+     * 3b-2d B15/B16: native-held API allowlist store. Private
+     * prefs file with NO other writer (grep-verified) — JS can
+     * add hosts only through the gated methods with a token.
+     */
+    private val apiAllowlistStore = object : CeremonyApiAllowlist.Store {
+        override fun load(): Set<String> {
+            val prefs = reactApplicationContext.getSharedPreferences(
+                "ceremony_api_allowlist",
+                Context.MODE_PRIVATE,
+            )
+            return prefs.getStringSet("urls", emptySet())?.toSet() ?: emptySet()
+        }
+
+        override fun save(urls: Set<String>) {
+            reactApplicationContext.getSharedPreferences(
+                "ceremony_api_allowlist",
+                Context.MODE_PRIVATE,
+            ).edit().putStringSet("urls", urls.toSet()).apply()
+        }
+    }
+
+    /**
+     * 3b-2d: allowlist-or-token gate. Returns true when the call
+     * may proceed (persisting newly approved URLs best-effort —
+     * a persist failure still applies this use since the user
+     * approved it; the next launch simply prompts again).
+     */
+    private fun gateApiUrls(
+        urls: List<String>,
+        ceremonyToken: String,
+        ceremonySessionID: String,
+        promise: Promise,
+        method: String,
+    ): Boolean {
+        return when (
+            CeremonyApiAllowlist.decide(urls, ceremonyToken, ceremonySessionID, apiAllowlistStore)
+        ) {
+            CeremonyApiAllowlist.Decision.REJECT -> {
+                rejectCeremonyUnauthorized(promise)
+                false
+            }
+            CeremonyApiAllowlist.Decision.APPLY_AND_PERSIST -> {
+                try {
+                    CeremonyApiAllowlist.persist(urls, apiAllowlistStore)
+                } catch (e: Exception) {
+                    ld(method, "allowlist persist failed, applying anyway: ${e.message}")
+                }
+                true
+            }
+            CeremonyApiAllowlist.Decision.APPLY -> true
+        }
+    }
+
     @ReactMethod
-    fun setAPI(network: String, baseAPI: String, promise: Promise) {
+    fun setAPI(
+        network: String,
+        baseAPI: String,
+        ceremonyToken: String,
+        ceremonySessionID: String,
+        promise: Promise,
+    ) {
         try {
+            if (!gateApiUrls(listOf(baseAPI), ceremonyToken, ceremonySessionID, promise, "setAPI")) return
             if (rejectBbmtUnavailable(promise, "setAPI")) return
             val result = DklsNative.bbmtUseAPINative(network, baseAPI)
             ld("setAPI", result)
@@ -397,10 +464,17 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             promise.reject(e)
         }
     }
-    
+
     @ReactMethod
-    fun setFeeAPIs(urls: String, promise: Promise) {
+    fun setFeeAPIs(
+        urls: String,
+        ceremonyToken: String,
+        ceremonySessionID: String,
+        promise: Promise,
+    ) {
         try {
+            val parsed = CeremonyApiAllowlist.parseCsv(urls)
+            if (!gateApiUrls(parsed, ceremonyToken, ceremonySessionID, promise, "setFeeAPIs")) return
             if (rejectBbmtUnavailable(promise, "setFeeAPIs")) return
             val result = DklsNative.bbmtUseFeeAPIsNative(urls)
             ld("setFeeAPIs", result)
@@ -513,8 +587,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun cancelMpcSession(sessionID: String, promise: Promise) {
+    fun cancelMpcSession(sessionID: String, ceremonyToken: String, promise: Promise) {
         try {
+            // 3b-4 B19: cancel consumes the ceremony token (same
+            // op+session) and atomically revokes the session.
+            if (!CeremonyTokens.cancelConsume(ceremonyToken, sessionID)) {
+                rejectCeremonyUnauthorized(promise)
+                return
+            }
             if (rejectBbmtUnavailable(promise, "cancelMpcSession")) return
             val out = DklsNative.bbmtCancelMpcSessionNative(sessionID)
             promise.resolve(out)
@@ -524,8 +604,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun cancelNostrMpc(promise: Promise) {
+    fun cancelNostrMpc(ceremonyToken: String, promise: Promise) {
         try {
+            // 3b-4 B19: global cancel consumes a live ceremony
+            // token; the token's own session scopes revocation.
+            if (!CeremonyTokens.cancelConsume(ceremonyToken, null)) {
+                rejectCeremonyUnauthorized(promise)
+                return
+            }
             if (rejectBbmtUnavailable(promise, "cancelNostrMpc")) return
             val out = DklsNative.bbmtCancelNostrMpcNative()
             promise.resolve(out)
@@ -562,9 +648,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun publishData(port: String, timeout: String, encKey: String, raw: String, mode: String,
+                    ceremonyToken: String, ceremonySessionID: String,
                     promise: Promise) {
         Thread {
             try {
+                // 3b-2c B13: rides the handshake ceremony token (sign|keygen).
+                if (!CeremonyTokens.verifyTransport(ceremonyToken, ceremonySessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "publishData")) return@Thread
                 val output = DklsNative.bbmtPublishDataNative(port, timeout, encKey, raw, mode)
                 ld("publishData", output)
@@ -577,9 +669,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun fetchData(url: String, decKey: String, payload: String, promise: Promise) {
+    fun fetchData(url: String, decKey: String, payload: String,
+                  ceremonyToken: String, ceremonySessionID: String,
+                  promise: Promise) {
         Thread {
             try {
+                // 3b-2c B14: rides the handshake ceremony token (sign|keygen).
+                if (!CeremonyTokens.verifyTransport(ceremonyToken, ceremonySessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "fetchData")) return@Thread
                 val raw = DklsNative.bbmtFetchDataNative(url, decKey, payload)
                 ld("fetchData", raw)
@@ -712,8 +811,13 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
     
     @ReactMethod
-    fun nostrKeypair(promise: Promise) {
+    fun nostrKeypair(ceremonyToken: String, promise: Promise) {
         try {
+            // 3b-2b B20: single-call keygen ceremony (no MPC session yet).
+            if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.KEYGEN)) {
+                rejectCeremonyUnauthorized(promise)
+                return
+            }
             if (rejectBbmtUnavailable(promise, "nostrKeypair")) return
             val result = DklsNative.bbmtNostrKeypairNative()
             ld("nostrKeypair", result)
@@ -750,10 +854,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         sessionKey: String,
         chaincode: String,
         ppmFile: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 setup takes a keygen token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "nostrMpcTssSetup")) return@Thread
                 val result = DklsNative.bbmtNostrJoinKeygenNative(
                     relaysCSV,
@@ -773,39 +883,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
-    @ReactMethod
-    fun nostrJoinKeysign(
-        relaysCSV: String,
-        partyNsec: String,
-        partiesNpubsCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        keyshareJSON: String,
-        derivationPath: String,
-        message: String,
-        promise: Promise
-    ) {
-        Thread {
-            try {
-                if (rejectBbmtUnavailable(promise, "nostrJoinKeysign")) return@Thread
-                val result = DklsNative.bbmtNostrJoinKeysignNative(
-                    relaysCSV,
-                    partyNsec,
-                    partiesNpubsCSV,
-                    sessionID,
-                    sessionKey,
-                    keyshareJSON,
-                    derivationPath,
-                    message,
-                )
-                ld("nostrJoinKeysign", result)
-                promise.resolve(result)
-            } catch (e: Throwable) {
-                ld("nostrJoinKeysign", "error: ${e.stackTraceToString()}")
-                promise.reject("NOSTR_JOIN_KEYSIGN_ERROR", "Failed to join keysign via Nostr: ${e.message}", e)
-            }
-        }.start()
-    }
+    // F18 (3b-3): nostrJoinKeysign REMOVED (dead from JS — zero
+    // static/dynamic/WebView/reflection callers; took keyshareJSON
+    // plaintext from JS). Go BbmtNostrJoinKeysign stays (native-only).
 
     // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
     // variant decision deferred). DKLs twins stage natively.
@@ -820,10 +900,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         encKey: String,
         decKey: String,
         chaincode: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 setup takes a keygen token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "mpcTssSetup")) return@Thread
                 val result = DklsNative.bbmtJoinKeygenNative(
                     ppmFile,
@@ -959,9 +1045,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun eciesKeypair(promise: Promise) {
+    fun eciesKeypair(ceremonyToken: String, promise: Promise) {
         Thread {
             try {
+                // 3b-2b B21: single-call keygen ceremony (no MPC session yet).
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.KEYGEN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "eciesKeypair")) return@Thread
                 val result = DklsNative.bbmtGenerateKeyPairNative()
                 if (result.startsWith("error:")) {
@@ -990,9 +1081,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      * JS passes the password, never a derived key. Emits v2 format only.
      */
     @ReactMethod
-    fun backupEncryptStoredKeyshare(password: String, promise: Promise) {
+    fun backupEncryptStoredKeyshare(password: String, ceremonyToken: String, promise: Promise) {
         Thread {
             try {
+                // 3b-3 A12: single-call export ceremony (no MPC session).
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.EXPORT)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 val data = loadKeyshareJSONFromRNES()
                 if (data == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
@@ -1025,9 +1121,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      * caller rewrite).
      */
     @ReactMethod
-    fun importBackupToStagedHandle(blob: String, password: String, promise: Promise) {
+    fun importBackupToStagedHandle(
+        blob: String,
+        password: String,
+        ceremonyToken: String,
+        ceremonySessionID: String,
+        promise: Promise,
+    ) {
         Thread {
             try {
+                // 3b-2e B17: strict import ceremony (owner-shared stage+persist).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.IMPORT, ceremonySessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "importBackupToStagedHandle")) return@Thread
                 val result = DklsNative.bbmtImportBackupStagedNative(blob, password)
                 if (result.startsWith("error:")) {
@@ -1049,9 +1156,22 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
      * failed persists are retryable with the same handle.
      */
     @ReactMethod
-    fun persistStoredKeyshare(handle: String, nsec: String, npub: String, promise: Promise) {
+    fun persistStoredKeyshare(
+        handle: String,
+        nsec: String,
+        npub: String,
+        ceremonyToken: String,
+        ceremonySessionID: String,
+        promise: Promise,
+    ) {
         Thread {
             try {
+                // 3b-2e B18: strict import ceremony (shared with stage, or
+                // the setup-commit flow's own save ceremony).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.IMPORT, ceremonySessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "persistStoredKeyshare")) return@Thread
                 val json = DklsNative.bbmtFinalizeStagedForPersistNative(handle, nsec, npub)
                 if (json.startsWith("error:")) {
@@ -1165,6 +1285,185 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     /**
+     * 3b-1 ceremony mint, per-ceremony methods ONLY. There is
+     * deliberately NO generic "request token for class X" bridge
+     * method: each entry point below hardcodes its op class and
+     * its prompt copy, so JS can neither choose the class nor
+     * spoof the action label. Transport rides the parent
+     * ceremony token (sign|keygen) — no transport mint exists.
+     */
+    /**
+     * 3b-2a: shared gate rejection. Every gated method verifies its
+     * token FIRST (before runtime checks or storage reads) so an
+     * unauthorized caller learns nothing except auth-required.
+     */
+    private fun rejectCeremonyUnauthorized(promise: Promise) {
+        promise.reject(
+            "CEREMONY_AUTH_REQUIRED",
+            "Ceremony authorization required for this call",
+            null,
+        )
+    }
+
+    @ReactMethod
+    fun requestSignCeremonyToken(sessionID: String, promise: Promise) {
+        promptAndMint(
+            CeremonyTokens.OpClass.SIGN, sessionID,
+            "Authenticate to sign", "Approve the signing ceremony", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestKeygenCeremonyToken(sessionID: String, promise: Promise) {
+        promptAndMint(
+            CeremonyTokens.OpClass.KEYGEN, sessionID,
+            "Authenticate to generate keys", "Approve the wallet setup ceremony", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestExportCeremonyToken(sessionID: String, promise: Promise) {
+        promptAndMint(
+            CeremonyTokens.OpClass.EXPORT, sessionID,
+            "Authenticate to export backup", "Approve the backup export", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestImportCeremonyToken(sessionID: String, promise: Promise) {
+        promptAndMint(
+            CeremonyTokens.OpClass.IMPORT, sessionID,
+            "Authenticate to import backup", "Approve the backup import", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestConfigCeremonyToken(sessionID: String, promise: Promise) {
+        promptAndMint(
+            CeremonyTokens.OpClass.CONFIG, sessionID,
+            "Authenticate to change settings", "Approve the network settings change", promise,
+        )
+    }
+
+    /**
+     * Shared mint worker. PRIVATE — not a bridge method, not
+     * JS-reachable. OS-visible auth FIRST (BiometricPrompt,
+     * biometric-or-device-credential), mint ONLY on success. No
+     * screen lock → CEREMONY_AUTH_NO_LOCK refuse (Q3). Every
+     * other failure → CEREMONY_AUTH_REQUIRED (no reason oracle).
+     * Mint itself enforces single-live-session.
+     */
+    private fun promptAndMint(
+        opClass: CeremonyTokens.OpClass,
+        sessionID: String,
+        title: String,
+        subtitle: String,
+        promise: Promise,
+    ) {
+        if (sessionID.isEmpty()) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Confirm to continue — authenticate in the prompt.",
+                null,
+            )
+            return
+        }
+        val ctx = reactApplicationContext
+        val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        if (km == null || !km.isDeviceSecure) {
+            promise.reject(
+                "CEREMONY_AUTH_NO_LOCK",
+                "Set a device screen lock to continue.",
+                null,
+            )
+            return
+        }
+        val activity = ctx.currentActivity as? FragmentActivity
+        if (activity == null) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Confirm to continue — authenticate in the prompt.",
+                null,
+            )
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                val executor = ContextCompat.getMainExecutor(activity)
+                val callback = object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(
+                        result: BiometricPrompt.AuthenticationResult,
+                    ) {
+                        try {
+                            promise.resolve(CeremonyTokens.mint(opClass, sessionID))
+                        } catch (e: Exception) {
+                            promise.reject(
+                                "CEREMONY_AUTH_REQUIRED",
+                                "Confirm to continue — authenticate in the prompt.",
+                                e,
+                            )
+                        }
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        // User cancel, lockout, HW failure: never mint.
+                        promise.reject(
+                            "CEREMONY_AUTH_REQUIRED",
+                            "Confirm to continue — authenticate in the prompt.",
+                            null,
+                        )
+                    }
+
+                    override fun onAuthenticationFailed() {
+                        // Single bad biometric — retryable, do not settle.
+                    }
+                }
+                val infoBuilder = BiometricPrompt.PromptInfo.Builder()
+                    .setTitle(title)
+                    .setSubtitle(subtitle)
+                    .setAllowedAuthenticators(
+                        BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                            BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+                    )
+                // NOTE: no negative button — forbidden with DEVICE_CREDENTIAL.
+                BiometricPrompt(activity, executor, callback).authenticate(infoBuilder.build())
+            } catch (e: Exception) {
+                promise.reject(
+                    "CEREMONY_AUTH_REQUIRED",
+                    "Confirm to continue — authenticate in the prompt.",
+                    e,
+                )
+            }
+        }
+    }
+
+    /** 3b-1: retire a token after ceremony success (-> USED). */
+    @ReactMethod
+    fun completeCeremonyToken(token: String, promise: Promise) {
+        try {
+            CeremonyTokens.complete(token)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("CEREMONY_TOKEN_ERROR", e.message, e)
+        }
+    }
+
+    /** 3b-1: revoke a token on teardown (-> REVOKED). Idempotent. */
+    @ReactMethod
+    fun releaseCeremonyToken(token: String, promise: Promise) {
+        try {
+            CeremonyTokens.release(token)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("CEREMONY_TOKEN_ERROR", e.message, e)
+        }
+    }
+
+    // NOTE: NO debug test mint here. The prompt-bypassing mint
+    // lives in src/debug (CeremonyTestModule) + Swift #if DEBUG —
+    // absent from release binaries. Guardrailed in jest.
+
+    /**
      * F15b-1 migration bootstrap (§1.5 step 7): idempotent
      * plaintext → envelope migration. Resolves {migrated:bool}.
      * Storage failures reject with [SECURE_STORAGE_*] copy.
@@ -1234,10 +1533,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         encKey: String,
         decKey: String,
         psbtBase64: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 sign takes a sign token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 val keyshare = loadKeyshareJSONFromRNES()
                 if (keyshare == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
@@ -1279,10 +1584,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         feeSatoshi: String,
         utxosWithPathsJSON: String,
         changeAddress: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 send takes a sign token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 val keyshare = loadKeyshareJSONFromRNES()
                 if (keyshare == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
@@ -1325,10 +1636,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         estimatedFee: String,
         utxosWithPathsJSON: String,
         changeAddress: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 nostr send takes a sign token (single-call).
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 if (rejectBbmtUnavailable(promise, "nostrMpcSendBTC")) return@Thread
                 val result = DklsNative.bbmtNostrMpcSendBTCWithUTXOsNative(
@@ -1359,10 +1676,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         partiesNpubsCSV: String,
         npubsSorted: String,
         psbtBase64: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 nostr sign takes a sign token (single-call).
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 if (rejectBbmtUnavailable(promise, "nostrMpcSignPSBT")) return@Thread
                 val result = DklsNative.bbmtNostrMpcSignPSBTNative(
@@ -1443,10 +1766,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         encKey: String,
         decKey: String,
         chaincode: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject(
                         "DKLS_NATIVE_REQUIRED",
@@ -1481,10 +1809,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         sessionID: String,
         sessionKey: String,
         chaincode: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject(
                         "DKLS_NATIVE_REQUIRED",
@@ -1510,9 +1843,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun dklsCancelMpcSession(sessionID: String, promise: Promise) {
+    fun dklsCancelMpcSession(sessionID: String, ceremonyToken: String, promise: Promise) {
         Thread {
             try {
+                // 3b-4 B19: cancel consumes the ceremony token (same
+                // op+session) and atomically revokes the session.
+                if (!CeremonyTokens.cancelConsume(ceremonyToken, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "dklsCancelMpcSession")) return@Thread
                 DklsNative.cancelMpcSessionNative(sessionID)
                 promise.resolve(null)
@@ -1523,9 +1862,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun dklsCancelNostrMpc(promise: Promise) {
+    fun dklsCancelNostrMpc(ceremonyToken: String, promise: Promise) {
         Thread {
             try {
+                // 3b-4 B19: global cancel consumes a live ceremony
+                // token; the token's own session scopes revocation.
+                if (!CeremonyTokens.cancelConsume(ceremonyToken, null)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "dklsCancelNostrMpc")) return@Thread
                 DklsNative.cancelNostrMpcNative()
                 promise.resolve(null)
@@ -1545,10 +1890,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         encKey: String,
         decKey: String,
         psbtBase64: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread
@@ -1584,10 +1934,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         satoshiFees: String,
         utxosWithPathsJSON: String,
         changeAddress: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread
@@ -1620,10 +1975,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         satoshiFees: String,
         utxosWithPathsJSON: String,
         changeAddress: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread
@@ -1646,10 +2006,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         partiesNpubsCSV: String,
         npubsSorted: String,
         psbtBase64: String,
+        ceremonyToken: String,
         promise: Promise,
     ) {
         Thread {
             try {
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread

@@ -56,6 +56,7 @@ import {
   shortenAddress,
 } from '../utils';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
 import {guardOnlineAction} from '../services/walletOnlineStore';
 import {useTheme} from '../theme';
@@ -69,6 +70,15 @@ import {
   type TssBackend,
 } from '../services/tssBackend';
 import {TssProvider} from '../services/TssProvider';
+import {
+  CeremonyAuthRequiredError,
+  CeremonyNoLockError,
+  completeCeremonyToken,
+  newCeremonySessionID,
+  releaseCeremonyToken,
+  requestKeygenCeremonyToken,
+  requestSignCeremonyToken,
+} from '../services/ceremonyAuth';
 import {
   parseEciesKeypairJson,
   resolveLanKeysignTransportKeys,
@@ -535,7 +545,11 @@ const MobilesPairing = ({navigation}: any) => {
             const sid = activeMpcSessionIdRef.current;
             if (sid) {
               try {
-                const cancelResult = await TssProvider.cancelMpcSession(sid);
+                // 3b-4 B19: class selects the stuck-cancel mint only.
+          const cancelResult = await TssProvider.cancelMpcSession(
+            sid,
+            isKeygen ? 'keygen' : 'sign',
+          );
                 dbg('MobilesPairing: cancelMpcSession', cancelResult.outcome);
               } catch (e) {
                 dbg('MobilesPairing: cancelMpcSession failed', e);
@@ -809,6 +823,9 @@ const MobilesPairing = ({navigation}: any) => {
 
   async function initSession() {
     const keygenFlow = !isSendBitcoin && !isSignPSBT;
+    // 3b-2c: set once the handshake mint succeeds; the catch
+    // releases it (returns complete before returning).
+    let hsTokenForCleanup: string | null = null;
     try {
       const keypairJson =
         (keypair || '').trim() ||
@@ -844,6 +861,16 @@ const MobilesPairing = ({navigation}: any) => {
           kp.publicKey.length > 16 ? kp.publicKey.slice(0, 16) + '…' : '…',
       });
       setStatus(sessionWaitMessage(isMaster, keygenFlow));
+      // 3b-2c B13/B14: the handshake IS the ceremony. Mint after
+      // validation (no prompt on a broken setup), complete before
+      // each return, release on any throw (see catch). Class
+      // matches the upcoming ceremony (keygen for setup, sign
+      // for send/sign); native verifyTransport accepts either.
+      const hsSession = await newCeremonySessionID('lan-handshake');
+      const hsToken = keygenFlow
+        ? await requestKeygenCeremonyToken(hsSession)
+        : await requestSignCeremonyToken(hsSession);
+      hsTokenForCleanup = hsToken;
       if (isMaster) {
         dbg('initSession: Running as master device');
         const attemptId = await generateMpcAttemptId();
@@ -889,12 +916,14 @@ const MobilesPairing = ({navigation}: any) => {
           ? [peerEnc, peerPubkey2].filter(Boolean).join(',')
           : peerEnc;
         const publishHandshake = () =>
-          BBMTLibNativeModule.publishData(
+          TssProvider.publishData(
             String(discoveryPort),
             String(timeout),
             enckeyCSV,
             _data,
             isTrio ? 'trio' : 'duo',
+            hsToken,
+            hsSession,
           );
         const publishStartedAt = Date.now();
         await ensureLanHandshakePortFree();
@@ -953,6 +982,11 @@ const MobilesPairing = ({navigation}: any) => {
             );
           }
           dbg('initSession: Session initialization completed successfully');
+          try {
+            await completeCeremonyToken(hsToken);
+          } catch {
+            /* logged in ceremonyAuth; handshake stands */
+          }
           return (_data || '').trim();
         } else {
           const elapsedMs = Date.now() - publishStartedAt;
@@ -1036,6 +1070,8 @@ const MobilesPairing = ({navigation}: any) => {
           peerURL,
           kp.privateKey,
           fetchStamp,
+          hsToken,
+          hsSession,
           acceptSessionPayload,
           keygenFlow ? 90 : timeout,
         );
@@ -1056,10 +1092,31 @@ const MobilesPairing = ({navigation}: any) => {
         dbg('initSession: Data fetched successfully', {
           len: rawFetched?.length ?? 0,
         });
+        try {
+          await completeCeremonyToken(hsToken);
+        } catch {
+          /* logged in ceremonyAuth; handshake stands */
+        }
         return (rawFetched || '').trim();
       }
     } catch (error: any) {
       dbg('initSession: Error occurred', {error});
+      // 3b-2c: release the handshake token on any failure.
+      if (hsTokenForCleanup !== null) {
+        try {
+          await releaseCeremonyToken(hsTokenForCleanup);
+        } catch {
+          /* logged in ceremonyAuth */
+        }
+        hsTokenForCleanup = null;
+      }
+      // User-facing ceremony errors pass through unprefixed.
+      if (error instanceof CeremonyAuthRequiredError) {
+        throw 'Authentication was cancelled — tap Start again to retry.';
+      }
+      if (error instanceof CeremonyNoLockError) {
+        throw error.message;
+      }
       const detail =
         error?.message ?? (typeof error === 'string' ? error : String(error));
       throw `Error initializing session:\n${detail}`;
@@ -1308,7 +1365,7 @@ const MobilesPairing = ({navigation}: any) => {
         const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
         const apiUrl = resolveStoredMempoolApiBase(net);
         await BBMTLibNativeModule.setBtcNetwork(net);
-        await BBMTLibNativeModule.setAPI(net, apiUrl);
+        await ensureMempoolApiApplied(net, apiUrl);
       }
       dbg('session init...');
       await ensureLanHandshakePortFree();
@@ -1343,7 +1400,7 @@ const MobilesPairing = ({navigation}: any) => {
         // Set network and API in BBMTLib for this transaction
         const apiUrl = resolveStoredMempoolApiBase(net);
         await BBMTLibNativeModule.setBtcNetwork(net);
-        await BBMTLibNativeModule.setAPI(net, apiUrl);
+        await ensureMempoolApiApplied(net, apiUrl);
         dbg('MobilesPairing: Set network and API in BBMTLib:', net, apiUrl);
       } else {
         // For send BTC, read ALL parameters from route params ONLY (no fallbacks)
@@ -1402,7 +1459,7 @@ const MobilesPairing = ({navigation}: any) => {
         // Set network and API in BBMTLib for this transaction
         const apiUrl = resolveStoredMempoolApiBase(net);
         await BBMTLibNativeModule.setBtcNetwork(net);
-        await BBMTLibNativeModule.setAPI(net, apiUrl);
+        await ensureMempoolApiApplied(net, apiUrl);
         // CRITICAL: Update LocalCache 'api' key so any balance/UTXO fetches use correct API
         // This ensures operations use the network from route params, not device's current network
         appConfigRepository.set('api', apiUrl);
@@ -1718,7 +1775,7 @@ const MobilesPairing = ({navigation}: any) => {
       if (originalNetwork && originalApiUrl) {
         try {
           await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
-          await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
+          await ensureMempoolApiApplied(originalNetwork, originalApiUrl);
           // Restore LocalCache 'api' key to original network's API
           appConfigRepository.set('api', originalApiUrl);
           // Restore WalletService internal state
@@ -1994,7 +2051,8 @@ const MobilesPairing = ({navigation}: any) => {
     try {
       // Android: keep gomobile for LAN pairing only; load libbbmtmobile at wallet setup (mpcTssSetup).
       setStatus('Generating device keys...');
-      const jkp = await BBMTLibNativeModule.eciesKeypair();
+      // 3b-2b B21: token-gated via TssProvider (OS-visible prompt).
+      const jkp = await TssProvider.eciesKeypair();
       const kp = parseEciesKeypairJson(jkp);
       setKeypair(jkp);
       setStatus('Syncing local IP...');
@@ -2316,16 +2374,22 @@ const MobilesPairing = ({navigation}: any) => {
     peerURL: string,
     privateKey: string,
     checksum: string,
+    // 3b-2c B14: handshake ceremony token (REQUIRED — transport
+    // never mints; the poll loop reuses the phase token).
+    ceremonyToken: string,
+    ceremonySessionID: string,
     acceptPayload?: (data: string) => boolean,
     timeoutSec: number = timeout,
   ) {
     const until = Date.now() + timeoutSec * 1000;
     while (Date.now() < until) {
       try {
-        const rawFetched = await BBMTLibNativeModule.fetchData(
+        const rawFetched = await TssProvider.fetchData(
           peerURL,
           privateKey,
           checksum,
+          ceremonyToken,
+          ceremonySessionID,
         );
         if (rawFetched) {
           if (isNativeFetchErrorPayload(rawFetched)) {
@@ -5114,7 +5178,7 @@ const MobilesPairing = ({navigation}: any) => {
               if (p.originalNetwork && p.originalApiUrl) {
                 try {
                   await BBMTLibNativeModule.setBtcNetwork(p.originalNetwork);
-                  await BBMTLibNativeModule.setAPI(
+                  await ensureMempoolApiApplied(
                     p.originalNetwork,
                     p.originalApiUrl,
                   );

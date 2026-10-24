@@ -266,16 +266,8 @@ object DklsNative {
     ): String = loaded {
         unwrap(bbmtNostrJoinKeygenJni(relays, nsec, peers, session, sessionKey, chaincode, ppmPath))
     }
-    fun bbmtNostrJoinKeysignNative(
-        relays: String, nsec: String, peers: String, session: String, sessionKey: String,
-        keyshare: String, derivePath: String, message: String,
-    ): String = loaded {
-        unwrap(
-            bbmtNostrJoinKeysignJni(
-                relays, nsec, peers, session, sessionKey, keyshare, derivePath, message,
-            ),
-        )
-    }
+    // F18 (3b-3): bbmtNostrJoinKeysignNative REMOVED with its sole
+    // caller (the deleted bridge method).
     fun bbmtMpcSignPSBTNative(
         server: String, key: String, parties: String, session: String, sessionKey: String,
         encKey: String, decKey: String, keyshare: String, psbt: String,
@@ -482,10 +474,9 @@ object DklsNative {
         relays: String, nsec: String, peers: String, session: String,
         sessionKey: String, chaincode: String, ppmPath: String,
     ): String
-    private external fun bbmtNostrJoinKeysignJni(
-        relays: String, nsec: String, peers: String, session: String, sessionKey: String,
-        keyshare: String, derivePath: String, message: String,
-    ): String
+    // F18 (3b-3): bbmtNostrJoinKeysignJni decl REMOVED with its
+    // sole caller (dkls-side nostrJoinKeysignJni was already dead
+    // with zero Kotlin callers — left untouched, out of scope).
     private external fun bbmtMpcSignPSBTJni(
         server: String, key: String, parties: String, session: String, sessionKey: String,
         encKey: String, decKey: String, keyshare: String, psbt: String,

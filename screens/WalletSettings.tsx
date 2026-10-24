@@ -6,7 +6,6 @@ import {
   TextInput,
   Alert,
   Modal,
-  NativeModules,
   ScrollView,
   Image,
   Platform,
@@ -23,10 +22,10 @@ import Animated, {
 } from 'react-native-reanimated';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import EncryptedStorage from 'react-native-encrypted-storage';
-const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 import {useUser} from '../context/UserContext';
 import {CANONICAL_TESTNET_MEMPOOL_API_BASE} from '../services/mempoolApiBase';
+import {ensureFeeApisApplied, ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {
   getMempoolHealth,
   providerHealthDotStyle,
@@ -975,7 +974,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         appConfigRepository.set('api', resolvedApi);
         if (net) appConfigRepository.set(`api_${net}`, resolvedApi);
       }
-      if (net) BBMTLibNativeModule.setAPI(net, resolvedApi);
+      if (net) {
+        ensureMempoolApiApplied(net, resolvedApi).catch(err =>
+          dbg('WalletSettings: setAPI failed', err),
+        );
+      }
     })();
     // Load Nostr relays (from cache if available, otherwise fetch dynamically)
     loadNostrRelayEntries().then(entries => {
@@ -1081,7 +1084,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       await setActiveApiProvider(primary);
       mempoolClient.setPublicBases(enabled);
       try {
-        await BBMTLibNativeModule.setFeeAPIs(enabled.join(','));
+        // Direct mint: provider list already on screen in the save flow.
+        await ensureFeeApisApplied(enabled, null);
       } catch {
         // no-op
       }

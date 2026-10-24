@@ -8,7 +8,7 @@ import {dbg} from '../utils';
 import {hasLoadedWallet} from '../services/walletGuard';
 import {
   importKeyshareFromBase64,
-  readKeyshareBase64FromUri,
+  readBackupBlobFromUri,
   showKeyshareImportError,
   showWalletAlreadyLoadedAlert,
   WalletAlreadyLoadedError,
@@ -88,7 +88,7 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
   );
 
   const openKeyshareImport = useCallback(async (uri: string) => {
-    const content = await readKeyshareBase64FromUri(uri);
+    const content = await readBackupBlobFromUri(uri);
     setFileContent(content);
     setModalVisible(true);
   }, []);

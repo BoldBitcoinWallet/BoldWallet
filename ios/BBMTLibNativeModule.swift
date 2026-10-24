@@ -6,6 +6,7 @@
 //
 import Darwin
 import Foundation
+import LocalAuthentication
 import Network
 import React
 import Security
@@ -278,8 +279,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   @objc func publishData(
     _ port: String, timeout: String, encKey: String, raw: String, mode: String,
+    ceremonyToken: String, ceremonySessionID: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2c B13: rides the handshake ceremony token (sign|keygen).
+    guard CeremonyTokens.verifyTransport(token: ceremonyToken, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssPublishData(port, timeout, encKey, raw, mode, &error)
@@ -294,9 +301,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func fetchData(
-    _ url: String, decKey: String, payload: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ url: String, decKey: String, payload: String,
+    ceremonyToken: String, ceremonySessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2c B14: rides the handshake ceremony token (sign|keygen).
+    guard CeremonyTokens.verifyTransport(token: ceremonyToken, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     var error: NSError?
     let output = TssFetchData(url, decKey, payload, &error)
     if error == nil {
@@ -535,8 +549,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func eciesKeypair(
-    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    _ ceremonyToken: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2b B21: single-call keygen ceremony (no MPC session yet).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .keygen) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     var error: NSError?
     let output = TssGenerateKeyPair(&error)
     resolve("eciesKeypair", output, error, resolver)
@@ -551,9 +571,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// F15b-1 (A6): versioned backup import that stages natively.
   /// Resolves {handle, metadata, legacy} — never plaintext.
   @objc func importBackupToStagedHandle(
-    _ blob: String, password: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ blob: String, password: String, ceremonyToken: String, ceremonySessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2e B17: strict import ceremony (owner-shared stage+persist).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .import, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssImportBackupStaged(blob, password, &error)
@@ -574,8 +600,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// entry is destroyed only after a VERIFIED write (retryable).
   @objc func persistStoredKeyshare(
     _ handle: String, nsec: String, npub: String,
+    ceremonyToken: String, ceremonySessionID: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2e B18: strict import ceremony (shared with stage, or
+    // the setup-commit flow's own save ceremony).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .import, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let json = TssFinalizeStagedForPersist(handle, nsec, npub, &error)
@@ -677,6 +710,137 @@ class BBMTLibNativeModule: RCTEventEmitter {
       resolver(true)
     }
   }
+
+  /// 3b-1 ceremony mint, per-ceremony methods ONLY. There is
+  /// deliberately NO generic "request token for class X" bridge
+  /// method: each entry point below hardcodes its op class and
+  /// its prompt copy, so JS can neither choose the class nor
+  /// spoof the action label. Transport rides the parent
+  /// ceremony token (sign|keygen) — no transport mint exists.
+  @objc func requestSignCeremonyToken(
+    _ sessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    promptAndMint(
+      opClass: .sign, sessionID: sessionID,
+      title: "Authenticate to sign", subtitle: "Approve the signing ceremony",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestKeygenCeremonyToken(
+    _ sessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    promptAndMint(
+      opClass: .keygen, sessionID: sessionID,
+      title: "Authenticate to generate keys", subtitle: "Approve the wallet setup ceremony",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestExportCeremonyToken(
+    _ sessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    promptAndMint(
+      opClass: .export, sessionID: sessionID,
+      title: "Authenticate to export backup", subtitle: "Approve the backup export",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestImportCeremonyToken(
+    _ sessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    promptAndMint(
+      opClass: .import, sessionID: sessionID,
+      title: "Authenticate to import backup", subtitle: "Approve the backup import",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestConfigCeremonyToken(
+    _ sessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    promptAndMint(
+      opClass: .config, sessionID: sessionID,
+      title: "Authenticate to change settings", subtitle: "Approve the network settings change",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  /// Shared mint worker. PRIVATE — not a bridge method, not
+  /// JS-reachable. OS-visible auth FIRST (LAContext,
+  /// biometric-or-device-passcode), mint ONLY on success. No
+  /// screen lock → CEREMONY_AUTH_NO_LOCK refuse (Q3). Every other
+  /// failure → CEREMONY_AUTH_REQUIRED (no reason oracle).
+  private func promptAndMint(
+    opClass: CeremonyOpClass, sessionID: String, title: String, subtitle: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    guard !sessionID.isEmpty else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
+      return
+    }
+    let context = LAContext()
+    var evalError: NSError?
+    guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &evalError) else {
+      if let code = evalError?.code, code == LAError.passcodeNotSet.rawValue {
+        rejecter("CEREMONY_AUTH_NO_LOCK", "Set a device screen lock to continue.", nil)
+      } else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", evalError)
+      }
+      return
+    }
+    // LAContext takes a single reason string (Android uses
+    // title+subtitle); combine for parity. Copy is hardcoded
+    // per ceremony above — JS supplies nothing, so the action
+    // label is unspoofable (the per-transaction WHAT remains a
+    // disclosed residual per §6.4; F20 owns the native screen).
+    // The prompt itself is always OS-rendered.
+    let reason = title + " — " + subtitle
+    context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+      if success {
+        resolver(CeremonyTokens.mint(opClass: opClass, sessionID: sessionID))
+      } else {
+        // User cancel, fallback, lockout, failure: never mint.
+        rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
+      }
+    }
+  }
+
+  /// 3b-1: retire a token after ceremony success (-> used).
+  @objc func completeCeremonyToken(
+    _ token: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    CeremonyTokens.complete(token: token)
+    resolver(true)
+  }
+
+  /// 3b-1: revoke a token on teardown (-> revoked). Idempotent.
+  @objc func releaseCeremonyToken(
+    _ token: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    CeremonyTokens.release(token: token)
+    resolver(true)
+  }
+
+  #if DEBUG
+    /// DEBUG-ONLY prompt-bypassing mint for tests. Stripped from
+    /// release by #if DEBUG (unlike Android's runtime gate;
+    /// disclosed, same security property). Production code must
+    /// never call this — guardrailed in jest.
+    @objc func requestCeremonyTokenTest(
+      _ op: String, sessionID: String,
+      resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    ) {
+      guard let opClass = CeremonyOpClass.parse(op), !sessionID.isEmpty else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
+        return
+      }
+      resolver(CeremonyTokens.mint(opClass: opClass, sessionID: sessionID))
+    }
+  #endif
 
   /// F15b-1 migration bootstrap (§1.5 step 7): idempotent
   /// plaintext → envelope migration. Resolves {migrated:bool}.
@@ -788,19 +952,60 @@ class BBMTLibNativeModule: RCTEventEmitter {
     resolve("setFeePolicy", output, error, resolver)
   }
 
+  /// 3b-2d B15/B16: native-held API allowlist store.
+  /// UserDefaults key with NO other writer (grep-verified).
+  private var apiAllowlistStore: CeremonyApiAllowlist.Store {
+    CeremonyApiAllowlist.Store(
+      load: {
+        Set(UserDefaults.standard.stringArray(forKey: "ceremonyApiAllowlistUrls") ?? [])
+      },
+      save: { urls in
+        UserDefaults.standard.set(Array(urls), forKey: "ceremonyApiAllowlistUrls")
+      }
+    )
+  }
+
+  /// 3b-2d: allowlist-or-token gate. True when the call may
+  /// proceed (newly approved URLs persisted best-effort — a
+  /// persist failure still applies this use since the user
+  /// approved it; the next launch simply prompts again).
+  private func gateApiUrls(
+    _ urls: [String], token: String, sessionID: String,
+    method: String, rejecter: @escaping RCTPromiseRejectBlock
+  ) -> Bool {
+    switch CeremonyApiAllowlist.decide(urls: urls, token: token, sessionID: sessionID, store: apiAllowlistStore) {
+    case .reject:
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return false
+    case .applyAndPersist:
+      CeremonyApiAllowlist.persist(urls, store: apiAllowlistStore)
+      return true
+    case .apply:
+      return true
+    }
+  }
+
   @objc func setAPI(
-    _ network: String, baseAPI: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ network: String, baseAPI: String, ceremonyToken: String, ceremonySessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    guard gateApiUrls([baseAPI], token: ceremonyToken, sessionID: ceremonySessionID, method: "setAPI", rejecter: rejecter) else {
+      return
+    }
     var error: NSError?
     let output = TssUseAPI(network, baseAPI, &error)
     resolve("setAPI", output, error, resolver)
   }
 
   @objc func setFeeAPIs(
-    _ urls: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ urls: String, ceremonyToken: String, ceremonySessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    guard gateApiUrls(CeremonyApiAllowlist.parseCsv(urls), token: ceremonyToken, sessionID: ceremonySessionID, method: "setFeeAPIs", rejecter: rejecter) else {
+      return
+    }
     var error: NSError?
     let output = TssUseFeeAPIs(urls, &error)
     resolve("setFeeAPIs", output, error, resolver)
@@ -841,9 +1046,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   // variant decision deferred). DKLs twins stage natively.
   @objc func mpcTssSetup(
     _ server: String, partyID: String, ppmFile: String, partiesCSV: String, sessionID: String,
-    sessionKey: String, encKey: String, decKey: String, chaincode: String,
+    sessionKey: String, encKey: String, decKey: String, chaincode: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 setup takes a keygen token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     var error: NSError?
     let output = TssJoinKeygen(
       ppmFile, partyID, partiesCSV, encKey, decKey, sessionID, server, chaincode, sessionKey, &error)
@@ -851,8 +1061,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func nostrKeypair(
-    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    _ ceremonyToken: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2b B20: single-call keygen ceremony (no MPC session yet).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .keygen) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssNostrKeypair(&error)
@@ -892,8 +1108,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   @objc func dklsMpcTssSetup(
     _ server: String, partyID: String, partiesCSV: String, sessionID: String,
     sessionKey: String, encKey: String, decKey: String, chaincode: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2b: gate FIRST — before runtime checks.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter(
@@ -921,9 +1143,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   @objc func dklsNostrMpcTssSetup(
     _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, chaincode: String,
+    sessionKey: String, chaincode: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2b: gate FIRST — before runtime checks.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter(
@@ -950,9 +1177,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsCancelMpcSession(
-    _ sessionID: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ sessionID: String, ceremonyToken: String, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-4 B19: cancel consumes the ceremony token (same
+    // op+session) and atomically revokes the session.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     if BbmtBridge.isAvailable() {
       BbmtBridge.cancelMpcSession(sessionID)
     }
@@ -960,8 +1193,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsCancelNostrMpc(
-    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    _ ceremonyToken: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-4 B19: global cancel consumes a live ceremony
+    // token; the token's own session scopes revocation.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: nil) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     if BbmtBridge.isAvailable() {
       BbmtBridge.cancelNostrMpc()
     }
@@ -971,8 +1211,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   @objc func dklsMpcSignPSBT(
     _ server: String, partyID: String, partiesCSV: String, sessionID: String,
     sessionKey: String, encKey: String, decKey: String, psbtBase64: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2a: gate FIRST — before runtime checks or storage reads.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -998,9 +1244,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     _ server: String, partyID: String, partiesCSV: String, sessionID: String,
     sessionKey: String, encKey: String, decKey: String, btcPub: String,
     toAddress: String, satoshiAmount: String, satoshiFees: String,
-    utxosWithPathsJSON: String, changeAddress: String,
+    utxosWithPathsJSON: String, changeAddress: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2a: gate FIRST — before runtime checks or storage reads.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -1027,8 +1278,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
     balanceSats: String, toAddress: String, satoshiAmount: String,
     satoshiFees: String, utxosWithPathsJSON: String, changeAddress: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2a: gate FIRST — single-call ceremony, no MPC session.
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -1055,9 +1312,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   @objc func dklsNostrMpcSignPSBT(
     _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
-    psbtBase64: String,
+    psbtBase64: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-2a: gate FIRST — single-call ceremony, no MPC session.
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -1084,9 +1346,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   // variant decision deferred). DKLs twins stage natively.
   @objc func nostrMpcTssSetup(
     _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, chaincode: String, ppmFile: String,
+    sessionKey: String, chaincode: String, ppmFile: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 setup takes a keygen token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssNostrJoinKeygen(
@@ -1096,24 +1363,9 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
   }
 
-  @objc func nostrJoinKeysign(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, keyshareJSON: String, derivationPath: String, message: String,
-    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    DispatchQueue.global(qos: .background).async { [weak self] in
-      guard let self = self else {
-        resolver("")
-        return
-      }
-      var error: NSError?
-      let output = TssNostrJoinKeysign(
-        relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, keyshareJSON,
-        derivationPath, message, &error)
-      self.sendLogEvent("nostrJoinKeysign", output)
-      resolver(error == nil ? output : error!.localizedDescription)
-    }
-  }
+  // F18 (3b-3): nostrJoinKeysign REMOVED (dead from JS — zero
+  // static/dynamic/WebView/reflection callers). Go
+  // BbmtNostrJoinKeysign stays (native-only, harmless).
 
   @objc func postTx(
     _ rawTxHex: String,
@@ -1147,10 +1399,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func cancelMpcSession(
-    _ sessionID: String,
+    _ sessionID: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-4 B19: cancel consumes the ceremony token (same
+    // op+session) and atomically revokes the session.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async {
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -1167,9 +1425,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func cancelNostrMpc(
-    _ resolver: @escaping RCTPromiseResolveBlock,
+    _ ceremonyToken: String,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-4 B19: global cancel consumes a live ceremony
+    // token; the token's own session scopes revocation.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: nil) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async {
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -1234,9 +1499,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
     encKey: String,
     decKey: String,
     psbtBase64: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 sign takes a sign token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1276,9 +1547,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
     feeSatoshi: String,
     utxosWithPathsJSON: String,
     changeAddress: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 send takes a sign token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1319,9 +1596,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
     estimatedFee: String,
     utxosWithPathsJSON: String,
     changeAddress: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 nostr send takes a sign token (single-call).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1362,10 +1645,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   @objc func nostrMpcSignPSBT(
     _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
-    psbtBase64: String,
+    psbtBase64: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 nostr sign takes a sign token (single-call).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1398,10 +1686,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// F1: versioned backup export. Password goes to Go (Argon2id + AES-GCM);
   /// JS never sees a derived key. Emits v2 format only.
   @objc func backupEncryptStoredKeyshare(
-    _ password: String,
+    _ password: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-3 A12: single-call export ceremony (no MPC session).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .export) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)

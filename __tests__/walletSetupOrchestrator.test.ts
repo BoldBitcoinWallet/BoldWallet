@@ -4,9 +4,6 @@ jest.mock('../services/WalletService', () => ({
 
 jest.mock('../native_modules', () => ({
   BBMTLibNativeModule: {
-    persistStoredKeyshare: jest.fn(async () =>
-      JSON.stringify({pub_key: 'aa', tss_backend: 'dkls23'}),
-    ),
     hasKeyshareInSecureStorage: jest.fn(async () => true),
     destroyKeyshareHandles: jest.fn(async () => true),
   },
@@ -16,7 +13,15 @@ jest.mock('../services/lanMpcSetup', () => ({}));
 jest.mock('../services/lanMpcTransport', () => ({}));
 jest.mock('../services/trioLanKeygenPreflight', () => ({}));
 jest.mock('../services/TssProvider', () => ({
-  TssProvider: {mpcTssSetup: jest.fn(), nostrMpcTssSetup: jest.fn()},
+  // 3b-2e: persist routes via TssProvider (token plumbing pinned in
+  // tssImportTokenGating; this suite pins orchestration).
+  TssProvider: {
+    mpcTssSetup: jest.fn(),
+    nostrMpcTssSetup: jest.fn(),
+    persistStoredKeyshare: jest.fn(async () =>
+      JSON.stringify({pub_key: 'aa', tss_backend: 'dkls23'}),
+    ),
+  },
 }));
 
 jest.mock('../services/tssKeygenPrepare', () => ({
@@ -123,9 +128,13 @@ describe('walletSetupOrchestrator', () => {
       nostrNpub: 'npub1persist',
     });
     expect(assertNoExistingWallet).toHaveBeenCalled();
-    expect(
-      BBMTLibNativeModule.persistStoredKeyshare,
-    ).toHaveBeenCalledWith('handle-abc123', 'nsec1persisttest', 'npub1persist');
+    expect(TssProvider.persistStoredKeyshare).toHaveBeenCalledWith(
+      'handle-abc123',
+      'nsec1persisttest',
+      'npub1persist',
+      undefined,
+      undefined,
+    );
     // No share bytes cross JS: RNES is never touched from here.
     expect(EncryptedStorage.setItem).not.toHaveBeenCalled();
     expect(EncryptedStorage.getItem).not.toHaveBeenCalled();
@@ -151,7 +160,7 @@ describe('walletSetupOrchestrator', () => {
   });
 
   it('F3: persistStagedKeyshare rewrites storage failures with clear copy', async () => {
-    (BBMTLibNativeModule.persistStoredKeyshare as jest.Mock).mockRejectedValueOnce(
+    (TssProvider.persistStoredKeyshare as jest.Mock).mockRejectedValueOnce(
       new Error('[SECURE_STORAGE_LOCKED] Device must be unlocked.'),
     );
     await expect(persistStagedKeyshare('handle-abc123')).rejects.toThrow(
@@ -160,7 +169,7 @@ describe('walletSetupOrchestrator', () => {
   });
 
   it('F3: persistStagedKeyshare propagates non-storage errors unchanged', async () => {
-    (BBMTLibNativeModule.persistStoredKeyshare as jest.Mock).mockRejectedValueOnce(
+    (TssProvider.persistStoredKeyshare as jest.Mock).mockRejectedValueOnce(
       new Error('quota exceeded'),
     );
     await expect(persistStagedKeyshare('handle-abc123')).rejects.toThrow(

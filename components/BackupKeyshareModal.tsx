@@ -24,6 +24,7 @@ import {
   evaluateBackupPassword,
   isBackupExportAllowed,
 } from '../services/backupPassword';
+import {TssProvider} from '../services/TssProvider';
 
 const {BBMTLibNativeModule} = NativeModules;
 
@@ -126,8 +127,9 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
       if (meta) {
         // Keyshare loaded and encrypted in native (RNES storage); file/share receives ciphertext only.
         // F1: v2 format (Argon2id + AES-GCM in Go). Password goes to native; no derived key in JS.
+        // 3b-3 A12: token-gated export (OS-visible prompt).
         const encryptedKeyshare =
-          await BBMTLibNativeModule.backupEncryptStoredKeyshare(password);
+          await TssProvider.backupEncryptStoredKeyshare(password);
 
         // Create filename based on pub_key hash and keyshare number
         if (!meta.pub_key) {
@@ -159,7 +161,24 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
         const friendlyFilename = `${hashPrefix}K${keyshareNumber}.share`;
         const tempDir = RNFS.TemporaryDirectoryPath || RNFS.CachesDirectoryPath;
         const filePath = `${tempDir}/${friendlyFilename}`;
-        await RNFS.writeFile(filePath, encryptedKeyshare, 'base64');
+        // 3b-6d (F23): the v2 envelope is ASCII text ("BW2$...") and
+        // MUST be written as utf8. Writing with 'base64' decodes the
+        // string first — "$" is not base64, so iOS wrote SILENT EMPTY
+        // files (nil data resolves success) and Android threw. Every
+        // v2 file backup since B1 is affected; legacy (pure-base64)
+        // backups were never hit.
+        await RNFS.writeFile(filePath, encryptedKeyshare, 'utf8');
+        // Fail-closed: never share an empty backup file. This guard
+        // would have caught the B1 write-encoding bug on day one.
+        const written = await RNFS.stat(filePath);
+        if (!written.size) {
+          await safeUnlink(filePath);
+          Alert.alert(
+            'Error',
+            'Backup file could not be written. Your keyshare is unchanged — please try again.',
+          );
+          return;
+        }
 
         await Share.open({
           title: 'Backup Your Keyshare',

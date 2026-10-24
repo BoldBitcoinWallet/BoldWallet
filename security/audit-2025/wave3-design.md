@@ -228,14 +228,15 @@ verifies §6, else rejects `[CEREMONY_AUTH_REQUIRED]`.
 | B1–B4 | GG18 signing ×4 | EXCLUDED from Wave 3 (F19): stay untokenized. Fail closed naturally on DKLs wallets (LocalState parse fails); GG18-wallet ceremony-auth gap disclosed under F19 |
 | B5–B8 | `dklsMpcSignPSBT`, `dklsMpcSendBTCWithUTXOs`, `dklsNostrMpcSendBTC`, `dklsNostrMpcSignPSBT` | `sign` |
 | B9–B12 | A3–A4 (DKLs setup; A1–A2 GG18 excluded per F19) | `keygen` (3a ships WITHOUT tokens; DKG-start ungated interim — solo DKG harmless, disclosed) |
-| B13 | `publishData` | `transport` (LAN send within ceremony session) |
-| B14 | `fetchData` | `transport` (poll loop covered by ceremony token — why tokens are session-scoped, never per-call) |
+| B13 | `publishData` | parent ceremony token (`sign`\|`keygen`) + session — NO separate transport class/mint (revised 3b-1b: one token per ceremony; LAN send within the ceremony session) |
+| B14 | `fetchData` | parent ceremony token (`sign`\|`keygen`) + session (poll loop covered by the ceremony token — why tokens are session-scoped, never per-call) |
 | B15 | `setAPI` | allowlist-or-token: OK iff URL ∈ native-persisted allowlist OR valid `config` token (which persists the URL). Init passes with stored URLs; attacker hosts fail without a user-visible prompt |
 | B16 | `setFeeAPIs` | same rule as B15 (same oracle-pointing class) |
 | B17–B18 | A6 `importBackupToStagedHandle`, A7 `persistStoredKeyshare` | `import` (one prompt covers stage+persist; persist ungated would let malicious JS overwrite RNES with an attacker share — the guard is JS-side and skippable) |
-| B19 | cancel ×4 | ceremony token (same op+session). STUCK-cancel: fresh token for the same sessionID re-auths (acceptable UX, no un-cancellable state). F12's exact-match mechanism stays Wave 4 |
+| B19 | cancel ×4 | ceremony token (same op+session). STUCK-cancel: fresh token for the same sessionID re-auths (acceptable UX, no un-cancellable state). F12's exact-match mechanism stays Wave 4. Cancel REVOKES the session token natively (3b authorization requirement — F10 isn't closed if cancel leaves the token valid) |
+| B20–B21 | `nostrKeypair`, `eciesKeypair` (REVISED 3b kickoff: retain + gate, do not remove — live callers confirmed) | `keygen` (same ceremony/session as DKG: one token covers pairing-identity generation + setup; generation ≠ exfil but a live secret-minting oracle needs the OS-visible prompt all the same) |
 
-### Table C — removed (3b, dead surface, zero callers)
+### Table C — removed (LANDED IN 3a per mandated sequence; the "(3b)" label here is stale — no code action)
 
 `aesEncrypt`, `aesDecrypt`, `aesEncryptStoredKeyshare` (both
 platforms). Generic oracles with no JS callers. Go
@@ -267,17 +268,21 @@ removal with registration-gating instead.)
 - Setup helpers: `preparams`, `ensureDklsLanRuntime`,
   `dklsHelloDkg` (no secrets).
 - Fresh-secret generators: `nostrKeypair`, `eciesKeypair`.
-  Return NEW secrets — F5 scope, explicitly unchanged.
-  (Generation ≠ exfil of the wallet share.) Q7 verification:
-  LIVE callers confirmed (`MobileNostrPairing:1232` pairing
-  identity; `MobilesPairing:1953` LAN transport) → removal
-  BLOCKED (would regress pairing); retained.
+  REVISED 3b kickoff: RETAIN + TOKEN-GATE (B20–B21, `keygen`
+  class), do not remove. Q7 verification: LIVE callers
+  confirmed (`MobileNostrPairing:1240` pairing identity;
+  `MobilesPairing:1953` LAN transport) → removal BLOCKED
+  (would regress pairing). A removed dead method is a win; a
+  gated live method is the actual fix — minting requires the
+  OS-visible prompt like every other secret-yielding call.
 - Non-sensitive config: `setBtcNetwork`, `setFeePolicy`.
 - Presence (already clean): `hasKeyshareInSecureStorage`,
   `getKeyshareNostrPrepJSON` (fixed 5-key contract, 1 caller).
-- Cancel ×4: deliberately UNGATED until F12 (Wave 4). Gating
-  cancel on a losable token risks stuck ceremonies; F12 owns
-  cancel auth. Known-open, tracked.
+- ~~Cancel ×4: deliberately UNGATED until F12 (Wave 4)~~ —
+  STRUCK 3b kickoff, superseded by B19 (Q6): cancel takes the
+  ceremony token (same op+session) and REVOKES the session
+  token natively. STUCK-cancel answered by fresh-token
+  re-auth. Only F12's exact-match MECHANISM stays Wave 4.
 - Plumbing: `addListener`, `removeListeners`, `disableLogging`.
 
 ### Go/cgo surface changes (3a)
@@ -414,31 +419,52 @@ an ACTIVE ceremony is unaffected by granularity anyway
 
 ### 6.2 Mechanics
 
-- NEW `requestCeremonyToken(op, sessionID, title, detail)` →
-  NATIVE shows OS auth (BiometricPrompt / LAContext,
-  biometric-or-device-passcode; no-sensor devices still get a
-  device-passcode prompt — never silent) → mints random 128-bit
-  token → native map `{token: (opClass, sessionID,
-  expiry≤10min)}` → resolves token string. Op CLASSES: `sign`,
-  `keygen`, `export`, `import`, `transport`, `config` — no
-  cross-class replay (sign/decrypt/export tokens never
-  interchange). Devices with NO screen lock configured:
-  REFUSE with UX message (`[CEREMONY_AUTH_NO_LOCK]`, "Set a
-  device screen lock to continue") — DECIDED (Q3).
-- Table-B methods take `token`, verify (exists, unexpired, op +
-  sessionID match), else `[CEREMONY_AUTH_REQUIRED]`. Tokens are
-  multi-use within their (op, sessionID); replay across
-  op/session fails. JS maps stable tokens to user copy
-  ("Confirm to continue — authenticate in the prompt").
+- NEW per-ceremony mint methods (NO generic "request token
+  for class X" — a generic minter would be the same
+  vulnerability one level up): `requestSignCeremonyToken`,
+  `requestKeygenCeremonyToken`, `requestExportCeremonyToken`,
+  `requestImportCeremonyToken`, `requestConfigCeremonyToken`,
+  each `(sessionID)` → NATIVE shows OS auth (BiometricPrompt /
+  LAContext, biometric-or-device-passcode; no-sensor devices
+  still get a device-passcode prompt — never silent) with
+  HARDCODED per-ceremony copy (JS supplies nothing, so the
+  action label is unspoofable) → mints random 128-bit token →
+  native map `{token: (opClass, sessionID, expiry≤10min)}` →
+  resolves token string. Op CLASSES: `sign`, `keygen`,
+  `export`, `import`, `config` — no cross-class replay
+  (sign/export/import/config tokens never interchange). NO
+  `transport` class: transport calls verify against the PARENT
+  ceremony token (`sign`|`keygen`) + session — the ceremony's
+  own channel, one token per ceremony, no confusion mode.
+  Devices with NO screen lock configured: REFUSE with UX
+  message (`[CEREMONY_AUTH_NO_LOCK]`, "Set a device screen
+  lock to continue") — DECIDED (Q3).
+- Table-B methods take `token` (+ `sessionID` where the call
+  lacks one), verify natively (exists, non-terminal, op +
+  sessionID match, TTL bounds ceremony START per 3b-1c),
+  else `[CEREMONY_AUTH_REQUIRED]` (single code, no reason
+  oracle). Tokens are multi-use within their (op,
+  sessionID); replay across op/session fails. JS maps stable
+  tokens to user copy ("Confirm to continue — authenticate
+  in the prompt").
 - Release: explicit `releaseCeremonyToken(token)` on
-  cancel/complete (best-effort from JS) + 30-min expiry +
+  cancel/complete (best-effort from JS) + 10-min expiry (§10:
+  10 min wins; the earlier "30-min" here was a doc bug) +
   native wipe on A10. Stale tokens fail closed, never linger.
+  TTL bounds ceremony START, not duration (3b-1c): only
+  MINTED tokens can expire; a started ceremony never dies
+  mid-sign from token expiry. Duration bounded by
+  complete/release/cancel, single-live-session supersession,
+  and process death.
 - Tests: jest mocks the native module (no OS prompt); JVM/XCTest
-  use a DEBUG-only `requestCeremonyTokenTest(op, sessionID)`
-  (compile-gated: `BuildConfig.DEBUG` / `#if DEBUG`; absent in
-  release). No `__DEV__` fail-open anywhere near ceremony auth
-  (unlike the advisory JS helper, which keeps its semantics for
-  non-enforcing UI gates only).
+  use a DEBUG-only `requestCeremonyTokenTest(op, sessionID)`.
+  Compile-time elimination BOTH platforms (3b-1d): Android =
+  debug-source-set module (`CeremonyTestModule`, reflectively
+  registered; release classes verified absent), iOS = `#if
+  DEBUG` method + extern (verified by Release build). No
+  `__DEV__` / `BuildConfig` runtime fail-open anywhere near
+  ceremony auth (unlike the advisory JS helper, which keeps
+  its semantics for non-enforcing UI gates only).
 
 ### 6.3 F4 biometry: what prompts, what doesn't
 

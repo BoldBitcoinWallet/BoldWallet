@@ -4,6 +4,10 @@ jest.mock('../native_modules', () => ({
     mpcTssSetup: jest.fn(),
     dklsNostrMpcTssSetup: jest.fn(),
     nostrMpcTssSetup: jest.fn(),
+    // 3b-2b: setup is keygen-token-gated; tests pin dispatch, not auth.
+    requestKeygenCeremonyToken: jest.fn(async () => 'tok-keygen-dispatch'),
+    completeCeremonyToken: jest.fn(async () => true),
+    releaseCeremonyToken: jest.fn(async () => true),
   },
 }));
 
@@ -17,6 +21,11 @@ jest.mock('../services/mpcCancel', () => ({
   markMpcInProgress: jest.fn(),
   resetMpcCancelState: jest.fn(),
   safeCancelMpc: jest.fn(),
+}));
+
+// 3b-2a: TssProvider -> ceremonyAuth -> utils (op-sqlite); stub the logger.
+jest.mock('../utils', () => ({
+  dbg: jest.fn(),
 }));
 
 import {BBMTLibNativeModule} from '../native_modules';

@@ -12,6 +12,7 @@ import {
 import {chaincodeHexFromBlob} from '../services/chaincodeReader';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {getExternalIndex} from '../services/HdIndexService';
 const {BBMTLibNativeModule} = NativeModules;
 interface WalletContextType {
@@ -97,7 +98,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       dbg('WalletContext: Resolved Mempool API URL:', api);
       appConfigRepository.set(`api_${net}`, api);
       appConfigRepository.set('api', api);
-      await BBMTLibNativeModule.setAPI(net, api);
+      await ensureMempoolApiApplied(net, api);
       setBaseApi(api);
       dbg('WalletContext: Wallet refresh completed');
     } catch (error) {

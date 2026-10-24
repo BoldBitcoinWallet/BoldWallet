@@ -1,6 +1,7 @@
 import Big from 'big.js';
 import {DeviceEventEmitter} from 'react-native';
 import {BBMTLibNativeModule} from '../native_modules';
+import {ensureMempoolApiApplied} from './apiConfigApply';
 import {
   dbg,
   getChangePath,
@@ -1153,7 +1154,9 @@ export class WalletService {
       return;
     }
     const useLegacyPath = resolveUseLegacyDerivationPaths(ks);
-    BBMTLibNativeModule.setAPI(network, apiUrl);
+    ensureMempoolApiApplied(network, apiUrl).catch(err =>
+      dbg('WalletService: setAPI failed', err),
+    );
 
     const prevExternalIndex = await getExternalIndex(network, addressType);
     const prevMaxUsedExternal = await getMaxUsedExternal(network, addressType);
@@ -1766,13 +1769,18 @@ export class WalletService {
         dbg('WalletService: Invalid pending amount:', pendingSent);
         throw new Error('Invalid pending amount');
       }
-      BBMTLibNativeModule.setAPI(this.currentNetwork, this.currentApiUrl);
+      ensureMempoolApiApplied(
+        this.currentNetwork,
+        this.currentApiUrl,
+      ).catch(err => dbg('WalletService: setAPI failed', err));
       const api = appConfigRepository.get('api') || this.currentApiUrl;
       if (!api) {
         dbg('WalletService: No API URL found');
         throw new Error('No API URL found');
       }
-      BBMTLibNativeModule.setAPI(this.currentNetwork, api);
+      ensureMempoolApiApplied(this.currentNetwork, api).catch(err =>
+        dbg('WalletService: setAPI failed', err),
+      );
       dbg('WalletService: Fetching UTXO total from native module');
       const totalUTXO = (await this.withTimeout(
         `utxo-${address}`,

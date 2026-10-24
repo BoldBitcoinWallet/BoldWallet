@@ -10,6 +10,7 @@ import {DeviceEventEmitter} from 'react-native';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {BBMTLibNativeModule} from '../native_modules';
+import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {
   getReceivePath,
   resolveUseLegacyDerivationPaths,
@@ -143,7 +144,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     const syncApi = async () => {
       try {
         if (!network || !apiBase) return;
-        await BBMTLibNativeModule.setAPI(network, apiBase);
+        await ensureMempoolApiApplied(network, apiBase);
       } catch {
         // no-op
       }
@@ -190,7 +191,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         }
         appConfigRepository.set('api', api);
         setApiBase(api);
-        await BBMTLibNativeModule.setAPI(net, api);
+        await ensureMempoolApiApplied(net, api);
       } catch {
         // no-op
       }
@@ -406,7 +407,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         appConfigRepository.set('api', nextApi);
         setNetwork(newNetwork);
         setApiBase(nextApi);
-        await BBMTLibNativeModule.setAPI(newNetwork, nextApi);
+        await ensureMempoolApiApplied(newNetwork, nextApi);
       } catch {
         // no-op
       }
@@ -430,7 +431,8 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         appConfigRepository.set(`api_${network}`, newApi);
         appConfigRepository.set('api', newApi);
         setApiBase(newApi);
-        await BBMTLibNativeModule.setAPI(network, newApi);
+        // Direct mint: provider switch with the URL on screen in settings.
+        await ensureMempoolApiApplied(network, newApi, null);
       } catch {
         // no-op
       }

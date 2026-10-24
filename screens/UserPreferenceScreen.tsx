@@ -46,7 +46,8 @@ import {
   primaryProviderUrl,
   saveMempoolProviderEntries,
 } from '../services/mempoolProvidersStore';
-import {BBMTLibNativeModule} from '../native_modules';
+
+import {ensureFeeApisApplied} from '../services/apiConfigApply';
 
 const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute();
@@ -84,7 +85,8 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       enabled.length > 0 ? enabled : ['https://mempool.space/api'];
     mempoolClient.setPublicBases(bases);
     try {
-      await BBMTLibNativeModule.setFeeAPIs(bases.join(','));
+      // Direct mint: URL already on screen in the save flow.
+      await ensureFeeApisApplied(bases, null);
     } catch {
       // no-op
     }

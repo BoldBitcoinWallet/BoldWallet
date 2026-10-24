@@ -193,9 +193,7 @@ func TssJoinKeygen(_ ppmPath: String, _ key: String, _ partiesCSV: String, _ enc
 func TssNostrJoinKeygen(_ relaysCSV: String, _ partyNsec: String, _ partiesNpubsCSV: String, _ sessionID: String, _ sessionKey: String, _ chaincode: String, _ ppmPath: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.nostrJoinKeygen(relaysCSV, nsec: partyNsec, peers: partiesNpubsCSV, session: sessionID, sessionKey: sessionKey, chaincode: chaincode, ppmPath: ppmPath), error)
 }
-func TssNostrJoinKeysign(_ relaysCSV: String, _ partyNsec: String, _ partiesNpubsCSV: String, _ sessionID: String, _ sessionKey: String, _ keyshareJSON: String, _ derivationPath: String, _ message: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.nostrJoinKeysign(relaysCSV, nsec: partyNsec, peers: partiesNpubsCSV, session: sessionID, sessionKey: sessionKey, keyshare: keyshareJSON, derivePath: derivationPath, message: message), error)
-}
+// F18 (3b-3): TssNostrJoinKeysign REMOVED with its sole caller.
 func TssMpcSignPSBT(_ server: String, _ key: String, _ partiesCSV: String, _ session: String, _ sessionKey: String, _ encKey: String, _ decKey: String, _ keyshare: String, _ psbtBase64: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.mpcSignPSBT(server, key: key, parties: partiesCSV, session: session, sessionKey: sessionKey, encKey: encKey, decKey: decKey, keyshare: keyshare, psbt: psbtBase64), error)
 }

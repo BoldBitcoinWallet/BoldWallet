@@ -295,11 +295,7 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   NSString *out = wrap(BbmtNostrJoinKeygen(r,n,p,s,sk,c,pp));
   free(r);free(n);free(p);free(s);free(sk);free(c);free(pp); return out;
 }
-+ (NSString *)nostrJoinKeysign:(NSString *)relays nsec:(NSString *)nsec peers:(NSString *)peers session:(NSString *)session sessionKey:(NSString *)sessionKey keyshare:(NSString *)keyshare derivePath:(NSString *)derivePath message:(NSString *)message {
-  char *r=dupC(relays),*n=dupC(nsec),*p=dupC(peers),*s=dupC(session),*sk=dupC(sessionKey),*ks=dupC(keyshare),*dp=dupC(derivePath),*m=dupC(message);
-  NSString *out = wrap(BbmtNostrJoinKeysign(r,n,p,s,sk,ks,dp,m));
-  free(r);free(n);free(p);free(s);free(sk);free(ks);free(dp);free(m); return out;
-}
+// F18 (3b-3): nostrJoinKeysign REMOVED with its sole caller.
 + (NSString *)mpcSignPSBT:(NSString *)server key:(NSString *)key parties:(NSString *)parties session:(NSString *)session sessionKey:(NSString *)sessionKey encKey:(NSString *)encKey decKey:(NSString *)decKey keyshare:(NSString *)keyshare psbt:(NSString *)psbt {
   char *sv=dupC(server),*k=dupC(key),*p=dupC(parties),*s=dupC(session),*sk=dupC(sessionKey),*ek=dupC(encKey),*dk=dupC(decKey),*ks=dupC(keyshare),*pb=dupC(psbt);
   NSString *out = wrap(BbmtMpcSignPSBT(sv,k,p,s,sk,ek,dk,ks,pb));

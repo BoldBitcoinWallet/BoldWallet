@@ -67,6 +67,7 @@ import {
 } from '../utils/urBytesQr';
 import {shouldIgnoreNonUrDuringSendScan} from '../utils/sendQrScan';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {validate as validateBitcoinAddress} from 'bitcoin-address-validation';
 import {useTheme} from '../theme';
 import {
@@ -599,7 +600,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
       const cleanBaseApi = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
       const apiUrl = `${cleanBaseApi}/api`;
-      await BBMTLibNativeModule.setAPI(network, apiUrl);
+      await ensureMempoolApiApplied(network, apiUrl);
 
       const effectiveAddressType =
         addressType || userAddressType || 'segwit-native';
@@ -748,7 +749,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         const cleanBaseApi = baseApi.replace(/\/+$/, '').replace(/\/api\/?$/, '');
         const apiUrl = `${cleanBaseApi}/api`;
         // Ensure native module has correct settings
-        await BBMTLibNativeModule.setAPI(network, apiUrl);
+        await ensureMempoolApiApplied(network, apiUrl);
         // Set up timeout (5 seconds)
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
@@ -950,7 +951,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         // Set up API URL from NetworkContext
         const api = resolveStoredMempoolApiBase(network);
         if (api) {
-          await BBMTLibNativeModule.setAPI(actualNet, api);
+          await ensureMempoolApiApplied(actualNet, api);
           dbg('API set for network:', actualNet, 'API:', api);
         }
         // DB → UI: read balance/price from SQLite
@@ -1396,7 +1397,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           : apiResolved;
         appConfigRepository.set(`api_${networkKey}`, api);
         appConfigRepository.set('api', api);
-        await BBMTLibNativeModule.setAPI(networkKey, api);
+        await ensureMempoolApiApplied(networkKey, api);
         // DB → UI: seed price + balance from SQLite
         refreshFromDBRef.current();
         setLoading(false);
