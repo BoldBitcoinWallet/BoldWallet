@@ -236,7 +236,8 @@ func postMessage(w http.ResponseWriter, r *http.Request) {
 	setData(key, messages)
 
 	w.WriteHeader(http.StatusOK)
-	pf("Message added to session %s: %+v", sessionID, msg)
+	pf("Message added to session %s: from=%s seq=%s hash=%s body_len=%d",
+		sessionID, msg.From, msg.SeqNo, msg.Hash, len(msg.Body))
 }
 
 func getMessage(w http.ResponseWriter, r *http.Request) {
