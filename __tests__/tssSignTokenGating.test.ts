@@ -5,6 +5,9 @@ jest.mock('../native_modules', () => ({
     dklsNostrMpcSendBTC: jest.fn(),
     dklsNostrMpcSignPSBT: jest.fn(),
     mpcSignPSBT: jest.fn(),
+    mpcSendBTCWithUTXOs: jest.fn(),
+    nostrMpcSendBTC: jest.fn(),
+    nostrMpcSignPSBT: jest.fn(),
     requestSignCeremonyToken: jest.fn(),
     completeCeremonyToken: jest.fn(),
     releaseCeremonyToken: jest.fn(),
@@ -150,12 +153,86 @@ describe('3b-2a sign token gating (F15b-2 / F10-bridge)', () => {
     expect(call[call.length - 1]).toBe('tok-sign-1');
   });
 
-  test('GG18 branch stays untokenized and mints nothing (F19 gap)', async () => {
+  test('GG18 mpcSignPSBT mints a sign token for its session (3b-6)', async () => {
     resolveBackend.mockResolvedValueOnce('gg18');
     native.mpcSignPSBT.mockResolvedValueOnce('signed-gg18');
     const out = await TssProvider.mpcSignPSBT(...SIGN_ARGS);
     expect(out).toBe('signed-gg18');
-    expect(native.requestSignCeremonyToken).not.toHaveBeenCalled();
-    expect(native.mpcSignPSBT).toHaveBeenCalledWith(...SIGN_ARGS);
+    expect(native.requestSignCeremonyToken).toHaveBeenCalledWith('sess-1');
+    expect(native.mpcSignPSBT).toHaveBeenCalledWith(...SIGN_ARGS, 'tok-sign-1');
+    expect(native.completeCeremonyToken).toHaveBeenCalledWith('tok-sign-1');
+  });
+
+  test('GG18 mpcSendBTCWithUTXOs mints a sign token for its session (3b-6)', async () => {
+    resolveBackend.mockResolvedValueOnce('gg18');
+    native.mpcSendBTCWithUTXOs.mockResolvedValueOnce('txid-gg18');
+    const out = await TssProvider.mpcSendBTCWithUTXOs(
+      'srv',
+      'p1',
+      'p1,p2',
+      'sess-gg18-send',
+      'sk',
+      'ek',
+      'dk',
+      'btcpub',
+      'tb1qto',
+      '1000',
+      '10',
+      '[]',
+      'tb1qchange',
+    );
+    expect(out).toBe('txid-gg18');
+    expect(native.requestSignCeremonyToken).toHaveBeenCalledWith(
+      'sess-gg18-send',
+    );
+    const call = native.mpcSendBTCWithUTXOs.mock.calls[0];
+    expect(call[call.length - 1]).toBe('tok-sign-1');
+    expect(native.completeCeremonyToken).toHaveBeenCalledWith('tok-sign-1');
+  });
+
+  test('GG18 nostrMpcSendBTC mints a fresh single-call ceremony (3b-6)', async () => {
+    resolveBackend.mockResolvedValueOnce('gg18');
+    native.nostrMpcSendBTC.mockResolvedValueOnce('txid-gg18-nostr');
+    const out = await TssProvider.nostrMpcSendBTC(
+      'wss://r',
+      'npub1,npub2',
+      'npub1,npub2',
+      '5000',
+      'tb1qto',
+      '1000',
+      '10',
+      '[]',
+      'tb1qchange',
+    );
+    expect(out).toBe('txid-gg18-nostr');
+    expect(native.requestSignCeremonyToken).toHaveBeenCalledTimes(1);
+    const call = native.nostrMpcSendBTC.mock.calls[0];
+    expect(call[call.length - 1]).toBe('tok-sign-1');
+  });
+
+  test('GG18 nostrMpcSignPSBT mints a fresh single-call ceremony (3b-6)', async () => {
+    resolveBackend.mockResolvedValueOnce('gg18');
+    native.nostrMpcSignPSBT.mockResolvedValueOnce('signed-gg18-nostr');
+    const out = await TssProvider.nostrMpcSignPSBT(
+      'wss://r',
+      'npub1,npub2',
+      'npub1,npub2',
+      'cHNidA==',
+    );
+    expect(out).toBe('signed-gg18-nostr');
+    expect(native.requestSignCeremonyToken).toHaveBeenCalledTimes(1);
+    const call = native.nostrMpcSignPSBT.mock.calls[0];
+    expect(call[call.length - 1]).toBe('tok-sign-1');
+  });
+
+  test('GG18 mint failure never reaches the native call (3b-6)', async () => {
+    resolveBackend.mockResolvedValueOnce('gg18');
+    native.requestSignCeremonyToken.mockRejectedValueOnce(
+      Object.assign(new Error('cancelled'), {
+        code: 'CEREMONY_AUTH_REQUIRED',
+      }),
+    );
+    await expect(TssProvider.mpcSignPSBT(...SIGN_ARGS)).rejects.toThrow();
+    expect(native.mpcSignPSBT).not.toHaveBeenCalled();
   });
 });

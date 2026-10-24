@@ -854,10 +854,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         sessionKey: String,
         chaincode: String,
         ppmFile: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 setup takes a keygen token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "nostrMpcTssSetup")) return@Thread
                 val result = DklsNative.bbmtNostrJoinKeygenNative(
                     relaysCSV,
@@ -894,10 +900,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         encKey: String,
         decKey: String,
         chaincode: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 setup takes a keygen token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "mpcTssSetup")) return@Thread
                 val result = DklsNative.bbmtJoinKeygenNative(
                     ppmFile,
@@ -1521,10 +1533,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         encKey: String,
         decKey: String,
         psbtBase64: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 sign takes a sign token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 val keyshare = loadKeyshareJSONFromRNES()
                 if (keyshare == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
@@ -1566,10 +1584,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         feeSatoshi: String,
         utxosWithPathsJSON: String,
         changeAddress: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 send takes a sign token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 val keyshare = loadKeyshareJSONFromRNES()
                 if (keyshare == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
@@ -1612,10 +1636,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         estimatedFee: String,
         utxosWithPathsJSON: String,
         changeAddress: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 nostr send takes a sign token (single-call).
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 if (rejectBbmtUnavailable(promise, "nostrMpcSendBTC")) return@Thread
                 val result = DklsNative.bbmtNostrMpcSendBTCWithUTXOsNative(
@@ -1646,10 +1676,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         partiesNpubsCSV: String,
         npubsSorted: String,
         psbtBase64: String,
+        ceremonyToken: String,
         promise: Promise
     ) {
         Thread {
             try {
+                // 3b-6: GG18 nostr sign takes a sign token (single-call).
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 if (rejectBbmtUnavailable(promise, "nostrMpcSignPSBT")) return@Thread
                 val result = DklsNative.bbmtNostrMpcSignPSBTNative(

@@ -41,6 +41,7 @@ RCT_EXTERN_METHOD(mpcTssSetup:(NSString *)server
                   encKey:(NSString *)encKey
                   decKey:(NSString *)decKey
                   chaincode:(NSString *)chaincode
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -204,6 +205,7 @@ RCT_EXTERN_METHOD(mpcSendBTCWithUTXOs:(NSString *)server
                   feeSatoshi:(NSString *)feeSatoshi
                   utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
                   changeAddress:(NSString *)changeAddress
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -221,6 +223,7 @@ RCT_EXTERN_METHOD(nostrMpcTssSetup:(NSString *)relaysCSV
                   sessionKey:(NSString *)sessionKey
                   chaincode:(NSString *)chaincode
                   ppmFile:(NSString *)ppmFile
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -236,6 +239,7 @@ RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
                   estimatedFee:(NSString *)estimatedFee
                   utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
                   changeAddress:(NSString *)changeAddress
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -248,6 +252,7 @@ RCT_EXTERN_METHOD(mpcSignPSBT:(NSString *)server
                   encKey:(NSString *)encKey
                   decKey:(NSString *)decKey
                   psbtBase64:(NSString *)psbtBase64
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -256,6 +261,7 @@ RCT_EXTERN_METHOD(nostrMpcSignPSBT:(NSString *)relaysCSV
                   partiesNpubsCSV:(NSString *)partiesNpubsCSV
                   npubsSorted:(NSString *)npubsSorted
                   psbtBase64:(NSString *)psbtBase64
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

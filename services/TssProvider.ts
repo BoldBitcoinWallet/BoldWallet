@@ -216,17 +216,25 @@ export const TssProvider = {
       );
       return parseStagedSetupResult(raw);
     }
-    // F19: GG18 legacy branch — full JSON through JS by explicit deferral.
-    const json = await BBMTLibNativeModule.mpcTssSetup(
-      server,
-      partyID,
-      ppmFile,
-      partiesCSV,
+    // 3b-6: GG18 setup takes a keygen token (strict session).
+    const json = await withCeremonyToken<string>(
       sessionID,
-      sessionKey,
-      encKey,
-      decKey,
-      chaincode,
+      ceremonyToken,
+      requestKeygenCeremonyToken,
+      'keygen',
+      token =>
+        BBMTLibNativeModule.mpcTssSetup(
+          server,
+          partyID,
+          ppmFile,
+          partiesCSV,
+          sessionID,
+          sessionKey,
+          encKey,
+          decKey,
+          chaincode,
+          token,
+        ),
     );
     return {kind: 'legacy-gg18', json};
   },
@@ -263,15 +271,23 @@ export const TssProvider = {
       );
       return parseStagedSetupResult(raw);
     }
-    // F19: GG18 legacy branch — full JSON through JS by explicit deferral.
-    const json = await BBMTLibNativeModule.nostrMpcTssSetup(
-      relaysCSV,
-      partyNsec,
-      partiesNpubsCSV,
+    // 3b-6: GG18 setup takes a keygen token (strict session).
+    const json = await withCeremonyToken<string>(
       sessionID,
-      sessionKey,
-      chaincode,
-      ppmPath,
+      ceremonyToken,
+      requestKeygenCeremonyToken,
+      'keygen',
+      token =>
+        BBMTLibNativeModule.nostrMpcTssSetup(
+          relaysCSV,
+          partyNsec,
+          partiesNpubsCSV,
+          sessionID,
+          sessionKey,
+          chaincode,
+          ppmPath,
+          token,
+        ),
     );
     return {kind: 'legacy-gg18', json};
   },
@@ -529,16 +545,19 @@ export const TssProvider = {
         ),
       );
     }
-    // F19: GG18 branch stays untokenized (disclosed gap).
-    return BBMTLibNativeModule.mpcSignPSBT(
-      server,
-      partyID,
-      partiesCSV,
-      sessionID,
-      sessionKey,
-      encKey,
-      decKey,
-      psbtBase64,
+    // 3b-6: GG18 sign takes a sign token (strict session).
+    return withCeremonyToken(sessionID, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+      BBMTLibNativeModule.mpcSignPSBT(
+        server,
+        partyID,
+        partiesCSV,
+        sessionID,
+        sessionKey,
+        encKey,
+        decKey,
+        psbtBase64,
+        token,
+      ),
     );
   },
 
@@ -579,21 +598,24 @@ export const TssProvider = {
         ),
       );
     }
-    // F19: GG18 branch stays untokenized (disclosed gap).
-    return BBMTLibNativeModule.mpcSendBTCWithUTXOs(
-      server,
-      partyID,
-      partiesCSV,
-      sessionID,
-      sessionKey,
-      encKey,
-      decKey,
-      btcPub,
-      toAddress,
-      satoshiAmount,
-      satoshiFees,
-      utxosWithPathsJSON,
-      changeAddress,
+    // 3b-6: GG18 send takes a sign token (strict session).
+    return withCeremonyToken(sessionID, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+      BBMTLibNativeModule.mpcSendBTCWithUTXOs(
+        server,
+        partyID,
+        partiesCSV,
+        sessionID,
+        sessionKey,
+        encKey,
+        decKey,
+        btcPub,
+        toAddress,
+        satoshiAmount,
+        satoshiFees,
+        utxosWithPathsJSON,
+        changeAddress,
+        token,
+      ),
     );
   },
 
@@ -626,17 +648,20 @@ export const TssProvider = {
         ),
       );
     }
-    // F19: GG18 branch stays untokenized (disclosed gap).
-    return BBMTLibNativeModule.nostrMpcSendBTC(
-      relaysCSV,
-      partiesNpubsCSV,
-      npubsSorted,
-      balanceSats,
-      toAddress,
-      satoshiAmount,
-      satoshiFees,
-      utxosWithPathsJSON,
-      changeAddress,
+    // 3b-6: GG18 nostr send takes a sign token (single-call).
+    return withCeremonyToken(undefined, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+      BBMTLibNativeModule.nostrMpcSendBTC(
+        relaysCSV,
+        partiesNpubsCSV,
+        npubsSorted,
+        balanceSats,
+        toAddress,
+        satoshiAmount,
+        satoshiFees,
+        utxosWithPathsJSON,
+        changeAddress,
+        token,
+      ),
     );
   },
 
@@ -659,12 +684,15 @@ export const TssProvider = {
         ),
       );
     }
-    // F19: GG18 branch stays untokenized (disclosed gap).
-    return BBMTLibNativeModule.nostrMpcSignPSBT(
-      relaysCSV,
-      partiesNpubsCSV,
-      npubsSorted,
-      psbtBase64,
+    // 3b-6: GG18 nostr sign takes a sign token (single-call).
+    return withCeremonyToken(undefined, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+      BBMTLibNativeModule.nostrMpcSignPSBT(
+        relaysCSV,
+        partiesNpubsCSV,
+        npubsSorted,
+        psbtBase64,
+        token,
+      ),
     );
   },
 

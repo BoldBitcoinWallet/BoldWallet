@@ -9,6 +9,12 @@ jest.mock('../native_modules', () => ({
     dklsNostrMpcSignPSBT: jest.fn(),
     dklsMpcTssSetup: jest.fn(),
     dklsNostrMpcTssSetup: jest.fn(),
+    mpcSignPSBT: jest.fn(),
+    mpcSendBTCWithUTXOs: jest.fn(),
+    nostrMpcSendBTC: jest.fn(),
+    nostrMpcSignPSBT: jest.fn(),
+    mpcTssSetup: jest.fn(),
+    nostrMpcTssSetup: jest.fn(),
     nostrKeypair: jest.fn(),
     eciesKeypair: jest.fn(),
     publishData: jest.fn(),
@@ -59,9 +65,14 @@ import {
   findLiveCeremonyToken,
   getSessionToken,
   releaseCeremonyToken,
+  requestKeygenCeremonyToken,
   requestSignCeremonyToken,
 } from '../services/ceremonyAuth';
 import {TssProvider} from '../services/TssProvider';
+import {
+  resolveTssBackend,
+  resolveTssBackendForKeygen,
+} from '../services/tssBackend';
 
 const native = BBMTLibNativeModule as any;
 const root = path.join(__dirname, '..');
@@ -147,6 +158,33 @@ function installStrictNative(): void {
   native.dklsNostrMpcTssSetup.mockImplementation(async (...a: unknown[]) => {
     gate(last(a), ['keygen'], a[3]);
     return JSON.stringify({handle: 'h', metadata: {pub_key: 'aa'}});
+  });
+  // 3b-6: GG18 branches mirror the DKLs gate contract. Note the GG18
+  // server setup arg shape carries ppmFile at index 2, so its
+  // sessionID sits at index 4 (DKLs twin: index 3).
+  native.mpcSignPSBT.mockImplementation(async (...a: unknown[]) => {
+    gate(last(a), ['sign'], a[3]);
+    return 'signed-gg18';
+  });
+  native.mpcSendBTCWithUTXOs.mockImplementation(async (...a: unknown[]) => {
+    gate(last(a), ['sign'], a[3]);
+    return 'txid-gg18';
+  });
+  native.nostrMpcSendBTC.mockImplementation(async (...a: unknown[]) => {
+    gate(last(a), ['sign']);
+    return 'txid-gg18';
+  });
+  native.nostrMpcSignPSBT.mockImplementation(async (...a: unknown[]) => {
+    gate(last(a), ['sign']);
+    return 'signed-gg18';
+  });
+  native.mpcTssSetup.mockImplementation(async (...a: unknown[]) => {
+    gate(last(a), ['keygen'], a[4]);
+    return '{"pub_key":"bb"}';
+  });
+  native.nostrMpcTssSetup.mockImplementation(async (...a: unknown[]) => {
+    gate(last(a), ['keygen'], a[3]);
+    return '{"pub_key":"cc"}';
   });
   native.nostrKeypair.mockImplementation(async (...a: unknown[]) => {
     gate(a[0], ['keygen']);
@@ -278,6 +316,152 @@ describe('3b-5 L5 malicious-JS simulation (F10-bridge)', () => {
     expect(native.releaseCeremonyToken).not.toHaveBeenCalledWith(tokA);
   });
 
+  test('GG18: unsigned direct calls fail closed on all 6 branches (3b-6)', async () => {
+    await expect(
+      native.mpcSignPSBT('s', 'p', 'pp', 'sess', 'sk', 'ek', 'dk', 'psbt'),
+    ).rejects.toMatchObject({code: 'CEREMONY_AUTH_REQUIRED'});
+    await expect(
+      native.mpcSignPSBT(
+        's',
+        'p',
+        'pp',
+        'sess',
+        'sk',
+        'ek',
+        'dk',
+        'psbt',
+        'tok-forged-1',
+      ),
+    ).rejects.toMatchObject({code: 'CEREMONY_AUTH_REQUIRED'});
+    await expect(
+      native.mpcSendBTCWithUTXOs(
+        's',
+        'p',
+        'pp',
+        'sess',
+        'sk',
+        'ek',
+        'dk',
+        'pub',
+        'to',
+        '1',
+        '1',
+        '[]',
+        'ch',
+      ),
+    ).rejects.toMatchObject({code: 'CEREMONY_AUTH_REQUIRED'});
+    await expect(
+      native.nostrMpcSendBTC(
+        'r',
+        'np',
+        'np',
+        '5',
+        'to',
+        '1',
+        '1',
+        '[]',
+        'ch',
+      ),
+    ).rejects.toMatchObject({code: 'CEREMONY_AUTH_REQUIRED'});
+    await expect(
+      native.nostrMpcSignPSBT('r', 'np', 'np', 'psbt'),
+    ).rejects.toMatchObject({code: 'CEREMONY_AUTH_REQUIRED'});
+    await expect(
+      native.mpcTssSetup('s', 'p', 'ppm', 'pp', 'sess', 'sk', 'ek', 'dk', 'cc'),
+    ).rejects.toMatchObject({code: 'CEREMONY_AUTH_REQUIRED'});
+    await expect(
+      native.nostrMpcTssSetup('r', 'nsec', 'np', 'sess', 'sk', 'cc', 'ppm'),
+    ).rejects.toMatchObject({code: 'CEREMONY_AUTH_REQUIRED'});
+  });
+
+  test('GG18: wrong-class token fails on sign and setup (3b-6)', async () => {
+    const keygenTok = await requestKeygenCeremonyToken('sess-gg18-x');
+    createdTokens.push(keygenTok);
+    (resolveTssBackend as jest.Mock).mockResolvedValueOnce('gg18');
+    await expect(
+      TssProvider.mpcSignPSBT(
+        's',
+        'p',
+        'pp',
+        'sess-gg18-x',
+        'sk',
+        'ek',
+        'dk',
+        'psbt',
+        keygenTok,
+      ),
+    ).rejects.toMatchObject({code: 'CEREMONY_AUTH_REQUIRED'});
+    const signTok = await requestSignCeremonyToken('sess-gg18-y');
+    createdTokens.push(signTok);
+    (resolveTssBackendForKeygen as jest.Mock).mockResolvedValueOnce('gg18');
+    await expect(
+      TssProvider.mpcTssSetup(
+        's',
+        'p',
+        'ppm',
+        'pp',
+        'sess-gg18-y',
+        'sk',
+        'ek',
+        'dk',
+        'cc',
+        undefined,
+        undefined,
+        signTok,
+      ),
+    ).rejects.toMatchObject({code: 'CEREMONY_AUTH_REQUIRED'});
+  });
+
+  test('GG18: wrong-session token fails with no owner-token lifecycle (3b-6)', async () => {
+    const tokA = await requestSignCeremonyToken('sess-GG18-A');
+    createdTokens.push(tokA);
+    (resolveTssBackend as jest.Mock).mockResolvedValueOnce('gg18');
+    await expect(
+      TssProvider.mpcSignPSBT(
+        's',
+        'p',
+        'pp',
+        'sess-GG18-B',
+        'sk',
+        'ek',
+        'dk',
+        'psbt',
+        tokA,
+      ),
+    ).rejects.toMatchObject({code: 'CEREMONY_AUTH_REQUIRED'});
+    expect(native.releaseCeremonyToken).not.toHaveBeenCalledWith(tokA);
+  });
+
+  test('GG18: valid token succeeds via provider (sign + setup) (3b-6)', async () => {
+    (resolveTssBackend as jest.Mock).mockResolvedValueOnce('gg18');
+    const signed = await TssProvider.mpcSignPSBT(
+      's',
+      'p',
+      'pp',
+      'sess-gg18-ok',
+      'sk',
+      'ek',
+      'dk',
+      'psbt',
+    );
+    expect(signed).toBe('signed-gg18');
+    expect(native.completeCeremonyToken).toHaveBeenCalledTimes(1);
+    (resolveTssBackendForKeygen as jest.Mock).mockResolvedValueOnce('gg18');
+    const setup = await TssProvider.mpcTssSetup(
+      's',
+      'p',
+      'ppm',
+      'pp',
+      'sess-gg18-kg',
+      'sk',
+      'ek',
+      'dk',
+      'cc',
+    );
+    expect(setup.kind).toBe('legacy-gg18');
+    expect(native.completeCeremonyToken).toHaveBeenCalledTimes(2);
+  });
+
   test('every unsigned direct call across the gated surface fails closed', async () => {
     await expect(native.dklsMpcTssSetup('s', 'p', 'pp', 'x', 'sk', 'ek', 'dk', 'cc')).rejects.toMatchObject({
       code: 'CEREMONY_AUTH_REQUIRED',
@@ -360,8 +544,14 @@ describe('3b-5 L5 malicious-JS simulation (F10-bridge)', () => {
     ).toBe(5);
   });
 
-  test('all 19 gated methods carry ceremonyToken on both platforms (source-text)', () => {
+  test('all 25 gated methods carry ceremonyToken on both platforms (source-text)', () => {
     const methods = [
+      'mpcSignPSBT',
+      'mpcSendBTCWithUTXOs',
+      'nostrMpcSendBTC',
+      'nostrMpcSignPSBT',
+      'mpcTssSetup',
+      'nostrMpcTssSetup',
       'dklsMpcSignPSBT',
       'dklsMpcSendBTCWithUTXOs',
       'dklsNostrMpcSendBTC',
@@ -405,7 +595,9 @@ describe('3b-5 L5 malicious-JS simulation (F10-bridge)', () => {
       expect(swiftDecl).toContain('ceremonyToken');
       // …the .m export exposes it (except no-arg-impossible shapes)…
       expect(m).toContain(name);
-      const mDecl = m.slice(m.indexOf(name), m.indexOf(name) + 800);
+      // 1100: the 14-param GG18 mpcSendBTCWithUTXOs extern places
+      // ceremonyToken ~830 chars in; the 800-char window truncated it.
+      const mDecl = m.slice(m.indexOf(name), m.indexOf(name) + 1100);
       expect(mDecl).toContain('ceremonyToken');
       // …and each side verifies (or decides/consumes) before work.
       expect(ktDecl + swiftDecl).toMatch(

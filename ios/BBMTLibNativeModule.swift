@@ -1046,9 +1046,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   // variant decision deferred). DKLs twins stage natively.
   @objc func mpcTssSetup(
     _ server: String, partyID: String, ppmFile: String, partiesCSV: String, sessionID: String,
-    sessionKey: String, encKey: String, decKey: String, chaincode: String,
+    sessionKey: String, encKey: String, decKey: String, chaincode: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 setup takes a keygen token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     var error: NSError?
     let output = TssJoinKeygen(
       ppmFile, partyID, partiesCSV, encKey, decKey, sessionID, server, chaincode, sessionKey, &error)
@@ -1341,9 +1346,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
   // variant decision deferred). DKLs twins stage natively.
   @objc func nostrMpcTssSetup(
     _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, chaincode: String, ppmFile: String,
+    sessionKey: String, chaincode: String, ppmFile: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 setup takes a keygen token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssNostrJoinKeygen(
@@ -1489,9 +1499,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
     encKey: String,
     decKey: String,
     psbtBase64: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 sign takes a sign token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1531,9 +1547,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
     feeSatoshi: String,
     utxosWithPathsJSON: String,
     changeAddress: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 send takes a sign token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1574,9 +1596,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
     estimatedFee: String,
     utxosWithPathsJSON: String,
     changeAddress: String,
+    ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 nostr send takes a sign token (single-call).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1617,10 +1645,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   @objc func nostrMpcSignPSBT(
     _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
-    psbtBase64: String,
+    psbtBase64: String, ceremonyToken: String,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // 3b-6: GG18 nostr sign takes a sign token (single-call).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
