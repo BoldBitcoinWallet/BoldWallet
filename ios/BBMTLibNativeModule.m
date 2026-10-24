@@ -144,11 +144,15 @@ RCT_EXTERN_METHOD(setFeePolicy:(NSString *)policy
 // Call setAPI
 RCT_EXTERN_METHOD(setAPI:(NSString *)network
                   baseAPI:(NSString *)baseAPI
+                  ceremonyToken:(NSString *)ceremonyToken
+                  ceremonySessionID:(NSString *)ceremonySessionID
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Call setFeeAPIs
 RCT_EXTERN_METHOD(setFeeAPIs:(NSString *)urls
+                  ceremonyToken:(NSString *)ceremonyToken
+                  ceremonySessionID:(NSString *)ceremonySessionID
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

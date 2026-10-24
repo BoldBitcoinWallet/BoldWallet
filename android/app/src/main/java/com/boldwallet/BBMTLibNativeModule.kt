@@ -391,9 +391,70 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
 
+    /**
+     * 3b-2d B15/B16: native-held API allowlist store. Private
+     * prefs file with NO other writer (grep-verified) — JS can
+     * add hosts only through the gated methods with a token.
+     */
+    private val apiAllowlistStore = object : CeremonyApiAllowlist.Store {
+        override fun load(): Set<String> {
+            val prefs = reactApplicationContext.getSharedPreferences(
+                "ceremony_api_allowlist",
+                Context.MODE_PRIVATE,
+            )
+            return prefs.getStringSet("urls", emptySet())?.toSet() ?: emptySet()
+        }
+
+        override fun save(urls: Set<String>) {
+            reactApplicationContext.getSharedPreferences(
+                "ceremony_api_allowlist",
+                Context.MODE_PRIVATE,
+            ).edit().putStringSet("urls", urls.toSet()).apply()
+        }
+    }
+
+    /**
+     * 3b-2d: allowlist-or-token gate. Returns true when the call
+     * may proceed (persisting newly approved URLs best-effort —
+     * a persist failure still applies this use since the user
+     * approved it; the next launch simply prompts again).
+     */
+    private fun gateApiUrls(
+        urls: List<String>,
+        ceremonyToken: String,
+        ceremonySessionID: String,
+        promise: Promise,
+        method: String,
+    ): Boolean {
+        return when (
+            CeremonyApiAllowlist.decide(urls, ceremonyToken, ceremonySessionID, apiAllowlistStore)
+        ) {
+            CeremonyApiAllowlist.Decision.REJECT -> {
+                rejectCeremonyUnauthorized(promise)
+                false
+            }
+            CeremonyApiAllowlist.Decision.APPLY_AND_PERSIST -> {
+                try {
+                    CeremonyApiAllowlist.persist(urls, apiAllowlistStore)
+                } catch (e: Exception) {
+                    ld(method, "allowlist persist failed, applying anyway: ${e.message}")
+                }
+                true
+            }
+            CeremonyApiAllowlist.Decision.APPLY -> true
+        }
+    }
+
     @ReactMethod
-    fun setAPI(network: String, baseAPI: String, promise: Promise) {
+    fun setAPI(
+        network: String,
+        baseAPI: String,
+        ceremonyToken: String,
+        ceremonySessionID: String,
+        promise: Promise,
+    ) {
         try {
+            if (!gateApiUrls(listOf(baseAPI), ceremonyToken, ceremonySessionID, promise, "setAPI")) return
             if (rejectBbmtUnavailable(promise, "setAPI")) return
             val result = DklsNative.bbmtUseAPINative(network, baseAPI)
             ld("setAPI", result)
@@ -403,10 +464,17 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             promise.reject(e)
         }
     }
-    
+
     @ReactMethod
-    fun setFeeAPIs(urls: String, promise: Promise) {
+    fun setFeeAPIs(
+        urls: String,
+        ceremonyToken: String,
+        ceremonySessionID: String,
+        promise: Promise,
+    ) {
         try {
+            val parsed = CeremonyApiAllowlist.parseCsv(urls)
+            if (!gateApiUrls(parsed, ceremonyToken, ceremonySessionID, promise, "setFeeAPIs")) return
             if (rejectBbmtUnavailable(promise, "setFeeAPIs")) return
             val result = DklsNative.bbmtUseFeeAPIsNative(urls)
             ld("setFeeAPIs", result)

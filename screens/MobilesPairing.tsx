@@ -56,6 +56,7 @@ import {
   shortenAddress,
 } from '../utils';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
 import {guardOnlineAction} from '../services/walletOnlineStore';
 import {useTheme} from '../theme';
@@ -1360,7 +1361,7 @@ const MobilesPairing = ({navigation}: any) => {
         const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
         const apiUrl = resolveStoredMempoolApiBase(net);
         await BBMTLibNativeModule.setBtcNetwork(net);
-        await BBMTLibNativeModule.setAPI(net, apiUrl);
+        await ensureMempoolApiApplied(net, apiUrl);
       }
       dbg('session init...');
       await ensureLanHandshakePortFree();
@@ -1395,7 +1396,7 @@ const MobilesPairing = ({navigation}: any) => {
         // Set network and API in BBMTLib for this transaction
         const apiUrl = resolveStoredMempoolApiBase(net);
         await BBMTLibNativeModule.setBtcNetwork(net);
-        await BBMTLibNativeModule.setAPI(net, apiUrl);
+        await ensureMempoolApiApplied(net, apiUrl);
         dbg('MobilesPairing: Set network and API in BBMTLib:', net, apiUrl);
       } else {
         // For send BTC, read ALL parameters from route params ONLY (no fallbacks)
@@ -1454,7 +1455,7 @@ const MobilesPairing = ({navigation}: any) => {
         // Set network and API in BBMTLib for this transaction
         const apiUrl = resolveStoredMempoolApiBase(net);
         await BBMTLibNativeModule.setBtcNetwork(net);
-        await BBMTLibNativeModule.setAPI(net, apiUrl);
+        await ensureMempoolApiApplied(net, apiUrl);
         // CRITICAL: Update LocalCache 'api' key so any balance/UTXO fetches use correct API
         // This ensures operations use the network from route params, not device's current network
         appConfigRepository.set('api', apiUrl);
@@ -1770,7 +1771,7 @@ const MobilesPairing = ({navigation}: any) => {
       if (originalNetwork && originalApiUrl) {
         try {
           await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
-          await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
+          await ensureMempoolApiApplied(originalNetwork, originalApiUrl);
           // Restore LocalCache 'api' key to original network's API
           appConfigRepository.set('api', originalApiUrl);
           // Restore WalletService internal state
@@ -5173,7 +5174,7 @@ const MobilesPairing = ({navigation}: any) => {
               if (p.originalNetwork && p.originalApiUrl) {
                 try {
                   await BBMTLibNativeModule.setBtcNetwork(p.originalNetwork);
-                  await BBMTLibNativeModule.setAPI(
+                  await ensureMempoolApiApplied(
                     p.originalNetwork,
                     p.originalApiUrl,
                   );

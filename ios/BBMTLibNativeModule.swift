@@ -939,19 +939,60 @@ class BBMTLibNativeModule: RCTEventEmitter {
     resolve("setFeePolicy", output, error, resolver)
   }
 
+  /// 3b-2d B15/B16: native-held API allowlist store.
+  /// UserDefaults key with NO other writer (grep-verified).
+  private var apiAllowlistStore: CeremonyApiAllowlist.Store {
+    CeremonyApiAllowlist.Store(
+      load: {
+        Set(UserDefaults.standard.stringArray(forKey: "ceremonyApiAllowlistUrls") ?? [])
+      },
+      save: { urls in
+        UserDefaults.standard.set(Array(urls), forKey: "ceremonyApiAllowlistUrls")
+      }
+    )
+  }
+
+  /// 3b-2d: allowlist-or-token gate. True when the call may
+  /// proceed (newly approved URLs persisted best-effort — a
+  /// persist failure still applies this use since the user
+  /// approved it; the next launch simply prompts again).
+  private func gateApiUrls(
+    _ urls: [String], token: String, sessionID: String,
+    method: String, rejecter: @escaping RCTPromiseRejectBlock
+  ) -> Bool {
+    switch CeremonyApiAllowlist.decide(urls: urls, token: token, sessionID: sessionID, store: apiAllowlistStore) {
+    case .reject:
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return false
+    case .applyAndPersist:
+      CeremonyApiAllowlist.persist(urls, store: apiAllowlistStore)
+      return true
+    case .apply:
+      return true
+    }
+  }
+
   @objc func setAPI(
-    _ network: String, baseAPI: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ network: String, baseAPI: String, ceremonyToken: String, ceremonySessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    guard gateApiUrls([baseAPI], token: ceremonyToken, sessionID: ceremonySessionID, method: "setAPI", rejecter: rejecter) else {
+      return
+    }
     var error: NSError?
     let output = TssUseAPI(network, baseAPI, &error)
     resolve("setAPI", output, error, resolver)
   }
 
   @objc func setFeeAPIs(
-    _ urls: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ urls: String, ceremonyToken: String, ceremonySessionID: String,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    guard gateApiUrls(CeremonyApiAllowlist.parseCsv(urls), token: ceremonyToken, sessionID: ceremonySessionID, method: "setFeeAPIs", rejecter: rejecter) else {
+      return
+    }
     var error: NSError?
     let output = TssUseFeeAPIs(urls, &error)
     resolve("setFeeAPIs", output, error, resolver)

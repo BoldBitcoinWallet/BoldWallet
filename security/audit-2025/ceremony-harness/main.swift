@@ -152,6 +152,37 @@ check(!CeremonyTokens.verifyTransport(token: "tok0000000000000000000000000099", 
 CeremonyTokens.release(token: tm)
 check(!CeremonyTokens.verifyTransport(token: tm, sessionID: "hs-1"), "transport rejects revoked")
 
+// 3b-2d B15/B16: allowlist-or-token gate (in-memory store).
+final class MemAllowlist {
+  var urls: Set<String> = []
+}
+let memStore = MemAllowlist()
+let allowStore = CeremonyApiAllowlist.Store(
+  load: { memStore.urls },
+  save: { memStore.urls = $0 }
+)
+check(CeremonyApiAllowlist.seeds.contains("https://mempool.space/api"), "seeds match JS mainnet default")
+check(CeremonyApiAllowlist.seeds.contains("https://mempool.space/testnet/api"), "seeds match JS testnet default")
+check(CeremonyApiAllowlist.normalize("  https://h/api// ") == "https://h/api", "normalize trims + strips slashes")
+check(CeremonyApiAllowlist.parseCsv(" https://a/api/, ,https://b/api ") == ["https://a/api", "https://b/api"], "parseCsv drops empties")
+check(CeremonyApiAllowlist.decide(urls: ["https://mempool.space/api"], token: "", sessionID: "", store: allowStore) == .apply, "seed applies silently")
+check(CeremonyApiAllowlist.decide(urls: ["https://mempool.space/api/"], token: "", sessionID: "", store: allowStore) == .apply, "seed slash-variant applies")
+check(CeremonyApiAllowlist.decide(urls: ["https://evil.example/api"], token: "", sessionID: "", store: allowStore) == .reject, "unknown rejects without token")
+check(memStore.urls.isEmpty, "reject persists nothing")
+reset()
+let cfgTok = CeremonyTokens.mint(opClass: .config, sessionID: "cfg-1")
+check(CeremonyApiAllowlist.decide(urls: ["https://custom.example/api"], token: cfgTok, sessionID: "cfg-1", store: allowStore) == .applyAndPersist, "config token approves")
+CeremonyApiAllowlist.persist(["https://custom.example/api"], store: allowStore)
+check(CeremonyApiAllowlist.decide(urls: ["https://custom.example/api"], token: "", sessionID: "", store: allowStore) == .apply, "persisted applies silently")
+reset()
+let signTok = CeremonyTokens.mint(opClass: .sign, sessionID: "cfg-1")
+check(CeremonyApiAllowlist.decide(urls: ["https://other.example/api"], token: signTok, sessionID: "cfg-1", store: allowStore) == .reject, "wrong-class token rejects")
+reset()
+let cfgTok2 = CeremonyTokens.mint(opClass: .config, sessionID: "cfg-1")
+check(CeremonyApiAllowlist.decide(urls: ["https://other.example/api"], token: cfgTok2, sessionID: "cfg-2", store: allowStore) == .reject, "wrong-session token rejects")
+check(CeremonyApiAllowlist.decide(urls: ["https://mempool.space/api", "https://new.example/api"], token: "", sessionID: "", store: allowStore) == .reject, "fee CSV needs all allowed")
+check(CeremonyApiAllowlist.decide(urls: [], token: "", sessionID: "", store: allowStore) == .apply, "empty list applies vacuously")
+
 // Wire parsing strict.
 check(CeremonyOpClass.parse("sign") == .sign, "parse sign")
 check(CeremonyOpClass.parse("keygen") == .keygen, "parse keygen")

@@ -276,6 +276,42 @@ export const TssProvider = {
   },
 
   /**
+   * 3b-2d B15: mempool API base. Allowlist-or-token: omit the
+   * token for allowlisted (built-in or previously approved)
+   * URLs; pass a `config` token to approve + persist a new URL.
+   * Prefer ensureMempoolApiApplied (approval UX included).
+   */
+  async setAPI(
+    network: string,
+    baseAPI: string,
+    ceremonyToken?: string,
+    ceremonySessionID?: string,
+  ): Promise<string> {
+    return BBMTLibNativeModule.setAPI(
+      network,
+      baseAPI,
+      ceremonyToken ?? '',
+      ceremonySessionID ?? '',
+    );
+  },
+
+  /**
+   * 3b-2d B16: fee API bases (CSV). Same allowlist-or-token
+   * rule as setAPI. Prefer ensureFeeApisApplied.
+   */
+  async setFeeAPIs(
+    urlsCSV: string,
+    ceremonyToken?: string,
+    ceremonySessionID?: string,
+  ): Promise<string> {
+    return BBMTLibNativeModule.setFeeAPIs(
+      urlsCSV,
+      ceremonyToken ?? '',
+      ceremonySessionID ?? '',
+    );
+  },
+
+  /**
    * 3b-2c B14: LAN handshake fetch. Same required-token rule
    * as publishData.
    */

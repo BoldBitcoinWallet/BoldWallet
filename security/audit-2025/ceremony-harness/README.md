@@ -12,6 +12,7 @@ From the repo root (macOS, Xcode CLT):
 
 ```sh
 swiftc -o /tmp/ceremony-harness ios/CeremonyTokens.swift \
+  ios/CeremonyApiAllowlist.swift \
   security/audit-2025/ceremony-harness/main.swift && /tmp/ceremony-harness
 ```
 
@@ -23,4 +24,6 @@ no-transition-on-failure, unknown-token fail, start-bounded
 lazy expiry (active survives TTL), complete→used,
 release→revoked (idempotent), cancel +
 new-ceremony revocation, same-session remint supersede, strict
-wire parsing.
+wire parsing, single-call verify, transport verify, API
+allowlist gate (seeds, normalize/CSV, allow/persist, token
+class+session binding).

@@ -180,6 +180,29 @@ resolve-"" transport errors. Evidence: tssTransportGating
 Android release green, tsc 32 pre-existing, eslint 0 errors.
 Full jest 670 passed, same 6 pre-existing failures.
 
+3b-2d config slice GREEN (B15-B16): allowlist-or-token.
+Native CeremonyApiAllowlist both platforms (seeds =
+mempool.space mainnet+testnet defaults, fail-safe on drift;
+private prefs/UserDefaults store, sole-writer verified;
+normalize + CSV parse; pure decide()). setAPI/setFeeAPIs
+gate FIRST: allowlisted applies silently, unknown needs a
+`config` token (strict session) and is then persisted
+(best-effort persist, always applies once approved). JS:
+TssProvider wrappers (token optional, '' default) +
+apiConfigApply ensureMempoolApiApplied/ensureFeeApisApplied
+(silent try; unknown URLs get in-app URL confirm — the OS
+prompt cannot show the host — then config mint; null-confirm
+direct mint for settings saves with the URL on screen;
+per-session denial memory; same-URL inflight dedup). All 30
+call sites migrated (25 setAPI + 5 setFeeAPIs incl.
+contexts; zero direct native callers remain). No QR-provided
+URL reaches setAPI (QR carries network only; URLs are
+stored-or-default) — legacy custom URLs re-confirm once via
+the Alert. Evidence: apiConfigApply 12/12, JVM allowlist
+9/9 + tokens 18/18, harness PASSED (80 checks), iOS Debug +
+Android release green, tsc 32 pre-existing, eslint 0 errors.
+Full jest 682 passed, same 6 pre-existing failures.
+
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
   arm64 emulator (pure-Go build; x/crypto/argon2 has amd64 asm only, so ARM
