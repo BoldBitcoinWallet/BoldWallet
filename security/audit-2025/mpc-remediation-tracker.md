@@ -38,6 +38,8 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F12 | Prefix-match cancel + 15-min poison; no-confirm bridge cancel | High | tss/cancel.go:29,103; BBMTLibNativeModule.kt:505 | Exact-match cancel; per-session contexts/keys; confirm token | TBD | Open |
 | F14 | SessionKeyHex inert; secrecy rests on long-term nsec | Med | tss/nostrtransport/config.go:49 | HKDF session key into AEAD or remove field (allowlist is DKG-pinned: signing_resolve.go:57) | TBD | Open |
 | F13 | Background/kill: warning-only; replay memory is RAM-only | Med | services/mpcKeepAlive.ts:200 | Ceremony epoch or fresh session IDs post-death; persist seen-IDs | TBD | Open |
+| F31 | No fee-rate cap: mempool API value flows unbounded into send (only 1 sat/vB floor) | Med | BBMTLib/tss/btc.go:233,1392,1191 | Cap fee rate (sanity max sat/vB) + cap total fee vs amount; reject absurd mempool values | TBD | Open (v4.1.1 Track B, NEW — Wave 6+) |
+| F32 | Trio LAN session key derived from public values only (sha256 of sessionID + masterHost) | High | BBMTLib/tss/lan_crypto.go:9-13 | Derive from a secret (PAKE/pairing secret or ECIES-wrapped random key); protocol change | TBD | Open (v4.1.1 Track B, NEW — Wave 6+) |
 
 Fix waves: (1) F7+sweep done. (2) B1 done. (3) F15(partial→F15b),F3,F4 done. Wave 3a = F15b-1+F10-clip (GREEN, unmerged); Wave 3b = F15b-2+F18+F10-bridge+F4-auth (implemented incl. 3b-6 GG18 tokenization, pending QA/merge); Wave 4 = F11+F6; then F12,F14; F13. F19 Done (tokenized); F20 deferred; F21 Done (3b first commit). F10-GG18 Done. F23 Done (3b-6d v2 file fix; retest round-trip gates merge).
 Still owner-side: govulncheck, npm audit, gitleaks/trufflehog history, FROST/DKLs23 fork diff.
@@ -485,3 +487,49 @@ Low cleanup (unreachable, zero Kotlin callers) — not Wave 4.
   Decision needed before calling F7-residual done.
 - Legacy import UX: wrong-password-vs-corruption now reads
   "Wrong password or corrupted backup" for legacy content failures.
+
+## v4.1.1 toolchain track (`security/v4.1.1-toolchain`, from main 84c54eaa)
+- F29 (Go rebuild, Critical) Done 6515461f: go.mod toolchain go1.26.10,
+  Dockerfiles pinned + checksummed, GOTOOLCHAIN=local; rebuilt + verified
+  per-arch (3/3 .so `go version -m` = go1.26.10, iOS 786x strings, APK
+  contains go1.26.10 on all 3 ABIs). libtss/Dockerfile deferred to libtss
+  repo (submodule). Rebuild required: x509 compiled into the .so.
+- F30 (Node 22.23.4, High) Done 35eb0106: Dockerfile Node 22.23.4+b8492284,
+  engines>=22.23.4, .nvmrc, npm ci green, jest 752/1 baseline identical.
+- F34 SKIPPED per user: manual GitHub release upload of .sha/.asc.
+- F28-exp Done 7b263e7c: verify-native-artifacts.sh gains MIN_GO=1.26.10
+  gate (.so via `go version -m` + all-ABIs-agree; iOS .a via strings >=
+  floor); gate proven both directions (exit 1 on forged floor, PASS on
+  revert); CI setup-go pinned 1.26 -> 1.26.10 + GOTOOLCHAIN=local in both
+  workflows; RELEASE.md documents minimums + pre-release gate. No
+  artifact-upload CI workflow exists on this track, so the script is a
+  release-machine gate (stamp workflows live on Wave 5 branch).
+- Version check: 4.1.1/72 already set everywhere (package.json, gradle,
+  Xcode MARKETING_VERSION/CURRENT_PROJECT_VERSION); no bump commit needed.
+- Full suite on this branch: Go -race (tss, dkls -short, nostrtransport,
+  bbmtmobile tagged) green; jest 752 pass / 1 pre-existing fail (urBytesQr
+  frames, same as baseline); tsc 32 pre-existing (baseline-identical);
+  eslint 16 err / 169 warn in untouched files (track changes zero
+  lintable sources — pre-existing by construction); JVM 47/47; F4
+  harness PASSED; assembleDebug SUCCESS; xcodebuild Debug SUCCEEDED;
+  :app:connectedDebugAndroidTest 11/11 on Small_Phone_API_35.
+- Known non-blocker: root `connectedDebugAndroidTest` fails at
+  :op-engineering_op-sqlite:mergeDebugAndroidTestNativeLibs (duplicate
+  libc++_shared.so from op-sqlite vs react-android transforms) — third-party
+  androidTest packaging conflict, no test failure; deterministic in this
+  env, independent of branch state (track touches no gradle/deps files).
+  App-module instrumented (the suite with the repo's tests) is 11/11.
+- Track B verification (report only, no code on this branch):
+  F31 CONFIRMED Medium — no fee cap: mempool /v1/fees/recommended ->
+  RecommendedFees (btc.go:233) -> calculateFees (btc.go:1392) ->
+  MpcSendBTCWithUTXOs estimatedFeeStr (btc.go:1191, parsed unbounded);
+  only a 1 sat/vB floor exists. NEW finding, Wave 6+.
+  F32 CONFIRMED High — trio LAN key = sha256(sessionID + "," + masterHost)
+  (lan_crypto.go:9-13), both inputs public, no secret; anyone on LAN can
+  derive + forge. NEW finding, Wave 6+ (protocol change, not v4.1.1).
+  F33 CONFIRMED on main (pump decrypts via raw AesDecrypt, no tag check)
+  but FIXED by Wave 5 F24b (ffeda6f5 lanPayloadHashValid) — no action,
+  merge carries the fix.
+  F5 NOT DONE — base-config cleartextTrafficPermitted="true" globally
+  (network_security_config.xml:3, with tools:ignore); already tracked as
+  F8 Open, no new row.
