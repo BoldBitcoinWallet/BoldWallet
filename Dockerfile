@@ -29,13 +29,16 @@ RUN curl -Lo node.tar.gz https://nodejs.org/dist/v20.18.1/node-v20.18.1-linux-x6
     && rm node.tar.gz
 
 # Install Go (cached unless Go version changes)
-RUN curl -LO https://go.dev/dl/go1.24.2.linux-amd64.tar.gz \
-    && tar -C /usr/local -xzf go1.24.2.linux-amd64.tar.gz \
-    && rm go1.24.2.linux-amd64.tar.gz
+# F29: 1.26.10 minimum (CVE-2026-111943, eMudhra intermediates), checksum-verified.
+RUN curl -Lo go.tar.gz https://go.dev/dl/go1.26.10.linux-amd64.tar.gz \
+    && echo "ccfe7ae822d2c2f41f4fe7c956199967a4dac22d0ee0d2b2bfdb440aab3b20c5 go.tar.gz" | sha256sum -c - \
+    && tar -C /usr/local -xzf go.tar.gz \
+    && rm go.tar.gz
 
 ENV PATH="/usr/local/go/bin:/usr/local/bin:${PATH}"
 ENV GOROOT="/usr/local/go"
 ENV GOPATH="/root/go"
+ENV GOTOOLCHAIN=local
 ENV PATH="/root/go/bin:${PATH}"
 # Set GOMODCACHE to use the cache mount location
 ENV GOMODCACHE="/root/go/pkg/mod"

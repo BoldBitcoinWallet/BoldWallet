@@ -2,6 +2,10 @@ module github.com/BoldBitcoinWallet/BBMTLib
 
 go 1.26.0
 
+// F29: minimum toolchain — CVE-2026-111943 (eMudhra intermediates) is fixed
+// in go1.26.10's crypto/x509. Binaries must be rebuilt, not just relinked.
+toolchain go1.26.10
+
 require (
 	github.com/0xCarbon/libtss/libtss-go v0.0.0
 	github.com/bnb-chain/tss-lib/v3 v3.0.0
