@@ -402,6 +402,8 @@ RCT_EXTERN_METHOD(ensureKeyshareEnveloped:(RCTPromiseResolveBlock)resolve reject
 // 3b-1 ceremony tokens: per-ceremony mint ONLY (hardcoded class +
 // prompt copy each). No generic mint exists by design.
 RCT_EXTERN_METHOD(requestSignCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+// F20: fused PSBT confirmation mint (native sheet, digest-bound).
+RCT_EXTERN_METHOD(requestPsbtSignCeremonyToken:(NSString *)sessionID psbtBase64:(NSString *)psbtBase64 resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(requestKeygenCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(requestExportCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(requestImportCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)

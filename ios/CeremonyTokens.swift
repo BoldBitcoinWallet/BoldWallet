@@ -65,6 +65,10 @@ struct CeremonyTokenRecord {
   var expiresAtMs: Int64
   var state: CeremonyTokenState
   var useCount: Int
+  // F20: sha256 hex of the PSBT artifact the user confirmed
+  // natively; nil = unbound (legacy mints). Enforced at keysign
+  // by contentBindingOk when present.
+  var boundDigest: String? = nil
 }
 
 enum CeremonyTokens {
@@ -82,7 +86,7 @@ enum CeremonyTokens {
   }
 
   /// Mint after successful OS auth. Revokes superseded tokens.
-  static func mint(opClass: CeremonyOpClass, sessionID: String) -> String {
+  static func mint(opClass: CeremonyOpClass, sessionID: String, boundDigest: String? = nil) -> String {
     precondition(!sessionID.isEmpty, "sessionID required")
     lock.lock()
     defer { lock.unlock() }
@@ -95,7 +99,7 @@ enum CeremonyTokens {
         tokens[id] = CeremonyTokenRecord(
           opClass: rec.opClass, sessionID: rec.sessionID,
           expiresAtMs: rec.expiresAtMs, state: .revoked,
-          useCount: rec.useCount)
+          useCount: rec.useCount, boundDigest: rec.boundDigest)
       }
     }
     var id = randomTokenId()
@@ -104,8 +108,25 @@ enum CeremonyTokens {
     }
     tokens[id] = CeremonyTokenRecord(
       opClass: opClass, sessionID: sessionID,
-      expiresAtMs: nowMs() + ttlMs, state: .minted, useCount: 0)
+      expiresAtMs: nowMs() + ttlMs, state: .minted, useCount: 0,
+      boundDigest: boundDigest)
     return id
+  }
+
+  /// F20 content binding. Unbound token (boundDigest == nil,
+  /// legacy mints) → ok. Bound token: the PSBT actually being
+  /// signed must hash to the confirmed digest; on mismatch the
+  /// whole session is revoked (a swapped artifact kills the
+  /// ceremony, never signs) and false returned. Unknown token →
+  /// false (verify() has already failed closed by then).
+  static func contentBindingOk(token: String, actualDigestHex: String?) -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    guard let rec = tokens[token] else { return false }
+    guard let bound = rec.boundDigest else { return true }
+    if let actualDigestHex, actualDigestHex == bound { return true }
+    revokeSessionInner(rec.sessionID)
+    return false
   }
 
   /// Native-side authorization check. Call with the op class the

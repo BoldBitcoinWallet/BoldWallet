@@ -30,6 +30,7 @@
 		BBMT00062D48369D00FE370B /* TssShim.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMT00072D48369D00FE370B /* TssShim.swift */; };
 		BBMTF15B1ENVELOPE00000002 /* KeyshareEnvelope.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMTF15B1ENVELOPE00000001 /* KeyshareEnvelope.swift */; };
 		BBMTF15B2CEREMONY00000002 /* CeremonyTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMTF15B2CEREMONY00000001 /* CeremonyTokens.swift */; };
+		BBMTF20PSBTDIGEST000002 /* PsbtDigest.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMTF20PSBTDIGEST000001 /* PsbtDigest.swift */; };
 		BBMT3B2DAPILIST00000002 /* CeremonyApiAllowlist.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBMT3B2DAPILIST00000001 /* CeremonyApiAllowlist.swift */; };
 		EB82B2233CF24510A230A956 /* JetBrainsMono-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 0B628FC831DA4FCB82826E0F /* JetBrainsMono-Medium.ttf */; };
 		IU001A1B2C3D4E5F60718293 /* IncomingUrlModule.swift in Sources */ = {isa = PBXBuildFile; fileRef = IU005A1B2C3D4E5F60718293 /* IncomingUrlModule.swift */; };
@@ -125,6 +126,7 @@
 		BBMT00072D48369D00FE370B /* TssShim.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TssShim.swift; sourceTree = "<group>"; };
 		BBMTF15B1ENVELOPE00000001 /* KeyshareEnvelope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyshareEnvelope.swift; sourceTree = "<group>"; };
 		BBMTF15B2CEREMONY00000001 /* CeremonyTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CeremonyTokens.swift; sourceTree = "<group>"; };
+		BBMTF20PSBTDIGEST000001 /* PsbtDigest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PsbtDigest.swift; sourceTree = "<group>"; };
 		BBMT3B2DAPILIST00000001 /* CeremonyApiAllowlist.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CeremonyApiAllowlist.swift; sourceTree = "<group>"; };
 		CF244333124C48401EA96FBE /* libPods-BoldWallet-BoldWalletTests.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-BoldWallet-BoldWalletTests.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		D0ECD961405C400BBD93B045 /* Inter-Regular.ttf */ = {isa = PBXFileReference; explicitFileType = undefined; fileEncoding = 9; includeInIndex = 0; lastKnownFileType = unknown; name = "Inter-Regular.ttf"; path = "../assets/fonts/Inter-Regular.ttf"; sourceTree = "<group>"; };
@@ -224,6 +226,7 @@
 				BBMT00072D48369D00FE370B /* TssShim.swift */,
 				BBMTF15B1ENVELOPE00000001 /* KeyshareEnvelope.swift */,
 				BBMTF15B2CEREMONY00000001 /* CeremonyTokens.swift */,
+				BBMTF20PSBTDIGEST000001 /* PsbtDigest.swift */,
 				BBMT3B2DAPILIST00000001 /* CeremonyApiAllowlist.swift */,
 				13B07FAF1A68108700A75B9A /* AppDelegate.h */,
 				13B07FB01A68108700A75B9A /* AppDelegate.mm */,
@@ -696,6 +699,7 @@
 				BBMT00062D48369D00FE370B /* TssShim.swift in Sources */,
 				BBMTF15B1ENVELOPE00000002 /* KeyshareEnvelope.swift in Sources */,
 				BBMTF15B2CEREMONY00000002 /* CeremonyTokens.swift in Sources */,
+				BBMTF20PSBTDIGEST000002 /* PsbtDigest.swift in Sources */,
 				BBMT3B2DAPILIST00000002 /* CeremonyApiAllowlist.swift in Sources */,
 				13B07FBC1A68108700A75B9A /* AppDelegate.mm in Sources */,
 				13B07FC11A68108700A75B9A /* main.m in Sources */,

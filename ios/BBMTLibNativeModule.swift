@@ -6,6 +6,7 @@
 //
 import Darwin
 import Foundation
+import UIKit
 import LocalAuthentication
 import Network
 import React
@@ -862,6 +863,136 @@ class BBMTLibNativeModule: RCTEventEmitter {
       resolver: resolver, rejecter: rejecter)
   }
 
+  /// F20 fused confirmation: the ONLY sign-token mint for PSBT
+  /// sign ceremonies. Parses the PSBT in Go (TssPsbtConfirmation —
+  /// never JS-supplied summary values), renders the outputs/fee/
+  /// network on a native sheet, and mints a digest-bound sign
+  /// token only after the user taps Confirm AND authenticates.
+  /// Cancel mints nothing (settles CEREMONY_AUTH_REQUIRED).
+  @objc func requestPsbtSignCeremonyToken(
+    _ sessionID: String?,
+    psbtBase64: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID, let psbtBase64 = psbtBase64 else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    guard !sessionID.isEmpty else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      var error: NSError?
+      let output = TssPsbtConfirmation(psbtBase64, &error)
+      guard error == nil,
+            let data = output.data(using: .utf8),
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let digest = json["digest"] as? String, digest.count == 64
+      else {
+        rejecter(
+          "CEREMONY_PSBT_INVALID",
+          "Could not read this transaction. It was not signed.", error)
+        return
+      }
+      let summary = self?.psbtConfirmationSummary(json) ?? ""
+      self?.showPsbtConfirmation(
+        sessionID: sessionID, digest: digest, summary: summary,
+        resolver: resolver, rejecter: rejecter)
+    }
+  }
+
+  /// Renders the Go-parsed summary. Amounts stay in sats — exact.
+  private func psbtConfirmationSummary(_ json: [String: Any]) -> String {
+    var lines: [String] = []
+    let network = (json["network"] as? String) ?? "testnet4"
+    lines.append(network == "testnet4" ? "TESTNET4 — no real value" : "MAINNET — real funds")
+    lines.append("")
+    var totalOut: Int64 = 0
+    if let outputs = json["outputs"] as? [[String: Any]] {
+      for o in outputs {
+        let amount = psbtAmount(o["amount"])
+        totalOut += amount
+        let change = (o["isChange"] as? Bool) == true ? " (change)" : ""
+        lines.append("→ \((o["address"] as? String) ?? "?")  \(amount) sat\(change)")
+      }
+    }
+    lines.append("")
+    lines.append("Total out: \(totalOut) sat")
+    lines.append("Fee: \(psbtAmountString(json["fee"])) sat")
+    return lines.joined(separator: "\n")
+  }
+
+  private func psbtAmount(_ v: Any?) -> Int64 {
+    if let s = v as? String { return Int64(s) ?? 0 }
+    if let n = v as? NSNumber { return n.int64Value }
+    return 0
+  }
+
+  private func psbtAmountString(_ v: Any?) -> String {
+    if let s = v as? String { return s }
+    if let n = v as? NSNumber { return n.stringValue }
+    return "0"
+  }
+
+  private func showPsbtConfirmation(
+    sessionID: String, digest: String, summary: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, let presenter = self.topViewController() else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        return
+      }
+      var settled = false
+      let alert = UIAlertController(
+        title: "Confirm transaction", message: summary, preferredStyle: .alert)
+      alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+        if !settled {
+          settled = true
+          rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        }
+      })
+      alert.addAction(UIAlertAction(title: "Confirm", style: .default) { _ in
+        settled = true
+        self.promptAndMint(
+          opClass: .sign, sessionID: sessionID,
+          title: "Authenticate to sign", subtitle: "Approve the signing ceremony",
+          resolver: resolver, rejecter: rejecter, boundDigest: digest)
+      })
+      presenter.present(alert, animated: true)
+    }
+  }
+
+  private func topViewController() -> UIViewController? {
+    let keyWindow = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .first { $0.isKeyWindow }
+    var top = keyWindow?.rootViewController
+    while let presented = top?.presentedViewController {
+      top = presented
+    }
+    return top
+  }
+
+  /// F20: bound-token PSBT check shared by the four sign methods.
+  /// Returns true when the caller must stop (already rejected).
+  private func rejectIfPsbtBindingMismatch(
+    token: String, psbtBase64: String,
+    rejecter: RCTPromiseRejectBlock
+  ) -> Bool {
+    if CeremonyTokens.contentBindingOk(
+      token: token, actualDigestHex: PsbtDigest.compute(psbtBase64)) {
+      return false
+    }
+    rejecter(
+      "CEREMONY_PSBT_MISMATCH",
+      "Transaction changed since confirmation — review and confirm again.", nil)
+    return true
+  }
+
   @objc func requestKeygenCeremonyToken(
     _ sessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
@@ -933,7 +1064,8 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// failure → CEREMONY_AUTH_REQUIRED (no reason oracle).
   private func promptAndMint(
     opClass: CeremonyOpClass, sessionID: String, title: String, subtitle: String,
-    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock,
+    boundDigest: String? = nil
   ) {
     guard !sessionID.isEmpty else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
@@ -958,7 +1090,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
     let reason = title + " — " + subtitle
     context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
       if success {
-        resolver(CeremonyTokens.mint(opClass: opClass, sessionID: sessionID))
+        resolver(CeremonyTokens.mint(opClass: opClass, sessionID: sessionID, boundDigest: boundDigest))
       } else {
         // User cancel, fallback, lockout, failure: never mint.
         rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
@@ -1569,6 +1701,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
         rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
         return
       }
+      // F20: sign only the confirmed artifact.
+      guard let self = self, !self.rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
+        return
+      }
       let output = BbmtBridge.mpcSignPsbt(
         withServer: server, key: partyID, parties: partiesCSV, session: sessionID,
         sessionKey: sessionKey, encKey: encKey, decKey: decKey, keyshare: keyshare,
@@ -1687,6 +1823,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       do {
         let (partyNsec, keyshareJSON) = try self?.nsecAndKeyshareJSONFromRNES()
           ?? ("", "")
+        // F20: sign only the confirmed artifact.
+        guard let self = self, !self.rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
+          return
+        }
         let output = BbmtBridge.nostrMpcSignPsbt(
           withRelays: relaysCSV, nsec: partyNsec, parties: partiesNpubsCSV,
           npubsSorted: npubsSorted, keyshare: keyshareJSON, psbt: psbtBase64)
@@ -1933,6 +2073,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
       return
     }
+    // F20: sign only the confirmed artifact.
+    guard !rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -2113,6 +2257,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
     // 3b-6: GG18 nostr sign takes a sign token (single-call).
     guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    // F20: sign only the confirmed artifact.
+    guard !rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
       return
     }
     DispatchQueue.global(qos: .background).async { [weak self] in
