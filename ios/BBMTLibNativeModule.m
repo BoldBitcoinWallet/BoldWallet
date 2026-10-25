@@ -387,6 +387,10 @@ RCT_EXTERN_METHOD(getKeyshareNostrPrepJSON:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(hasKeyshareInSecureStorage:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// F36 device-integrity signals (always resolves a JSON string, fail-open)
+RCT_EXTERN_METHOD(getDeviceIntegritySignals:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Device entropy source metadata (informational, not gating)
 RCT_EXTERN_METHOD(getDeviceEntropyMetadata:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)

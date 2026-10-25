@@ -55,6 +55,7 @@ import {
   WALLET_SENSITIVE_ACTION_AUTH,
   type WalletBiometricPromptOptions,
 } from '../services/walletBiometricAuth';
+import {confirmDeviceIntegrityForSensitiveAction} from '../services/deviceIntegrity';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
@@ -436,6 +437,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       walletSensitiveAuthPendingRef.current = true;
       setWalletSensitiveAuthPending(true);
       try {
+        // F36: warn-and-confirm on compromised devices before key material moves.
+        const integrityOk = await confirmDeviceIntegrityForSensitiveAction(
+          prompts.integrityActionLabel ?? 'This sensitive action',
+        );
+        if (!integrityOk) {
+          return;
+        }
         const ok = await promptWalletBiometricAuth({
           ...prompts,
           showFailureAlert: true,

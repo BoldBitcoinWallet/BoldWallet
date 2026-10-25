@@ -8,6 +8,7 @@ import Darwin
 import Foundation
 import UIKit
 import LocalAuthentication
+import MachO
 import Network
 import React
 import Security
@@ -2455,6 +2456,78 @@ class BBMTLibNativeModule: RCTEventEmitter {
   ) {
     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
       resolve(self?.keyshareExistsInRNES() ?? false)
+    }
+  }
+
+  /// F36: device-integrity signals (jailbreak artifacts, sandbox escape,
+  /// suspicious dylibs incl. Frida, simulator build). Defense-in-depth with
+  /// no backend: heuristics only, always resolves a JSON string
+  /// `{"compromised":bool,"signals":[...]}`. Fail-open on internal error —
+  /// detection must never brick the app. A hooked device can lie to this
+  /// check; it raises the bar for casual jailbroken use, it is not
+  /// attestation (that needs App Attest plus backend verification).
+  @objc func getDeviceIntegritySignals(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .userInitiated).async {
+      var signals: [String] = []
+      let fm = FileManager.default
+      let jbPaths = [
+        "/Applications/Cydia.app",
+        "/Library/MobileSubstrate/MobileSubstrate.dylib",
+        "/bin/bash",
+        "/usr/sbin/sshd",
+        "/etc/apt",
+        "/private/var/lib/apt/",
+        "/private/var/stash",
+        "/private/var/lib/cydia",
+        "/private/var/tmp/cydia.log",
+        "/Applications/RockApp.app",
+        "/Applications/Icy.app",
+        "/Applications/WinterBoard.app",
+        "/Library/MobileSubstrate/DynamicLibraries/Veency.plist",
+        "/System/Library/LaunchDaemons/com.ikey.bbot.plist",
+        "/System/Library/LaunchDaemons/com.saurik.Cydia.Startup.plist",
+      ]
+      for p in jbPaths {
+        if fm.fileExists(atPath: p) {
+          signals.append("ios-jailbreak-artifact")
+          break
+        }
+      }
+      // Sandbox escape probe: App Store apps cannot write outside their container.
+      let probe = "/private/" + UUID().uuidString
+      if fm.createFile(atPath: probe, contents: Data("x".utf8)) {
+        try? fm.removeItem(atPath: probe)
+        if !signals.contains("ios-jailbreak-artifact") {
+          signals.append("ios-sandbox-escape")
+        }
+      }
+      // Suspicious injected dylibs (Substrate / SSL kill-switches / Frida gadget).
+      let imageCount = _dyld_image_count()
+      for i in 0..<imageCount {
+        if let cName = _dyld_get_image_name(i) {
+          let name = String(cString: cName).lowercased()
+          if name.contains("mobilesubstrate") || name.contains("cydiasubstrate")
+            || name.contains("sslkillswitch") || name.contains("frida")
+            || name.contains("cynject") {
+            signals.append("ios-suspicious-dylib")
+            break
+          }
+        }
+      }
+      #if targetEnvironment(simulator)
+      signals.append("ios-simulator-build")
+      #endif
+      let unique = Array(Set(signals)).sorted()
+      let payload: [String: Any] = ["compromised": !unique.isEmpty, "signals": unique]
+      if let data = try? JSONSerialization.data(withJSONObject: payload),
+        let json = String(data: data, encoding: .utf8) {
+        resolve(json)
+      } else {
+        resolve("{\"compromised\":false,\"signals\":[]}")
+      }
     }
   }
 

@@ -4,6 +4,8 @@ import android.app.AlertDialog
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -224,6 +226,130 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.reject("KEYSHARE_EXISTS_ERROR", e.message, e)
             }
         }.start()
+    }
+
+    /**
+     * F36: device-integrity signals (root artifacts, emulator build).
+     * Defense-in-depth with no backend: heuristics only, always resolves a
+     * JSON string `{"compromised":bool,"signals":[...]}`. Fail-open on
+     * internal error (JS treats error/unknown as proceed) — detection must
+     * never brick the app. A hooked device can lie to this check; it raises
+     * the bar for casual rooted use, it is not attestation.
+     */
+    @ReactMethod
+    fun getDeviceIntegritySignals(promise: Promise) {
+        Thread {
+            try {
+                val signals = detectDeviceIntegritySignals()
+                val obj = JSONObject()
+                obj.put("compromised", signals.isNotEmpty())
+                val arr = org.json.JSONArray()
+                for (s in signals) arr.put(s)
+                obj.put("signals", arr)
+                promise.resolve(obj.toString())
+            } catch (e: Exception) {
+                try {
+                    val fallback = JSONObject()
+                    fallback.put("compromised", false)
+                    fallback.put("signals", org.json.JSONArray())
+                    fallback.put("error", e.message ?: "detect-failed")
+                    promise.resolve(fallback.toString())
+                } catch (_: Exception) {
+                    promise.resolve("{\"compromised\":false,\"signals\":[]}")
+                }
+            }
+        }.start()
+    }
+
+    private fun detectDeviceIntegritySignals(): List<String> {
+        val signals = mutableListOf<String>()
+        try {
+            val tags = Build.TAGS
+            if (tags != null && tags.contains("test-keys")) {
+                signals.add("android-test-keys-build")
+            }
+        } catch (_: Exception) {
+        }
+        try {
+            val suPaths =
+                arrayOf(
+                    "/system/bin/su",
+                    "/system/xbin/su",
+                    "/sbin/su",
+                    "/system/sd/xbin/su",
+                    "/system/bin/.ext/.su",
+                    "/data/local/xbin/su",
+                    "/data/local/bin/su",
+                    "/data/local/su",
+                    "/su/bin/su",
+                )
+            if (suPaths.any { File(it).exists() }) {
+                signals.add("android-su-binary-present")
+            }
+        } catch (_: Exception) {
+        }
+        try {
+            val rootPackages =
+                arrayOf(
+                    "com.noshufou.android.su",
+                    "com.noshufou.android.su.elite",
+                    "eu.chainfire.supersu",
+                    "com.koushikdutta.superuser",
+                    "com.thirdparty.superuser",
+                    "com.yellowes.su",
+                    "com.topjohnwu.magisk",
+                    "com.kingroot.kinguser",
+                    "com.kingo.root",
+                    "com.smedialink.oneclickroot",
+                    "com.zhiqupk.root.global",
+                    "com.alephzain.framaroot",
+                )
+            val pm = reactApplicationContext.packageManager
+            for (pkg in rootPackages) {
+                try {
+                    @Suppress("DEPRECATION")
+                    pm.getPackageInfo(pkg, PackageManager.GET_ACTIVITIES)
+                    signals.add("android-root-manager-app")
+                    break
+                } catch (_: PackageManager.NameNotFoundException) {
+                }
+            }
+        } catch (_: Exception) {
+        }
+        try {
+            val fingerprint = Build.FINGERPRINT ?: ""
+            val model = Build.MODEL ?: ""
+            val manufacturer = Build.MANUFACTURER ?: ""
+            val brand = Build.BRAND ?: ""
+            val device = Build.DEVICE ?: ""
+            val product = Build.PRODUCT ?: ""
+            val hardware = Build.HARDWARE ?: ""
+            val emulator =
+                fingerprint.startsWith("generic") ||
+                    fingerprint.contains("vbox") ||
+                    model.contains("google_sdk") ||
+                    model.contains("Emulator") ||
+                    model.contains("Android SDK built for x86") ||
+                    manufacturer.contains("Genymotion") ||
+                    (brand.startsWith("generic") && device.startsWith("generic")) ||
+                    product in
+                    arrayOf(
+                        "google_sdk",
+                        "sdk",
+                        "sdk_x86",
+                        "vbox86p",
+                        "emulator",
+                        "simulator",
+                    ) ||
+                    hardware.contains("goldfish") ||
+                    hardware.contains("ranchu") ||
+                    hardware.contains("vbox86")
+            if (emulator) {
+                signals.add("android-emulator-build")
+            }
+        } catch (_: Exception) {
+        }
+        return signals
     }
 
     /** Summary line only; never logs keyshare contents. */
