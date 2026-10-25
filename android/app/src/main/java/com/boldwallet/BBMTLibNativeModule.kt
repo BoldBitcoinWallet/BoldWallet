@@ -1743,6 +1743,116 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    /**
+     * F20 Phase 1b: fused send confirmation. No PSBT exists yet,
+     * so the sheet renders the JS-supplied payment fields — BUT
+     * the minted token binds sha256 over the canonical payment
+     * string (SendBinding), and every send keysign recomputes it
+     * over its actual arguments. A JS swap after confirmation
+     * (different address/amount/fee/change) mismatches natively
+     * and revokes. The banner network is derived from the
+     * destination address prefix, not from JS claims.
+     */
+    @ReactMethod
+    fun requestSendSignCeremonyToken(
+        sessionID: String?,
+        toAddress: String?,
+        amountSatoshi: String?,
+        feeSatoshi: String?,
+        changeAddress: String?,
+        promise: Promise,
+    ) {
+        if (sessionID == null || toAddress == null || amountSatoshi == null ||
+            feeSatoshi == null || changeAddress == null
+        ) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        if (sessionID.isEmpty()) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        val digest = SendBinding.digest(
+            toAddress, amountSatoshi, feeSatoshi, changeAddress,
+        )
+        val banner = if (SendBinding.isTestnetAddress(toAddress)) {
+            "TESTNET4 — no real value"
+        } else {
+            "MAINNET — real funds"
+        }
+        val sb = StringBuilder()
+        sb.append(banner).append("\n\n")
+        sb.append("Send ").append(amountSatoshi.trim()).append(" sat\n")
+        sb.append("To: ").append(toAddress.trim()).append('\n')
+        sb.append("Fee: ").append(feeSatoshi.trim()).append(" sat")
+        if (changeAddress.isNotBlank()) {
+            sb.append("\nChange: ").append(changeAddress.trim())
+        }
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        var settled = false
+        activity.runOnUiThread {
+            try {
+                val dialog = AlertDialog.Builder(activity)
+                    .setTitle("Confirm payment")
+                    .setMessage(sb.toString())
+                    .setPositiveButton("Confirm") { _, _ ->
+                        settled = true
+                        promptAndMint(
+                            CeremonyTokens.OpClass.SIGN, sessionID,
+                            "Authenticate to sign", "Approve the payment",
+                            promise, boundDigest = digest,
+                        )
+                    }
+                    .setNegativeButton("Cancel") { _, _ ->
+                        if (!settled) {
+                            settled = true
+                            rejectCeremonyUnauthorized(promise)
+                        }
+                    }
+                    .create()
+                dialog.setOnCancelListener {
+                    if (!settled) {
+                        settled = true
+                        rejectCeremonyUnauthorized(promise)
+                    }
+                }
+                dialog.show()
+            } catch (e: Exception) {
+                if (!settled) {
+                    settled = true
+                    rejectCeremonyUnauthorized(promise)
+                }
+            }
+        }
+    }
+
+    /** F20-1b: bound-token send check shared by the send methods. */
+    private fun rejectIfSendBindingMismatch(
+        ceremonyToken: String,
+        toAddress: String,
+        amountSatoshi: String,
+        feeSatoshi: String,
+        changeAddress: String,
+        promise: Promise,
+    ): Boolean {
+        val actual = SendBinding.digest(
+            toAddress, amountSatoshi, feeSatoshi, changeAddress,
+        )
+        if (CeremonyTokens.contentBindingOk(ceremonyToken, actual)) {
+            return false
+        }
+        promise.reject(
+            "CEREMONY_SEND_MISMATCH",
+            "Payment details changed since confirmation — review and confirm again.",
+            null,
+        )
+        return true
+    }
+
     /** F20: bound-token PSBT check shared by the four sign methods. */
     private fun rejectIfPsbtBindingMismatch(
         ceremonyToken: String,
@@ -2111,6 +2221,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     rejectCeremonyUnauthorized(promise)
                     return@Thread
                 }
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, receiverAddress, amountSatoshi, feeSatoshi, changeAddress, promise)) {
+                    return@Thread
+                }
                 val keyshare = loadKeyshareJSONFromRNES()
                 if (keyshare == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
@@ -2168,6 +2282,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 // 3b-6: GG18 nostr send takes a sign token (single-call).
                 if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
                     rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, receiverAddress, amountSatoshi, estimatedFee, changeAddress, promise)) {
                     return@Thread
                 }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
@@ -2533,6 +2651,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                         return@Thread
                     }
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, toAddress, satoshiAmount, satoshiFees, changeAddress, promise)) {
+                    return@Thread
+                }
                 val result = DklsNative.mpcSendBtcWithUtxosNative(
                     server, partyID, partiesCSV, sessionID, sessionKey,
                     encKey, decKey, keyshare, btcPub, toAddress,
@@ -2570,6 +2692,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             try {
                 if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
                     rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, toAddress, satoshiAmount, satoshiFees, changeAddress, promise)) {
                     return@Thread
                 }
                 if (!ensureBbmtRuntime()) {

@@ -977,6 +977,102 @@ class BBMTLibNativeModule: RCTEventEmitter {
     return top
   }
 
+  /// F20 Phase 1b: fused send confirmation. No PSBT exists yet,
+  /// so the sheet renders the JS-supplied payment fields — BUT
+  /// the minted token binds sha256 over the canonical payment
+  /// string (SendBinding), and every send keysign recomputes it
+  /// over its actual arguments. A JS swap after confirmation
+  /// (different address/amount/fee/change) mismatches natively
+  /// and revokes. The banner network is derived from the
+  /// destination address prefix, not from JS claims.
+  @objc func requestSendSignCeremonyToken(
+    _ sessionID: String?,
+    toAddress: String?,
+    amountSatoshi: String?,
+    feeSatoshi: String?,
+    changeAddress: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID, let toAddress = toAddress,
+          let amountSatoshi = amountSatoshi, let feeSatoshi = feeSatoshi,
+          let changeAddress = changeAddress
+    else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    guard !sessionID.isEmpty else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    let digest = SendBinding.digest(
+      toAddress: toAddress, amountSatoshi: amountSatoshi,
+      feeSatoshi: feeSatoshi, changeAddress: changeAddress)
+    let trim = { (s: String) in s.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var lines = [
+      SendBinding.isTestnetAddress(toAddress) ? "TESTNET4 — no real value" : "MAINNET — real funds",
+      "",
+      "Send \(trim(amountSatoshi)) sat",
+      "To: \(trim(toAddress))",
+      "Fee: \(trim(feeSatoshi)) sat",
+    ]
+    if !trim(changeAddress).isEmpty {
+      lines.append("Change: \(trim(changeAddress))")
+    }
+    showSendConfirmation(
+      sessionID: sessionID, digest: digest,
+      summary: lines.joined(separator: "\n"),
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  private func showSendConfirmation(
+    sessionID: String, digest: String, summary: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, let presenter = self.topViewController() else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        return
+      }
+      var settled = false
+      let alert = UIAlertController(
+        title: "Confirm payment", message: summary, preferredStyle: .alert)
+      alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+        if !settled {
+          settled = true
+          rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        }
+      })
+      alert.addAction(UIAlertAction(title: "Confirm", style: .default) { _ in
+        settled = true
+        self.promptAndMint(
+          opClass: .sign, sessionID: sessionID,
+          title: "Authenticate to sign", subtitle: "Approve the payment",
+          resolver: resolver, rejecter: rejecter, boundDigest: digest)
+      })
+      presenter.present(alert, animated: true)
+    }
+  }
+
+  /// F20-1b: bound-token send check shared by the send methods.
+  /// Returns true when the caller must stop (already rejected).
+  private func rejectIfSendBindingMismatch(
+    token: String, toAddress: String, amountSatoshi: String,
+    feeSatoshi: String, changeAddress: String,
+    rejecter: RCTPromiseRejectBlock
+  ) -> Bool {
+    let actual = SendBinding.digest(
+      toAddress: toAddress, amountSatoshi: amountSatoshi,
+      feeSatoshi: feeSatoshi, changeAddress: changeAddress)
+    if CeremonyTokens.contentBindingOk(token: token, actualDigestHex: actual) {
+      return false
+    }
+    rejecter(
+      "CEREMONY_SEND_MISMATCH",
+      "Payment details changed since confirmation — review and confirm again.", nil)
+    return true
+  }
+
   /// F20: bound-token PSBT check shared by the four sign methods.
   /// Returns true when the caller must stop (already rejected).
   private func rejectIfPsbtBindingMismatch(
@@ -1744,6 +1840,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
         rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
         return
       }
+      // F20-1b: pay only the confirmed payment.
+      guard let self = self, !self.rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: toAddress, amountSatoshi: satoshiAmount, feeSatoshi: satoshiFees, changeAddress: changeAddress, rejecter: rejecter) else {
+        return
+      }
       let output = BbmtBridge.mpcSendBtc(
         withServer: server, key: partyID, parties: partiesCSV, session: sessionID,
         sessionKey: sessionKey, encKey: encKey, decKey: decKey, keyshare: keyshare,
@@ -1783,6 +1883,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       do {
         let (partyNsec, keyshareJSON) = try self?.nsecAndKeyshareJSONFromRNES()
           ?? ("", "")
+        // F20-1b: pay only the confirmed payment.
+        guard let self = self, !self.rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: toAddress, amountSatoshi: satoshiAmount, feeSatoshi: satoshiFees, changeAddress: changeAddress, rejecter: rejecter) else {
+          return
+        }
         let output = BbmtBridge.nostrMpcSendBtc(
           withRelays: relaysCSV, nsec: partyNsec, parties: partiesNpubsCSV,
           npubsSorted: npubsSorted, balance: balanceSats, keyshare: keyshareJSON,
@@ -2137,6 +2241,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
       return
     }
+    // F20-1b: pay only the confirmed payment.
+    guard !rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: receiverAddress, amountSatoshi: amountSatoshi, feeSatoshi: feeSatoshi, changeAddress: changeAddress, rejecter: rejecter) else {
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -2196,6 +2304,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
     // 3b-6: GG18 nostr send takes a sign token (single-call).
     guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    // F20-1b: pay only the confirmed payment.
+    guard !rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: receiverAddress, amountSatoshi: amountSatoshi, feeSatoshi: estimatedFee, changeAddress: changeAddress, rejecter: rejecter) else {
       return
     }
     DispatchQueue.global(qos: .background).async { [weak self] in
