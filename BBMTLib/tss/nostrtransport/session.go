@@ -495,6 +495,15 @@ func (s *SessionCoordinator) PublishComplete(ctx context.Context, phase string) 
 	return s.publishPhase(ctx, phase, "complete")
 }
 
+// F39: PublishGroupKey broadcasts this party's group-key hash for
+// the post-DKG cross-check. Peers collect it via
+// MessagePump.SetOnGroupKey; unanimity is required before first
+// use (see dkls runNostrDKG).
+func (s *SessionCoordinator) PublishGroupKey(ctx context.Context, gkHashHex string) (err error) {
+	defer recoverAsError("SessionCoordinator.PublishGroupKey", &err, nil)
+	return s.publishPhase(ctx, "keygen-groupkey", gkHashHex)
+}
+
 // PublishAbort notifies peers that this party aborted (keygen/keysign failure or user cancel).
 // Uses a short fresh context when ctx is already cancelled so the event can still go out.
 func (s *SessionCoordinator) PublishAbort(ctx context.Context, reason string) (err error) {

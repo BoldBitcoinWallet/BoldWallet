@@ -193,9 +193,9 @@ func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, 
 	)
 	runner := &nostrPartyRunner{selfID: selfID, localNpub: localNpub, messenger: nm, peers: allParties}
 	share, _, err := runDKGWithSender(ctx, cfg.SessionID, selfID, sidBytes, threshold, runner, roundCh)
-	pumpCancel()
-	wg.Wait()
 	if err != nil {
+		pumpCancel()
+		wg.Wait()
 		peerAbort.Lock()
 		set, reason := peerAbort.set, peerAbort.reason
 		peerAbort.Unlock()
@@ -204,6 +204,17 @@ func runNostrDKG(rootCtx context.Context, cfg nostrtransport.Config, chaincode, 
 		}
 		return "", err
 	}
+	// F39: post-DKG group-key cross-check (nostr). The pump stays
+	// alive to collect peers' keygen-groupkey phases; a mismatch
+	// fails closed here — the share is freed by the deferred
+	// cleanup and never returned or persisted.
+	if gkErr := collectGroupKeyConsensus(ctx, cfg, coordinator, pump, share, localNpub, allParties); gkErr != nil {
+		pumpCancel()
+		wg.Wait()
+		return "", gkErr
+	}
+	pumpCancel()
+	wg.Wait()
 	defer share.Free()
 
 	nsecField, err := NsecFieldForKeyshareJSON(cfg.LocalNsec)

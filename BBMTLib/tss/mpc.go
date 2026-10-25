@@ -853,6 +853,124 @@ func fetchCompletedKeygenParties(server, session string) ([]string, error) {
 	return keys, nil
 }
 
+// errGroupKeyEndpointMissing signals a relay that predates the
+// F39 group-key exchange (old app version as LAN master).
+// Callers warn and proceed without the cross-check (status quo);
+// a MISMATCH, by contrast, always fails closed.
+var errGroupKeyEndpointMissing = fmt.Errorf("relay has no groupkey endpoint (old version)")
+
+func postGroupKeygenHash(server, session, party, gkHashHex string) error {
+	payload, err := json.Marshal(map[string]string{"party": party, "gkhash": gkHashHex})
+	if err != nil {
+		return fmt.Errorf("failed to marshal groupkey payload: %w", err)
+	}
+	resp, err := relayRequestClient.Post(
+		strings.TrimRight(server, "/")+"/groupkey/keygen/"+session,
+		"application/json", bytes.NewBuffer(payload))
+	if err != nil {
+		return fmt.Errorf("failed to post groupkey hash: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return errGroupKeyEndpointMissing
+	}
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("groupkey/keygen status %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func fetchGroupKeygenHashes(server, session string) (map[string]string, error) {
+	resp, err := relayRequestClient.Get(strings.TrimRight(server, "/") + "/groupkey/keygen/" + session)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch groupkey hashes: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, errGroupKeyEndpointMissing
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("groupkey/keygen status %s", resp.Status)
+	}
+	buff, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read groupkey body: %w", err)
+	}
+	var hashes map[string]string
+	if err := json.Unmarshal(buff, &hashes); err != nil {
+		return nil, fmt.Errorf("failed to decode groupkey hashes: %w", err)
+	}
+	return hashes, nil
+}
+
+// exchangeGroupKeyConsensus posts this party's group-key hash and
+// requires unanimity across `parties` before the keyshare is used.
+// Mismatch (divergent DKG results) fails closed with a typed
+// error; an endpoint missing on an old-version relay warns and
+// proceeds (today's behavior — the check only guards honest
+// divergence, and old↔new ceremonies must keep working).
+func exchangeGroupKeyConsensus(server, session, selfParty string, parties []string, gkHashHex string) error {
+	if err := postGroupKeygenHash(server, session, selfParty, gkHashHex); err != nil {
+		if err == errGroupKeyEndpointMissing {
+			Logln("BBMTLog", "F39: relay predates group-key check; proceeding without cross-check")
+			return nil
+		}
+		return fmt.Errorf("F39 group-key post failed: %w", err)
+	}
+	need := make([]string, 0, len(parties))
+	for _, p := range parties {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			need = append(need, p)
+		}
+	}
+	if len(need) == 0 {
+		return nil
+	}
+	waitFor := lanCompleteAwaitTimeout(len(need))
+	timeout := time.NewTimer(waitFor)
+	defer timeout.Stop()
+	poll := time.NewTicker(time.Second)
+	defer poll.Stop()
+	for {
+		hashes, err := fetchGroupKeygenHashes(server, session)
+		if err != nil {
+			if err == errGroupKeyEndpointMissing {
+				Logln("BBMTLog", "F39: relay predates group-key check; proceeding without cross-check")
+				return nil
+			}
+			Logln("BBMTLog", "F39: group-key fetch failed (retrying):", err)
+		} else {
+			complete := true
+			for _, p := range need {
+				if _, ok := hashes[p]; !ok {
+					complete = false
+					break
+				}
+			}
+			if complete {
+				for p, h := range hashes {
+					if !strings.EqualFold(h, gkHashHex) {
+						return fmt.Errorf("DKG_GROUP_KEY_MISMATCH: party %s derived a different group key — aborting before first use (divergent DKG results lock funds)", p)
+					}
+				}
+				Logln("BBMTLog", "F39: group-key consensus across", len(need), "parties")
+				return nil
+			}
+		}
+		select {
+		case <-timeout.C:
+			// Bounded wait over: a peer on an old version never
+			// posts. Warn and proceed (status quo) rather than
+			// deadlock mixed-version ceremonies.
+			Logln("BBMTLog", "F39: group-key wait timed out; proceeding without full consensus")
+			return nil
+		case <-poll.C:
+		}
+	}
+}
+
 func awaitPartyCompletions(ctx context.Context, parties []string, server, session string) error {
 	if ctx == nil {
 		ctx = context.Background()

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -166,6 +167,10 @@ func completedKeysign(w http.ResponseWriter, r *http.Request) {
 	log.Printf("BBMTLog: completedKeysign succeeded: Session %s, MessageID %s", sessionID, messageID)
 }
 
+func keygenGroupKeyKey(sessionID string) string {
+	return "groupkey-keygen-" + sessionID
+}
+
 func keygenCompletionKey(sessionID string) string {
 	return "local-party-complete-" + sessionID
 }
@@ -207,6 +212,78 @@ func getCompletedKeygen(w http.ResponseWriter, r *http.Request) {
 	out := []string{}
 	if found {
 		if prev, ok := data.([]string); ok && prev != nil {
+			out = prev
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
+}
+
+// F39: post-DKG group-key hash exchange. Each party posts the hex
+// of its locally-derived group public key; peers fetch the map and
+// require unanimity before first use. The value is public (it is
+// the wallet's deposit key); the check catches divergent DKG
+// results (implementation skew, partial ceremony) — lockout, not
+// theft. Stored per (session, party), merged like completions.
+type groupKeyPost struct {
+	Party  string `json:"party"`
+	GkHash string `json:"gkhash"`
+}
+
+func isHexString(s string) bool {
+	if len(s) == 0 || len(s) > 256 {
+		return false
+	}
+	for _, c := range s {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F') {
+			return false
+		}
+	}
+	return true
+}
+
+func postGroupKeygen(w http.ResponseWriter, r *http.Request) {
+	sessionID := getSessionID(r)
+
+	var post groupKeyPost
+	if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+	post.Party = strings.TrimSpace(post.Party)
+	post.GkHash = strings.TrimSpace(post.GkHash)
+	if post.Party == "" || !isHexString(post.GkHash) {
+		http.Error(w, "invalid party or gkhash", http.StatusBadRequest)
+		return
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	k := keygenGroupKeyKey(sessionID)
+	hashes := map[string]string{}
+	if data, found := getData(k); found {
+		if prev, ok := data.(map[string]string); ok && prev != nil {
+			hashes = prev
+		}
+	}
+	hashes[post.Party] = post.GkHash
+	setData(k, hashes)
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func getGroupKeygen(w http.ResponseWriter, r *http.Request) {
+	sessionID := getSessionID(r)
+	k := keygenGroupKeyKey(sessionID)
+
+	mutex.Lock()
+	data, found := getData(k)
+	mutex.Unlock()
+
+	out := map[string]string{}
+	if found {
+		if prev, ok := data.(map[string]string); ok && prev != nil {
 			out = prev
 		}
 	}
@@ -326,6 +403,9 @@ func listen(port string) *http.Server {
 	r.HandleFunc("/complete/keysign/{sessionID}", completedKeysign).Methods("POST")
 	r.HandleFunc("/complete/keygen/{sessionID}", completedKeygen).Methods("POST")
 	r.HandleFunc("/complete/keygen/{sessionID}", getCompletedKeygen).Methods("GET")
+	// F39: post-DKG group-key hash exchange (see postGroupKeygen).
+	r.HandleFunc("/groupkey/keygen/{sessionID}", postGroupKeygen).Methods("POST")
+	r.HandleFunc("/groupkey/keygen/{sessionID}", getGroupKeygen).Methods("GET")
 
 	// Message Routes
 	r.HandleFunc("/message/{sessionID}", postMessage).Methods("POST")
