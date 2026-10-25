@@ -29,6 +29,8 @@ jest.mock('../native_modules', () => ({
     cancelMpcSession: jest.fn(),
     cancelNostrMpc: jest.fn(),
     requestSignCeremonyToken: jest.fn(),
+    requestPsbtSignCeremonyToken: jest.fn(),
+    requestSendSignCeremonyToken: jest.fn(),
     requestKeygenCeremonyToken: jest.fn(),
     requestExportCeremonyToken: jest.fn(),
     requestImportCeremonyToken: jest.fn(),
@@ -127,6 +129,9 @@ function last<T>(args: unknown[]): T {
 function installStrictNative(): void {
   mintRegistry.clear();
   native.requestSignCeremonyToken.mockImplementation(mintStub('sign'));
+  // F20: PSBT confirmation minter — same 'sign' class issuance.
+  native.requestPsbtSignCeremonyToken.mockImplementation(mintStub('sign'));
+  native.requestSendSignCeremonyToken.mockImplementation(mintStub('sign'));
   native.requestKeygenCeremonyToken.mockImplementation(mintStub('keygen'));
   native.requestExportCeremonyToken.mockImplementation(mintStub('export'));
   native.requestImportCeremonyToken.mockImplementation(mintStub('import'));
