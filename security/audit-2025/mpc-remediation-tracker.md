@@ -530,6 +530,12 @@ Low cleanup (unreachable, zero Kotlin callers) — not Wave 4.
   F33 CONFIRMED on main (pump decrypts via raw AesDecrypt, no tag check)
   but FIXED by Wave 5 F24b (ffeda6f5 lanPayloadHashValid) — no action,
   merge carries the fix.
-  F5 NOT DONE — base-config cleartextTrafficPermitted="true" globally
-  (network_security_config.xml:3, with tools:ignore); already tracked as
-  F8 Open, no new row.
+  Grok-cleartext verification: NOT DONE — base-config
+  cleartextTrafficPermitted="true" globally (network_security_config.xml:3,
+  with tools:ignore). (Numbering note: the Track B prompt called this "F5",
+  but tracker F5 is the nsec finding — cleartext is tracker F8, Open.
+  Corrected 2026-10-25; no new row.) Disposition: known residual for
+  v4.1.1 release notes, NOT fixed here — cleartext http://LAN-IP is
+  load-bearing for LAN pairing (peers.go:112,236; lanMpcSetup.ts:143) and
+  IP literals cannot be allowlisted via domain-config, so correct scoping
+  needs real work + device testing (F8, Wave 6/5.5).
