@@ -660,6 +660,60 @@ func PsbtIdentityHash(psbtBase64 string) (string, error) {
 	return Sha256Bytes(txBuf.Bytes())
 }
 
+// F20: PsbtConfirmationDigest binds a ceremony token to the exact PSBT
+// artifact confirmed by the user. sha256 over the canonical decoded PSBT
+// bytes — full artifact (derivation paths and metadata included), NOT
+// just the unsigned tx (PsbtIdentityHash): a path/metadata swap after
+// confirmation must not sign. Native sides compute the identical digest
+// (strip whitespace, base64-decode, sha256, lowercase hex).
+func PsbtConfirmationDigest(psbtBase64 string) (string, error) {
+	canonical, err := canonicalPsbtBase64(psbtBase64)
+	if err != nil {
+		return "", err
+	}
+	raw, err := base64.StdEncoding.DecodeString(canonical)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode canonical PSBT: %w", err)
+	}
+	return Sha256Bytes(raw)
+}
+
+// F20: PsbtConfirmation returns ParsePSBTDetails JSON plus the
+// confirmation digest and the operative network, atomically over the
+// same canonical bytes — the native confirmation sheet renders ONLY
+// from this, never from JS-supplied summary values.
+func PsbtConfirmation(psbtBase64 string) (result string, err error) {
+	defer RecoverAsError("PsbtConfirmation", &err, &result)
+
+	canonical, err := canonicalPsbtBase64(psbtBase64)
+	if err != nil {
+		return "", err
+	}
+	digest, err := PsbtConfirmationDigest(canonical)
+	if err != nil {
+		return "", err
+	}
+	detailsJSON, err := ParsePSBTDetails(canonical)
+	if err != nil {
+		return "", err
+	}
+	var details map[string]interface{}
+	if err := json.Unmarshal([]byte(detailsJSON), &details); err != nil {
+		return "", fmt.Errorf("confirmation details: %w", err)
+	}
+	network := "testnet4"
+	if _btc_net == "mainnet" {
+		network = "mainnet"
+	}
+	details["digest"] = digest
+	details["network"] = network
+	out, err := json.Marshal(details)
+	if err != nil {
+		return "", fmt.Errorf("confirmation marshal: %w", err)
+	}
+	return string(out), nil
+}
+
 // ParsePSBTDetails extracts transaction details from a PSBT for display
 // Returns JSON with inputs, outputs, fee, and total amounts
 func ParsePSBTDetails(psbtBase64 string) (result string, err error) {
