@@ -849,17 +849,54 @@ export const explorerWebBaseFromApiUrl = apiUrl => {
 const MAINNET_APIS = ['https://mempool.space/api'];
 const TESTNET_APIS = ['https://mempool.space/testnet/api'];
 
-// Function to fetch dynamic API endpoints from GitHub
+// F35: the dynamic mempool/relay lists live in a GitHub repo whose
+// main branch moves. Fetch from a REVIEWED, PINNED commit — a repo
+// compromise pushing a malicious list to main cannot redirect
+// traffic until a pinned update ships in an app release (which is
+// a reviewed change). To update: verify the new list content,
+// bump MEMPOOL_HOSTS_COMMIT, and name the review in the commit.
+const MEMPOOL_HOSTS_COMMIT = 'b94706d435c6d70b00867605f96892c4a5d1e545';
+const MEMPOOL_HOSTS_BASE = `https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/${MEMPOOL_HOSTS_COMMIT}`;
+// F35: parsing bounds (a compromised-or-corrupt fetch must not
+// yield an unbounded list or a multi-MB regex scan).
+const MAX_LIST_BODY_CHARS = 64 * 1024;
+const MAX_LIST_ENTRIES = 32;
+
+// F35: strict https mempool-host validation (hostname, not
+// substring — a URL like https://evil.com/?x=mempool must fail).
+const isValidMempoolApiUrl = url => {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') {
+      return false;
+    }
+    return parsed.hostname.toLowerCase().includes('mempool');
+  } catch {
+    return false;
+  }
+};
+
+const isValidRelayUrl = url => {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'wss:' && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
+};
+
+// Function to fetch dynamic API endpoints from GitHub (pinned commit)
 export const fetchDynamicAPIEndpoints = async () => {
   try {
-    const response = await fetch(
-      'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main/README.md',
-    );
+    const response = await fetch(`${MEMPOOL_HOSTS_BASE}/README.md`);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const markdownText = await response.text();
+    if (markdownText.length > MAX_LIST_BODY_CHARS) {
+      throw new Error('dynamic API list exceeds size bound');
+    }
 
     // Parse markdown to extract URLs
     const urlRegex = /https:\/\/[^\s\]]+/g;
@@ -867,7 +904,8 @@ export const fetchDynamicAPIEndpoints = async () => {
 
     // Filter and format URLs to ensure they have /api suffix
     const apiEndpoints = urls
-      .filter(url => url.includes('mempool'))
+      .filter(isValidMempoolApiUrl)
+      .slice(0, MAX_LIST_ENTRIES)
       .map(url => {
         // Remove trailing slash if present
         const cleanUrl = url.replace(/\/$/, '');
@@ -907,17 +945,18 @@ export const NOSTR_RELAY_DENYLIST = ['wss://nostr.oxtr.dev'];
 const filterUnreliableNostrRelays = relays =>
   relays.filter(url => !NOSTR_RELAY_DENYLIST.includes(url.trim()));
 
-// Function to fetch dynamic Nostr relays from GitHub
+// Function to fetch dynamic Nostr relays from GitHub (pinned commit)
 export const fetchDynamicNostrRelays = async () => {
   try {
-    const response = await fetch(
-      'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main/NOSTR.md',
-    );
+    const response = await fetch(`${MEMPOOL_HOSTS_BASE}/NOSTR.md`);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const markdownText = await response.text();
+    if (markdownText.length > MAX_LIST_BODY_CHARS) {
+      throw new Error('dynamic relay list exceeds size bound');
+    }
 
     // Parse markdown to extract relay URLs (lines starting with "- wss://")
     const relayRegex = /^-\s*(wss:\/\/[^\s]+)/gm;
@@ -930,10 +969,8 @@ export const fetchDynamicNostrRelays = async () => {
         const urlMatch = match.match(/wss:\/\/[^\s]+/);
         return urlMatch ? urlMatch[0].trim() : null;
       })
-      .filter(
-        url =>
-          url !== null && typeof url === 'string' && url.startsWith('wss://'),
-      )
+      .filter(url => url !== null && isValidRelayUrl(url))
+      .slice(0, MAX_LIST_ENTRIES)
       .map(url => String(url)); // Ensure all are strings
 
     if (relays.length > 0) {
@@ -957,10 +994,14 @@ export const getNostrRelays = async (forceFetch = false) => {
     try {
       const cachedRelays = await LocalCache.getItem('nostr_relays');
       if (cachedRelays) {
+        // F35: validate cached entries — a cache written by an
+        // older fetch (or tampered store) must not smuggle in
+        // non-wss endpoints.
         const relaysArray = cachedRelays
           .split(',')
           .map(r => r.trim())
-          .filter(Boolean);
+          .filter(isValidRelayUrl)
+          .slice(0, MAX_LIST_ENTRIES);
         if (relaysArray.length > 0) {
           const filtered = filterUnreliableNostrRelays(relaysArray);
           dbg('Using cached Nostr relays:', filtered);
