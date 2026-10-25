@@ -184,7 +184,7 @@ func MpcSignPSBT(
 		Logf("Input %d: signing with path %s, pubkey %x", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
 
 		// Create session for this input
-		utxoSession := fmt.Sprintf("%s%d", session, i)
+		utxoSession := deriveUtxoSession(session, i)
 		mpcHook("psbt", "signing psbt input", session, utxoSession, i+1, inputCount, false)
 
 		// Get sighash type from PSBT input, default to SigHashAll if not specified
@@ -1015,7 +1015,7 @@ func runNostrMpcSignPSBTInternal(
 		Logf("Input %d: signing with path %s, pubkey %x", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
 
 		// Create session for this input
-		utxoSession := fmt.Sprintf("%s%d", sessionID, i)
+		utxoSession := deriveUtxoSession(sessionID, i)
 		mpcHook("psbt", "signing psbt input (nostr)", sessionID, utxoSession, i+1, inputCount, false)
 
 		// Get sighash type from PSBT input, default to SigHashAll if not specified

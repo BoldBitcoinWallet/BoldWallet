@@ -860,7 +860,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	for i, utxo := range selectedUTXOs {
 		// update utxo session - counter
 		utxoIndex = i + 1
-		utxoSession = fmt.Sprintf("%s%d", sessionID, i)
+		utxoSession = deriveUtxoSession(sessionID, i)
 
 		mpcHook("btc_send", "fetching utxo details", sessionID, utxoSession, utxoIndex, utxoCount, false)
 		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
@@ -1289,7 +1289,7 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 			return "", fmt.Errorf("invalid derived pubkey for input %d: %w", i, err)
 		}
 
-		utxoSession := fmt.Sprintf("%s%d", sessionID, i)
+		utxoSession := deriveUtxoSession(sessionID, i)
 		// Re-use the already-resolved prevout (no second network call per input).
 		outpointHash, _ := chainhash.NewHashFromStr(utxo.TxID)
 		txOut := prevOuts[wire.OutPoint{Hash: *outpointHash, Index: utxo.Vout}]
