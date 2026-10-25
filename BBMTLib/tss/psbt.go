@@ -184,7 +184,7 @@ func MpcSignPSBT(
 		Logf("Input %d: signing with path %s, pubkey %x", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
 
 		// Create session for this input
-		utxoSession := fmt.Sprintf("%s%d", session, i)
+		utxoSession := deriveUtxoSession(session, i)
 		mpcHook("psbt", "signing psbt input", session, utxoSession, i+1, inputCount, false)
 
 		// Get sighash type from PSBT input, default to SigHashAll if not specified
@@ -1015,7 +1015,7 @@ func runNostrMpcSignPSBTInternal(
 		Logf("Input %d: signing with path %s, pubkey %x", i, inputDerivePath, inputPubKeyBytes[:min(8, len(inputPubKeyBytes))])
 
 		// Create session for this input
-		utxoSession := fmt.Sprintf("%s%d", sessionID, i)
+		utxoSession := deriveUtxoSession(sessionID, i)
 		mpcHook("psbt", "signing psbt input (nostr)", sessionID, utxoSession, i+1, inputCount, false)
 
 		// Get sighash type from PSBT input, default to SigHashAll if not specified
@@ -1245,11 +1245,7 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 	}
 	peerNpub := peersNpub[0]
 
-	// Generate session key from sessionFlag (deterministic)
-	sessionKey, err := Sha256(sessionFlag)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate session key: %w", err)
-	}
+	// F14: no session key — the Config field was required-but-never-read.
 
 	// Generate random peerNonce
 	peerNonce, err := SecureRandom(64)
@@ -1261,13 +1257,12 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 
 	// Create config for pre-agreement
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionFlag,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    60 * time.Second,
+		Relays:     relays,
+		SessionID:  sessionFlag,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 60 * time.Second,
 	}
 	cfg.ApplyDefaults()
 

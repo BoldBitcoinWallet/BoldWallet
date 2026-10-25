@@ -54,7 +54,7 @@ func nostrAttemptHandshakeRoom(txIntentKey string) (string, error) {
 	return Sha256(nostrAttemptHandshakePrefix + txIntentKey)
 }
 
-func nostrAttemptConfig(relaysCSV, partyNsec, partiesNpubsCSV, room, sessionKey string) (nostrtransport.Config, string, string, error) {
+func nostrAttemptConfig(relaysCSV, partyNsec, partiesNpubsCSV, room string) (nostrtransport.Config, string, string, error) {
 	localNpub, err := DeriveNpubFromNsec(partyNsec)
 	if err != nil {
 		return nostrtransport.Config{}, "", "", err
@@ -75,13 +75,12 @@ func nostrAttemptConfig(relaysCSV, partyNsec, partiesNpubsCSV, room, sessionKey 
 		return nostrtransport.Config{}, "", "", fmt.Errorf("attempt handshake requires exactly 1 peer, got %d", len(peersNpub))
 	}
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     room,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    60 * time.Second,
+		Relays:     relays,
+		SessionID:  room,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 60 * time.Second,
 	}
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -91,11 +90,7 @@ func nostrAttemptConfig(relaysCSV, partyNsec, partiesNpubsCSV, room, sessionKey 
 }
 
 func publishNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room, attemptID string) error {
-	sessionKey, err := Sha256(room)
-	if err != nil {
-		return err
-	}
-	cfg, localNpub, peerNpub, err := nostrAttemptConfig(relaysCSV, partyNsec, partiesNpubsCSV, room, sessionKey)
+	cfg, localNpub, peerNpub, err := nostrAttemptConfig(relaysCSV, partyNsec, partiesNpubsCSV, room)
 	if err != nil {
 		return err
 	}
@@ -122,11 +117,7 @@ func publishNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room, attemptI
 }
 
 func waitForNostrAttemptID(relaysCSV, partyNsec, partiesNpubsCSV, room string) (string, error) {
-	sessionKey, err := Sha256(room)
-	if err != nil {
-		return "", err
-	}
-	cfg, _, _, err := nostrAttemptConfig(relaysCSV, partyNsec, partiesNpubsCSV, room, sessionKey)
+	cfg, _, _, err := nostrAttemptConfig(relaysCSV, partyNsec, partiesNpubsCSV, room)
 	if err != nil {
 		return "", err
 	}

@@ -155,3 +155,15 @@ dependencies {
     androidTestImplementation "androidx.test:runner:1.5.2"
     androidTestImplementation "androidx.test.ext:junit:1.1.5"
 }
+
+// F28 build integrity: jniLibs/*.so are gitignored local artifacts and gradle
+// never rebuilds them (no externalNativeBuild path wiring). Fail fast when the
+// .so files are missing or were built from drifted sources, instead of silently
+// shipping stale native code (Wave 4 incident class).
+tasks.register("verifyDklsNativeStamp", Exec) {
+    workingDir rootDir
+    commandLine "bash", "${rootDir}/scripts/native-stamp.sh", "verify"
+}
+tasks.named("preBuild") {
+    dependsOn("verifyDklsNativeStamp")
+}

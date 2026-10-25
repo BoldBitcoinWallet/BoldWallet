@@ -46,13 +46,12 @@ func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKe
 	peersNpub := filterPeers(allParties, localNpub)
 
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionID,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    5 * time.Minute,
+		Relays:     relays,
+		SessionID:  sessionID,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 5 * time.Minute,
 	}
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -344,13 +343,12 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 
 	relays := splitCSV(relaysCSV)
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionID,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     signSess.NostrPeers,
-		MaxTimeout:    5 * time.Minute,
+		Relays:     relays,
+		SessionID:  sessionID,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  signSess.NostrPeers,
+		MaxTimeout: 5 * time.Minute,
 	}
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {

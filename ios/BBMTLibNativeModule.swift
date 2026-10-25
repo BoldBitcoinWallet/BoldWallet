@@ -36,15 +36,18 @@ class BBMTLibNativeModule: RCTEventEmitter {
     return ["BBMT_APPLE"]
   }
 
-  private func resolve(
-    _ tag: String, _ output: String, _ error: NSError?, _ resolver: @escaping RCTPromiseResolveBlock
+  // F27: resolve-or-reject gate. Go errors reject with a typed code — error
+  // text is never resolved as a value (the pre-F27 behavior of this helper).
+  private func resolveOrReject(
+    _ tag: String, _ output: String, _ error: NSError?, _ resolver: @escaping RCTPromiseResolveBlock,
+    _ rejecter: @escaping RCTPromiseRejectBlock, _ code: String
   ) {
     if error == nil {
       sendLogEvent(tag, output)
       resolver(output)
     } else {
       sendLogEvent(tag, error!.localizedDescription)
-      resolver(error!.localizedDescription)
+      rejecter(code, error!.localizedDescription, error)
     }
   }
 
@@ -348,8 +351,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
       var error: NSError?
       TssSetNetwork(network, &error)
       let output = TssGetNetwork(&error)
-      self?.sendLogEvent("setBtcNetwork", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("setBtcNetwork", error.localizedDescription)
+        rejecter("SET_BTC_NETWORK_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("setBtcNetwork", output)
+        resolver(output)
+      }
     }
   }
 
@@ -372,8 +381,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         senderAddress,
         receiverAddress,
         Int64(amountSatoshi) ?? 0, &error)
-      self?.sendLogEvent("spendingHash", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("spendingHash", error.localizedDescription)
+        rejecter("SPENDING_HASH_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("spendingHash", output)
+        resolver(output)
+      }
     }
   }
 
@@ -396,8 +411,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         utxosWithPathsJSON,
         receiverAddress,
         amountSatoshi, &error)
-      self?.sendLogEvent("spendingHashWithUTXOs", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("spendingHashWithUTXOs", error.localizedDescription)
+        rejecter("SPENDING_HASH_WITH_UTXOS_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("spendingHashWithUTXOs", output)
+        resolver(output)
+      }
     }
   }
 
@@ -420,8 +441,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         senderAddress,
         receiverAddress,
         Int64(amountSatoshi) ?? 0, &error)
-      self?.sendLogEvent("estimateFee", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("estimateFee", error.localizedDescription)
+        rejecter("ESTIMATE_FEES_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("estimateFee", output)
+        resolver(output)
+      }
     }
   }
 
@@ -446,8 +473,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         receiverAddress,
         amountSatoshi,
         changeAddress, &error)
-      self?.sendLogEvent("estimateFeeWithUTXOs", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("estimateFeeWithUTXOs", error.localizedDescription)
+        rejecter("ESTIMATE_FEE_WITH_UTXOS_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("estimateFeeWithUTXOs", output)
+        resolver(output)
+      }
     }
   }
 
@@ -464,8 +497,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssRunRelay(port, &error)
-      self?.sendLogEvent("runRelay", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("runRelay", error.localizedDescription)
+        rejecter("RUN_RELAY_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("runRelay", output)
+        resolver(output)
+      }
     }
   }
 
@@ -481,7 +520,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssStopRelay(&error)
-    resolve("stopRelay", output, error, resolver)
+    resolveOrReject("stopRelay", output, error, resolver, rejecter, "STOP_RELAY_ERROR")
   }
 
   @objc func listenForPeers(
@@ -637,7 +676,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
     var error: NSError?
     let output = TssGenerateKeyPair(&error)
-    resolve("eciesKeypair", output, error, resolver)
+    resolveOrReject("eciesKeypair", output, error, resolver, rejecter, "ECIES_KEYPAIR_ERROR")
   }
 
   // F10 (3a): dead oracle methods aesEncrypt / aesDecrypt /
@@ -1008,7 +1047,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssSha256(message, &error)
-    resolve("sha256", output, error, resolver)
+    resolveOrReject("sha256", output, error, resolver, rejecter, "SHA256_ERROR")
   }
 
   @objc func secureRandom(
@@ -1017,7 +1056,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
   ) {
     var error: NSError?
     let output = TssSecureRandom(Int32(length), &error)
-    resolve("secureRandom", output, error, resolver)
+    resolveOrReject("secureRandom", output, error, resolver, rejecter, "SECURE_RANDOM_ERROR")
   }
 
   @objc func recoverPubkey(
@@ -1032,7 +1071,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssSecP256k1Recover(r, s, v, h, &error)
-    resolve("recoverPubkey", output, error, resolver)
+    resolveOrReject("recoverPubkey", output, error, resolver, rejecter, "RECOVER_PUBKEY_ERROR")
   }
 
   @objc func derivePubkey(
@@ -1052,7 +1091,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("DERIVE_PUBKEY_ERROR", "Failed to derive pubkey: \(error.localizedDescription)", error)
       return
     }
-    resolve("derivePubkey", output, nil, resolver)
+    resolveOrReject("derivePubkey", output, nil, resolver, rejecter, "DERIVE_PUBKEY_ERROR")
   }
 
   @objc func encodeXpub(
@@ -1067,7 +1106,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssEncodeXpub(hexPubkey, hexChaincode, network, &error)
-    resolve("encodeXpub", output, error, resolver)
+    resolveOrReject("encodeXpub", output, error, resolver, rejecter, "ENCODE_XPUB_ERROR")
   }
 
   @objc func getOutputDescriptor(
@@ -1082,7 +1121,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssGetOutputDescriptor(hexPubkey, hexChaincode, network, addressType, &error)
-    resolve("getOutputDescriptor", output, error, resolver)
+    resolveOrReject("getOutputDescriptor", output, error, resolver, rejecter, "GET_OUTPUT_DESCRIPTOR_ERROR")
   }
 
   @objc func appendOutputDescriptorChecksum(
@@ -1097,7 +1136,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssAppendOutputDescriptorChecksum(descriptorBody, &error)
-    resolve("appendOutputDescriptorChecksum", output, error, resolver)
+    resolveOrReject("appendOutputDescriptorChecksum", output, error, resolver, rejecter, "APPEND_OUTPUT_DESCRIPTOR_CHECKSUM_ERROR")
   }
 
   @objc func btcAddress(
@@ -1128,7 +1167,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("BTC_ADDRESS_ERROR", "Failed to generate BTC address: \(error.localizedDescription)", error)
       return
     }
-    resolve("btcAddress", output, nil, resolver)
+    resolveOrReject("btcAddress", output, nil, resolver, rejecter, "BTC_ADDRESS_ERROR")
   }
 
   @objc func setFeePolicy(
@@ -1143,7 +1182,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssUseFeePolicy(policy, &error)
-    resolve("setFeePolicy", output, error, resolver)
+    resolveOrReject("setFeePolicy", output, error, resolver, rejecter, "SET_FEE_POLICY_ERROR")
   }
 
   /// 3b-2d B15/B16: native-held API allowlist store.
@@ -1208,7 +1247,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("SET_API_ERROR", error.localizedDescription, error)
       return
     }
-    resolve("setAPI", output, nil, resolver)
+    resolveOrReject("setAPI", output, nil, resolver, rejecter, "SET_API_ERROR")
   }
 
   @objc func setFeeAPIs(
@@ -1232,7 +1271,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("SET_FEE_APIS_ERROR", error.localizedDescription, error)
       return
     }
-    resolve("setFeeAPIs", output, nil, resolver)
+    resolveOrReject("setFeeAPIs", output, nil, resolver, rejecter, "SET_FEE_APIS_ERROR")
   }
   
   @objc func totalUTXO(
@@ -1247,7 +1286,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssTotalUTXO(address, &error)
-    resolve("totalUTXO", output, error, resolver)
+    resolveOrReject("totalUTXO", output, error, resolver, rejecter, "TOTAL_UTXO_ERROR")
   }
 
   @objc func preparams(
@@ -1299,7 +1338,13 @@ class BBMTLibNativeModule: RCTEventEmitter {
     var error: NSError?
     let output = TssJoinKeygen(
       ppmFile, partyID, partiesCSV, encKey, decKey, sessionID, server, chaincode, sessionKey, &error)
-    resolve("mpcTssSetup", output, error, resolver)
+    // F27-GG18: reject Go errors; never resolve error text as a keyshare.
+    if let error = error {
+      sendLogEvent("mpcTssSetup", error.localizedDescription)
+      rejecter("MPC_TSS_SETUP_ERROR", error.localizedDescription, error)
+    } else {
+      resolveOrReject("mpcTssSetup", output, nil, resolver, rejecter, "MPC_TSS_SETUP_ERROR")
+    }
   }
 
   @objc func nostrKeypair(
@@ -1320,8 +1365,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssNostrKeypair(&error)
-      self?.sendLogEvent("nostrKeypair", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a keypair.
+      if let error = error {
+        self?.sendLogEvent("nostrKeypair", error.localizedDescription)
+        rejecter("NOSTR_KEYPAIR_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("nostrKeypair", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1338,8 +1389,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssHexToNpub(hexKey, &error)
-      self?.sendLogEvent("hexToNpub", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("hexToNpub", error.localizedDescription)
+        rejecter("HEX_TO_NPUB_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("hexToNpub", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1666,8 +1723,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
       var error: NSError?
       let output = TssNostrJoinKeygen(
         relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, chaincode, ppmFile, &error)
-      self?.sendLogEvent("nostrMpcTssSetup", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a keyshare.
+      if let error = error {
+        self?.sendLogEvent("nostrMpcTssSetup", error.localizedDescription)
+        rejecter("NOSTR_MPC_TSS_SETUP_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("nostrMpcTssSetup", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1810,8 +1873,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssParsePSBTDetails(psbtBase64, &error)
-      self?.sendLogEvent("parsePSBTDetails", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("parsePSBTDetails", error.localizedDescription)
+        rejecter("PARSE_PSBT_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("parsePSBTDetails", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1884,8 +1953,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         decKey,
         keyshare,
         psbtBase64, &error)
-      self.sendLogEvent("mpcSignPSBT", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("mpcSignPSBT", error.localizedDescription)
+        rejecter("MPC_SIGN_PSBT_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("mpcSignPSBT", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1943,8 +2018,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         feeSatoshi,
         utxosWithPathsJSON,
         changeAddress, &error)
-      self.sendLogEvent("mpcSendBTCWithUTXOs", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("mpcSendBTCWithUTXOs", error.localizedDescription)
+        rejecter("MPC_SEND_BTC_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("mpcSendBTCWithUTXOs", output)
+        resolver(output)
+      }
     }
   }
 
@@ -2006,8 +2087,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         estimatedFee,
         utxosWithPathsJSON,
         changeAddress, &error)
-      self.sendLogEvent("nostrMpcSendBTC", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("nostrMpcSendBTC", error.localizedDescription)
+        rejecter("NOSTR_MPC_SEND_BTC_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("nostrMpcSendBTC", output)
+        resolver(output)
+      }
     }
   }
 
@@ -2051,8 +2138,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
       var error: NSError?
       let output = TssNostrMpcSignPSBT(
         relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64, &error)
-      self.sendLogEvent("nostrMpcSignPSBT", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("nostrMpcSignPSBT", error.localizedDescription)
+        rejecter("NOSTR_MPC_SIGN_PSBT_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("nostrMpcSignPSBT", output)
+        resolver(output)
+      }
     }
   }
 

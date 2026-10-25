@@ -1006,7 +1006,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             promise.resolve(result)
         } catch (e: Exception) {
             ld("nostrKeypair", "error: ${e.stackTraceToString()}")
-            promise.resolve(e.message)
+            // F27: reject; resolving e.message is error-text-as-value.
+            promise.reject("NOSTR_KEYPAIR_ERROR", "Failed to generate keypair: ${e.message}", e)
         }
     }
 
@@ -1027,7 +1028,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(result)
             } catch (e: Exception) {
                 ld("hexToNpub", "error: ${e.stackTraceToString()}")
-                promise.resolve(e.message)
+                // F27: reject; resolving e.message is error-text-as-value.
+                promise.reject("HEX_TO_NPUB_ERROR", "Failed to convert hex: ${e.message}", e)
             }
         }.start()
     }
