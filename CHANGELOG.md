@@ -70,6 +70,16 @@
 - **Pairing screens reworked for dice setup** — `ShowcaseScreen`, `MobilesPairing`, and `MobileNostrPairing` thread the dice session (and its short-code check) through wallet creation; `walletSetupOrchestrator` finalizes with the dice-derived chaincode when dice were used.
 - **Log redaction helper** — `services/logRedact.ts` scrubs secret-shaped values before they reach console output during ceremonies.
 
+## [4.0.7] - 2026-08-28
+
+> **Patch release:** LAN signing party-resolution fix plus pairing transport polish. A duo joiner whose stored committee order differed could resolve the wrong signer ID; the committee is now always persisted as `KeyShare1,KeyShare2`, and `KeyShareN` maps to DKG id N regardless of stored order.
+
+### Fixed
+- **LAN keysign party IDs** — `KeyShareN` resolves to DKG id N (the number in the moniker), not to its position in the persisted committee array; LAN setup persists the committee as `KeyShare1,KeyShare2` on both devices so stored order can no longer skew signer resolution. Regression coverage: `party_test`, `signing_resolve_test`, `lanMpcSetup` tests.
+
+### Changed
+- **Pairing transport selector** — QR transport (static/animated) fails soft: an unrenderable or oversized QR shows "Continue with Local or Nostr" instead of a dead end. Retry copy shortened to "Open Bold to retry." (the force-close warning is removed).
+
 ## [4.0.6] - 2026-08-25
 
 > **Patch release:** Explorer traffic is now observable as a slow/fail hint instead of silent hangs; Send no longer treats a timeout as a zero balance. Mempool REST hosts are a checkable list (like Nostr relays) with ranked failover over enabled URLs only; the header shows `host +N` when a pool is active. A keyshare can move airgap via encrypted animated QR (Settings two-step PIN-then-QR export, Welcome restore) locked with a CSPRNG 6-digit PIN. Dimmed modals use a shared frosted glass blur backdrop. Android Play packaging is camera/GPS-optional, LAN pairing uses Nearby Wi-Fi on Android 13+, and sharing a keyshare from WhatsApp/Telegram actually opens Bold. Branta merchant verify is **opt-in (default off)** with SDK **3.2.1** address-mismatch / tamper detection; history shows the merchant name (not “Paying undefined”). MPC on LAN/Nostr queues round payloads so a fast peer cannot poison the current round, and pairing shows a live connection-quality chip. Home-screen camouflage uses bundled launcher identities (QuickCalc, Notes, Weather, Files) without duplicating the Bold tile; settings show the real launcher artwork, and when camouflage is on the lock screen hides Bold branding.
