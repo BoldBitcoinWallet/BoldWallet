@@ -27,8 +27,14 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F10-clipboard | Secret clipboard writes (full keyshare JSON, dice rolls) | High | KeyshareInfoContent.tsx:605; DiceEntropySheet.tsx:604 | Metadata-only copy (npub/pub_key/suite); dice copyDisabled; clipboard-after-export tests | TBD | Green (3a-5 evidence below; unmerged on security/wave3a-f15b1-f10clip) |
 | F10-bridge | Bridge sign/decrypt callable from any JS | High | services/TssProvider.ts:116 (62 native methods) | Done (3b-6): Table B fully gated (B5–B21 + A12 + B19 cancel-consume); setAPI/fee allowlist-or-token; keypair generators retained + gated (OS prompt); L5 malicious-JS suite 15/15 over 25 gated methods. No carve-outs — GG18 sign/setup tokenized, F10-GG18 closed | TBD | Done (security/wave3b-f15b2-f18-f10, pending QA/merge) |
 | F10-GG18 | GG18 sign/setup branches token-gated | Critical | mpcSignPSBT; mpcSendBTCWithUTXOs; nostrMpcSendBTC; nostrMpcSignPSBT; mpcTssSetup; nostrMpcTssSetup (GG18 branches) | Done (3b-6): all 6 branches take class-binding tokens (sign ×4 incl. 2 single-call nostr; keygen ×2 strict-session) on both platforms with operation-specific OS prompts; pin tests rewritten as authorization assertions (unsigned/wrong-class/wrong-session fail, valid succeeds); GG18 legacy e2e 5/5 | TBD | Done |
-| F11 | No input validation at JNI/Go seams; FFI crashes | High | bbmtmobile/export_dkls.go:17; tss/common.go:465; mpc.go:1238 | Nil/length/caps checks; bound SecureRandom; nil-guard resp/req. Wave-3 scope MUST include new BbmtBackupEncrypt/Decrypt + JNI trampolines (added guard-less in B1) | TBD | Open |
-| F6 | LAN decrypt-before-verify padding oracle | Med-High | BBMTLib/tss/mpc.go:1149 | Verify-then-decrypt; uniform observable; AEAD | TBD | Open |
+| F11 | No input validation at JNI/Go seams; FFI crashes | High | bbmtmobile/export_dkls.go:17; tss/common.go:465; mpc.go:1238 | Done (wave4, 6 commits): Go seam validate.go (mustGoStr nil/8MiB, mustNonNegative, recoverBridge) × 66 exports; SecureRandom [1,4096] + RecoverAsError; amounts 21M-BTC, isEdDSA 0/1, preparams-timeout bounded. JNI null+16MiB guards × 53 entry points (65 symbols unchanged). Kotlin 58 @ReactMethods nullable+INVALID_ARGS; fail-closed publish/fetch/listen/discover; setAPI shape (https any; http/ws/wss LAN-literal, no DNS) + error-prefix rejects. Swift 59 @objc nullable+guard; fail-closed 4; shape mirror + harness 47; dupC nil-propagating. JS INVALID_URL contract tests. Evidence: Go seam 6/6 (tagged), tss full green, JVM 47/47, instrumented F11 5/5 emulator, harness PASSED, assembleDebug + xcodebuild Debug green, L5 15/15 (window 600→1300, property unchanged). Residuals (documented, not blocking): (1) broad error-text-as-value propagation on unfixed iOS resolve()/Android bbmt* methods — named methods fixed, wholesale fix is F10-bridge follow-up; (2) listen/discover no prefix check (user-controlled peer names — deliberate); (3) DklsBridge.mm dead, no callers; (4) empty-string requiredness owned by domain code | TBD | Done |
+| F6 | LAN decrypt-before-verify padding oracle | Med-High | BBMTLib/tss/mpc.go:1149 | Done (wave4): uniform-outcome (all reject classes DELETE same poll + dummy MAC work) instead of reorder — h1 tag covers plaintext by wire design, so verify-before-decrypt would break cross-version ceremonies (AEAD/EtM declined, see PR). Nil-guards on DELETE path (no Do(nil), no nil Body.Close). Tests: f6_oracle_test.go (same-poll DELETE ×4 classes, nil-safety ×2, timing medians 959ns vs 25.6µs with <50ms bound — hang-check only, NOT a timing-oracle proof; -race clean). Verified: single DELETE constructor (no class-dependent fields); dummy HMAC is real hmac.New+Sum work. Residuals → F24/F25/F26 | TBD | Done |
+| F24 | Empty-hash LAN messages skip verification entirely (pre-existing fail-open; review proposed as F23 but F23 taken) | Med-High | BBMTLib/tss/mpc.go:1183 (if Hash != gate) | Producer census first: if no legit producer omits hash, drop untagged; else understand path. Disposition vs F6: DISTINCT vector, not a reopening — F6's delete/keep oracle is closed (Done stands); F24 is a separate bypass path | TBD | Open (Wave 5) |
+| F27 | Go errors resolve as values (error-text-as-value) across the bridge (review proposed as F26; F26 taken by timing residual) | High | iOS BBMTLibNativeModule.swift resolve()/ternary; Android bbmt* raw wrappers (DklsNative.kt) | Wave 5 order: (1) audit the iOS/Android delta FIRST — 9-instance gap (Android 34 vs iOS 25 residual; review said 15, arithmetic corrected), incl. postTx txid + btcAddress fixed on iOS but not Android: mirror those before the rest; (2) F27-GG18 sub-row first; (3) remaining config/misc per-method (status channels prefix-check + reject; data channels assessed individually). Count (measured): iOS 25 residual / 20 fixed / 23 N/A (68); Android 34 residual / 19 fixed / 17 N/A (70). Proven bite: testnet4 error-text mempool URL incident | TBD | Open (Wave 5) |
+| F27-GG18 | GG18 sign/setup raw-resolve Go errors as signatures/handles, both platforms | High | mpcSignPSBT/mpcSendBTCWithUTXOs/nostrMpcSendBTC/nostrMpcSignPSBT/mpcTssSetup/nostrMpcTssSetup (iOS ternary + Android raw resolve) | First within F27: same protocol under-tested throughout the audit (untokenized until 3b-6); convert to reject-on-error both platforms | TBD | Open (Wave 5, first in F27) |
+| F28 | Build integrity: gradle ships prebuilt .so, native fixes don't reach binary without manual rebuild (review proposed as F27) | High | android/app/build.gradle (no externalNativeBuild path); jniLibs prebuilts | One of: (a) source-hash verification in build (fail if .so older than cpp/Go sources), (b) always-rebuild gradle task wiring build-dkls.sh, (c) committed .so with embedded build stamp + CI check. F11 instrumented null test crashed on stale .so and passed after rebuild — proof the pipeline silently ships stale code | TBD | Open (Wave 5) |
+| F25 | No HTTP timeout on LAN DELETE/poll GET (malicious-relay hang; review proposed as F24) | Med | BBMTLib/tss/mpc.go:1065,1240 (http.DefaultClient) | Bounded http.Client{Timeout} on transport calls | TBD | Open (Wave 5) |
+| F26 | F6 timing residual: reject medians 959ns vs 25.6µs (panic/recover cost; review proposed as F25) | Low-Med | BBMTLib/tss/mpc.go:1152 reject paths | Documented: network-indistinguishable vs passive observer; potentially distinguishable by active LAN-local adversary with repeated trials. Fix if prioritized: balance fast paths or cheaper error path | TBD | Open-doc (Wave 5) |
 | F12 | Prefix-match cancel + 15-min poison; no-confirm bridge cancel | High | tss/cancel.go:29,103; BBMTLibNativeModule.kt:505 | Exact-match cancel; per-session contexts/keys; confirm token | TBD | Open |
 | F14 | SessionKeyHex inert; secrecy rests on long-term nsec | Med | tss/nostrtransport/config.go:49 | HKDF session key into AEAD or remove field (allowlist is DKG-pinned: signing_resolve.go:57) | TBD | Open |
 | F13 | Background/kill: warning-only; replay memory is RAM-only | Med | services/mpcKeepAlive.ts:200 | Ceremony epoch or fresh session IDs post-death; persist seen-IDs | TBD | Open |
@@ -440,6 +446,28 @@ Low cleanup (unreachable, zero Kotlin callers) — not Wave 4.
   received; models + OS versions pending fill-in).
 - Merge gate satisfied; merge 3a → main (--no-ff), then
   3b → main (--no-ff, references 3a).
+
+## Wave 4 close-out notes (F6 + F11 on `security/wave4-f6-f11`)
+- Finding-number map (review proposal → tracker): empty-hash F23 → F24
+  (F23 is the 3b-6d v2-file finding, Done — no duplicate created);
+  no-timeout F24 → F25; timing F25 → F26; error-text-as-value F26 → F27;
+  build-integrity F27 → F28. F23 was not dropped: it stays Done as filed.
+- Flake (monitored, not a regression): one transient `go test ./tss/`
+  FAIL under load during F11-1 validation; unreproduced across 5
+  subsequent runs (F6 ×3, full ×2). If it recurs, capture the failing
+  test name before rerunning.
+- L5 window 600→1300: ceiling MEASURED (max verify distance 1162 on
+  14-param GG18 send, +138 margin), not loosened. Property (all 25
+  carry + verify tokens) unchanged; null guards only pushed text down.
+- Emulator note: Small_Phone_API_35 on this host is arm64 — the ART-x86
+  vs ART-ARM JNI concern is partially mitigated (real-device run still
+  differs in drivers/thermal, not ISA).
+- QA record: RESULT passed (2026-10-25, user-reported). 4 items —
+  JNI null-arg on real Android ARM (typed error, no crash), setAPI
+  file:// on real iOS (rejected), LAN ceremony on real WiFi
+  (completes), transport-abuse approximation (clean fail + retry) —
+  all pass. Device models/OS + runner name: pending fill-in by QA
+  runner.
 
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms

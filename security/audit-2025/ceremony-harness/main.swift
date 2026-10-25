@@ -219,6 +219,32 @@ check(CeremonyApiAllowlist.decide(urls: ["https://other.example/api"], token: cf
 check(CeremonyApiAllowlist.decide(urls: ["https://mempool.space/api", "https://new.example/api"], token: "", sessionID: "", store: allowStore) == .reject, "fee CSV needs all allowed")
 check(CeremonyApiAllowlist.decide(urls: [], token: "", sessionID: "", store: allowStore) == .apply, "empty list applies vacuously")
 
+// F11 URL shape validation (mirrors JVM testF11_*).
+for u in ["https://mempool.space/api", "https://example.com:8443/api",
+  "HTTPS://upper.example/api", "  https://mempool.space/api  ",
+  "http://127.0.0.1:3002/api", "http://localhost:3002/api",
+  "http://10.0.2.15/api", "http://192.168.1.10:3002/api",
+  "http://172.16.0.9/api", "http://169.254.10.20/api",
+  "http://user:pass@192.168.1.10:3002/api", "http://[::1]:3002/api",
+  "ws://127.0.0.1:8080/x", "wss://10.1.2.3/api"] {
+  check(CeremonyApiAllowlist.isAllowedApiUrlShape(u), "shape accepts \(u)")
+}
+for u in ["", "   ", "file:///etc/passwd", "javascript:alert(1)",
+  "ftp://example.com/api", "mempool.space/api", "https://", "http://",
+  "http:///api", "http://example.com/api", "http://8.8.8.8/api",
+  "http://172.32.0.1/api", "http://[::1/api", "ws://example.com/x",
+  "wss://example.com/api", "gopher://localhost/api"] {
+  check(!CeremonyApiAllowlist.isAllowedApiUrlShape(u), "shape rejects \(u)")
+}
+for h in ["localhost", "127.0.0.1", "10.9.9.9", "172.16.0.1",
+  "172.31.255.255", "192.168.0.1", "169.254.0.2", "::1", "fe80::1", "fd00::1"] {
+  check(CeremonyApiAllowlist.isLanHost(h), "lan host \(h)")
+}
+for h in ["example.com", "8.8.8.8", "172.32.0.1", "192.167.0.1",
+  "1.2.3.4.5", "999.1.1.1", "2001:db8::1"] {
+  check(!CeremonyApiAllowlist.isLanHost(h), "non-lan host \(h)")
+}
+
 // Wire parsing strict.
 check(CeremonyOpClass.parse("sign") == .sign, "parse sign")
 check(CeremonyOpClass.parse("keygen") == .keygen, "parse keygen")

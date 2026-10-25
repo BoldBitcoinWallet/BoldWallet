@@ -169,4 +169,73 @@ class CeremonyApiAllowlistTest {
             CeremonyApiAllowlist.decide(emptyList(), "", "", store),
         )
     }
+
+    @Test
+    fun testF11_UrlShapeAccepts() {
+        val good = listOf(
+            "https://mempool.space/api",
+            "https://example.com:8443/api",
+            "HTTPS://upper.example/api",
+            "  https://mempool.space/api  ",
+            "http://127.0.0.1:3002/api",
+            "http://localhost:3002/api",
+            "http://10.0.2.15/api",
+            "http://192.168.1.10:3002/api",
+            "http://172.16.0.9/api",
+            "http://169.254.10.20/api",
+            "http://user:pass@192.168.1.10:3002/api",
+            "http://[::1]:3002/api",
+            "ws://127.0.0.1:8080/x",
+            "wss://10.1.2.3/api",
+        )
+        for (u in good) {
+            assertTrue("accept: $u", CeremonyApiAllowlist.isAllowedApiUrlShape(u))
+        }
+    }
+
+    @Test
+    fun testF11_UrlShapeRejects() {
+        val bad = listOf(
+            "",
+            "   ",
+            "file:///etc/passwd",
+            "javascript:alert(1)",
+            "ftp://example.com/api",
+            "mempool.space/api",
+            "https://",
+            "http://",
+            "http:///api",
+            "http://example.com/api",
+            "http://8.8.8.8/api",
+            "http://172.32.0.1/api",
+            "http://[::1/api",
+            "ws://example.com/x",
+            "wss://example.com/api",
+            "gopher://localhost/api",
+        )
+        for (u in bad) {
+            assertFalse("reject: $u", CeremonyApiAllowlist.isAllowedApiUrlShape(u))
+        }
+    }
+
+    @Test
+    fun testF11_LanHostLiterals() {
+        assertTrue(CeremonyApiAllowlist.isLanHost("localhost"))
+        assertTrue(CeremonyApiAllowlist.isLanHost("127.0.0.1"))
+        assertTrue(CeremonyApiAllowlist.isLanHost("10.9.9.9"))
+        assertTrue(CeremonyApiAllowlist.isLanHost("172.16.0.1"))
+        assertTrue(CeremonyApiAllowlist.isLanHost("172.31.255.255"))
+        assertTrue(CeremonyApiAllowlist.isLanHost("192.168.0.1"))
+        assertTrue(CeremonyApiAllowlist.isLanHost("169.254.0.2"))
+        assertTrue(CeremonyApiAllowlist.isLanHost("::1"))
+        assertTrue(CeremonyApiAllowlist.isLanHost("fe80::1"))
+        assertTrue(CeremonyApiAllowlist.isLanHost("fd00::1"))
+        assertFalse(CeremonyApiAllowlist.isLanHost("example.com"))
+        assertFalse(CeremonyApiAllowlist.isLanHost("8.8.8.8"))
+        assertFalse(CeremonyApiAllowlist.isLanHost("172.32.0.1"))
+        assertFalse(CeremonyApiAllowlist.isLanHost("192.167.0.1"))
+        assertFalse(CeremonyApiAllowlist.isLanHost("1.2.3.4.5"))
+        assertFalse(CeremonyApiAllowlist.isLanHost("999.1.1.1"))
+        assertFalse(CeremonyApiAllowlist.isLanHost("2001:db8::1"))
+    }
 }

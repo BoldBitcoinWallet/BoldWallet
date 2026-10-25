@@ -278,10 +278,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func publishData(
-    _ port: String, timeout: String, encKey: String, raw: String, mode: String,
-    ceremonyToken: String, ceremonySessionID: String,
+    _ port: String?, timeout: String?, encKey: String?, raw: String?, mode: String?,
+    ceremonyToken: String?, ceremonySessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let port = port, let timeout = timeout, let encKey = encKey, let raw = raw, let mode = mode, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2c B13: rides the handshake ceremony token (sign|keygen).
     guard CeremonyTokens.verifyTransport(token: ceremonyToken, sessionID: ceremonySessionID) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -295,17 +301,23 @@ class BBMTLibNativeModule: RCTEventEmitter {
         resolver(output)
       } else {
         self?.sendLogEvent("publishData", error!.localizedDescription)
-        resolver("")
+        rejecter("PUBLISH_DATA_ERROR", error!.localizedDescription, error)
       }
     }
   }
 
   @objc func fetchData(
-    _ url: String, decKey: String, payload: String,
-    ceremonyToken: String, ceremonySessionID: String,
+    _ url: String?, decKey: String?, payload: String?,
+    ceremonyToken: String?, ceremonySessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let url = url, let decKey = decKey, let payload = payload, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2c B14: rides the handshake ceremony token (sign|keygen).
     guard CeremonyTokens.verifyTransport(token: ceremonyToken, sessionID: ceremonySessionID) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -318,14 +330,20 @@ class BBMTLibNativeModule: RCTEventEmitter {
       resolver(output)
     } else {
       self.sendLogEvent("fetchData", error!.localizedDescription)
-      resolver("")
+      rejecter("FETCH_DATA_ERROR", error!.localizedDescription, error)
     }
   }
 
   @objc func setBtcNetwork(
-    _ network: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ network: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let network = network else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       TssSetNetwork(network, &error)
@@ -336,12 +354,18 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func spendingHash(
-    _ senderAddress: String,
-    receiverAddress: String,
-    amountSatoshi: String,
+    _ senderAddress: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let senderAddress = senderAddress, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssSpendingHash(
@@ -354,12 +378,18 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func spendingHashWithUTXOs(
-    _ utxosWithPathsJSON: String,
-    receiverAddress: String,
-    amountSatoshi: String,
+    _ utxosWithPathsJSON: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let utxosWithPathsJSON = utxosWithPathsJSON, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssSpendingHashWithUTXOs(
@@ -372,12 +402,18 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func estimateFees(
-    _ senderAddress: String,
-    receiverAddress: String,
-    amountSatoshi: String,
+    _ senderAddress: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let senderAddress = senderAddress, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssEstimateFees(
@@ -390,13 +426,19 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func estimateFeeWithUTXOs(
-    _ utxosWithPathsJSON: String,
-    receiverAddress: String,
-    amountSatoshi: String,
-    changeAddress: String,
+    _ utxosWithPathsJSON: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
+    changeAddress: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let utxosWithPathsJSON = utxosWithPathsJSON, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi, let changeAddress = changeAddress else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssEstimateFeeWithUTXOs(
@@ -410,9 +452,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func runRelay(
-    _ port: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ port: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let port = port else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssRunRelay(port, &error)
@@ -422,18 +470,30 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func stopRelay(
-    _ tag: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ tag: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let tag = tag else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssStopRelay(&error)
     resolve("stopRelay", output, error, resolver)
   }
 
   @objc func listenForPeers(
-    _ id: String, pubkey: String, port: String, timeout: String, mode: String,
+    _ id: String?, pubkey: String?, port: String?, timeout: String?, mode: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let id = id, let pubkey = pubkey, let port = port, let timeout = timeout, let mode = mode else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssListenForPeers(id, pubkey, port, timeout, mode, &error)
@@ -442,15 +502,21 @@ class BBMTLibNativeModule: RCTEventEmitter {
         resolver(output)
       } else {
         self?.sendLogEvent("listenForPeers", error!.localizedDescription)
-        resolver("")
+        rejecter("LISTEN_PEERS_ERROR", error!.localizedDescription, error)
       }
     }
   }
 
   @objc func discoverPeers(
-    _ id: String, pubkey: String, localIp: String, remoteIp: String, port: String, timeout: String, mode: String,
+    _ id: String?, pubkey: String?, localIp: String?, remoteIp: String?, port: String?, timeout: String?, mode: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let id = id, let pubkey = pubkey, let localIp = localIp, let remoteIp = remoteIp, let port = port, let timeout = timeout, let mode = mode else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssDiscoverPeers(id, pubkey, localIp, remoteIp, port, timeout, mode, &error)
@@ -459,15 +525,21 @@ class BBMTLibNativeModule: RCTEventEmitter {
         resolver(output)
       } else { 
         self?.sendLogEvent("discoverPeers", error!.localizedDescription)
-        resolver("")
+        rejecter("DISCOVER_PEERS_ERROR", error!.localizedDescription, error)
       }
     }
   }
 
   @objc func getLanIp(
-    _ peerIP: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ peerIP: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let peerIP = peerIP else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var address: String?
     var classCAddress: String?
     var iphoneHotspotIp: String?
@@ -549,9 +621,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func eciesKeypair(
-    _ ceremonyToken: String,
+    _ ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2b B21: single-call keygen ceremony (no MPC session yet).
     guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .keygen) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -571,10 +649,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// F15b-1 (A6): versioned backup import that stages natively.
   /// Resolves {handle, metadata, legacy} — never plaintext.
   @objc func importBackupToStagedHandle(
-    _ blob: String, password: String, ceremonyToken: String, ceremonySessionID: String,
+    _ blob: String?, password: String?, ceremonyToken: String?, ceremonySessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let blob = blob, let password = password, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2e B17: strict import ceremony (owner-shared stage+persist).
     guard CeremonyTokens.verify(token: ceremonyToken, opClass: .import, sessionID: ceremonySessionID) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -599,10 +683,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// Resolves post-finalize metadata for the JS mirror. Staged
   /// entry is destroyed only after a VERIFIED write (retryable).
   @objc func persistStoredKeyshare(
-    _ handle: String, nsec: String, npub: String,
-    ceremonyToken: String, ceremonySessionID: String,
+    _ handle: String?, nsec: String?, npub: String?,
+    ceremonyToken: String?, ceremonySessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let handle = handle, let nsec = nsec, let npub = npub, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2e B18: strict import ceremony (shared with stage, or
     // the setup-commit flow's own save ceremony).
     guard CeremonyTokens.verify(token: ceremonyToken, opClass: .import, sessionID: ceremonySessionID) else {
@@ -718,9 +808,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// spoof the action label. Transport rides the parent
   /// ceremony token (sign|keygen) — no transport mint exists.
   @objc func requestSignCeremonyToken(
-    _ sessionID: String,
+    _ sessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     promptAndMint(
       opClass: .sign, sessionID: sessionID,
       title: "Authenticate to sign", subtitle: "Approve the signing ceremony",
@@ -728,9 +824,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func requestKeygenCeremonyToken(
-    _ sessionID: String,
+    _ sessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     promptAndMint(
       opClass: .keygen, sessionID: sessionID,
       title: "Authenticate to generate keys", subtitle: "Approve the wallet setup ceremony",
@@ -738,9 +840,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func requestExportCeremonyToken(
-    _ sessionID: String,
+    _ sessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     promptAndMint(
       opClass: .export, sessionID: sessionID,
       title: "Authenticate to export backup", subtitle: "Approve the backup export",
@@ -748,9 +856,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func requestImportCeremonyToken(
-    _ sessionID: String,
+    _ sessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     promptAndMint(
       opClass: .import, sessionID: sessionID,
       title: "Authenticate to import backup", subtitle: "Approve the backup import",
@@ -758,9 +872,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func requestConfigCeremonyToken(
-    _ sessionID: String,
+    _ sessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     promptAndMint(
       opClass: .config, sessionID: sessionID,
       title: "Authenticate to change settings", subtitle: "Approve the network settings change",
@@ -809,18 +929,30 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   /// 3b-1: retire a token after ceremony success (-> used).
   @objc func completeCeremonyToken(
-    _ token: String,
+    _ token: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let token = token else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     CeremonyTokens.complete(token: token)
     resolver(true)
   }
 
   /// 3b-1: revoke a token on teardown (-> revoked). Idempotent.
   @objc func releaseCeremonyToken(
-    _ token: String,
+    _ token: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let token = token else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     CeremonyTokens.release(token: token)
     resolver(true)
   }
@@ -831,9 +963,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
     /// disclosed, same security property). Production code must
     /// never call this — guardrailed in jest.
     @objc func requestCeremonyTokenTest(
-      _ op: String, sessionID: String,
+      _ op: String?, sessionID: String?,
       resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
     ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let op = op, let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
       guard let opClass = CeremonyOpClass.parse(op), !sessionID.isEmpty else {
         rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
         return
@@ -859,9 +997,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func sha256(
-    _ message: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ message: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let message = message else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssSha256(message, &error)
     resolve("sha256", output, error, resolver)
@@ -877,18 +1021,30 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func recoverPubkey(
-    _ r: String, s: String, v: String, h: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ r: String?, s: String?, v: String?, h: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let r = r, let s = s, let v = v, let h = h else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssSecP256k1Recover(r, s, v, h, &error)
     resolve("recoverPubkey", output, error, resolver)
   }
 
   @objc func derivePubkey(
-    _ hexPubkey: String, hexChaincode: String, path: String,
+    _ hexPubkey: String?, hexChaincode: String?, path: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let hexPubkey = hexPubkey, let hexChaincode = hexChaincode, let path = path else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssGetDerivedPubKey(hexPubkey, hexChaincode, path, false, &error)
     if let error = error {
@@ -900,36 +1056,60 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func encodeXpub(
-    _ hexPubkey: String, hexChaincode: String, network: String,
+    _ hexPubkey: String?, hexChaincode: String?, network: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let hexPubkey = hexPubkey, let hexChaincode = hexChaincode, let network = network else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssEncodeXpub(hexPubkey, hexChaincode, network, &error)
     resolve("encodeXpub", output, error, resolver)
   }
 
   @objc func getOutputDescriptor(
-    _ hexPubkey: String, hexChaincode: String, network: String, addressType: String,
+    _ hexPubkey: String?, hexChaincode: String?, network: String?, addressType: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let hexPubkey = hexPubkey, let hexChaincode = hexChaincode, let network = network, let addressType = addressType else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssGetOutputDescriptor(hexPubkey, hexChaincode, network, addressType, &error)
     resolve("getOutputDescriptor", output, error, resolver)
   }
 
   @objc func appendOutputDescriptorChecksum(
-    _ descriptorBody: String,
+    _ descriptorBody: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let descriptorBody = descriptorBody else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssAppendOutputDescriptorChecksum(descriptorBody, &error)
     resolve("appendOutputDescriptorChecksum", output, error, resolver)
   }
 
   @objc func btcAddress(
-    _ compressedPubkey: String, network: String, addressType: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ compressedPubkey: String?, network: String?, addressType: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let compressedPubkey = compressedPubkey, let network = network, let addressType = addressType else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output: String
     if addressType == "segwit-native" {
@@ -952,9 +1132,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func setFeePolicy(
-    _ policy: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ policy: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let policy = policy else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssUseFeePolicy(policy, &error)
     resolve("setFeePolicy", output, error, resolver)
@@ -981,6 +1167,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     _ urls: [String], token: String, sessionID: String,
     method: String, rejecter: @escaping RCTPromiseRejectBlock
   ) -> Bool {
+    // F11: shape before auth — malformed URLs never prompt nor persist.
+    for url in urls {
+      if !CeremonyApiAllowlist.isAllowedApiUrlShape(url) {
+        sendLogEvent(method, "rejecting malformed API URL")
+        rejecter("INVALID_URL", "Malformed API URL", nil)
+        return false
+      }
+    }
     switch CeremonyApiAllowlist.decide(urls: urls, token: token, sessionID: sessionID, store: apiAllowlistStore) {
     case .reject:
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -994,44 +1188,78 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func setAPI(
-    _ network: String, baseAPI: String, ceremonyToken: String, ceremonySessionID: String,
+    _ network: String?, baseAPI: String?, ceremonyToken: String?, ceremonySessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let network = network, let baseAPI = baseAPI, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     guard gateApiUrls([baseAPI], token: ceremonyToken, sessionID: ceremonySessionID, method: "setAPI", rejecter: rejecter) else {
       return
     }
     var error: NSError?
     let output = TssUseAPI(network, baseAPI, &error)
-    resolve("setAPI", output, error, resolver)
+    if let error = error {
+      sendLogEvent("setAPI", error.localizedDescription)
+      rejecter("SET_API_ERROR", error.localizedDescription, error)
+      return
+    }
+    resolve("setAPI", output, nil, resolver)
   }
 
   @objc func setFeeAPIs(
-    _ urls: String, ceremonyToken: String, ceremonySessionID: String,
+    _ urls: String?, ceremonyToken: String?, ceremonySessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let urls = urls, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     guard gateApiUrls(CeremonyApiAllowlist.parseCsv(urls), token: ceremonyToken, sessionID: ceremonySessionID, method: "setFeeAPIs", rejecter: rejecter) else {
       return
     }
     var error: NSError?
     let output = TssUseFeeAPIs(urls, &error)
-    resolve("setFeeAPIs", output, error, resolver)
+    if let error = error {
+      sendLogEvent("setFeeAPIs", error.localizedDescription)
+      rejecter("SET_FEE_APIS_ERROR", error.localizedDescription, error)
+      return
+    }
+    resolve("setFeeAPIs", output, nil, resolver)
   }
   
   @objc func totalUTXO(
-    _ address: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ address: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let address = address else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssTotalUTXO(address, &error)
     resolve("totalUTXO", output, error, resolver)
   }
 
   @objc func preparams(
-    _ outFile: String, timeout: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ outFile: String?, timeout: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let outFile = outFile, let timeout = timeout else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     var success: ObjCBool = false
     let waitMinutes = Int(timeout) ?? 2
@@ -1053,10 +1281,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
   // variant decision deferred). DKLs twins stage natively.
   @objc func mpcTssSetup(
-    _ server: String, partyID: String, ppmFile: String, partiesCSV: String, sessionID: String,
-    sessionKey: String, encKey: String, decKey: String, chaincode: String, ceremonyToken: String,
+    _ server: String?, partyID: String?, ppmFile: String?, partiesCSV: String?, sessionID: String?,
+    sessionKey: String?, encKey: String?, decKey: String?, chaincode: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let ppmFile = ppmFile, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let chaincode = chaincode, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-6: GG18 setup takes a keygen token (strict session).
     guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1069,9 +1303,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func nostrKeypair(
-    _ ceremonyToken: String,
+    _ ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2b B20: single-call keygen ceremony (no MPC session yet).
     guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .keygen) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1086,9 +1326,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func hexToNpub(
-    _ hexKey: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ hexKey: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let hexKey = hexKey else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssHexToNpub(hexKey, &error)
@@ -1114,11 +1360,17 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsMpcTssSetup(
-    _ server: String, partyID: String, partiesCSV: String, sessionID: String,
-    sessionKey: String, encKey: String, decKey: String, chaincode: String,
-    ceremonyToken: String,
+    _ server: String?, partyID: String?, partiesCSV: String?, sessionID: String?,
+    sessionKey: String?, encKey: String?, decKey: String?, chaincode: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let chaincode = chaincode, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2b: gate FIRST — before runtime checks.
     guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1150,10 +1402,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsNostrMpcTssSetup(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, chaincode: String, ceremonyToken: String,
+    _ relaysCSV: String?, partyNsec: String?, partiesNpubsCSV: String?, sessionID: String?,
+    sessionKey: String?, chaincode: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partyNsec = partyNsec, let partiesNpubsCSV = partiesNpubsCSV, let sessionID = sessionID, let sessionKey = sessionKey, let chaincode = chaincode, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2b: gate FIRST — before runtime checks.
     guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1185,9 +1443,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsCancelMpcSession(
-    _ sessionID: String, ceremonyToken: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ sessionID: String?, ceremonyToken: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-4 B19: cancel consumes the ceremony token (same
     // op+session) and atomically revokes the session.
     guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: sessionID) else {
@@ -1201,9 +1465,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsCancelNostrMpc(
-    _ ceremonyToken: String,
+    _ ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-4 B19: global cancel consumes a live ceremony
     // token; the token's own session scopes revocation.
     guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: nil) else {
@@ -1217,11 +1487,17 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsMpcSignPSBT(
-    _ server: String, partyID: String, partiesCSV: String, sessionID: String,
-    sessionKey: String, encKey: String, decKey: String, psbtBase64: String,
-    ceremonyToken: String,
+    _ server: String?, partyID: String?, partiesCSV: String?, sessionID: String?,
+    sessionKey: String?, encKey: String?, decKey: String?, psbtBase64: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let psbtBase64 = psbtBase64, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2a: gate FIRST — before runtime checks or storage reads.
     guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1249,12 +1525,18 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsMpcSendBTCWithUTXOs(
-    _ server: String, partyID: String, partiesCSV: String, sessionID: String,
-    sessionKey: String, encKey: String, decKey: String, btcPub: String,
-    toAddress: String, satoshiAmount: String, satoshiFees: String,
-    utxosWithPathsJSON: String, changeAddress: String, ceremonyToken: String,
+    _ server: String?, partyID: String?, partiesCSV: String?, sessionID: String?,
+    sessionKey: String?, encKey: String?, decKey: String?, btcPub: String?,
+    toAddress: String?, satoshiAmount: String?, satoshiFees: String?,
+    utxosWithPathsJSON: String?, changeAddress: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let btcPub = btcPub, let toAddress = toAddress, let satoshiAmount = satoshiAmount, let satoshiFees = satoshiFees, let utxosWithPathsJSON = utxosWithPathsJSON, let changeAddress = changeAddress, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2a: gate FIRST — before runtime checks or storage reads.
     guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1283,12 +1565,18 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsNostrMpcSendBTC(
-    _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
-    balanceSats: String, toAddress: String, satoshiAmount: String,
-    satoshiFees: String, utxosWithPathsJSON: String, changeAddress: String,
-    ceremonyToken: String,
+    _ relaysCSV: String?, partiesNpubsCSV: String?, npubsSorted: String?,
+    balanceSats: String?, toAddress: String?, satoshiAmount: String?,
+    satoshiFees: String?, utxosWithPathsJSON: String?, changeAddress: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partiesNpubsCSV = partiesNpubsCSV, let npubsSorted = npubsSorted, let balanceSats = balanceSats, let toAddress = toAddress, let satoshiAmount = satoshiAmount, let satoshiFees = satoshiFees, let utxosWithPathsJSON = utxosWithPathsJSON, let changeAddress = changeAddress, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2a: gate FIRST — single-call ceremony, no MPC session.
     guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1319,10 +1607,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsNostrMpcSignPSBT(
-    _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
-    psbtBase64: String, ceremonyToken: String,
+    _ relaysCSV: String?, partiesNpubsCSV: String?, npubsSorted: String?,
+    psbtBase64: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partiesNpubsCSV = partiesNpubsCSV, let npubsSorted = npubsSorted, let psbtBase64 = psbtBase64, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-2a: gate FIRST — single-call ceremony, no MPC session.
     guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1353,10 +1647,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
   // variant decision deferred). DKLs twins stage natively.
   @objc func nostrMpcTssSetup(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, chaincode: String, ppmFile: String, ceremonyToken: String,
+    _ relaysCSV: String?, partyNsec: String?, partiesNpubsCSV: String?, sessionID: String?,
+    sessionKey: String?, chaincode: String?, ppmFile: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partyNsec = partyNsec, let partiesNpubsCSV = partiesNpubsCSV, let sessionID = sessionID, let sessionKey = sessionKey, let chaincode = chaincode, let ppmFile = ppmFile, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-6: GG18 setup takes a keygen token (strict session).
     guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1376,10 +1676,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   // BbmtNostrJoinKeysign stays (native-only, harmless).
 
   @objc func postTx(
-    _ rawTxHex: String,
+    _ rawTxHex: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let rawTxHex = rawTxHex else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let txid = TssPostTx(rawTxHex, &error)
@@ -1393,10 +1699,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func computeTxId(
-    _ rawTxHex: String,
+    _ rawTxHex: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let rawTxHex = rawTxHex else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let txid = TssComputeTxId(rawTxHex, &error)
     if error == nil {
@@ -1407,10 +1719,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func cancelMpcSession(
-    _ sessionID: String, ceremonyToken: String,
+    _ sessionID: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-4 B19: cancel consumes the ceremony token (same
     // op+session) and atomically revokes the session.
     guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: sessionID) else {
@@ -1433,10 +1751,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func cancelNostrMpc(
-    _ ceremonyToken: String,
+    _ ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-4 B19: global cancel consumes a live ceremony
     // token; the token's own session scopes revocation.
     guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: nil) else {
@@ -1459,18 +1783,30 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func disableLogging(
-    _ tag: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ tag: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let tag = tag else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     useLog = false
     TssDisableLogs()
     resolver(tag)
   }
 
   @objc func parsePSBTDetails(
-    _ psbtBase64: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ psbtBase64: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let psbtBase64 = psbtBase64 else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssParsePSBTDetails(psbtBase64, &error)
@@ -1480,9 +1816,15 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func psbtIdentityHash(
-    _ psbtBase64: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ psbtBase64: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let psbtBase64 = psbtBase64 else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssPsbtIdentityHash(psbtBase64, &error)
@@ -1499,18 +1841,24 @@ class BBMTLibNativeModule: RCTEventEmitter {
   // MARK: - Stored keyshare (read from RNES-compatible storage; no keyshare string from JS bridge)
 
   @objc func mpcSignPSBT(
-    _ server: String,
-    partyID: String,
-    partiesCSV: String,
-    sessionID: String,
-    sessionKey: String,
-    encKey: String,
-    decKey: String,
-    psbtBase64: String,
-    ceremonyToken: String,
+    _ server: String?,
+    partyID: String?,
+    partiesCSV: String?,
+    sessionID: String?,
+    sessionKey: String?,
+    encKey: String?,
+    decKey: String?,
+    psbtBase64: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let psbtBase64 = psbtBase64, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-6: GG18 sign takes a sign token (strict session).
     guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1542,23 +1890,29 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func mpcSendBTCWithUTXOs(
-    _ server: String,
-    partyID: String,
-    partiesCSV: String,
-    sessionID: String,
-    sessionKey: String,
-    encKey: String,
-    decKey: String,
-    publicKey: String,
-    receiverAddress: String,
-    amountSatoshi: String,
-    feeSatoshi: String,
-    utxosWithPathsJSON: String,
-    changeAddress: String,
-    ceremonyToken: String,
+    _ server: String?,
+    partyID: String?,
+    partiesCSV: String?,
+    sessionID: String?,
+    sessionKey: String?,
+    encKey: String?,
+    decKey: String?,
+    publicKey: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
+    feeSatoshi: String?,
+    utxosWithPathsJSON: String?,
+    changeAddress: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let publicKey = publicKey, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi, let feeSatoshi = feeSatoshi, let utxosWithPathsJSON = utxosWithPathsJSON, let changeAddress = changeAddress, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-6: GG18 send takes a sign token (strict session).
     guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1595,19 +1949,25 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func nostrMpcSendBTC(
-    _ relaysCSV: String,
-    partiesNpubsCSV: String,
-    npubsSorted: String,
-    balanceSats: String,
-    receiverAddress: String,
-    amountSatoshi: String,
-    estimatedFee: String,
-    utxosWithPathsJSON: String,
-    changeAddress: String,
-    ceremonyToken: String,
+    _ relaysCSV: String?,
+    partiesNpubsCSV: String?,
+    npubsSorted: String?,
+    balanceSats: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
+    estimatedFee: String?,
+    utxosWithPathsJSON: String?,
+    changeAddress: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partiesNpubsCSV = partiesNpubsCSV, let npubsSorted = npubsSorted, let balanceSats = balanceSats, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi, let estimatedFee = estimatedFee, let utxosWithPathsJSON = utxosWithPathsJSON, let changeAddress = changeAddress, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-6: GG18 nostr send takes a sign token (single-call).
     guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1652,11 +2012,17 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func nostrMpcSignPSBT(
-    _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
-    psbtBase64: String, ceremonyToken: String,
+    _ relaysCSV: String?, partiesNpubsCSV: String?, npubsSorted: String?,
+    psbtBase64: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partiesNpubsCSV = partiesNpubsCSV, let npubsSorted = npubsSorted, let psbtBase64 = psbtBase64, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-6: GG18 nostr sign takes a sign token (single-call).
     guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
@@ -1694,10 +2060,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// F1: versioned backup export. Password goes to Go (Argon2id + AES-GCM);
   /// JS never sees a derived key. Emits v2 format only.
   @objc func backupEncryptStoredKeyshare(
-    _ password: String, ceremonyToken: String,
+    _ password: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let password = password, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     // 3b-3 A12: single-call export ceremony (no MPC session).
     guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .export) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)

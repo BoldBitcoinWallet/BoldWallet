@@ -103,6 +103,32 @@ describe('3b-2d config gating (F10-bridge B15-B16)', () => {
     expect(native.completeCeremonyToken).toHaveBeenCalledWith('tok-cfg-1');
   });
 
+  test('F11 malformed URL (INVALID_URL) fails closed: no prompt, no mint', async () => {
+    native.setAPI.mockRejectedValue(
+      Object.assign(new Error('Malformed API URL'), {code: 'INVALID_URL'}),
+    );
+    const confirm = jest.fn(async () => true);
+    await expect(
+      ensureMempoolApiApplied('mainnet', 'file:///etc/passwd', confirm),
+    ).rejects.toThrow('Malformed API URL');
+    expect(confirm).not.toHaveBeenCalled();
+    expect(native.requestConfigCeremonyToken).not.toHaveBeenCalled();
+    expect(native.setAPI).toHaveBeenCalledTimes(1);
+  });
+
+  test('F11 malformed fee URL fails closed without token retry', async () => {
+    native.setFeeAPIs.mockRejectedValue(
+      Object.assign(new Error('Malformed API URL'), {code: 'INVALID_URL'}),
+    );
+    const confirm = jest.fn(async () => true);
+    await expect(
+      // eslint-disable-next-line no-script-url -- attack-string test input, not code
+      ensureFeeApisApplied(['javascript:alert(1)'], confirm),
+    ).rejects.toThrow('Malformed API URL');
+    expect(confirm).not.toHaveBeenCalled();
+    expect(native.requestConfigCeremonyToken).not.toHaveBeenCalled();
+  });
+
   test('confirm deny throws without minting', async () => {
     native.setAPI.mockRejectedValue(authRejection());
     const confirm = jest.fn(async () => false);

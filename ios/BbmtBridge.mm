@@ -11,7 +11,10 @@ static void (*pBbmtFree)(char *);
 static BOOL resolveFree(void);
 
 static char *dupC(NSString *s) {
-  if (!s) return strdup("");
+  // F11: propagate nil so Go's mustGoStr rejects it with a typed
+  // error instead of silently converting to "". free(NULL) is safe
+  // at all call sites.
+  if (!s) return NULL;
   const char *u = s.UTF8String;
   return u ? strdup(u) : strdup("");
 }
