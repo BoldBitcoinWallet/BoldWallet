@@ -230,6 +230,41 @@ func FetchUTXODetails(txID string, vout uint32) (result *wire.TxOut, isWitnessRe
 	return &wire.TxOut{PkScript: scriptBytes, Value: voutData.Value}, isWitness, nil
 }
 
+// F31: sanity bounds on mempool-suggested fee rates. A malicious
+// or corrupt mempool endpoint must not drive an absurd rate into
+// tx building. MaxFeeRateSatVB is ~5x the worst observed mainnet
+// spike (Apr-2024 Runes peak ~2k sat/vB) — anything above is
+// rejected, not clamped (fail closed; the endpoint is untrusted).
+const MaxFeeRateSatVB = 10000
+
+// checkFeeRateSanity rejects absurd mempool fee-rate values in
+// both directions. Called on every tier value before use.
+func checkFeeRateSanity(rate int) error {
+	if rate < 1 {
+		return fmt.Errorf("fee rate %d sat/vB below minimum relay rate 1 sat/vB", rate)
+	}
+	if rate > MaxFeeRateSatVB {
+		return fmt.Errorf("fee rate %d sat/vB exceeds sanity cap %d sat/vB", rate, MaxFeeRateSatVB)
+	}
+	return nil
+}
+
+// checkFeeVsAmount rejects a total fee that exceeds the payment
+// itself — almost surely a corrupt suggestion or swap, never an
+// intended payment (change outputs aside).
+func checkFeeVsAmount(feeSatoshi, amountSatoshi int64) error {
+	if feeSatoshi < 0 {
+		return fmt.Errorf("negative fee %d", feeSatoshi)
+	}
+	if amountSatoshi <= 0 {
+		return fmt.Errorf("non-positive payment amount %d", amountSatoshi)
+	}
+	if feeSatoshi > amountSatoshi {
+		return fmt.Errorf("fee %d sat exceeds payment %d sat — refusing", feeSatoshi, amountSatoshi)
+	}
+	return nil
+}
+
 func RecommendedFees(feeType string) (int, error) {
 	for _, url := range _api_urls {
 		fee_url := strings.TrimSuffix(url, "/")
@@ -245,20 +280,27 @@ func RecommendedFees(feeType string) (int, error) {
 		if err := json.NewDecoder(resp.Body).Decode(&fees); err != nil {
 			continue
 		}
+		var rate int
 		switch feeType {
 		case "top":
-			return fees.FastestFee, nil
+			rate = fees.FastestFee
 		case "30m":
-			return fees.HalfHourFee, nil
+			rate = fees.HalfHourFee
 		case "1hr":
-			return fees.HourFee, nil
+			rate = fees.HourFee
 		case "eco":
-			return fees.EconomyFee, nil
+			rate = fees.EconomyFee
 		case "min":
-			return fees.MinimumFee, nil
+			rate = fees.MinimumFee
 		default:
 			return 0, errors.New("invalid fee type: top, eco, min, 1hr, 30m")
 		}
+		// F31: reject absurd endpoint values before they flow anywhere.
+		if err := checkFeeRateSanity(rate); err != nil {
+			Logf("Fee endpoint %s returned absurd %s rate: %v, trying next endpoint", url, feeType, err)
+			continue
+		}
+		return rate, nil
 	}
 	return 0, errors.New("failed to get fees")
 }
@@ -723,6 +765,12 @@ func MpcSendBTC(
 	/* btc */
 	publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64) (result string, err error) {
 	defer RecoverAsError("MpcSendBTC", &err, &result)
+
+	// F31: backstop at spend time (fee is F20-1b-displayed; this
+	// catches a corrupt value that reached the native layer).
+	if err := checkFeeVsAmount(estimatedFee, amountSatoshi); err != nil {
+		return "", err
+	}
 
 	Logln("BBMTLog", "invoking MpcSendBTC...")
 
@@ -1194,6 +1242,12 @@ func MpcSendBTCWithUTXOs(
 		return "", fmt.Errorf("invalid estimatedFee %q: %w", estimatedFeeStr, parseErr)
 	}
 
+	// F31: backstop at spend time (fee is F20-1b-displayed; this
+	// catches a corrupt value that reached the native layer).
+	if err := checkFeeVsAmount(estimatedFee, amountSatoshi); err != nil {
+		return "", err
+	}
+
 	utxos, err := parseUTXOsWithPathsJSON(utxosWithPathsJSON)
 	if err != nil {
 		return "", err
@@ -1549,6 +1603,11 @@ func calculateFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 	}
 
 	Logf("Final estimated transaction size: %d vbytes, Fee: %d satoshis", vbytes, estimatedFee)
+	// F31: the suggestion path rejects absurd totals at estimation
+	// time, so JS surfaces the failure before any ceremony starts.
+	if err := checkFeeVsAmount(estimatedFee, satoshiAmount); err != nil {
+		return 0, err
+	}
 	return estimatedFee, nil
 }
 
