@@ -1245,11 +1245,7 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 	}
 	peerNpub := peersNpub[0]
 
-	// Generate session key from sessionFlag (deterministic)
-	sessionKey, err := Sha256(sessionFlag)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate session key: %w", err)
-	}
+	// F14: no session key — the Config field was required-but-never-read.
 
 	// Generate random peerNonce
 	peerNonce, err := SecureRandom(64)
@@ -1261,13 +1257,12 @@ func runNostrPreAgreementPSBT(relaysCSV, partyNsec, partiesNpubsCSV, sessionFlag
 
 	// Create config for pre-agreement
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionFlag,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    60 * time.Second,
+		Relays:     relays,
+		SessionID:  sessionFlag,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 60 * time.Second,
 	}
 	cfg.ApplyDefaults()
 

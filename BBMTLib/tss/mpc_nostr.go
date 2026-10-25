@@ -175,13 +175,12 @@ func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKe
 
 	// Create config
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionID,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    90 * time.Second,
+		Relays:     relays,
+		SessionID:  sessionID,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 90 * time.Second,
 	}
 	cfg.ApplyDefaults()
 
@@ -239,13 +238,12 @@ func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionI
 
 	// Create config
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionID,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    90 * time.Second,
+		Relays:     relays,
+		SessionID:  sessionID,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 90 * time.Second,
 	}
 	cfg.ApplyDefaults()
 
@@ -301,13 +299,12 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 
 	// Create config
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionID,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    90 * time.Second,
+		Relays:     relays,
+		SessionID:  sessionID,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 90 * time.Second,
 	}
 	cfg.ApplyDefaults()
 
@@ -459,11 +456,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	}
 	peerNpub := peersNpub[0]
 
-	// Generate session key from sessionFlag (deterministic)
-	sessionKey, err := Sha256(sessionFlag)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate session key: %w", err)
-	}
+	// F14: no session key — the Config field was required-but-never-read.
 
 	// Generate random peerNonce
 	peerNonce, err := SecureRandom(64)
@@ -475,13 +468,12 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 
 	// Create config for pre-agreement (using sessionFlag as sessionID)
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionFlag,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    60 * time.Second,
+		Relays:     relays,
+		SessionID:  sessionFlag,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 60 * time.Second,
 	}
 	cfg.ApplyDefaults()
 
