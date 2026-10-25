@@ -175,7 +175,14 @@ export function LoadingQuotesMarquee({
       <View style={s.lineWrap}>
         <WebView
           key={`${segmentLine.length}:${segmentLine.slice(0, 80)}`}
-          originWhitelist={['*']}
+          // F38: inline-HTML ticker. originWhitelist locked to
+          // about:blank (the document's own origin — no baseUrl is
+          // set); any remote navigation is blocked before the gate
+          // below. JS stays ENABLED: the ticker is JS-driven
+          // (requestAnimationFrame measuring, not CSS-only), so
+          // disabling it would kill the animation. File access off:
+          // the document is fully inline, nothing to load.
+          originWhitelist={['about:blank']}
           source={{html: htmlSource}}
           style={s.webMarquee}
           scrollEnabled={false}
@@ -184,6 +191,9 @@ export function LoadingQuotesMarquee({
           bounces={false}
           overScrollMode="never"
           androidLayerType="hardware"
+          allowFileAccess={false}
+          allowUniversalAccessFromFileURLs={false}
+          allowFileAccessFromFileURLs={false}
           setSupportMultipleWindows={true}
           opaque={false}
           textZoom={Platform.OS === 'android' ? 100 : undefined}
