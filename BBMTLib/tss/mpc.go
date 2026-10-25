@@ -622,7 +622,7 @@ func (m *MessengerImp) Send(from, to, body string) error {
 	defer ReportTransportProgress(m.SessionID, "lan", "out", 0, 1, false)
 
 	// Prepare the HTTP request
-	resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
+	resp, err := relayRequestClient.Post(url, "application/json", bytes.NewReader(requestBody))
 	if err != nil {
 		Logln("BBMTLog", "fail to send message: ", err)
 		return fmt.Errorf("fail to send message: %w", err)
@@ -679,7 +679,7 @@ func joinSession(server, session, key string) error {
 	tryJoin := func() bool {
 		attempts++
 		bodyReader := bytes.NewReader(body)
-		resp, err := http.Post(sessionUrl, "application/json", bodyReader)
+		resp, err := relayPollClient.Post(sessionUrl, "application/json", bodyReader)
 		if err != nil {
 			Logln("BBMTLog", "joinSession: POST failed", "url=", sessionUrl, "party=", key, "attempt=", attempts, "err=", err)
 			return false
@@ -908,7 +908,7 @@ func awaitPartyCompletions(ctx context.Context, parties []string, server, sessio
 }
 
 func fetchSessionParticipants(sessionUrl string) ([]string, error) {
-	resp, err := http.Get(sessionUrl)
+	resp, err := relayPollClient.Get(sessionUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -952,12 +952,12 @@ func stringSet(vals []string) map[string]struct{} {
 func endSession(server, session string) error {
 	sessionUrl := server + "/" + session
 	Logln("======================================================> Session Closure: ", session)
-	client := http.Client{}
+	// F25: bounded relay client (shared).
 	req, err := http.NewRequest(http.MethodDelete, sessionUrl, nil)
 	if err != nil {
 		return fmt.Errorf("fail to end session: %w", err)
 	}
-	resp, err := client.Do(req)
+	resp, err := relayRequestClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("fail to end session: %w", err)
 	}
@@ -982,11 +982,8 @@ func flagPartyKeysignComplete(relayHost, sessionID, message, body string) error 
 	req.Header.Set("message_id", message)
 	// req.Header.Set("Content-Type", "text/plain")
 
-	// Configure the HTTP client with a timeout
-	client := &http.Client{}
-
-	// Execute the HTTP POST request
-	resp, err := client.Do(req)
+	// F25: bounded relay client (shared).
+	resp, err := relayRequestClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send POST request: %w", err)
 	}
@@ -1017,7 +1014,7 @@ func flagPartyComplete(serverURL, session, localPartyID string) error {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	resp, err := http.Post(serverURL+"/complete/keygen/"+session, "application/json", bytes.NewBuffer(payload))
+	resp, err := relayRequestClient.Post(serverURL+"/complete/keygen/"+session, "application/json", bytes.NewBuffer(payload))
 	if err != nil {
 		return fmt.Errorf("failed to send POST request: %w", err)
 	}
@@ -1062,7 +1059,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			Logln("BBMTLog", "Fetching messages...")
 
 			// Fetch messages from the server
-			resp, err := http.Get(server + "/message/" + session + "/" + key)
+			resp, err := relayPollClient.Get(server + "/message/" + session + "/" + key)
 			if err != nil {
 				Logln("BBMTLog", "Error fetching messages:", err)
 				isApplyingMessages = false
@@ -1248,7 +1245,7 @@ func deleteMessage(server, session, key, messageHash string) {
 		return
 	}
 
-	resp, rspErr := http.DefaultClient.Do(req)
+	resp, rspErr := relayRequestClient.Do(req)
 	if rspErr != nil {
 		Logln("BBMTLog", "HTTP_DELETE Error", rspErr)
 		return

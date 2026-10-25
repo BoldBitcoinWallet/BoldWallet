@@ -43,7 +43,7 @@ func startLANMessagePump(server, session, sessionKey, key string, onBody func(st
 		case <-endCh:
 			return
 		case <-time.After(lanPumpInterval()):
-			resp, err := http.Get(server + "/message/" + session + "/" + key)
+			resp, err := tss.RelayPollClient().Get(server + "/message/" + session + "/" + key)
 			if err != nil {
 				continue
 			}
@@ -104,7 +104,7 @@ func md5Hex(s string) string {
 func lanDeleteMessage(server, session, key, hash string) {
 	req, _ := http.NewRequest(http.MethodDelete, server+"/message/"+session+"/"+key+"/"+hash, nil)
 	if req != nil {
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := tss.RelayRequestClient().Do(req)
 		if err == nil && resp != nil {
 			resp.Body.Close()
 		}
