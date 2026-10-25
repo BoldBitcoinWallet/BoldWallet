@@ -1299,7 +1299,13 @@ class BBMTLibNativeModule: RCTEventEmitter {
     var error: NSError?
     let output = TssJoinKeygen(
       ppmFile, partyID, partiesCSV, encKey, decKey, sessionID, server, chaincode, sessionKey, &error)
-    resolve("mpcTssSetup", output, error, resolver)
+    // F27-GG18: reject Go errors; never resolve error text as a keyshare.
+    if let error = error {
+      sendLogEvent("mpcTssSetup", error.localizedDescription)
+      rejecter("MPC_TSS_SETUP_ERROR", error.localizedDescription, error)
+    } else {
+      resolve("mpcTssSetup", output, nil, resolver)
+    }
   }
 
   @objc func nostrKeypair(
@@ -1666,8 +1672,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
       var error: NSError?
       let output = TssNostrJoinKeygen(
         relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, chaincode, ppmFile, &error)
-      self?.sendLogEvent("nostrMpcTssSetup", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a keyshare.
+      if let error = error {
+        self?.sendLogEvent("nostrMpcTssSetup", error.localizedDescription)
+        rejecter("NOSTR_MPC_TSS_SETUP_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("nostrMpcTssSetup", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1884,8 +1896,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         decKey,
         keyshare,
         psbtBase64, &error)
-      self.sendLogEvent("mpcSignPSBT", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("mpcSignPSBT", error.localizedDescription)
+        rejecter("MPC_SIGN_PSBT_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("mpcSignPSBT", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1943,8 +1961,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         feeSatoshi,
         utxosWithPathsJSON,
         changeAddress, &error)
-      self.sendLogEvent("mpcSendBTCWithUTXOs", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("mpcSendBTCWithUTXOs", error.localizedDescription)
+        rejecter("MPC_SEND_BTC_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("mpcSendBTCWithUTXOs", output)
+        resolver(output)
+      }
     }
   }
 
@@ -2006,8 +2030,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         estimatedFee,
         utxosWithPathsJSON,
         changeAddress, &error)
-      self.sendLogEvent("nostrMpcSendBTC", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("nostrMpcSendBTC", error.localizedDescription)
+        rejecter("NOSTR_MPC_SEND_BTC_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("nostrMpcSendBTC", output)
+        resolver(output)
+      }
     }
   }
 
@@ -2051,8 +2081,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
       var error: NSError?
       let output = TssNostrMpcSignPSBT(
         relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64, &error)
-      self.sendLogEvent("nostrMpcSignPSBT", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("nostrMpcSignPSBT", error.localizedDescription)
+        rejecter("NOSTR_MPC_SIGN_PSBT_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("nostrMpcSignPSBT", output)
+        resolver(output)
+      }
     }
   }
 

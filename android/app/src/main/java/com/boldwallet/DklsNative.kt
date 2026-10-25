@@ -218,7 +218,7 @@ object DklsNative {
     fun bbmtEstimateFeeWithUTXOsNative(
         utxos: String, receiver: String, amount: String, change: String,
     ): String = loaded { bbmtEstimateFeeWithUTXOsJni(utxos, receiver, amount, change) }
-    fun bbmtPostTxNative(rawTx: String): String = loaded { bbmtPostTxJni(rawTx) }
+    fun bbmtPostTxNative(rawTx: String): String = loaded { unwrap(bbmtPostTxJni(rawTx)) }
     fun bbmtComputeTxIdNative(rawTx: String): String = loaded { bbmtComputeTxIdJni(rawTx) }
     fun bbmtAesEncryptNative(data: String, key: String): String = loaded { bbmtAesEncryptJni(data, key) }
     fun bbmtAesDecryptNative(data: String, key: String): String = loaded { bbmtAesDecryptJni(data, key) }
@@ -241,11 +241,11 @@ object DklsNative {
     ): String = loaded { bbmtGetOutputDescriptorJni(hexPub, hexChain, network, addressType) }
     fun bbmtAppendOutputDescriptorChecksumNative(descriptor: String): String =
         loaded { bbmtAppendOutputDescriptorChecksumJni(descriptor) }
-    fun bbmtPubToP2WPKHNative(pub: String, network: String): String = loaded { bbmtPubToP2WPKHJni(pub, network) }
+    fun bbmtPubToP2WPKHNative(pub: String, network: String): String = loaded { unwrap(bbmtPubToP2WPKHJni(pub, network)) }
     fun bbmtPubToP2SHP2WKHNative(pub: String, network: String): String =
-        loaded { bbmtPubToP2SHP2WKHJni(pub, network) }
-    fun bbmtPubToP2TRNative(pub: String, network: String): String = loaded { bbmtPubToP2TRJni(pub, network) }
-    fun bbmtPubToP2KHNative(pub: String, network: String): String = loaded { bbmtPubToP2KHJni(pub, network) }
+        loaded { unwrap(bbmtPubToP2SHP2WKHJni(pub, network)) }
+    fun bbmtPubToP2TRNative(pub: String, network: String): String = loaded { unwrap(bbmtPubToP2TRJni(pub, network)) }
+    fun bbmtPubToP2KHNative(pub: String, network: String): String = loaded { unwrap(bbmtPubToP2KHJni(pub, network)) }
     fun bbmtLocalPreParamsNative(ppmFile: String, timeoutMinutes: Long): String =
         loaded { bbmtLocalPreParamsJni(ppmFile, timeoutMinutes) }
     fun bbmtJoinKeygenNative(
