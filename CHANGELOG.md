@@ -56,6 +56,20 @@
 - GG18 remains supported indefinitely; there is no forced migration to DKLs23.
 - Still tracked for v4.1.2+ / Wave 6+: F31 (fee-rate cap), F32 (LAN trio key derivation), F35 (unsigned host lists), F36 (device-integrity signals), F38 (WebView whitelist), F39 (post-DKG group-key check), F40 (DKLs23 key refresh).
 
+## [4.1.0] - 2026-09-28
+
+> **Feature release:** wallet setup can derive its master chaincode from physical dice rolls instead of any phone's random generator. Roll real dice, enter the same sequence on every ceremony phone, and the sequence — not a device RNG — becomes the master chaincode. Full story: `docs/DICE_USER_GUIDE.md`; byte-level format: `docs/DICE_CHAINCODE_SPEC.md`.
+
+### Added
+- **Dice-rolls setup entropy** — on each phone, open **Use dice rolls** before setup starts. Choose D6 (100 rolls: 5 dice × 20 throws), D20 (60 rolls), or a coin (256 flips), then enter that sequence on every phone in the same order (type, paste, or scan the other phone's QR in the same room — the QR never goes over Wi-Fi or Nostr). Read the short code aloud: it must match on all phones, and the app's `dice_` check stops setup if any phone's sequence differs. A different sequence, or dice on only some phones, aborts the ceremony. Skipping dice leaves setup exactly as before.
+- **Dice setup UI** — `DiceEntropySheet` (roll entry + receipt via `DiceReceipt`), `DeviceEntropyPill` on ceremony screens, `EntropyInfoCard`, and `KeygenFinalizePanel` for the finalize step. Setup flows on Showcase, LAN pairing (`MobilesPairing`), and Nostr pairing (`MobileNostrPairing`) carry the dice session through to the MPC ceremony.
+- **Dice chaincode derivation** — phones exchange dice commitments and `dice_` checksum tags (`services/diceSession.ts`); any mismatch aborts before MPC starts, then the agreed sequence becomes the master chaincode (Go: `BBMTLib/tss/dice_chaincode.go`). Covered by `diceCrosscheck`, `diceEntropy`, and `diceHardening` test suites (commit parsing, checksum matching, bias/format validation, derivation).
+- **Ceremony docs** — `docs/DICE_USER_GUIDE.md` (rules: film the ceremony if you want an audit trail, no cloud keyboard, write rolls on paper, never share the raw rolls), `docs/DICE_CHAINCODE_SPEC.md`, and `docs/SECURITY_AUDIT.md` §7. Note: account descriptors (e.g. Sparrow) contain the account chaincode, not the master chaincode.
+
+### Changed
+- **Pairing screens reworked for dice setup** — `ShowcaseScreen`, `MobilesPairing`, and `MobileNostrPairing` thread the dice session (and its short-code check) through wallet creation; `walletSetupOrchestrator` finalizes with the dice-derived chaincode when dice were used.
+- **Log redaction helper** — `services/logRedact.ts` scrubs secret-shaped values before they reach console output during ceremonies.
+
 ## [4.0.6] - 2026-08-25
 
 > **Patch release:** Explorer traffic is now observable as a slow/fail hint instead of silent hangs; Send no longer treats a timeout as a zero balance. Mempool REST hosts are a checkable list (like Nostr relays) with ranked failover over enabled URLs only; the header shows `host +N` when a pool is active. A keyshare can move airgap via encrypted animated QR (Settings two-step PIN-then-QR export, Welcome restore) locked with a CSPRNG 6-digit PIN. Dimmed modals use a shared frosted glass blur backdrop. Android Play packaging is camera/GPS-optional, LAN pairing uses Nearby Wi-Fi on Android 13+, and sharing a keyshare from WhatsApp/Telegram actually opens Bold. Branta merchant verify is **opt-in (default off)** with SDK **3.2.1** address-mismatch / tamper detection; history shows the merchant name (not “Paying undefined”). MPC on LAN/Nostr queues round payloads so a fast peer cannot poison the current round, and pairing shows a live connection-quality chip. Home-screen camouflage uses bundled launcher identities (QuickCalc, Notes, Weather, Files) without duplicating the Bold tile; settings show the real launcher artwork, and when camouflage is on the lock screen hides Bold branding.
