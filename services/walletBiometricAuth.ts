@@ -11,6 +11,8 @@ export type WalletBiometricPromptOptions = {
   fallbackPromptMessage?: string;
   /** When false, failed/cancelled auth shows an alert with Retry (lock-screen style). Default true. */
   showFailureAlert?: boolean;
+  /** F36: short human label for the device-integrity warning (e.g. 'backing up your wallet keyshare'). */
+  integrityActionLabel?: string;
 };
 
 const PASSCODE_FALLBACK = 'Use your device passcode to continue';
@@ -20,22 +22,27 @@ export const WALLET_SENSITIVE_ACTION_AUTH = {
   backupKeyshare: {
     promptMessage: 'Authenticate to backup your wallet keyshare',
     fallbackPromptMessage: PASSCODE_FALLBACK,
+    integrityActionLabel: 'Backing up your wallet keyshare',
   },
   airgapKeyshareExport: {
     promptMessage: 'Authenticate to export airgap keyshare QR',
     fallbackPromptMessage: PASSCODE_FALLBACK,
+    integrityActionLabel: 'Exporting your airgap keyshare QR',
   },
   deleteWallet: {
     promptMessage: 'Authenticate to delete your wallet on this device',
     fallbackPromptMessage: PASSCODE_FALLBACK,
+    integrityActionLabel: 'Deleting your wallet on this device',
   },
   enableDeveloperMode: {
     promptMessage: 'Authenticate to enable Developer Mode',
     fallbackPromptMessage: PASSCODE_FALLBACK,
+    integrityActionLabel: 'Enabling Developer Mode',
   },
   viewKeyshareStructure: {
     promptMessage: 'Authenticate to view keyshare structure',
     fallbackPromptMessage: PASSCODE_FALLBACK,
+    integrityActionLabel: 'Viewing your keyshare structure',
   },
 } as const satisfies Record<string, WalletBiometricPromptOptions>;
 

@@ -5,6 +5,8 @@ jest.mock('../native_modules', () => ({
     dklsMpcSignPSBT: jest.fn(),
     dklsNostrMpcSignPSBT: jest.fn(),
     requestSignCeremonyToken: jest.fn(),
+    requestPsbtSignCeremonyToken: jest.fn(),
+    requestSendSignCeremonyToken: jest.fn(),
     completeCeremonyToken: jest.fn(),
     releaseCeremonyToken: jest.fn(),
     sha256: jest.fn(async (s: string) => `sha256(${s})`),
@@ -108,6 +110,21 @@ beforeEach(() => {
       return token;
     },
   );
+  // F20: PSBT signs mint through the native confirmation sheet.
+  native.requestPsbtSignCeremonyToken.mockImplementation(
+    async (session: string) => {
+      const token = `tok-sign-${session}`;
+      mintRegistry.set(token, {op: 'sign', session});
+      return token;
+    },
+  );
+  native.requestSendSignCeremonyToken.mockImplementation(
+    async (session: string) => {
+      const token = `tok-sign-${session}`;
+      mintRegistry.set(token, {op: 'sign', session});
+      return token;
+    },
+  );
   native.completeCeremonyToken.mockResolvedValue(true);
   native.releaseCeremonyToken.mockResolvedValue(true);
   native.mpcSignPSBT.mockImplementation(async (...a: unknown[]) => {
@@ -149,8 +166,9 @@ describe('3b-6 GG18 legacy end-to-end (F10-GG18 / F19)', () => {
     expect(out).toBe('signed-psbt-gg18-legacy');
     // GG18 branch taken, token minted for this session and passed last.
     expect(native.dklsMpcSignPSBT).not.toHaveBeenCalled();
-    expect(native.requestSignCeremonyToken).toHaveBeenCalledWith(
+    expect(native.requestPsbtSignCeremonyToken).toHaveBeenCalledWith(
       'sess-legacy-1',
+      'cHNidA==',
     );
     expect(native.mpcSignPSBT).toHaveBeenCalledWith(
       'srv',
@@ -179,8 +197,8 @@ describe('3b-6 GG18 legacy end-to-end (F10-GG18 / F19)', () => {
     );
     expect(out).toBe('signed-nostr-psbt-gg18-legacy');
     expect(native.dklsNostrMpcSignPSBT).not.toHaveBeenCalled();
-    expect(native.requestSignCeremonyToken).toHaveBeenCalledTimes(1);
-    const mintedSession = native.requestSignCeremonyToken.mock.calls[0][0];
+    expect(native.requestPsbtSignCeremonyToken).toHaveBeenCalledTimes(1);
+    const mintedSession = native.requestPsbtSignCeremonyToken.mock.calls[0][0];
     const call = native.nostrMpcSignPSBT.mock.calls[0];
     expect(call[call.length - 1]).toBe(`tok-sign-${mintedSession}`);
     expect(native.completeCeremonyToken).toHaveBeenCalledTimes(1);

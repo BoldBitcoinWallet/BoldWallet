@@ -74,6 +74,10 @@ object CeremonyTokens {
         val expiresAtMs: Long,
         val state: State,
         val useCount: Int,
+        // F20: sha256 hex of the PSBT artifact the user confirmed
+        // natively; null = unbound (legacy mints). Enforced at
+        // keysign by contentBindingOk when present.
+        val boundDigest: String? = null,
     )
 
     private val lock = Any()
@@ -88,7 +92,7 @@ object CeremonyTokens {
     }
 
     /** Mint after successful OS auth. Revokes superseded tokens. */
-    fun mint(opClass: OpClass, sessionID: String): String {
+    fun mint(opClass: OpClass, sessionID: String, boundDigest: String? = null): String {
         require(sessionID.isNotEmpty()) { "sessionID required" }
         synchronized(lock) {
             // Single live session: a new ceremony supersedes every
@@ -110,6 +114,7 @@ object CeremonyTokens {
                 expiresAtMs = nowMs() + TTL_MS,
                 state = State.MINTED,
                 useCount = 0,
+                boundDigest = boundDigest,
             )
             return id
         }
@@ -170,6 +175,24 @@ object CeremonyTokens {
             }
             revokeSession(rec.sessionID)
             return true
+        }
+    }
+
+    /**
+     * F20 content binding. Unbound token (boundDigest == null,
+     * legacy mints) → ok. Bound token: the PSBT actually being
+     * signed must hash to the confirmed digest; on mismatch the
+     * whole session is revoked (a swapped artifact kills the
+     * ceremony, never signs) and false returned. Unknown token →
+     * false (verify() has already failed closed by then).
+     */
+    fun contentBindingOk(token: String, actualDigestHex: String?): Boolean {
+        synchronized(lock) {
+            val rec = tokens[token] ?: return false
+            val bound = rec.boundDigest ?: return true
+            if (actualDigestHex != null && actualDigestHex == bound) return true
+            revokeSession(rec.sessionID)
+            return false
         }
     }
 

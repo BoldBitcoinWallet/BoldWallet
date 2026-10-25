@@ -49,6 +49,9 @@ func (a *loopbackAccessor) SaveLocalState(pubkey, localState string) error {
 type loopbackMessenger struct {
 	peer  *ServiceImpl
 	queue chan string
+	// F13: when true, dispatch delivers every message twice back-to-back,
+	// simulating a relay redelivering pre-kill messages to a fresh session.
+	dupEach bool
 }
 
 func newLoopbackMessenger() *loopbackMessenger {
@@ -77,6 +80,9 @@ func (m *loopbackMessenger) dispatch() {
 		// Blocks until the peer's process loop receives; the
 		// dispatcher is dedicated, so the sender never stalls.
 		_ = m.peer.ApplyData(body)
+		if m.dupEach {
+			_ = m.peer.ApplyData(body)
+		}
 	}
 }
 
@@ -243,4 +249,113 @@ func TestF19_LegacyGG18LoopbackKeysign(t *testing.T) {
 	}
 	verify("party A", sigA)
 	verify("party B", sigB)
+}
+
+// TestF13_GG18LoopbackDuplicateDelivery simulates a relay redelivering
+// pre-kill messages: every A->B message is applied twice. The ceremony must
+// complete with well-formed signatures (KeysignECDSA verifies internally) —
+// duplicates are absorbed by the lib's per-party round guards (ok[j] skip),
+// never double-applied, never hanging.
+func TestF13_GG18LoopbackDuplicateDelivery(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping live GG18 ceremony under -short")
+	}
+
+	chainCode := strings.Repeat("cc", 32)
+	accA := &loopbackAccessor{store: map[string]string{}}
+	accB := &loopbackAccessor{store: map[string]string{}}
+	msgAB := newLoopbackMessenger()
+	msgBA := newLoopbackMessenger()
+	msgAB.dupEach = true // A->B duplicated; B->A normal (asymmetric replay)
+
+	dir := t.TempDir()
+	var svcA, svcB *ServiceImpl
+	var errA, errB error
+	var wg sync.WaitGroup
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		svcA, errA = NewService(msgAB, accA, true, dir+"/a.ppm")
+	}()
+	go func() {
+		defer wg.Done()
+		svcB, errB = NewService(msgBA, accB, true, dir+"/b.ppm")
+	}()
+	wg.Wait()
+	if errA != nil {
+		t.Fatalf("NewService A: %v", errA)
+	}
+	if errB != nil {
+		t.Fatalf("NewService B: %v", errB)
+	}
+	msgAB.setPeer(svcB)
+	msgBA.setPeer(svcA)
+
+	var respA, respB *KeygenResponse
+	var kgErrA, kgErrB error
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		respA, kgErrA = svcA.KeygenECDSA(&KeygenRequest{
+			LocalPartyID: "p1",
+			AllParties:   "p1,p2",
+			ChainCodeHex: chainCode,
+		})
+	}()
+	go func() {
+		defer wg.Done()
+		respB, kgErrB = svcB.KeygenECDSA(&KeygenRequest{
+			LocalPartyID: "p2",
+			AllParties:   "p1,p2",
+			ChainCodeHex: chainCode,
+		})
+	}()
+	wg.Wait()
+	if kgErrA != nil {
+		t.Fatalf("keygen A: %v", kgErrA)
+	}
+	if kgErrB != nil {
+		t.Fatalf("keygen B: %v", kgErrB)
+	}
+
+	msg := []byte("f13 gg18 duplicate delivery")
+	msgB64 := base64.StdEncoding.EncodeToString(msg)
+	var sigA, sigB *KeysignResponse
+	var ksErrA, ksErrB error
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		sigA, ksErrA = svcA.KeysignECDSA(&KeysignRequest{
+			PubKey:               respA.PubKey,
+			MessageToSign:        msgB64,
+			KeysignCommitteeKeys: "p1,p2",
+			LocalPartyKey:        "p1",
+			DerivePath:           "m/0/0",
+		})
+	}()
+	go func() {
+		defer wg.Done()
+		sigB, ksErrB = svcB.KeysignECDSA(&KeysignRequest{
+			PubKey:               respB.PubKey,
+			MessageToSign:        msgB64,
+			KeysignCommitteeKeys: "p1,p2",
+			LocalPartyKey:        "p2",
+			DerivePath:           "m/0/0",
+		})
+	}()
+	wg.Wait()
+	if ksErrA != nil {
+		t.Fatalf("keysign A with duplicated inbound: %v", ksErrA)
+	}
+	if ksErrB != nil {
+		t.Fatalf("keysign B: %v", ksErrB)
+	}
+	for name, sig := range map[string]*KeysignResponse{"A": sigA, "B": sigB} {
+		if sig.R == "" || sig.S == "" || sig.DerSignature == "" {
+			t.Fatalf("%s: empty signature fields", name)
+		}
+		if _, err := hex.DecodeString(sig.DerSignature); err != nil {
+			t.Fatalf("%s: bad DER hex: %v", name, err)
+		}
+	}
 }

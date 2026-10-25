@@ -279,6 +279,11 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   NSString *out = wrap(BbmtPsbtIdentityHash(k0));
   free(k0); return out;
 }
++ (NSString *)psbtConfirmation:(NSString *)psbt {
+  char *k0=dupC(psbt);
+  NSString *out = wrap(BbmtPsbtConfirmation(k0));
+  free(k0); return out;
+}
 
 + (NSString *)listenForPeers:(NSString *)partyId pubkey:(NSString *)pubkey port:(NSString *)port timeout:(NSString *)timeout mode:(NSString *)mode {
   char *a=dupC(partyId),*b=dupC(pubkey),*c=dupC(port),*d=dupC(timeout),*e=dupC(mode);

@@ -2,8 +2,83 @@
 
 ## [Unreleased]
 
+## [4.1.1] - 2026-10-25
+
+> **Security release:** the audit-remediation release. Keyshare backup and storage cryptography rebuilt; every sensitive bridge operation now requires a per-ceremony, OS-authenticated token; the LAN transport oracle is closed; the shipped native library is rebuilt on Go 1.26.10 (both platforms previously shipped Go 1.26.0). Testnet4 support (previously Unreleased) ships in this release. GG18 keyshares keep working — no forced migration.
+
+### Security
+
+**Cryptographic storage**
+- Backup files are encrypted with AES-256-GCM + Argon2id (per-file random salt) in a versioned format; legacy CBC backups import once and re-export in the new format (F1).
+- Keyshares are held natively and stored in a device-bound encrypted envelope; plaintext share material no longer crosses the JS bridge on persist, import-decrypt, or read (F15b-1).
+- iOS keyshare items use `WhenPasscodeSetThisDeviceOnly`; ceremonies require an OS biometric/device-credential prompt via the per-ceremony token mint (per-read Keychain biometry is not used — it would break background reads) (F4).
+- Backup import verifies the file's `pub_key` against the share's group key and ciphersuite before accepting it (F2).
+
+**Bridge authorization**
+- All 25 sensitive bridge methods require a per-ceremony token (≤10 min, start-bound, operation-class bound, minted via OS prompt, revoked on cancel) (F10-bridge).
+- GG18 signing and setup are token-gated like DKLs23; pre-existing GG18 keyshares continue to route and sign (F19, F10-GG18).
+- Backup export requires the full 5-rule password policy (F16).
+- Copying a full keyshare to the clipboard is removed; only metadata (npub / pub_key / suite) can be copied (F10-clipboard).
+- The pairing `nsec` is cleared from JS state after setup finalize (F21).
+
+**Transport**
+- LAN padding oracle closed (uniform reject outcome on all failure classes) (F6).
+- Relay HTTP calls have bounded timeouts (5 s poll / 10 s unary) (F25).
+- ECIES library bumped to v2.0.8 — fixes invalid-curve key recovery GO-2023-2380 (F41).
+- DKLs LAN messages now carry a verified payload tag (F33, closed via F24b).
+
+**Input validation**
+- Every bridge method validates nil/length/encoding; Go panics surface as typed errors, never crashes (F11).
+- `fetchData` fails closed on error instead of resolving empty (F11).
+- Shared files arriving via SEND/VIEW are size-capped at 1 MiB with a typed reject (F37).
+
+**Build and supply chain**
+- Native library rebuilt with Go 1.26.10 — fixes the forged-certificate CVE in the shipped binary; the shipped v4.1.0 Android and iOS builds both contained Go 1.26.0 (F29).
+- Node toolchain moved from EOL 20.x to 22.23.4 (F30).
+- `.sha256` / `.asc` for release artifacts are produced manually on the GitHub release page (no automation; F34 handled per release process).
+- `verify-native-artifacts.sh` fails verification if any native artifact is below Go 1.26.10, and gradle fails fast on a stale prebuilt `libdkls_jni.so` (F28, F28-exp).
+- Unused `axios` dependency removed (35 advisories against an unreachable package eliminated).
+
 ### Changed
+- `SessionKeyHex` removed — the field was cryptographically inert (F14-A).
+- Cancel is exact-session only (no prefix matching, no 15-minute poison window) (F12).
+- Fresh random session IDs per ceremony; no stale-state reuse after process death (freshness-by-construction; no persisted epoch) (F13).
 - **Testnet3 → Testnet4** — the testnet network now uses Bitcoin Testnet4 parameters (chain params, address prefixes, default port 48333) and `https://mempool.space/testnet4/api` as the canonical mempool endpoint, following the public deprecation of Testnet3 (reset/exploit, sunset by mempool.space). Legacy `testnet` / `testnet3` network keys and stored provider URLs are accepted as aliases and normalized to `testnet4` on read; v2 address/UTXO cache rows keyed under `testnet3` are purged on first launch, v1 history preserved. Regtest and mainnet are unchanged.
+
+### Fixed
+- Log redaction markers print a literal `<redacted>` instead of HTML-escaped text.
+- Android Keystore AES-GCM envelope uses the provider-generated IV (caller-supplied IVs are rejected by Keystore).
+- Legacy GG18 keyshares route and sign under the token model.
+
+### Not changed (documented residuals)
+- Cleartext HTTP to LAN IPs (F8) — Android `network_security_config` cannot scope IP literals, and LAN pairing depends on it. Runtime peer verification is Wave 6 work.
+- The pairing `nsec` remains inside the keyshare backup (F14-B) — the backup is one secret bundle under one envelope; splitting it would break cross-device restore.
+- GG18 remains supported indefinitely; there is no forced migration to DKLs23.
+- Still tracked for v4.1.2+ / Wave 6+: F31 (fee-rate cap), F32 (LAN trio key derivation), F35 (unsigned host lists), F36 (device-integrity signals), F38 (WebView whitelist), F39 (post-DKG group-key check), F40 (DKLs23 key refresh).
+
+## [4.1.0] - 2026-09-28
+
+> **Feature release:** wallet setup can derive its master chaincode from physical dice rolls instead of any phone's random generator. Roll real dice, enter the same sequence on every ceremony phone, and the sequence — not a device RNG — becomes the master chaincode. Full story: `docs/DICE_USER_GUIDE.md`; byte-level format: `docs/DICE_CHAINCODE_SPEC.md`.
+
+### Added
+- **Dice-rolls setup entropy** — on each phone, open **Use dice rolls** before setup starts. Choose D6 (100 rolls: 5 dice × 20 throws), D20 (60 rolls), or a coin (256 flips), then enter that sequence on every phone in the same order (type, paste, or scan the other phone's QR in the same room — the QR never goes over Wi-Fi or Nostr). Read the short code aloud: it must match on all phones, and the app's `dice_` check stops setup if any phone's sequence differs. A different sequence, or dice on only some phones, aborts the ceremony. Skipping dice leaves setup exactly as before.
+- **Dice setup UI** — `DiceEntropySheet` (roll entry + receipt via `DiceReceipt`), `DeviceEntropyPill` on ceremony screens, `EntropyInfoCard`, and `KeygenFinalizePanel` for the finalize step. Setup flows on Showcase, LAN pairing (`MobilesPairing`), and Nostr pairing (`MobileNostrPairing`) carry the dice session through to the MPC ceremony.
+- **Dice chaincode derivation** — phones exchange dice commitments and `dice_` checksum tags (`services/diceSession.ts`); any mismatch aborts before MPC starts, then the agreed sequence becomes the master chaincode (Go: `BBMTLib/tss/dice_chaincode.go`). Covered by `diceCrosscheck`, `diceEntropy`, and `diceHardening` test suites (commit parsing, checksum matching, bias/format validation, derivation).
+- **Ceremony docs** — `docs/DICE_USER_GUIDE.md` (rules: film the ceremony if you want an audit trail, no cloud keyboard, write rolls on paper, never share the raw rolls), `docs/DICE_CHAINCODE_SPEC.md`, and `docs/SECURITY_AUDIT.md` §7. Note: account descriptors (e.g. Sparrow) contain the account chaincode, not the master chaincode.
+
+### Changed
+- **Pairing screens reworked for dice setup** — `ShowcaseScreen`, `MobilesPairing`, and `MobileNostrPairing` thread the dice session (and its short-code check) through wallet creation; `walletSetupOrchestrator` finalizes with the dice-derived chaincode when dice were used.
+- **Log redaction helper** — `services/logRedact.ts` scrubs secret-shaped values before they reach console output during ceremonies.
+
+## [4.0.7] - 2026-08-28
+
+> **Patch release:** LAN signing party-resolution fix plus pairing transport polish. A duo joiner whose stored committee order differed could resolve the wrong signer ID; the committee is now always persisted as `KeyShare1,KeyShare2`, and `KeyShareN` maps to DKG id N regardless of stored order.
+
+### Fixed
+- **LAN keysign party IDs** — `KeyShareN` resolves to DKG id N (the number in the moniker), not to its position in the persisted committee array; LAN setup persists the committee as `KeyShare1,KeyShare2` on both devices so stored order can no longer skew signer resolution. Regression coverage: `party_test`, `signing_resolve_test`, `lanMpcSetup` tests.
+
+### Changed
+- **Pairing transport selector** — QR transport (static/animated) fails soft: an unrenderable or oversized QR shows "Continue with Local or Nostr" instead of a dead end. Retry copy shortened to "Open Bold to retry." (the force-close warning is removed).
 
 ## [4.0.6] - 2026-08-25
 

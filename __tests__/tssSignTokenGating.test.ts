@@ -9,6 +9,8 @@ jest.mock('../native_modules', () => ({
     nostrMpcSendBTC: jest.fn(),
     nostrMpcSignPSBT: jest.fn(),
     requestSignCeremonyToken: jest.fn(),
+    requestPsbtSignCeremonyToken: jest.fn(),
+    requestSendSignCeremonyToken: jest.fn(),
     completeCeremonyToken: jest.fn(),
     releaseCeremonyToken: jest.fn(),
     sha256: jest.fn(async (s: string) => `sha256(${s})`),
@@ -54,6 +56,8 @@ beforeEach(() => {
   jest.clearAllMocks();
   resolveBackend.mockResolvedValue('dkls23');
   native.requestSignCeremonyToken.mockResolvedValue('tok-sign-1');
+  native.requestPsbtSignCeremonyToken.mockResolvedValue('tok-sign-1');
+  native.requestSendSignCeremonyToken.mockResolvedValue('tok-sign-1');
   native.completeCeremonyToken.mockResolvedValue(true);
   native.releaseCeremonyToken.mockResolvedValue(true);
   native.dklsMpcSignPSBT.mockResolvedValue('signed-psbt');
@@ -65,7 +69,13 @@ describe('3b-2a sign token gating (F15b-2 / F10-bridge)', () => {
   test('mpcSignPSBT mints a sign token and passes it last', async () => {
     const out = await TssProvider.mpcSignPSBT(...SIGN_ARGS);
     expect(out).toBe('signed-psbt');
-    expect(native.requestSignCeremonyToken).toHaveBeenCalledWith('sess-1');
+    // F20: PSBT mints go through the native confirmation sheet,
+    // bound to the exact PSBT being signed.
+    expect(native.requestPsbtSignCeremonyToken).toHaveBeenCalledWith(
+      'sess-1',
+      'cHNidA==',
+    );
+    expect(native.requestSignCeremonyToken).not.toHaveBeenCalled();
     expect(native.dklsMpcSignPSBT).toHaveBeenCalledWith(
       ...SIGN_ARGS,
       'tok-sign-1',
@@ -93,6 +103,7 @@ describe('3b-2a sign token gating (F15b-2 / F10-bridge)', () => {
     const out = await TssProvider.mpcSignPSBT(...SIGN_ARGS, 'tok-owner-9');
     expect(out).toBe('signed-psbt');
     expect(native.requestSignCeremonyToken).not.toHaveBeenCalled();
+    expect(native.requestPsbtSignCeremonyToken).not.toHaveBeenCalled();
     expect(native.dklsMpcSignPSBT).toHaveBeenCalledWith(
       ...SIGN_ARGS,
       'tok-owner-9',
@@ -102,7 +113,7 @@ describe('3b-2a sign token gating (F15b-2 / F10-bridge)', () => {
   });
 
   test('mint failure (user cancel) never reaches the sign call', async () => {
-    native.requestSignCeremonyToken.mockRejectedValueOnce(
+    native.requestPsbtSignCeremonyToken.mockRejectedValueOnce(
       Object.assign(new Error('cancelled'), {
         code: 'CEREMONY_AUTH_REQUIRED',
       }),
@@ -128,9 +139,15 @@ describe('3b-2a sign token gating (F15b-2 / F10-bridge)', () => {
       'tb1qchange',
     );
     expect(out).toBe('sent-txid');
-    expect(native.requestSignCeremonyToken).toHaveBeenCalledWith(
+    // F20-1b: sends mint via the native payment confirmation.
+    expect(native.requestSendSignCeremonyToken).toHaveBeenCalledWith(
       'sess-send-2',
+      'tb1qto',
+      '1000',
+      '10',
+      'tb1qchange',
     );
+    expect(native.requestSignCeremonyToken).not.toHaveBeenCalled();
     const call = native.dklsMpcSendBTCWithUTXOs.mock.calls[0];
     expect(call[call.length - 1]).toBe('tok-sign-1');
     expect(native.completeCeremonyToken).toHaveBeenCalledWith('tok-sign-1');
@@ -145,8 +162,12 @@ describe('3b-2a sign token gating (F15b-2 / F10-bridge)', () => {
     );
     expect(out).toBe('signed-nostr-psbt');
     // No MPC session on the call: wrapper mints a fresh ceremony ID.
-    expect(native.requestSignCeremonyToken).toHaveBeenCalledTimes(1);
-    const mintedSession = native.requestSignCeremonyToken.mock.calls[0][0];
+    // F20: via the PSBT confirmation minter, with the PSBT bound.
+    expect(native.requestPsbtSignCeremonyToken).toHaveBeenCalledTimes(1);
+    expect(native.requestPsbtSignCeremonyToken.mock.calls[0][1]).toBe(
+      'cHNidA==',
+    );
+    const mintedSession = native.requestPsbtSignCeremonyToken.mock.calls[0][0];
     expect(typeof mintedSession).toBe('string');
     expect(mintedSession.length).toBeGreaterThan(0);
     const call = native.dklsNostrMpcSignPSBT.mock.calls[0];
@@ -158,7 +179,10 @@ describe('3b-2a sign token gating (F15b-2 / F10-bridge)', () => {
     native.mpcSignPSBT.mockResolvedValueOnce('signed-gg18');
     const out = await TssProvider.mpcSignPSBT(...SIGN_ARGS);
     expect(out).toBe('signed-gg18');
-    expect(native.requestSignCeremonyToken).toHaveBeenCalledWith('sess-1');
+    expect(native.requestPsbtSignCeremonyToken).toHaveBeenCalledWith(
+      'sess-1',
+      'cHNidA==',
+    );
     expect(native.mpcSignPSBT).toHaveBeenCalledWith(...SIGN_ARGS, 'tok-sign-1');
     expect(native.completeCeremonyToken).toHaveBeenCalledWith('tok-sign-1');
   });
@@ -182,8 +206,12 @@ describe('3b-2a sign token gating (F15b-2 / F10-bridge)', () => {
       'tb1qchange',
     );
     expect(out).toBe('txid-gg18');
-    expect(native.requestSignCeremonyToken).toHaveBeenCalledWith(
+    expect(native.requestSendSignCeremonyToken).toHaveBeenCalledWith(
       'sess-gg18-send',
+      'tb1qto',
+      '1000',
+      '10',
+      'tb1qchange',
     );
     const call = native.mpcSendBTCWithUTXOs.mock.calls[0];
     expect(call[call.length - 1]).toBe('tok-sign-1');
@@ -205,7 +233,10 @@ describe('3b-2a sign token gating (F15b-2 / F10-bridge)', () => {
       'tb1qchange',
     );
     expect(out).toBe('txid-gg18-nostr');
-    expect(native.requestSignCeremonyToken).toHaveBeenCalledTimes(1);
+    expect(native.requestSendSignCeremonyToken).toHaveBeenCalledTimes(1);
+    expect(native.requestSendSignCeremonyToken.mock.calls[0][1]).toBe(
+      'tb1qto',
+    );
     const call = native.nostrMpcSendBTC.mock.calls[0];
     expect(call[call.length - 1]).toBe('tok-sign-1');
   });
@@ -220,14 +251,67 @@ describe('3b-2a sign token gating (F15b-2 / F10-bridge)', () => {
       'cHNidA==',
     );
     expect(out).toBe('signed-gg18-nostr');
-    expect(native.requestSignCeremonyToken).toHaveBeenCalledTimes(1);
+    expect(native.requestPsbtSignCeremonyToken).toHaveBeenCalledTimes(1);
+    expect(native.requestPsbtSignCeremonyToken.mock.calls[0][1]).toBe(
+      'cHNidA==',
+    );
     const call = native.nostrMpcSignPSBT.mock.calls[0];
     expect(call[call.length - 1]).toBe('tok-sign-1');
   });
 
+  test('F20: unparsable PSBT (native confirmation rejects) never signs', async () => {
+    native.requestPsbtSignCeremonyToken.mockRejectedValueOnce(
+      Object.assign(new Error('Could not read this transaction.'), {
+        code: 'CEREMONY_PSBT_INVALID',
+      }),
+    );
+    await expect(TssProvider.mpcSignPSBT(...SIGN_ARGS)).rejects.toThrow(
+      'Could not read this transaction.',
+    );
+    expect(native.dklsMpcSignPSBT).not.toHaveBeenCalled();
+    expect(native.mpcSignPSBT).not.toHaveBeenCalled();
+  });
+
+  test('F20: user declining the native sheet mints nothing, never signs', async () => {
+    native.requestPsbtSignCeremonyToken.mockRejectedValueOnce(
+      Object.assign(new Error('auth required'), {
+        code: 'CEREMONY_AUTH_REQUIRED',
+      }),
+    );
+    await expect(TssProvider.mpcSignPSBT(...SIGN_ARGS)).rejects.toThrow();
+    expect(native.dklsMpcSignPSBT).not.toHaveBeenCalled();
+  });
+
+  test('F20-1b: declining the payment confirmation never sends', async () => {
+    native.requestSendSignCeremonyToken.mockRejectedValueOnce(
+      Object.assign(new Error('auth required'), {
+        code: 'CEREMONY_AUTH_REQUIRED',
+      }),
+    );
+    await expect(
+      TssProvider.mpcSendBTCWithUTXOs(
+        'srv',
+        'p1',
+        'p1,p2',
+        'sess-send-x',
+        'sk',
+        'ek',
+        'dk',
+        'btcpub',
+        'tb1qto',
+        '1000',
+        '10',
+        '[]',
+        'tb1qchange',
+      ),
+    ).rejects.toThrow();
+    expect(native.dklsMpcSendBTCWithUTXOs).not.toHaveBeenCalled();
+    expect(native.mpcSendBTCWithUTXOs).not.toHaveBeenCalled();
+  });
+
   test('GG18 mint failure never reaches the native call (3b-6)', async () => {
     resolveBackend.mockResolvedValueOnce('gg18');
-    native.requestSignCeremonyToken.mockRejectedValueOnce(
+    native.requestPsbtSignCeremonyToken.mockRejectedValueOnce(
       Object.assign(new Error('cancelled'), {
         code: 'CEREMONY_AUTH_REQUIRED',
       }),

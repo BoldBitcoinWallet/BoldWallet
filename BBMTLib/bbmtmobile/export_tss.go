@@ -305,6 +305,12 @@ func BbmtPsbtIdentityHash(psbt *C.char) (out *C.char) {
 	return cString(tss.PsbtIdentityHash(mustGoStr(psbt, "psbt")))
 }
 
+//export BbmtPsbtConfirmation
+func BbmtPsbtConfirmation(psbt *C.char) (out *C.char) {
+	defer recoverBridge(&out)
+	return cString(tss.PsbtConfirmation(mustGoStr(psbt, "psbt")))
+}
+
 //export BbmtMpcSignPSBT
 func BbmtMpcSignPSBT(server, key, parties, session, sessionKey, encKey, decKey, keyshare, psbt *C.char) (out *C.char) {
 	defer recoverBridge(&out)

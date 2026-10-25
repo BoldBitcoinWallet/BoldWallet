@@ -148,6 +148,99 @@ export function requestSignCeremonyToken(sessionID: string): Promise<string> {
   return requestToken('requestSignCeremonyToken', 'sign', sessionID);
 }
 
+/**
+ * F20: mint a SIGN token bound to one PSBT artifact. Native
+ * parses the PSBT (Go), shows the outputs/fee/network on a
+ * native confirmation sheet, and mints only after Confirm +
+ * OS auth. The token carries the confirmed artifact digest;
+ * native keysign rejects any different PSBT. Cancel/decline
+ * rejects CeremonyAuthRequiredError (nothing minted);
+ * unparsable PSBT rejects with the native CEREMONY_PSBT_INVALID
+ * message.
+ */
+export async function requestPsbtSignCeremonyToken(
+  sessionID: string,
+  psbtBase64: string,
+): Promise<string> {
+  try {
+    const fn = BBMTLibNativeModule.requestPsbtSignCeremonyToken as
+      | ((sessionID: string, psbtBase64: string) => Promise<unknown>)
+      | undefined;
+    if (typeof fn !== 'function') {
+      throw new CeremonyAuthRequiredError();
+    }
+    const token = await fn(sessionID, psbtBase64);
+    if (!token || typeof token !== 'string') {
+      throw new CeremonyAuthRequiredError();
+    }
+    registerSessionToken(sessionID, 'sign', token);
+    return token;
+  } catch (error) {
+    if (
+      error instanceof CeremonyNoLockError ||
+      error instanceof CeremonyAuthRequiredError
+    ) {
+      throw error;
+    }
+    dbg('requestPsbtSignCeremonyToken failed', error);
+    throw mapCeremonyError(error);
+  }
+}
+
+/**
+ * F20 Phase 1b: mint a SIGN token bound to one send payment.
+ * Native shows the payment on a native sheet and mints only
+ * after Confirm + OS auth; the token binds the canonical
+ * payment string and native send keysign rejects any different
+ * address/amount/fee/change. This is the ONLY minter the send
+ * wrappers use.
+ */
+export async function requestSendSignCeremonyToken(
+  sessionID: string,
+  payment: {
+    toAddress: string;
+    amountSatoshi: string;
+    feeSatoshi: string;
+    changeAddress: string;
+  },
+): Promise<string> {
+  try {
+    const fn = BBMTLibNativeModule.requestSendSignCeremonyToken as
+      | ((
+          sessionID: string,
+          toAddress: string,
+          amountSatoshi: string,
+          feeSatoshi: string,
+          changeAddress: string,
+        ) => Promise<unknown>)
+      | undefined;
+    if (typeof fn !== 'function') {
+      throw new CeremonyAuthRequiredError();
+    }
+    const token = await fn(
+      sessionID,
+      payment.toAddress,
+      payment.amountSatoshi,
+      payment.feeSatoshi,
+      payment.changeAddress,
+    );
+    if (!token || typeof token !== 'string') {
+      throw new CeremonyAuthRequiredError();
+    }
+    registerSessionToken(sessionID, 'sign', token);
+    return token;
+  } catch (error) {
+    if (
+      error instanceof CeremonyNoLockError ||
+      error instanceof CeremonyAuthRequiredError
+    ) {
+      throw error;
+    }
+    dbg('requestSendSignCeremonyToken failed', error);
+    throw mapCeremonyError(error);
+  }
+}
+
 /** Mint a KEYGEN token (wallet setup + pairing identity). */
 export function requestKeygenCeremonyToken(
   sessionID: string,

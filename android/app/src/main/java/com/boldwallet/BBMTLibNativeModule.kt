@@ -1,8 +1,11 @@
 package com.boldwallet
 
+import android.app.AlertDialog
 import android.app.KeyguardManager
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
 import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
@@ -223,6 +226,130 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.reject("KEYSHARE_EXISTS_ERROR", e.message, e)
             }
         }.start()
+    }
+
+    /**
+     * F36: device-integrity signals (root artifacts, emulator build).
+     * Defense-in-depth with no backend: heuristics only, always resolves a
+     * JSON string `{"compromised":bool,"signals":[...]}`. Fail-open on
+     * internal error (JS treats error/unknown as proceed) — detection must
+     * never brick the app. A hooked device can lie to this check; it raises
+     * the bar for casual rooted use, it is not attestation.
+     */
+    @ReactMethod
+    fun getDeviceIntegritySignals(promise: Promise) {
+        Thread {
+            try {
+                val signals = detectDeviceIntegritySignals()
+                val obj = JSONObject()
+                obj.put("compromised", signals.isNotEmpty())
+                val arr = org.json.JSONArray()
+                for (s in signals) arr.put(s)
+                obj.put("signals", arr)
+                promise.resolve(obj.toString())
+            } catch (e: Exception) {
+                try {
+                    val fallback = JSONObject()
+                    fallback.put("compromised", false)
+                    fallback.put("signals", org.json.JSONArray())
+                    fallback.put("error", e.message ?: "detect-failed")
+                    promise.resolve(fallback.toString())
+                } catch (_: Exception) {
+                    promise.resolve("{\"compromised\":false,\"signals\":[]}")
+                }
+            }
+        }.start()
+    }
+
+    private fun detectDeviceIntegritySignals(): List<String> {
+        val signals = mutableListOf<String>()
+        try {
+            val tags = Build.TAGS
+            if (tags != null && tags.contains("test-keys")) {
+                signals.add("android-test-keys-build")
+            }
+        } catch (_: Exception) {
+        }
+        try {
+            val suPaths =
+                arrayOf(
+                    "/system/bin/su",
+                    "/system/xbin/su",
+                    "/sbin/su",
+                    "/system/sd/xbin/su",
+                    "/system/bin/.ext/.su",
+                    "/data/local/xbin/su",
+                    "/data/local/bin/su",
+                    "/data/local/su",
+                    "/su/bin/su",
+                )
+            if (suPaths.any { File(it).exists() }) {
+                signals.add("android-su-binary-present")
+            }
+        } catch (_: Exception) {
+        }
+        try {
+            val rootPackages =
+                arrayOf(
+                    "com.noshufou.android.su",
+                    "com.noshufou.android.su.elite",
+                    "eu.chainfire.supersu",
+                    "com.koushikdutta.superuser",
+                    "com.thirdparty.superuser",
+                    "com.yellowes.su",
+                    "com.topjohnwu.magisk",
+                    "com.kingroot.kinguser",
+                    "com.kingo.root",
+                    "com.smedialink.oneclickroot",
+                    "com.zhiqupk.root.global",
+                    "com.alephzain.framaroot",
+                )
+            val pm = reactApplicationContext.packageManager
+            for (pkg in rootPackages) {
+                try {
+                    @Suppress("DEPRECATION")
+                    pm.getPackageInfo(pkg, PackageManager.GET_ACTIVITIES)
+                    signals.add("android-root-manager-app")
+                    break
+                } catch (_: PackageManager.NameNotFoundException) {
+                }
+            }
+        } catch (_: Exception) {
+        }
+        try {
+            val fingerprint = Build.FINGERPRINT ?: ""
+            val model = Build.MODEL ?: ""
+            val manufacturer = Build.MANUFACTURER ?: ""
+            val brand = Build.BRAND ?: ""
+            val device = Build.DEVICE ?: ""
+            val product = Build.PRODUCT ?: ""
+            val hardware = Build.HARDWARE ?: ""
+            val emulator =
+                fingerprint.startsWith("generic") ||
+                    fingerprint.contains("vbox") ||
+                    model.contains("google_sdk") ||
+                    model.contains("Emulator") ||
+                    model.contains("Android SDK built for x86") ||
+                    manufacturer.contains("Genymotion") ||
+                    (brand.startsWith("generic") && device.startsWith("generic")) ||
+                    product in
+                    arrayOf(
+                        "google_sdk",
+                        "sdk",
+                        "sdk_x86",
+                        "vbox86p",
+                        "emulator",
+                        "simulator",
+                    ) ||
+                    hardware.contains("goldfish") ||
+                    hardware.contains("ranchu") ||
+                    hardware.contains("vbox86")
+            if (emulator) {
+                signals.add("android-emulator-build")
+            }
+        } catch (_: Exception) {
+        }
+        return signals
     }
 
     /** Summary line only; never logs keyshare contents. */
@@ -1006,7 +1133,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             promise.resolve(result)
         } catch (e: Exception) {
             ld("nostrKeypair", "error: ${e.stackTraceToString()}")
-            promise.resolve(e.message)
+            // F27: reject; resolving e.message is error-text-as-value.
+            promise.reject("NOSTR_KEYPAIR_ERROR", "Failed to generate keypair: ${e.message}", e)
         }
     }
 
@@ -1027,7 +1155,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(result)
             } catch (e: Exception) {
                 ld("hexToNpub", "error: ${e.stackTraceToString()}")
-                promise.resolve(e.message)
+                // F27: reject; resolving e.message is error-text-as-value.
+                promise.reject("HEX_TO_NPUB_ERROR", "Failed to convert hex: ${e.message}", e)
             }
         }.start()
     }
@@ -1600,6 +1729,273 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         )
     }
 
+    /**
+     * F20 fused confirmation: the ONLY sign-token mint for PSBT
+     * sign ceremonies. Parses the PSBT in Go (bbmtPsbtConfirmation —
+     * never JS-supplied summary values), renders the outputs/fee/
+     * network on a native sheet, and mints a digest-bound sign
+     * token only after the user taps Confirm AND authenticates.
+     * Cancel/dismiss settles as CEREMONY_AUTH_REQUIRED (the same
+     * no-mint outcome as declining the prompt; nothing is minted).
+     */
+    @ReactMethod
+    fun requestPsbtSignCeremonyToken(
+        sessionID: String?,
+        psbtBase64: String?,
+        promise: Promise,
+    ) {
+        if (sessionID == null || psbtBase64 == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        if (sessionID.isEmpty()) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "requestPsbtSignCeremonyToken")) {
+                    return@Thread
+                }
+                val confirmation = DklsNative.bbmtPsbtConfirmationNative(psbtBase64)
+                val json = try {
+                    JSONObject(confirmation)
+                } catch (e: JSONException) {
+                    promise.reject(
+                        "CEREMONY_PSBT_INVALID",
+                        "Could not read this transaction. It was not signed.",
+                        e,
+                    )
+                    return@Thread
+                }
+                val digest = json.optString("digest")
+                if (digest.length != 64) {
+                    promise.reject(
+                        "CEREMONY_PSBT_INVALID",
+                        "Could not read this transaction. It was not signed.",
+                        null,
+                    )
+                    return@Thread
+                }
+                val summary = buildPsbtConfirmationSummary(json)
+                showPsbtConfirmation(sessionID, digest, summary, promise)
+            } catch (e: Throwable) {
+                promise.reject(
+                    "CEREMONY_PSBT_INVALID",
+                    "Could not read this transaction. It was not signed.",
+                    e,
+                )
+            }
+        }.start()
+    }
+
+    /** Renders the Go-parsed summary. Amounts stay in sats — exact. */
+    private fun buildPsbtConfirmationSummary(json: JSONObject): String {
+        val sb = StringBuilder()
+        val network = json.optString("network", "testnet4")
+        if (network == "testnet4") {
+            sb.append("TESTNET4 — no real value\n\n")
+        } else {
+            sb.append("MAINNET — real funds\n\n")
+        }
+        val outputs = json.optJSONArray("outputs")
+        var totalOut = 0L
+        if (outputs != null) {
+            for (i in 0 until outputs.length()) {
+                val o = outputs.optJSONObject(i) ?: continue
+                val amount = psbtAmountOf(o)
+                totalOut += amount
+                val change = if (o.optBoolean("isChange")) " (change)" else ""
+                sb.append("→ ").append(o.optString("address"))
+                    .append("  ").append(amount).append(" sat")
+                    .append(change).append('\n')
+            }
+        }
+        sb.append("\nTotal out: ").append(totalOut).append(" sat")
+        sb.append("\nFee: ").append(json.optString("fee", "0")).append(" sat")
+        return sb.toString()
+    }
+
+    private fun psbtAmountOf(o: JSONObject): Long {
+        val s = o.optString("amount")
+        return s.toLongOrNull() ?: o.optLong("amount", 0L)
+    }
+
+    private fun showPsbtConfirmation(
+        sessionID: String,
+        digest: String,
+        summary: String,
+        promise: Promise,
+    ) {
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        var settled = false
+        activity.runOnUiThread {
+            try {
+                val dialog = AlertDialog.Builder(activity)
+                    .setTitle("Confirm transaction")
+                    .setMessage(summary)
+                    .setPositiveButton("Confirm") { _, _ ->
+                        settled = true
+                        promptAndMint(
+                            CeremonyTokens.OpClass.SIGN, sessionID,
+                            "Authenticate to sign", "Approve the signing ceremony",
+                            promise, boundDigest = digest,
+                        )
+                    }
+                    .setNegativeButton("Cancel") { _, _ ->
+                        if (!settled) {
+                            settled = true
+                            rejectCeremonyUnauthorized(promise)
+                        }
+                    }
+                    .create()
+                dialog.setOnCancelListener {
+                    if (!settled) {
+                        settled = true
+                        rejectCeremonyUnauthorized(promise)
+                    }
+                }
+                dialog.show()
+            } catch (e: Exception) {
+                if (!settled) {
+                    settled = true
+                    rejectCeremonyUnauthorized(promise)
+                }
+            }
+        }
+    }
+
+    /**
+     * F20 Phase 1b: fused send confirmation. No PSBT exists yet,
+     * so the sheet renders the JS-supplied payment fields — BUT
+     * the minted token binds sha256 over the canonical payment
+     * string (SendBinding), and every send keysign recomputes it
+     * over its actual arguments. A JS swap after confirmation
+     * (different address/amount/fee/change) mismatches natively
+     * and revokes. The banner network is derived from the
+     * destination address prefix, not from JS claims.
+     */
+    @ReactMethod
+    fun requestSendSignCeremonyToken(
+        sessionID: String?,
+        toAddress: String?,
+        amountSatoshi: String?,
+        feeSatoshi: String?,
+        changeAddress: String?,
+        promise: Promise,
+    ) {
+        if (sessionID == null || toAddress == null || amountSatoshi == null ||
+            feeSatoshi == null || changeAddress == null
+        ) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        if (sessionID.isEmpty()) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        val digest = SendBinding.digest(
+            toAddress, amountSatoshi, feeSatoshi, changeAddress,
+        )
+        val banner = if (SendBinding.isTestnetAddress(toAddress)) {
+            "TESTNET4 — no real value"
+        } else {
+            "MAINNET — real funds"
+        }
+        val sb = StringBuilder()
+        sb.append(banner).append("\n\n")
+        sb.append("Send ").append(amountSatoshi.trim()).append(" sat\n")
+        sb.append("To: ").append(toAddress.trim()).append('\n')
+        sb.append("Fee: ").append(feeSatoshi.trim()).append(" sat")
+        if (changeAddress.isNotBlank()) {
+            sb.append("\nChange: ").append(changeAddress.trim())
+        }
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        var settled = false
+        activity.runOnUiThread {
+            try {
+                val dialog = AlertDialog.Builder(activity)
+                    .setTitle("Confirm payment")
+                    .setMessage(sb.toString())
+                    .setPositiveButton("Confirm") { _, _ ->
+                        settled = true
+                        promptAndMint(
+                            CeremonyTokens.OpClass.SIGN, sessionID,
+                            "Authenticate to sign", "Approve the payment",
+                            promise, boundDigest = digest,
+                        )
+                    }
+                    .setNegativeButton("Cancel") { _, _ ->
+                        if (!settled) {
+                            settled = true
+                            rejectCeremonyUnauthorized(promise)
+                        }
+                    }
+                    .create()
+                dialog.setOnCancelListener {
+                    if (!settled) {
+                        settled = true
+                        rejectCeremonyUnauthorized(promise)
+                    }
+                }
+                dialog.show()
+            } catch (e: Exception) {
+                if (!settled) {
+                    settled = true
+                    rejectCeremonyUnauthorized(promise)
+                }
+            }
+        }
+    }
+
+    /** F20-1b: bound-token send check shared by the send methods. */
+    private fun rejectIfSendBindingMismatch(
+        ceremonyToken: String,
+        toAddress: String,
+        amountSatoshi: String,
+        feeSatoshi: String,
+        changeAddress: String,
+        promise: Promise,
+    ): Boolean {
+        val actual = SendBinding.digest(
+            toAddress, amountSatoshi, feeSatoshi, changeAddress,
+        )
+        if (CeremonyTokens.contentBindingOk(ceremonyToken, actual)) {
+            return false
+        }
+        promise.reject(
+            "CEREMONY_SEND_MISMATCH",
+            "Payment details changed since confirmation — review and confirm again.",
+            null,
+        )
+        return true
+    }
+
+    /** F20: bound-token PSBT check shared by the four sign methods. */
+    private fun rejectIfPsbtBindingMismatch(
+        ceremonyToken: String,
+        psbtBase64: String,
+        promise: Promise,
+    ): Boolean {
+        if (CeremonyTokens.contentBindingOk(ceremonyToken, PsbtDigest.compute(psbtBase64))) {
+            return false
+        }
+        promise.reject(
+            "CEREMONY_PSBT_MISMATCH",
+            "Transaction changed since confirmation — review and confirm again.",
+            null,
+        )
+        return true
+    }
+
     @ReactMethod
     fun requestKeygenCeremonyToken(sessionID: String?, promise: Promise) {
         // F11: JS null reaches Kotlin as null; non-null params would
@@ -1674,6 +2070,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         title: String,
         subtitle: String,
         promise: Promise,
+        boundDigest: String? = null,
     ) {
         if (sessionID.isEmpty()) {
             promise.reject(
@@ -1710,7 +2107,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         result: BiometricPrompt.AuthenticationResult,
                     ) {
                         try {
-                            promise.resolve(CeremonyTokens.mint(opClass, sessionID))
+                            promise.resolve(
+                                CeremonyTokens.mint(opClass, sessionID, boundDigest),
+                            )
                         } catch (e: Exception) {
                             promise.reject(
                                 "CEREMONY_AUTH_REQUIRED",
@@ -1886,6 +2285,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     rejectCeremonyUnauthorized(promise)
                     return@Thread
                 }
+                // F20: sign only the confirmed artifact.
+                if (rejectIfPsbtBindingMismatch(ceremonyToken, psbtBase64, promise)) {
+                    return@Thread
+                }
                 val keyshare = loadKeyshareJSONFromRNES()
                 if (keyshare == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
@@ -1942,6 +2345,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 // 3b-6: GG18 send takes a sign token (strict session).
                 if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
                     rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, receiverAddress, amountSatoshi, feeSatoshi, changeAddress, promise)) {
                     return@Thread
                 }
                 val keyshare = loadKeyshareJSONFromRNES()
@@ -2003,6 +2410,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     rejectCeremonyUnauthorized(promise)
                     return@Thread
                 }
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, receiverAddress, amountSatoshi, estimatedFee, changeAddress, promise)) {
+                    return@Thread
+                }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 if (rejectBbmtUnavailable(promise, "nostrMpcSendBTC")) return@Thread
                 val result = DklsNative.bbmtNostrMpcSendBTCWithUTXOsNative(
@@ -2048,6 +2459,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 // 3b-6: GG18 nostr sign takes a sign token (single-call).
                 if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
                     rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                // F20: sign only the confirmed artifact.
+                if (rejectIfPsbtBindingMismatch(ceremonyToken, psbtBase64, promise)) {
                     return@Thread
                 }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
@@ -2307,6 +2722,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                         return@Thread
                     }
+                // F20: sign only the confirmed artifact.
+                if (rejectIfPsbtBindingMismatch(ceremonyToken, psbtBase64, promise)) {
+                    return@Thread
+                }
                 val result = DklsNative.mpcSignPsbtNative(
                     server, partyID, partiesCSV, sessionID, sessionKey,
                     encKey, decKey, keyshare, psbtBase64,
@@ -2358,6 +2777,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                         return@Thread
                     }
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, toAddress, satoshiAmount, satoshiFees, changeAddress, promise)) {
+                    return@Thread
+                }
                 val result = DklsNative.mpcSendBtcWithUtxosNative(
                     server, partyID, partiesCSV, sessionID, sessionKey,
                     encKey, decKey, keyshare, btcPub, toAddress,
@@ -2397,6 +2820,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     rejectCeremonyUnauthorized(promise)
                     return@Thread
                 }
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, toAddress, satoshiAmount, satoshiFees, changeAddress, promise)) {
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread
@@ -2433,6 +2860,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             try {
                 if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
                     rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                // F20: sign only the confirmed artifact.
+                if (rejectIfPsbtBindingMismatch(ceremonyToken, psbtBase64, promise)) {
                     return@Thread
                 }
                 if (!ensureBbmtRuntime()) {

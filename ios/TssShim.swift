@@ -132,6 +132,10 @@ func TssPsbtIdentityHash(_ psbtBase64: String, _ error: NSErrorPointer) -> Strin
   bbmtResolve(BbmtBridge.psbtIdentityHash(psbtBase64), error)
 }
 
+func TssPsbtConfirmation(_ psbtBase64: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.psbtConfirmation(psbtBase64), error)
+}
+
 func TssSpendingHash(_ senderAddress: String, _ receiverAddress: String, _ amountSatoshi: Int64, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.spendingHash(senderAddress, receiver: receiverAddress, amount: amountSatoshi), error)
 }

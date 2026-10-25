@@ -9,6 +9,8 @@ import {
   requestExportCeremonyToken,
   requestImportCeremonyToken,
   requestKeygenCeremonyToken,
+  requestPsbtSignCeremonyToken,
+  requestSendSignCeremonyToken,
   requestSignCeremonyToken,
 } from './ceremonyAuth';
 import {
@@ -530,8 +532,12 @@ export const TssProvider = {
     ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
+    // F20: PSBT sign mints via the native confirmation sheet,
+    // binding the token to this exact PSBT artifact.
+    const psbtMint = (sid: string) =>
+      requestPsbtSignCeremonyToken(sid, psbtBase64);
     if (backend === 'dkls23') {
-      return withCeremonyToken(sessionID, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+      return withCeremonyToken(sessionID, ceremonyToken, psbtMint, 'sign', token =>
         BBMTLibNativeModule.dklsMpcSignPSBT(
           server,
           partyID,
@@ -546,7 +552,7 @@ export const TssProvider = {
       );
     }
     // 3b-6: GG18 sign takes a sign token (strict session).
-    return withCeremonyToken(sessionID, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+    return withCeremonyToken(sessionID, ceremonyToken, psbtMint, 'sign', token =>
       BBMTLibNativeModule.mpcSignPSBT(
         server,
         partyID,
@@ -578,8 +584,17 @@ export const TssProvider = {
     ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
+    // F20-1b: sends mint via the native payment confirmation,
+    // binding the token to this exact payment.
+    const sendMint = (sid: string) =>
+      requestSendSignCeremonyToken(sid, {
+        toAddress,
+        amountSatoshi: satoshiAmount,
+        feeSatoshi: satoshiFees,
+        changeAddress,
+      });
     if (backend === 'dkls23') {
-      return withCeremonyToken(sessionID, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+      return withCeremonyToken(sessionID, ceremonyToken, sendMint, 'sign', token =>
         BBMTLibNativeModule.dklsMpcSendBTCWithUTXOs(
           server,
           partyID,
@@ -599,7 +614,7 @@ export const TssProvider = {
       );
     }
     // 3b-6: GG18 send takes a sign token (strict session).
-    return withCeremonyToken(sessionID, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+    return withCeremonyToken(sessionID, ceremonyToken, sendMint, 'sign', token =>
       BBMTLibNativeModule.mpcSendBTCWithUTXOs(
         server,
         partyID,
@@ -632,8 +647,17 @@ export const TssProvider = {
     ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
+    // F20-1b: sends mint via the native payment confirmation,
+    // binding the token to this exact payment.
+    const sendMint = (sid: string) =>
+      requestSendSignCeremonyToken(sid, {
+        toAddress,
+        amountSatoshi: satoshiAmount,
+        feeSatoshi: satoshiFees,
+        changeAddress,
+      });
     if (backend === 'dkls23') {
-      return withCeremonyToken(undefined, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+      return withCeremonyToken(undefined, ceremonyToken, sendMint, 'sign', token =>
         BBMTLibNativeModule.dklsNostrMpcSendBTC(
           relaysCSV,
           partiesNpubsCSV,
@@ -649,7 +673,7 @@ export const TssProvider = {
       );
     }
     // 3b-6: GG18 nostr send takes a sign token (single-call).
-    return withCeremonyToken(undefined, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+    return withCeremonyToken(undefined, ceremonyToken, sendMint, 'sign', token =>
       BBMTLibNativeModule.nostrMpcSendBTC(
         relaysCSV,
         partiesNpubsCSV,
@@ -673,8 +697,12 @@ export const TssProvider = {
     ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
+    // F20: PSBT sign mints via the native confirmation sheet,
+    // binding the token to this exact PSBT artifact.
+    const psbtMint = (sid: string) =>
+      requestPsbtSignCeremonyToken(sid, psbtBase64);
     if (backend === 'dkls23') {
-      return withCeremonyToken(undefined, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+      return withCeremonyToken(undefined, ceremonyToken, psbtMint, 'sign', token =>
         BBMTLibNativeModule.dklsNostrMpcSignPSBT(
           relaysCSV,
           partiesNpubsCSV,
@@ -685,7 +713,7 @@ export const TssProvider = {
       );
     }
     // 3b-6: GG18 nostr sign takes a sign token (single-call).
-    return withCeremonyToken(undefined, ceremonyToken, requestSignCeremonyToken, 'sign', token =>
+    return withCeremonyToken(undefined, ceremonyToken, psbtMint, 'sign', token =>
       BBMTLibNativeModule.nostrMpcSignPSBT(
         relaysCSV,
         partiesNpubsCSV,

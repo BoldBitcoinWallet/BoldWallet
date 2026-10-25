@@ -41,6 +41,7 @@ import {
   promptWalletBiometricAuth,
   WALLET_SENSITIVE_ACTION_AUTH,
 } from '../services/walletBiometricAuth';
+import {confirmDeviceIntegrityForSensitiveAction} from '../services/deviceIntegrity';
 import {useTheme} from '../theme';
 import {getFontStyle} from '../theme/utils';
 import {createStyles} from './Styles';
@@ -589,6 +590,14 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     }
     setDevKeyshareAuthPending(true);
     try {
+      // F36: warn-and-confirm on compromised devices before key material shows.
+      const integrityOk = await confirmDeviceIntegrityForSensitiveAction(
+        WALLET_SENSITIVE_ACTION_AUTH.viewKeyshareStructure
+          .integrityActionLabel ?? 'Viewing your keyshare structure',
+      );
+      if (!integrityOk) {
+        return;
+      }
       const ok = await promptWalletBiometricAuth({
         ...WALLET_SENSITIVE_ACTION_AUTH.viewKeyshareStructure,
         showFailureAlert: true,

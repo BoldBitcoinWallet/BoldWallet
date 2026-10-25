@@ -21,6 +21,8 @@ jobs:
       CGO_ENABLED: '1'
       # Node 20 EOL on Actions runners; v6 actions use Node 24 (see GitHub changelog Sep 2025).
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+      # F28-exp: never auto-download another toolchain; go.mod pins the floor.
+      GOTOOLCHAIN: local
     defaults:
       run:
         working-directory: ./BBMTLib
@@ -33,7 +35,8 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.26'
+          # F28-exp: pin exact patch — CVE-2026-111943 fixed in go1.26.10.
+          go-version: '1.26.10'
           cache-dependency-path: BBMTLib/go.sum
 
       - name: Install jq

@@ -21,7 +21,6 @@ func main() {
 		partyNpub       = flag.String("npub", "", "Local party's Nostr public key (npub...). If not provided, generates new keypair")
 		otherPartiesCSV = flag.String("peers", "", "Comma-separated list of other party npubs [required]")
 		sessionID       = flag.String("session", "", "Preshared session ID (auto-generated if not provided)")
-		sessionKey      = flag.String("session-key", "", "Preshared session key in hex (auto-generated if not provided)")
 		chaincode       = flag.String("chaincode", "", "Chain code in hex (auto-generated if not provided)")
 		timeout         = flag.Int("timeout", 90, "Maximum timeout in seconds (default: 90)")
 		nsecEnv         = flag.String("nsec-env", "NOSTR_NSEC", "Environment variable name for nsec (used only if -npub is provided)")
@@ -71,16 +70,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Generated session ID: %s\n", *sessionID)
 	}
 
-	// Generate session key if not provided
-	if *sessionKey == "" {
-		var err error
-		*sessionKey, err = tss.SecureRandom(64)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error: CSPRNG failure generating session key: %v\n", err)
-			os.Exit(1)
-		}
-		fmt.Fprintf(os.Stderr, "Generated session key: %s\n", *sessionKey)
-	}
+	// F14: no session key — the Config field was required-but-never-read.
 
 	// Generate chaincode if not provided
 	if *chaincode == "" {
@@ -107,13 +97,12 @@ func main() {
 
 	// Create config
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     *sessionID,
-		SessionKeyHex: *sessionKey,
-		LocalNpub:     npub,
-		LocalNsec:     nsec,
-		PeersNpub:     peers,
-		MaxTimeout:    time.Duration(*timeout) * time.Second,
+		Relays:     relays,
+		SessionID:  *sessionID,
+		LocalNpub:  npub,
+		LocalNsec:  nsec,
+		PeersNpub:  peers,
+		MaxTimeout: time.Duration(*timeout) * time.Second,
 	}
 
 	if err := cfg.Validate(); err != nil {

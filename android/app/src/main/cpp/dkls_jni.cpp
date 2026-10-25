@@ -587,6 +587,18 @@ Java_com_boldwallet_DklsNative_bbmtParsePSBTDetailsJni(JNIEnv *env, jclass, jstr
 }
 
 extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtPsbtConfirmationJni(JNIEnv *env, jclass, jstring psbt) {
+  if (!bbmt_jni_check_strings(env, {psbt})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
+  const char *p = env->GetStringUTFChars(psbt, nullptr);
+  jstring out = to_jstring(env, BbmtPsbtConfirmation(const_cast<char *>(p)));
+  env->ReleaseStringUTFChars(psbt, p);
+  return out;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtPsbtIdentityHashJni(JNIEnv *env, jclass, jstring psbt) {
   if (!bbmt_jni_check_strings(env, {psbt})) {
     return env->NewStringUTF("error:f11: null or oversized string argument");

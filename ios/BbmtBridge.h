@@ -122,6 +122,7 @@ NS_ASSUME_NONNULL_BEGIN
 + (void)disableLogs;
 + (NSString *)parsePSBTDetails:(NSString *)psbt;
 + (NSString *)psbtIdentityHash:(NSString *)psbt;
++ (NSString *)psbtConfirmation:(NSString *)psbt;
 + (NSString *)mpcSignPSBT:(NSString *)server key:(NSString *)key parties:(NSString *)parties session:(NSString *)session sessionKey:(NSString *)sessionKey encKey:(NSString *)encKey decKey:(NSString *)decKey keyshare:(NSString *)keyshare psbt:(NSString *)psbt;
 + (NSString *)mpcSendBTCWithUTXOs:(NSString *)server key:(NSString *)key parties:(NSString *)parties session:(NSString *)session sessionKey:(NSString *)sessionKey encKey:(NSString *)encKey decKey:(NSString *)decKey keyshare:(NSString *)keyshare btcPub:(NSString *)btcPub receiver:(NSString *)receiver amount:(NSString *)amount fees:(NSString *)fees utxos:(NSString *)utxos change:(NSString *)change;
 + (NSString *)nostrMpcSendBTCWithUTXOs:(NSString *)relays nsec:(NSString *)nsec parties:(NSString *)parties npubsSorted:(NSString *)npubsSorted balance:(NSString *)balance keyshare:(NSString *)keyshare receiver:(NSString *)receiver amount:(NSString *)amount fees:(NSString *)fees utxos:(NSString *)utxos change:(NSString *)change;

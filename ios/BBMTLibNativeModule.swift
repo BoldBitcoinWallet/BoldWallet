@@ -6,7 +6,9 @@
 //
 import Darwin
 import Foundation
+import UIKit
 import LocalAuthentication
+import MachO
 import Network
 import React
 import Security
@@ -36,15 +38,18 @@ class BBMTLibNativeModule: RCTEventEmitter {
     return ["BBMT_APPLE"]
   }
 
-  private func resolve(
-    _ tag: String, _ output: String, _ error: NSError?, _ resolver: @escaping RCTPromiseResolveBlock
+  // F27: resolve-or-reject gate. Go errors reject with a typed code — error
+  // text is never resolved as a value (the pre-F27 behavior of this helper).
+  private func resolveOrReject(
+    _ tag: String, _ output: String, _ error: NSError?, _ resolver: @escaping RCTPromiseResolveBlock,
+    _ rejecter: @escaping RCTPromiseRejectBlock, _ code: String
   ) {
     if error == nil {
       sendLogEvent(tag, output)
       resolver(output)
     } else {
       sendLogEvent(tag, error!.localizedDescription)
-      resolver(error!.localizedDescription)
+      rejecter(code, error!.localizedDescription, error)
     }
   }
 
@@ -348,8 +353,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
       var error: NSError?
       TssSetNetwork(network, &error)
       let output = TssGetNetwork(&error)
-      self?.sendLogEvent("setBtcNetwork", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("setBtcNetwork", error.localizedDescription)
+        rejecter("SET_BTC_NETWORK_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("setBtcNetwork", output)
+        resolver(output)
+      }
     }
   }
 
@@ -372,8 +383,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         senderAddress,
         receiverAddress,
         Int64(amountSatoshi) ?? 0, &error)
-      self?.sendLogEvent("spendingHash", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("spendingHash", error.localizedDescription)
+        rejecter("SPENDING_HASH_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("spendingHash", output)
+        resolver(output)
+      }
     }
   }
 
@@ -396,8 +413,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         utxosWithPathsJSON,
         receiverAddress,
         amountSatoshi, &error)
-      self?.sendLogEvent("spendingHashWithUTXOs", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("spendingHashWithUTXOs", error.localizedDescription)
+        rejecter("SPENDING_HASH_WITH_UTXOS_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("spendingHashWithUTXOs", output)
+        resolver(output)
+      }
     }
   }
 
@@ -420,8 +443,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         senderAddress,
         receiverAddress,
         Int64(amountSatoshi) ?? 0, &error)
-      self?.sendLogEvent("estimateFee", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("estimateFee", error.localizedDescription)
+        rejecter("ESTIMATE_FEES_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("estimateFee", output)
+        resolver(output)
+      }
     }
   }
 
@@ -446,8 +475,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         receiverAddress,
         amountSatoshi,
         changeAddress, &error)
-      self?.sendLogEvent("estimateFeeWithUTXOs", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("estimateFeeWithUTXOs", error.localizedDescription)
+        rejecter("ESTIMATE_FEE_WITH_UTXOS_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("estimateFeeWithUTXOs", output)
+        resolver(output)
+      }
     }
   }
 
@@ -464,8 +499,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssRunRelay(port, &error)
-      self?.sendLogEvent("runRelay", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("runRelay", error.localizedDescription)
+        rejecter("RUN_RELAY_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("runRelay", output)
+        resolver(output)
+      }
     }
   }
 
@@ -481,7 +522,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssStopRelay(&error)
-    resolve("stopRelay", output, error, resolver)
+    resolveOrReject("stopRelay", output, error, resolver, rejecter, "STOP_RELAY_ERROR")
   }
 
   @objc func listenForPeers(
@@ -637,7 +678,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
     var error: NSError?
     let output = TssGenerateKeyPair(&error)
-    resolve("eciesKeypair", output, error, resolver)
+    resolveOrReject("eciesKeypair", output, error, resolver, rejecter, "ECIES_KEYPAIR_ERROR")
   }
 
   // F10 (3a): dead oracle methods aesEncrypt / aesDecrypt /
@@ -823,6 +864,232 @@ class BBMTLibNativeModule: RCTEventEmitter {
       resolver: resolver, rejecter: rejecter)
   }
 
+  /// F20 fused confirmation: the ONLY sign-token mint for PSBT
+  /// sign ceremonies. Parses the PSBT in Go (TssPsbtConfirmation —
+  /// never JS-supplied summary values), renders the outputs/fee/
+  /// network on a native sheet, and mints a digest-bound sign
+  /// token only after the user taps Confirm AND authenticates.
+  /// Cancel mints nothing (settles CEREMONY_AUTH_REQUIRED).
+  @objc func requestPsbtSignCeremonyToken(
+    _ sessionID: String?,
+    psbtBase64: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID, let psbtBase64 = psbtBase64 else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    guard !sessionID.isEmpty else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      var error: NSError?
+      let output = TssPsbtConfirmation(psbtBase64, &error)
+      guard error == nil,
+            let data = output.data(using: .utf8),
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let digest = json["digest"] as? String, digest.count == 64
+      else {
+        rejecter(
+          "CEREMONY_PSBT_INVALID",
+          "Could not read this transaction. It was not signed.", error)
+        return
+      }
+      let summary = self?.psbtConfirmationSummary(json) ?? ""
+      self?.showPsbtConfirmation(
+        sessionID: sessionID, digest: digest, summary: summary,
+        resolver: resolver, rejecter: rejecter)
+    }
+  }
+
+  /// Renders the Go-parsed summary. Amounts stay in sats — exact.
+  private func psbtConfirmationSummary(_ json: [String: Any]) -> String {
+    var lines: [String] = []
+    let network = (json["network"] as? String) ?? "testnet4"
+    lines.append(network == "testnet4" ? "TESTNET4 — no real value" : "MAINNET — real funds")
+    lines.append("")
+    var totalOut: Int64 = 0
+    if let outputs = json["outputs"] as? [[String: Any]] {
+      for o in outputs {
+        let amount = psbtAmount(o["amount"])
+        totalOut += amount
+        let change = (o["isChange"] as? Bool) == true ? " (change)" : ""
+        lines.append("→ \((o["address"] as? String) ?? "?")  \(amount) sat\(change)")
+      }
+    }
+    lines.append("")
+    lines.append("Total out: \(totalOut) sat")
+    lines.append("Fee: \(psbtAmountString(json["fee"])) sat")
+    return lines.joined(separator: "\n")
+  }
+
+  private func psbtAmount(_ v: Any?) -> Int64 {
+    if let s = v as? String { return Int64(s) ?? 0 }
+    if let n = v as? NSNumber { return n.int64Value }
+    return 0
+  }
+
+  private func psbtAmountString(_ v: Any?) -> String {
+    if let s = v as? String { return s }
+    if let n = v as? NSNumber { return n.stringValue }
+    return "0"
+  }
+
+  private func showPsbtConfirmation(
+    sessionID: String, digest: String, summary: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, let presenter = self.topViewController() else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        return
+      }
+      var settled = false
+      let alert = UIAlertController(
+        title: "Confirm transaction", message: summary, preferredStyle: .alert)
+      alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+        if !settled {
+          settled = true
+          rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        }
+      })
+      alert.addAction(UIAlertAction(title: "Confirm", style: .default) { _ in
+        settled = true
+        self.promptAndMint(
+          opClass: .sign, sessionID: sessionID,
+          title: "Authenticate to sign", subtitle: "Approve the signing ceremony",
+          resolver: resolver, rejecter: rejecter, boundDigest: digest)
+      })
+      presenter.present(alert, animated: true)
+    }
+  }
+
+  private func topViewController() -> UIViewController? {
+    let keyWindow = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .first { $0.isKeyWindow }
+    var top = keyWindow?.rootViewController
+    while let presented = top?.presentedViewController {
+      top = presented
+    }
+    return top
+  }
+
+  /// F20 Phase 1b: fused send confirmation. No PSBT exists yet,
+  /// so the sheet renders the JS-supplied payment fields — BUT
+  /// the minted token binds sha256 over the canonical payment
+  /// string (SendBinding), and every send keysign recomputes it
+  /// over its actual arguments. A JS swap after confirmation
+  /// (different address/amount/fee/change) mismatches natively
+  /// and revokes. The banner network is derived from the
+  /// destination address prefix, not from JS claims.
+  @objc func requestSendSignCeremonyToken(
+    _ sessionID: String?,
+    toAddress: String?,
+    amountSatoshi: String?,
+    feeSatoshi: String?,
+    changeAddress: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID, let toAddress = toAddress,
+          let amountSatoshi = amountSatoshi, let feeSatoshi = feeSatoshi,
+          let changeAddress = changeAddress
+    else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    guard !sessionID.isEmpty else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    let digest = SendBinding.digest(
+      toAddress: toAddress, amountSatoshi: amountSatoshi,
+      feeSatoshi: feeSatoshi, changeAddress: changeAddress)
+    let trim = { (s: String) in s.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var lines = [
+      SendBinding.isTestnetAddress(toAddress) ? "TESTNET4 — no real value" : "MAINNET — real funds",
+      "",
+      "Send \(trim(amountSatoshi)) sat",
+      "To: \(trim(toAddress))",
+      "Fee: \(trim(feeSatoshi)) sat",
+    ]
+    if !trim(changeAddress).isEmpty {
+      lines.append("Change: \(trim(changeAddress))")
+    }
+    showSendConfirmation(
+      sessionID: sessionID, digest: digest,
+      summary: lines.joined(separator: "\n"),
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  private func showSendConfirmation(
+    sessionID: String, digest: String, summary: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, let presenter = self.topViewController() else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        return
+      }
+      var settled = false
+      let alert = UIAlertController(
+        title: "Confirm payment", message: summary, preferredStyle: .alert)
+      alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+        if !settled {
+          settled = true
+          rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        }
+      })
+      alert.addAction(UIAlertAction(title: "Confirm", style: .default) { _ in
+        settled = true
+        self.promptAndMint(
+          opClass: .sign, sessionID: sessionID,
+          title: "Authenticate to sign", subtitle: "Approve the payment",
+          resolver: resolver, rejecter: rejecter, boundDigest: digest)
+      })
+      presenter.present(alert, animated: true)
+    }
+  }
+
+  /// F20-1b: bound-token send check shared by the send methods.
+  /// Returns true when the caller must stop (already rejected).
+  private func rejectIfSendBindingMismatch(
+    token: String, toAddress: String, amountSatoshi: String,
+    feeSatoshi: String, changeAddress: String,
+    rejecter: RCTPromiseRejectBlock
+  ) -> Bool {
+    let actual = SendBinding.digest(
+      toAddress: toAddress, amountSatoshi: amountSatoshi,
+      feeSatoshi: feeSatoshi, changeAddress: changeAddress)
+    if CeremonyTokens.contentBindingOk(token: token, actualDigestHex: actual) {
+      return false
+    }
+    rejecter(
+      "CEREMONY_SEND_MISMATCH",
+      "Payment details changed since confirmation — review and confirm again.", nil)
+    return true
+  }
+
+  /// F20: bound-token PSBT check shared by the four sign methods.
+  /// Returns true when the caller must stop (already rejected).
+  private func rejectIfPsbtBindingMismatch(
+    token: String, psbtBase64: String,
+    rejecter: RCTPromiseRejectBlock
+  ) -> Bool {
+    if CeremonyTokens.contentBindingOk(
+      token: token, actualDigestHex: PsbtDigest.compute(psbtBase64)) {
+      return false
+    }
+    rejecter(
+      "CEREMONY_PSBT_MISMATCH",
+      "Transaction changed since confirmation — review and confirm again.", nil)
+    return true
+  }
+
   @objc func requestKeygenCeremonyToken(
     _ sessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
@@ -894,7 +1161,8 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// failure → CEREMONY_AUTH_REQUIRED (no reason oracle).
   private func promptAndMint(
     opClass: CeremonyOpClass, sessionID: String, title: String, subtitle: String,
-    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock,
+    boundDigest: String? = nil
   ) {
     guard !sessionID.isEmpty else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
@@ -919,7 +1187,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
     let reason = title + " — " + subtitle
     context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
       if success {
-        resolver(CeremonyTokens.mint(opClass: opClass, sessionID: sessionID))
+        resolver(CeremonyTokens.mint(opClass: opClass, sessionID: sessionID, boundDigest: boundDigest))
       } else {
         // User cancel, fallback, lockout, failure: never mint.
         rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
@@ -1008,7 +1276,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssSha256(message, &error)
-    resolve("sha256", output, error, resolver)
+    resolveOrReject("sha256", output, error, resolver, rejecter, "SHA256_ERROR")
   }
 
   @objc func secureRandom(
@@ -1017,7 +1285,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
   ) {
     var error: NSError?
     let output = TssSecureRandom(Int32(length), &error)
-    resolve("secureRandom", output, error, resolver)
+    resolveOrReject("secureRandom", output, error, resolver, rejecter, "SECURE_RANDOM_ERROR")
   }
 
   @objc func recoverPubkey(
@@ -1032,7 +1300,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssSecP256k1Recover(r, s, v, h, &error)
-    resolve("recoverPubkey", output, error, resolver)
+    resolveOrReject("recoverPubkey", output, error, resolver, rejecter, "RECOVER_PUBKEY_ERROR")
   }
 
   @objc func derivePubkey(
@@ -1052,7 +1320,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("DERIVE_PUBKEY_ERROR", "Failed to derive pubkey: \(error.localizedDescription)", error)
       return
     }
-    resolve("derivePubkey", output, nil, resolver)
+    resolveOrReject("derivePubkey", output, nil, resolver, rejecter, "DERIVE_PUBKEY_ERROR")
   }
 
   @objc func encodeXpub(
@@ -1067,7 +1335,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssEncodeXpub(hexPubkey, hexChaincode, network, &error)
-    resolve("encodeXpub", output, error, resolver)
+    resolveOrReject("encodeXpub", output, error, resolver, rejecter, "ENCODE_XPUB_ERROR")
   }
 
   @objc func getOutputDescriptor(
@@ -1082,7 +1350,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssGetOutputDescriptor(hexPubkey, hexChaincode, network, addressType, &error)
-    resolve("getOutputDescriptor", output, error, resolver)
+    resolveOrReject("getOutputDescriptor", output, error, resolver, rejecter, "GET_OUTPUT_DESCRIPTOR_ERROR")
   }
 
   @objc func appendOutputDescriptorChecksum(
@@ -1097,7 +1365,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssAppendOutputDescriptorChecksum(descriptorBody, &error)
-    resolve("appendOutputDescriptorChecksum", output, error, resolver)
+    resolveOrReject("appendOutputDescriptorChecksum", output, error, resolver, rejecter, "APPEND_OUTPUT_DESCRIPTOR_CHECKSUM_ERROR")
   }
 
   @objc func btcAddress(
@@ -1128,7 +1396,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("BTC_ADDRESS_ERROR", "Failed to generate BTC address: \(error.localizedDescription)", error)
       return
     }
-    resolve("btcAddress", output, nil, resolver)
+    resolveOrReject("btcAddress", output, nil, resolver, rejecter, "BTC_ADDRESS_ERROR")
   }
 
   @objc func setFeePolicy(
@@ -1143,7 +1411,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssUseFeePolicy(policy, &error)
-    resolve("setFeePolicy", output, error, resolver)
+    resolveOrReject("setFeePolicy", output, error, resolver, rejecter, "SET_FEE_POLICY_ERROR")
   }
 
   /// 3b-2d B15/B16: native-held API allowlist store.
@@ -1208,7 +1476,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("SET_API_ERROR", error.localizedDescription, error)
       return
     }
-    resolve("setAPI", output, nil, resolver)
+    resolveOrReject("setAPI", output, nil, resolver, rejecter, "SET_API_ERROR")
   }
 
   @objc func setFeeAPIs(
@@ -1232,7 +1500,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("SET_FEE_APIS_ERROR", error.localizedDescription, error)
       return
     }
-    resolve("setFeeAPIs", output, nil, resolver)
+    resolveOrReject("setFeeAPIs", output, nil, resolver, rejecter, "SET_FEE_APIS_ERROR")
   }
   
   @objc func totalUTXO(
@@ -1247,7 +1515,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
     var error: NSError?
     let output = TssTotalUTXO(address, &error)
-    resolve("totalUTXO", output, error, resolver)
+    resolveOrReject("totalUTXO", output, error, resolver, rejecter, "TOTAL_UTXO_ERROR")
   }
 
   @objc func preparams(
@@ -1299,7 +1567,13 @@ class BBMTLibNativeModule: RCTEventEmitter {
     var error: NSError?
     let output = TssJoinKeygen(
       ppmFile, partyID, partiesCSV, encKey, decKey, sessionID, server, chaincode, sessionKey, &error)
-    resolve("mpcTssSetup", output, error, resolver)
+    // F27-GG18: reject Go errors; never resolve error text as a keyshare.
+    if let error = error {
+      sendLogEvent("mpcTssSetup", error.localizedDescription)
+      rejecter("MPC_TSS_SETUP_ERROR", error.localizedDescription, error)
+    } else {
+      resolveOrReject("mpcTssSetup", output, nil, resolver, rejecter, "MPC_TSS_SETUP_ERROR")
+    }
   }
 
   @objc func nostrKeypair(
@@ -1320,8 +1594,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssNostrKeypair(&error)
-      self?.sendLogEvent("nostrKeypair", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a keypair.
+      if let error = error {
+        self?.sendLogEvent("nostrKeypair", error.localizedDescription)
+        rejecter("NOSTR_KEYPAIR_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("nostrKeypair", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1338,8 +1618,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssHexToNpub(hexKey, &error)
-      self?.sendLogEvent("hexToNpub", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("hexToNpub", error.localizedDescription)
+        rejecter("HEX_TO_NPUB_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("hexToNpub", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1512,6 +1798,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
         rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
         return
       }
+      // F20: sign only the confirmed artifact.
+      guard let self = self, !self.rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
+        return
+      }
       let output = BbmtBridge.mpcSignPsbt(
         withServer: server, key: partyID, parties: partiesCSV, session: sessionID,
         sessionKey: sessionKey, encKey: encKey, decKey: decKey, keyshare: keyshare,
@@ -1549,6 +1839,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       }
       guard let keyshare = self?.loadKeyshareJSONFromRNES() else {
         rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        return
+      }
+      // F20-1b: pay only the confirmed payment.
+      guard let self = self, !self.rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: toAddress, amountSatoshi: satoshiAmount, feeSatoshi: satoshiFees, changeAddress: changeAddress, rejecter: rejecter) else {
         return
       }
       let output = BbmtBridge.mpcSendBtc(
@@ -1590,6 +1884,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       do {
         let (partyNsec, keyshareJSON) = try self?.nsecAndKeyshareJSONFromRNES()
           ?? ("", "")
+        // F20-1b: pay only the confirmed payment.
+        guard let self = self, !self.rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: toAddress, amountSatoshi: satoshiAmount, feeSatoshi: satoshiFees, changeAddress: changeAddress, rejecter: rejecter) else {
+          return
+        }
         let output = BbmtBridge.nostrMpcSendBtc(
           withRelays: relaysCSV, nsec: partyNsec, parties: partiesNpubsCSV,
           npubsSorted: npubsSorted, balance: balanceSats, keyshare: keyshareJSON,
@@ -1630,6 +1928,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       do {
         let (partyNsec, keyshareJSON) = try self?.nsecAndKeyshareJSONFromRNES()
           ?? ("", "")
+        // F20: sign only the confirmed artifact.
+        guard let self = self, !self.rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
+          return
+        }
         let output = BbmtBridge.nostrMpcSignPsbt(
           withRelays: relaysCSV, nsec: partyNsec, parties: partiesNpubsCSV,
           npubsSorted: npubsSorted, keyshare: keyshareJSON, psbt: psbtBase64)
@@ -1666,8 +1968,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
       var error: NSError?
       let output = TssNostrJoinKeygen(
         relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, chaincode, ppmFile, &error)
-      self?.sendLogEvent("nostrMpcTssSetup", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a keyshare.
+      if let error = error {
+        self?.sendLogEvent("nostrMpcTssSetup", error.localizedDescription)
+        rejecter("NOSTR_MPC_TSS_SETUP_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("nostrMpcTssSetup", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1810,8 +2118,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssParsePSBTDetails(psbtBase64, &error)
-      self?.sendLogEvent("parsePSBTDetails", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("parsePSBTDetails", error.localizedDescription)
+        rejecter("PARSE_PSBT_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("parsePSBTDetails", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1864,6 +2178,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
       return
     }
+    // F20: sign only the confirmed artifact.
+    guard !rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1884,8 +2202,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         decKey,
         keyshare,
         psbtBase64, &error)
-      self.sendLogEvent("mpcSignPSBT", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("mpcSignPSBT", error.localizedDescription)
+        rejecter("MPC_SIGN_PSBT_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("mpcSignPSBT", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1918,6 +2242,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
       return
     }
+    // F20-1b: pay only the confirmed payment.
+    guard !rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: receiverAddress, amountSatoshi: amountSatoshi, feeSatoshi: feeSatoshi, changeAddress: changeAddress, rejecter: rejecter) else {
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1943,8 +2271,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         feeSatoshi,
         utxosWithPathsJSON,
         changeAddress, &error)
-      self.sendLogEvent("mpcSendBTCWithUTXOs", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("mpcSendBTCWithUTXOs", error.localizedDescription)
+        rejecter("MPC_SEND_BTC_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("mpcSendBTCWithUTXOs", output)
+        resolver(output)
+      }
     }
   }
 
@@ -1971,6 +2305,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
     // 3b-6: GG18 nostr send takes a sign token (single-call).
     guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    // F20-1b: pay only the confirmed payment.
+    guard !rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: receiverAddress, amountSatoshi: amountSatoshi, feeSatoshi: estimatedFee, changeAddress: changeAddress, rejecter: rejecter) else {
       return
     }
     DispatchQueue.global(qos: .background).async { [weak self] in
@@ -2006,8 +2344,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
         estimatedFee,
         utxosWithPathsJSON,
         changeAddress, &error)
-      self.sendLogEvent("nostrMpcSendBTC", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("nostrMpcSendBTC", error.localizedDescription)
+        rejecter("NOSTR_MPC_SEND_BTC_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("nostrMpcSendBTC", output)
+        resolver(output)
+      }
     }
   }
 
@@ -2026,6 +2370,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
     // 3b-6: GG18 nostr sign takes a sign token (single-call).
     guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
       rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    // F20: sign only the confirmed artifact.
+    guard !rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
       return
     }
     DispatchQueue.global(qos: .background).async { [weak self] in
@@ -2051,8 +2399,14 @@ class BBMTLibNativeModule: RCTEventEmitter {
       var error: NSError?
       let output = TssNostrMpcSignPSBT(
         relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64, &error)
-      self.sendLogEvent("nostrMpcSignPSBT", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("nostrMpcSignPSBT", error.localizedDescription)
+        rejecter("NOSTR_MPC_SIGN_PSBT_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("nostrMpcSignPSBT", output)
+        resolver(output)
+      }
     }
   }
 
@@ -2102,6 +2456,78 @@ class BBMTLibNativeModule: RCTEventEmitter {
   ) {
     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
       resolve(self?.keyshareExistsInRNES() ?? false)
+    }
+  }
+
+  /// F36: device-integrity signals (jailbreak artifacts, sandbox escape,
+  /// suspicious dylibs incl. Frida, simulator build). Defense-in-depth with
+  /// no backend: heuristics only, always resolves a JSON string
+  /// `{"compromised":bool,"signals":[...]}`. Fail-open on internal error —
+  /// detection must never brick the app. A hooked device can lie to this
+  /// check; it raises the bar for casual jailbroken use, it is not
+  /// attestation (that needs App Attest plus backend verification).
+  @objc func getDeviceIntegritySignals(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .userInitiated).async {
+      var signals: [String] = []
+      let fm = FileManager.default
+      let jbPaths = [
+        "/Applications/Cydia.app",
+        "/Library/MobileSubstrate/MobileSubstrate.dylib",
+        "/bin/bash",
+        "/usr/sbin/sshd",
+        "/etc/apt",
+        "/private/var/lib/apt/",
+        "/private/var/stash",
+        "/private/var/lib/cydia",
+        "/private/var/tmp/cydia.log",
+        "/Applications/RockApp.app",
+        "/Applications/Icy.app",
+        "/Applications/WinterBoard.app",
+        "/Library/MobileSubstrate/DynamicLibraries/Veency.plist",
+        "/System/Library/LaunchDaemons/com.ikey.bbot.plist",
+        "/System/Library/LaunchDaemons/com.saurik.Cydia.Startup.plist",
+      ]
+      for p in jbPaths {
+        if fm.fileExists(atPath: p) {
+          signals.append("ios-jailbreak-artifact")
+          break
+        }
+      }
+      // Sandbox escape probe: App Store apps cannot write outside their container.
+      let probe = "/private/" + UUID().uuidString
+      if fm.createFile(atPath: probe, contents: Data("x".utf8)) {
+        try? fm.removeItem(atPath: probe)
+        if !signals.contains("ios-jailbreak-artifact") {
+          signals.append("ios-sandbox-escape")
+        }
+      }
+      // Suspicious injected dylibs (Substrate / SSL kill-switches / Frida gadget).
+      let imageCount = _dyld_image_count()
+      for i in 0..<imageCount {
+        if let cName = _dyld_get_image_name(i) {
+          let name = String(cString: cName).lowercased()
+          if name.contains("mobilesubstrate") || name.contains("cydiasubstrate")
+            || name.contains("sslkillswitch") || name.contains("frida")
+            || name.contains("cynject") {
+            signals.append("ios-suspicious-dylib")
+            break
+          }
+        }
+      }
+      #if targetEnvironment(simulator)
+      signals.append("ios-simulator-build")
+      #endif
+      let unique = Array(Set(signals)).sorted()
+      let payload: [String: Any] = ["compromised": !unique.isEmpty, "signals": unique]
+      if let data = try? JSONSerialization.data(withJSONObject: payload),
+        let json = String(data: data, encoding: .utf8) {
+        resolve(json)
+      } else {
+        resolve("{\"compromised\":false,\"signals\":[]}")
+      }
     }
   }
 
