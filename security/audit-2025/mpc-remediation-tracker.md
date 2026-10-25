@@ -40,6 +40,13 @@ Bundle B1 (F1+F2+F16) is tracked as ONE Critical sprint item. Do not split it.
 | F13 | Background/kill: warning-only; replay memory is RAM-only | Med | services/mpcKeepAlive.ts:200 | Ceremony epoch or fresh session IDs post-death; persist seen-IDs | TBD | Open |
 | F31 | No fee-rate cap: mempool API value flows unbounded into send (only 1 sat/vB floor) | Med | BBMTLib/tss/btc.go:233,1392,1191 | Cap fee rate (sanity max sat/vB) + cap total fee vs amount; reject absurd mempool values | TBD | Open (v4.1.1 Track B, NEW — Wave 6+) |
 | F32 | Trio LAN session key derived from public values only (sha256 of sessionID + masterHost) | High | BBMTLib/tss/lan_crypto.go:9-13 | Derive from a secret (PAKE/pairing secret or ECIES-wrapped random key); protocol change | TBD | Open (v4.1.1 Track B, NEW — Wave 6+) |
+| F35 | Unsigned GitHub-raw endpoint lists drive mempool APIs + Nostr relays (repo compromise = traffic redirect; feeds F31 fee path) | High | utils.js fetchDynamicAPIEndpoints (~855), fetchDynamicNostrRelays; consumers mempoolApiBase.ts:118, mempoolProvidersStore.ts:248, utils.js:976 | Pin commit hash + signature check, or remove dynamic fetch (fallback to hardcoded lists) | TBD | Open (reconciliation NEW — Wave 6+) |
+| F36 | No device-integrity signals (root/jailbreak/Play Integrity/App Attest); biometry only | Med | (zero hits in app source; biometry in walletBiometricAuth.ts, SecureStorage.kt, BBMTLibNativeModule) | Add Play Integrity + App Attest as defense-in-depth | TBD | Open (reconciliation NEW — v4.1.2) |
+| F37 | SEND */* accepts any file; peek path reads whole file uncapped (large-file OOM); opaque bytes default to keyshare modal | Med | services/incomingFileClassifier.ts readFilePeekBase64 + classifyIncomingFile default | Cap peek at ~1MB (reject above); keep password+envelope gate | TBD | Open (reconciliation NEW — size cap is v4.1.1-eligible, rest Wave 6) |
+| F38 | WebView originWhitelist * on quotes marquee (local HTML, escaped segments, nav gate — defense-in-depth only) | Low | screens/loading/LoadingQuotesMarquee.tsx:178; loadingQuotesMarqueeHtml.ts | Tighten to about:blank + javaScriptEnabled false after verifying CSS-only animation | TBD | Open (reconciliation NEW — v4.1.2) |
+| F39 | No post-DKG group-key cross-check (no exchange-compare, test-sign, or visual confirm; divergent keys = fund lockout) | Med | BBMTLib/dkls/nostr.go runNostrDKG (->KeyshareJSONFromHandle, no compare); JS setup flow | Exchange + compare group-key hashes post-DKG, or test-sign before first deposit | TBD | Open (reconciliation NEW — Wave 6+) |
+| F40 | DKLs23 key refresh unavailable (lib tss_refresh_new returns ProtocolMismatch for DKLs23; FROST-only; zero app callers) | Med | libtss/libtss-ffi/src/session.rs:231; session.go NewRefreshSession | libtss DKLs refresh support, or re-DKG UX (manual rotation via new wallet exists today) | TBD | Open (reconciliation NEW — v4.1.2+) |
+| F41 | ecies/go GO-2023-2380 reachable (invalid-curve key recovery; relay-fed decrypt oracle on duo-ECIES path) | High | tss/cipher.go:50,69 via DecryptLANRelayPayload (lan_pump.go:72); ecies/go v2.0.3, fixed v2.0.8 | Bump to v2.0.8 + rebuild + re-verify; full oracle analysis in Wave 6 (F24b uniform-keep may blunt observability) | TBD | Open (govulncheck NEW — v4.1.1-candidate) |
 
 Fix waves: (1) F7+sweep done. (2) B1 done. (3) F15(partial→F15b),F3,F4 done. Wave 3a = F15b-1+F10-clip (GREEN, unmerged); Wave 3b = F15b-2+F18+F10-bridge+F4-auth (implemented incl. 3b-6 GG18 tokenization, pending QA/merge); Wave 4 = F11+F6; then F12,F14; F13. F19 Done (tokenized); F20 deferred; F21 Done (3b first commit). F10-GG18 Done. F23 Done (3b-6d v2 file fix; retest round-trip gates merge).
 Still owner-side: govulncheck, npm audit, gitleaks/trufflehog history, FROST/DKLs23 fork diff.
@@ -539,3 +546,47 @@ Low cleanup (unreachable, zero Kotlin callers) — not Wave 4.
   load-bearing for LAN pairing (peers.go:112,236; lanMpcSetup.ts:143) and
   IP literals cannot be allowlisted via domain-config, so correct scoping
   needs real work + device testing (F8, Wave 6/5.5).
+
+## Reconciliation: original audit vs tracker (2026-10-25, pre-consolidation)
+- SCOPE LIMIT: security/audit-2025/mpc-wallet-security-report.md + layer
+  files do NOT exist in the repo (only tracker, regression plan, wave2
+  notes, wave3 design). Full Step-0b comparison was impossible; the six
+  items below were verified from the review text against source + tracker.
+  The reference report must cite this section, not claim a full re-read.
+- All six CONFIRMED in source, all six UNTRACKED before today. Numbered now:
+  F35 GitHub-raw unsigned lists (High, Wave 6+) — TWO fetches, not one:
+  mempool hosts (README.md) + Nostr relays (NOSTR.md). Filter
+  `url.includes('mempool')` is attacker-satisfiable. Bigger than described.
+  F36 device integrity absent (Med, v4.1.2) — biometry only, zero
+  root/jailbreak/Play Integrity/App Attest hits. (Tracker F9 is a different
+  finding — bridge strings; original-audit F9 vs tracker F9 collided.)
+  F37 intent hardening (Med) — manifest structure OK (MainActivity exported
+  as required; service not exported; allowBackup=false). Residuals: (a) no
+  size cap on shared-file peek (large-file OOM — v4.1.1-eligible, ~5 lines
+  + test); (b) opaque-bytes->keyshare default is fail-safe (password gate
+  + B1 envelope still apply).
+  F38 WebView originWhitelist * (Low, v4.1.2) — local HTML, escaped
+  segments, nav gate; tighten after verifying CSS-only animation.
+  F39 post-DKG cross-check absent (Med, Wave 6+) — impact is fund lockout,
+  not theft (in-protocol DKG commitments + F2 import binding mitigate).
+  F40 DKLs23 refresh unavailable (Med, v4.1.2+) — lib ProtocolMismatch;
+  manual rotation (new wallet + move funds) exists.
+- npm audit (prod, Node 22.23.4): 18 vulns (1 low, 7 mod, 9 high, 1 crit).
+  Runtime-reachable: NONE in first-party code. axios@1.13.6 (35 advisories,
+  High) is an UNUSED direct dep (zero imports outside stale untracked
+  bundle.js) -> hygiene: remove from package.json (v4.1.1-eligible,
+  zero-risk). ws/shell-quote/js-yaml/image-size/etc are metro/CLI/devtools
+  chains (build/dev-server only, do not ship) -> accept, revisit on RN
+  upgrade. uuid bounds-check (mod) needs buf+v3/v5/v6; app uses v4 -> accept.
+  @keystonehq flag is via its nested uuid -> accept.
+- govulncheck (tss/dkls/bbmtmobile): 1 REACHABLE -> F41 (High):
+  GO-2023-2380, ecies/go v2.0.3 (fixed v2.0.8), invalid-curve key recovery
+  via tss/cipher.go:50,69; relay-supplied ciphertext reaches EciesDecrypt
+  on the live duo path (lan_pump.go:72 + TssProvider enc/dec passthrough).
+  F24b uniform-keep may blunt oracle observability — Wave 6 must analyze.
+  One-line fix exists (bump + rebuild + re-verify) -> v4.1.1-candidate.
+  19 required-but-uncalled vulns -> info only.
+- v4.1.1-eligible fast follow-ups (NOT done here; need user call before the
+  release ships, tag moves cheaply while unpushed): (1) ecies bump + rebuild
+  + re-verify + re-hash (~1h); (2) axios removal (2 min); (3) SEND peek size
+  cap + test (30 min).
