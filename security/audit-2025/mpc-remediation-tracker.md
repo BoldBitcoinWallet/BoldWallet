@@ -462,9 +462,12 @@ Low cleanup (unreachable, zero Kotlin callers) — not Wave 4.
 - Emulator note: Small_Phone_API_35 on this host is arm64 — the ART-x86
   vs ART-ARM JNI concern is partially mitigated (real-device run still
   differs in drivers/thermal, not ISA).
-- QA record: PENDING human decision — run the 4-item Wave 4 device QA
-  (~45 min, two devices) or waive with note "Wave 4 QA waived,
-  emulator+loopback accepted". Merge awaits this call.
+- QA record: RESULT passed (2026-10-25, user-reported). 4 items —
+  JNI null-arg on real Android ARM (typed error, no crash), setAPI
+  file:// on real iOS (rejected), LAN ceremony on real WiFi
+  (completes), transport-abuse approximation (clean fail + retry) —
+  all pass. Device models/OS + runner name: pending fill-in by QA
+  runner.
 
 ## B1 close-out notes
 - Argon2id timing (production t=3/m=64MiB/p=1): 155 ms Mac arm64; 243-263 ms
