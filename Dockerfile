@@ -23,8 +23,9 @@ RUN apt update && apt install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Node.js (cached unless Node version changes)
-RUN curl -Lo node.tar.gz https://nodejs.org/dist/v20.18.1/node-v20.18.1-linux-x64.tar.gz \
-    && echo "259e5a8bf2e15ecece65bd2a47153262eda71c0b2c9700d5e703ce4951572784 node.tar.gz" | sha256sum -c - \
+# F30: 22.23.4 (Node 20 EOL Apr 2026), checksum-verified.
+RUN curl -Lo node.tar.gz https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.gz \
+    && echo "b8492284c76a54baf58d61668dd0e41ee0fc98adabf9503d30f05d08f55b4406 node.tar.gz" | sha256sum -c - \
     && tar xzf node.tar.gz --strip-components=1 -C /usr/local/ \
     && rm node.tar.gz
 
