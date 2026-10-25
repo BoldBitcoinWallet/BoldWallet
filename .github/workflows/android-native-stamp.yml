@@ -1,0 +1,25 @@
+name: Android Native Stamp (F28)
+
+# F28 mechanism test. The .so files are gitignored, so CI cannot verify any
+# artifact — it verifies the stamp write/verify logic itself via selftest
+# (shadow tree, no NDK/Go/.so needed). The real gate is the gradle
+# verifyDklsNativeStamp task on the machine producing the APK/AAB.
+on:
+  pull_request:
+    paths:
+      - 'android/scripts/native-stamp.sh'
+      - 'android/app/build.gradle'
+      - 'android/app/src/main/cpp/**'
+      - 'BBMTLib/build-dkls.sh'
+      - '.github/workflows/android-native-stamp.yml'
+  workflow_dispatch:
+
+jobs:
+  stamp-logic:
+    name: Stamp write/verify logic (no NDK)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Selftest stamp script
+        run: bash android/scripts/native-stamp.sh selftest

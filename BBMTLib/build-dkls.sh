@@ -269,6 +269,26 @@ build_android() {
   if [ "${VERIFY_NATIVE:-1}" = "1" ] && [ -x "${verify}" ]; then
     bash "${verify}" || warn "Native artifact verification reported issues"
   fi
+
+  # F28: record which sources produced these .so files. Gradle fails fast
+  # (verifyDklsNativeStamp) when sources drift without a rebuild.
+  local stamp="${ROOT}/../android/scripts/native-stamp.sh"
+  if [ -x "${stamp}" ]; then
+    bash "${stamp}" check-dirs || warn "Stamp GO_DIRS may miss a linked package (see above)"
+    local built_abis=()
+    for abi in arm64-v8a armeabi-v7a x86_64; do
+      if [ -f "${JNI_OUT}/${abi}/libbbmtmobile.so" ] && \
+         [ -f "${JNI_OUT}/${abi}/libdkls_jni.so" ] && \
+         [ -f "${JNI_OUT}/${abi}/libbbmtmobile.h" ]; then
+        built_abis+=("${abi}")
+      fi
+    done
+    if [ "${#built_abis[@]}" -eq 0 ]; then
+      warn "No complete Android ABI; skip native stamp write"
+    else
+      bash "${stamp}" write "${built_abis[@]}" || warn "Native stamp write failed"
+    fi
+  fi
 }
 
 build_ios() {
