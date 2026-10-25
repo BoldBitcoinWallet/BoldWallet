@@ -481,6 +481,29 @@ func computePayloadAuthTag(data, keyHex string) (string, error) {
 	return "h1:" + hex.EncodeToString(mac.Sum(nil)), nil
 }
 
+// VerifyLANPayloadTag reports whether hash is the valid h1 tag of body
+// under sessionKey. F24: shared by the DKLs transport (lan_pump), which
+// previously verified nothing. Pure: callers own logging.
+func VerifyLANPayloadTag(body, sessionKey, hash string) bool {
+	if !strings.HasPrefix(hash, "h1:") || len(sessionKey) == 0 {
+		return false
+	}
+	expectedTag, err := computePayloadAuthTag(body, sessionKey)
+	if err != nil {
+		return false
+	}
+	return hmac.Equal([]byte(expectedTag), []byte(hash))
+}
+
+// VerifyLANPayloadDigest reports whether hash is the valid d1 digest of
+// body. F24: shared by the DKLs transport (lan_pump). Pure.
+func VerifyLANPayloadDigest(body, hash string) bool {
+	if !strings.HasPrefix(hash, "d1:") {
+		return false
+	}
+	return computePayloadDigest(body) == hash
+}
+
 func AesEncrypt(data, key string) (result string, err error) {
 	defer RecoverAsError("AesEncrypt", &err, &result)
 
@@ -1210,6 +1233,13 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 						deleteMessage(server, session, key, message.Hash)
 						continue
 					}
+				} else {
+					// F24: no legitimate producer emits an empty hash (the
+					// sender always sets d1/h1; the relay stores verbatim).
+					// Reject like every other class (F6 uniform outcome).
+					Logln("BBMTLog", "Missing payload hash; dropping message", message.SeqNo)
+					deleteMessage(server, session, key, message.Hash)
+					continue
 				}
 
 				Logln("BBMTLog", "Applying inbound message body")

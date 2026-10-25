@@ -74,6 +74,15 @@ func startLANMessagePump(server, session, sessionKey, key string, onBody func(st
 					dklsLogErrorf("pump decrypt %s from %s: %v", key, message.From, err)
 					continue
 				}
+				// F24: the sender always tags (h1 with session key, d1
+				// otherwise); verify like the GG18 path. Failures keep the
+				// message for retry, matching this loop's decrypt-fail
+				// handling — every failure class keeps, so the relay
+				// observes no delete/keep split.
+				if !lanPayloadHashValid(body, sessionKey, message.Hash) {
+					dklsLogErrorf("pump hash reject %s from %s", key, message.From)
+					continue
+				}
 				bodyKey := message.From + ":" + md5Hex(body)
 				if bodyDelivered[bodyKey] {
 					if !msgMap[message.Hash] {
@@ -99,6 +108,17 @@ func startLANMessagePump(server, session, sessionKey, key string, onBody func(st
 func md5Hex(s string) string {
 	sum := md5.Sum([]byte(s))
 	return hex.EncodeToString(sum[:])
+}
+
+// lanPayloadHashValid mirrors the GG18 downloadMessage verify switch:
+// h1 tag checked with session key, d1 digest checked keyless, empty or
+// unknown formats rejected.
+func lanPayloadHashValid(body, sessionKey, hash string) bool {
+	if hash == "" {
+		return false
+	}
+	return tss.VerifyLANPayloadTag(body, sessionKey, hash) ||
+		tss.VerifyLANPayloadDigest(body, hash)
 }
 
 func lanDeleteMessage(server, session, key, hash string) {
