@@ -2,6 +2,7 @@ jest.mock('react-native-fs', () => ({
   DocumentDirectoryPath: '/tmp',
   copyFile: jest.fn(async () => undefined),
   readFile: jest.fn(),
+  stat: jest.fn(async () => ({size: 6})),
 }));
 
 jest.mock('../services/rnfsSafe', () => ({
@@ -13,8 +14,11 @@ import RNFS from 'react-native-fs';
 import {isPsbtBytes} from '../services/psbtIdentity';
 import {
   classifyIncomingFile,
+  IncomingFileTooLargeError,
   inferFileKindFromUri,
   looksLikeNonWalletBytes,
+  MAX_SHARED_FILE_BYTES,
+  readPsbtBase64FromSharedUri,
 } from '../services/incomingFileClassifier';
 
 const mockedReadFile = RNFS.readFile as jest.Mock;
@@ -88,5 +92,56 @@ describe('incomingFileClassifier', () => {
     await expect(
       classifyIncomingFile('content://org.telegram.messenger.provider/media/9'),
     ).resolves.toBe('psbt');
+  });
+});
+
+describe('TestF37 shared-file size cap', () => {
+  const mockedStat = RNFS.stat as jest.Mock;
+  const mockedRead = RNFS.readFile as jest.Mock;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedStat.mockResolvedValue({size: 6});
+  });
+
+  it('TestF37 classify rejects oversized file with typed error, no hint fallback', async () => {
+    mockedStat.mockResolvedValue({size: MAX_SHARED_FILE_BYTES + 1});
+    await expect(
+      classifyIncomingFile('content://com.whatsapp.provider.media/item/8'),
+    ).rejects.toBeInstanceOf(IncomingFileTooLargeError);
+    // The oversized bytes must never be read into memory.
+    expect(mockedRead).not.toHaveBeenCalled();
+  });
+
+  it('TestF37 oversized .share is not reclassified by extension', async () => {
+    mockedStat.mockResolvedValue({size: MAX_SHARED_FILE_BYTES * 4});
+    await expect(
+      classifyIncomingFile('file:///tmp/huge.share'),
+    ).rejects.toBeInstanceOf(IncomingFileTooLargeError);
+  });
+
+  it('TestF37 file exactly at the cap still classifies', async () => {
+    mockedStat.mockResolvedValue({size: MAX_SHARED_FILE_BYTES});
+    mockedRead.mockResolvedValue(
+      Buffer.from([0xa6, 0x11, 0x22, 0x33]).toString('base64'),
+    );
+    await expect(
+      classifyIncomingFile('content://com.whatsapp.provider.media/item/9'),
+    ).resolves.toBe('keyshare');
+  });
+
+  it('TestF37 PSBT shared-uri read rejects oversized file', async () => {
+    mockedStat.mockResolvedValue({size: MAX_SHARED_FILE_BYTES + 1});
+    await expect(
+      readPsbtBase64FromSharedUri('content://downloads/tx.psbt'),
+    ).rejects.toBeInstanceOf(IncomingFileTooLargeError);
+    expect(mockedRead).not.toHaveBeenCalled();
+  });
+
+  it('TestF37 string size (Android stat) is handled', async () => {
+    mockedStat.mockResolvedValue({size: String(MAX_SHARED_FILE_BYTES + 1)});
+    await expect(
+      classifyIncomingFile('content://media/10'),
+    ).rejects.toBeInstanceOf(IncomingFileTooLargeError);
   });
 });

@@ -18,6 +18,7 @@ import {
   resolveUseLegacyDerivationPaths,
 } from '../utils';
 import {WalletAlreadyLoadedError} from './walletGuard';
+import {IncomingFileTooLargeError} from './incomingFileClassifier';
 
 export {WalletAlreadyLoadedError, assertNoExistingWallet} from './walletGuard';
 
@@ -245,6 +246,13 @@ export function showKeyshareImportError(error: unknown): void {
   }
   if (error instanceof WrongKeysharePasswordError) {
     Alert.alert('Wrong Password', 'Could not import keyshare');
+    return;
+  }
+  if (error instanceof IncomingFileTooLargeError) {
+    Alert.alert(
+      'File Too Large',
+      'Shared files must be 1 MB or smaller. Keyshare backups and PSBTs are only a few KB.',
+    );
     return;
   }
   if (error instanceof InvalidKeyshareError) {
