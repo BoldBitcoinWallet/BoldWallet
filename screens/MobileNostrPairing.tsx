@@ -1,12 +1,11 @@
 /* eslint-disable react-native/no-inline-styles */
 import React, {useState, useEffect, useRef, useCallback} from 'react';
+import {confirmAppPrompt, showAppNotice} from '../services/appPrompt';
 import {
   View,
   Text,
   StyleSheet,
-  Alert,
   Image,
-  Modal,
   TextInput,
   ScrollView,
   Platform,
@@ -14,6 +13,7 @@ import {
   NativeEventEmitter,
   EmitterSubscription,
 } from 'react-native';
+import AppModal from '../components/AppModal';
 import AppPressable from '../components/AppPressable';
 import GlassModalOverlay from '../components/GlassModalOverlay';
 import Animated, {
@@ -57,6 +57,7 @@ import {
   detectKeyshareTssBackend,
   shortenAddress,
 } from '../utils';
+import {quoteOversizedJsonIntegers} from '../utils/keyshareDevView';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
 import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
@@ -82,17 +83,27 @@ import {
   type TssBackend,
 } from '../services/tssBackend';
 import {TssProvider} from '../services/TssProvider';
+import {
+  CeremonyAuthRequiredError,
+  CeremonyNoLockError,
+  newCeremonySessionID,
+  releaseCeremonyToken,
+  requestSignCeremonyToken,
+} from '../services/ceremonyAuth';
 import {generateSecureHex64} from '../services/mpcAttemptId';
 import {
   assertCanStartNostrMpc,
   nostrMpcCooldownMessageFromError,
 } from '../services/mpcCancel';
 import {
+  beginMpcFlowAttempt,
+  clearMpcFlowAttempt,
   isMpcAbortedOrCanceledError,
   isPeerAbortedSessionError,
   peerAbortUserMessage,
   shouldShowMpcFlowAlert,
   showMpcFlowAlert,
+  showMpcSignFailure,
 } from '../services/mpcFlowAlerts';
 import {
   emptyMpcTransportSubprogress,
@@ -114,7 +125,6 @@ import {
 } from '../services/mpcConnectionQuality';
 import {getPrepareModalCopy} from '../services/tssKeygenPrepare';
 import {
-  getMpcKeepAlivePrepareModalSubtitle,
   getMpcKeepAliveSetupHint,
   LAN_KEYGEN_STATUS,
 } from '../services/walletSetupUi';
@@ -165,7 +175,7 @@ import {useUser} from '../context/UserContext';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
-import database from '../services/Database';
+import {clearCachesBeforeWalletSession} from '../services/walletSessionReset';
 import transactionRepository from '../services/repositories/TransactionRepository';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import {WalletService} from '../services/WalletService';
@@ -684,25 +694,29 @@ const MobileNostrPairing = ({navigation}: any) => {
   } | null>(null);
   const skipRestoreInFinallyRef = useRef(false);
   const nostrAbortRef = useRef(false);
+  const nostrAttemptIdRef = useRef<string | null>(null);
   const nostrFlowAlertGate = () => ({
     aborted: nostrAbortRef.current,
     focused: isFocusedRef.current,
     flowActive: isPairingRef.current,
+    attemptId: nostrAttemptIdRef.current ?? undefined,
   });
 
   const abortActiveNostrMpc = React.useCallback((opts?: {keygen?: boolean}) => {
     const isKeygen = !!opts?.keygen;
-    Alert.alert(
-      isKeygen ? 'Abort wallet setup?' : 'Abort signing?',
-      isKeygen
-        ? 'This will stop key generation on this device. Other devices will stop shortly. Wait 15 seconds before retrying.'
-        : 'This will stop the current Nostr MPC signing flow. Wait 15 seconds before starting again.',
-      [
-        {text: isKeygen ? 'Keep going' : 'Keep signing', style: 'cancel'},
-        {
-          text: 'Abort',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAppPrompt({
+      icon: 'warning',
+      title: isKeygen ? 'Stop setup?' : 'Stop signing?',
+      hint: isKeygen
+        ? 'The other phones stop too. Wait a moment, then start again.'
+        : 'Wait a moment, then start the payment again.',
+      cancelLabel: isKeygen ? 'Keep going' : 'Keep signing',
+      confirmLabel: 'Stop',
+      tone: 'danger',
+    }).then(async ok => {
+      if (!ok) {
+        return;
+      }
             nostrAbortRef.current = true;
             const aborted = progressStateAfterAbort(mpcHookProgressRef.current);
             setCircleTarget(aborted.percent);
@@ -725,10 +739,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             }
             // F15b-1: wipe staged keyshares (covers DKG-return/abort races).
             await discardPendingKeyshares();
-          },
-        },
-      ],
-    );
+    });
   }, [setPairingActive, isSignPSBT, setCircleTarget]);
 
   const connectionQrRef = useRef<any>(null);
@@ -767,17 +778,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       if (setupMode === 'duo' || setupMode === 'trio') {
         try {
           dbg('=== MobileNostrPairing: Clearing all cache for wallet setup');
-          // Clear SQLite wallet data
-          database.clearWalletData();
-          dbg('SQLite wallet data cleared');
-          // btcPub is derived in memory; keep the keyshare blob for signing.
-          // Clear WalletService cache
-          try {
-            // stale key removed;
-            dbg('WalletService cache cleared');
-          } catch (error) {
-            dbg('Error clearing WalletService cache:', error);
-          }
+          await clearCachesBeforeWalletSession();
           dbg('=== MobileNostrPairing: Cache clearing completed');
         } catch (error) {
           dbg('Error clearing cache in MobileNostrPairing:', error);
@@ -803,7 +804,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         }
       } catch (error) {
         dbg('Error initializing:', error);
-        Alert.alert('Error', 'Failed to initialize device');
+        showAppNotice('Error', 'Failed to initialize device');
       }
     };
     initialize();
@@ -935,8 +936,12 @@ const MobileNostrPairing = ({navigation}: any) => {
   };
   // Listen to native module events for progress tracking
   useEffect(() => {
+    let mounted = true;
     const eventEmitter = new NativeEventEmitter(BBMTLibNativeModule);
     const processHook = (message: string) => {
+      if (!mounted) {
+        return;
+      }
       try {
         const parsed = JSON.parse(message);
         if (shouldLogRelayFidelity(parsed)) {
@@ -1056,6 +1061,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       },
     );
     return () => {
+      mounted = false;
       subscription.remove();
     };
   }, [isTrio, isSendBitcoin, isSignPSBT, keygenBackend, spendBackend, setCircleTarget]);
@@ -1259,7 +1265,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       );
     } catch (error: any) {
       dbg('Error generating keypair:', error);
-      Alert.alert('Error', 'Failed to generate Nostr keypair');
+      showAppNotice('Error', 'Failed to generate Nostr keypair');
     }
   };
   // Helper function to shorten npub for display
@@ -1654,7 +1660,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       dbg('=== END SESSION ID CALCULATION ===');
     } catch (error: any) {
       dbg('Error generating session params:', error);
-      Alert.alert('Error', 'Failed to generate session parameters');
+      showAppNotice('Error', 'Failed to generate session parameters');
     }
   };
   const startKeygen = async () => {
@@ -1662,7 +1668,16 @@ const MobileNostrPairing = ({navigation}: any) => {
     if (!guardOnlineAction('Wallet is offline — pairing needs the network')) {
       return;
     }
-    const localTag = diceOn ? await diceChecksumTag(diceSets) : '';
+    let localTag = '';
+    try {
+      localTag = diceOn ? await diceChecksumTag(diceSets) : '';
+    } catch (e) {
+      showAppNotice(
+        'Dice check',
+        e instanceof Error ? e.message : 'Dice check differs.',
+      );
+      return;
+    }
     // Connection QR is often scanned before dice is entered, so peer tags may
     // be empty even when rolls match. Session id already binds the local tag.
     // Only compare peer tags when every peer actually sent one (re-scan).
@@ -1676,7 +1691,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           assertMatchingDiceChecksums('', peerTags);
         }
       } catch (e) {
-        Alert.alert(
+        showAppNotice(
           'Dice check',
           e instanceof Error ? e.message : 'Dice check differs.',
         );
@@ -1686,7 +1701,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     try {
       assertCanStartNostrMpc();
     } catch (e) {
-      Alert.alert(
+      showAppNotice(
         'Please wait',
         nostrMpcCooldownMessageFromError(e) || String(e),
       );
@@ -1694,15 +1709,22 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
     let backend = keygenBackend ?? routeKeygenBackend;
     if (!backend && keygenSetupMode) {
-      backend = await resolveWalletSetupBackend(
-        routeKeygenBackend,
-        keygenSetupMode,
-      );
-      setKeygenBackend(backend);
+      try {
+        backend = await resolveWalletSetupBackend(
+          routeKeygenBackend,
+          keygenSetupMode,
+        );
+        setKeygenBackend(backend);
+      } catch (e) {
+        showAppNotice(
+          'Error',
+          e instanceof Error ? e.message : 'Could not start key generation',
+        );
+        return;
+      }
     }
     activeMpcSessionIdRef.current = sessionID;
     setMpcSessionShort(mpcSessionShortLabel(sessionID));
-    setPairingActive(true);
     keysharePersistedRef.current = false;
     pendingKeyshareRef.current = null;
     // F15b-1: wipe any staged keyshare from an abandoned prior run.
@@ -1785,6 +1807,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         throw new Error('Please keep at least one relay enabled');
       }
       await saveNostrRelayEntries(relayEntries);
+      setPairingActive(true);
       // Log detailed info for debugging trio mode
       dbg('Starting Nostr keygen with:', {
         relays: relaysCSV,
@@ -1847,7 +1870,11 @@ const MobileNostrPairing = ({navigation}: any) => {
       } else {
         // F19: GG18 legacy branch — full JSON through JS by deferral.
         try {
-          keyshare = JSON.parse(setupResult.json);
+          // Quote GG18 *big.Int* fields before parse (validation only;
+          // persist path also quotes via finalizeKeyshareForStorage).
+          keyshare = JSON.parse(
+            quoteOversizedJsonIntegers(setupResult.json),
+          );
           if (!keyshare.pub_key) {
             throw new Error('Invalid keyshare: missing pub_key');
           }
@@ -1935,9 +1962,35 @@ const MobileNostrPairing = ({navigation}: any) => {
       setPairingActive(false);
     }
   };
+  const authenticateBeforeCoSign = async (): Promise<boolean> => {
+    try {
+      const sid = await newCeremonySessionID('nostr-cosign-start');
+      const tok = await requestSignCeremonyToken(sid);
+      try {
+        await releaseCeremonyToken(tok);
+      } catch {
+        /* prompt already succeeded */
+      }
+      return true;
+    } catch (e) {
+      if (e instanceof CeremonyAuthRequiredError) {
+        return false;
+      }
+      if (e instanceof CeremonyNoLockError) {
+        showAppNotice('Screen lock required', e.message);
+        return false;
+      }
+      showAppNotice(
+        'Could not authenticate',
+        e instanceof Error ? e.message : String(e),
+      );
+      return false;
+    }
+  };
+
   const startSendBTC = async () => {
     if (!route.params) {
-      Alert.alert('Error', 'Missing transaction parameters');
+      showAppNotice('Error', 'Missing transaction parameters');
       return;
     }
     if (!guardOnlineAction('Wallet is offline — co-signing needs the network')) {
@@ -1946,11 +1999,14 @@ const MobileNostrPairing = ({navigation}: any) => {
     try {
       assertCanStartNostrMpc();
     } catch (e) {
-      Alert.alert('Please wait', alertMessageForNostrSendError(e));
+      showAppNotice('Please wait', alertMessageForNostrSendError(e));
       return;
     }
     if (!activeRelaysCSV(relayEntries)) {
-      Alert.alert('Error', 'Please keep at least one relay enabled');
+      showAppNotice('Error', 'Please keep at least one relay enabled');
+      return;
+    }
+    if (!(await authenticateBeforeCoSign())) {
       return;
     }
     let backend = spendBackend;
@@ -1959,6 +2015,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       setSpendBackend(backend);
     }
     nostrAbortRef.current = false;
+    nostrAttemptIdRef.current = beginMpcFlowAttempt();
     TssProvider.resetMpcCancelState('nostr');
     TssProvider.markMpcInProgress('nostr');
     // Nostr send computes sessionID in native after pre-agreement; do not filter hooks by keygen session.
@@ -2349,6 +2406,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         return;
       }
       keepAliveOutcomeRef.current = 'success';
+      clearMpcFlowAttempt(nostrAttemptIdRef.current ?? undefined);
       setSignedTxRawHex(rawTxHex);
     } catch (error: any) {
       dbg('Send BTC error:', error);
@@ -2357,8 +2415,8 @@ const MobileNostrPairing = ({navigation}: any) => {
           !isMpcAbortedOrCanceledError(error) &&
           shouldShowMpcFlowAlert(nostrFlowAlertGate())
         ) {
-          showMpcFlowAlert(
-            'Error',
+          showMpcSignFailure(
+            'Could not sign',
             alertMessageForNostrSendError(error),
             nostrFlowAlertGate(),
           );
@@ -2406,7 +2464,7 @@ const MobileNostrPairing = ({navigation}: any) => {
   };
   const startSignPSBT = async () => {
     if (!route.params?.psbtBase64) {
-      Alert.alert('Error', 'Missing PSBT data');
+      showAppNotice('Error', 'Missing PSBT data');
       return;
     }
     if (!guardOnlineAction('Wallet is offline — co-signing needs the network')) {
@@ -2415,11 +2473,14 @@ const MobileNostrPairing = ({navigation}: any) => {
     try {
       assertCanStartNostrMpc();
     } catch (e) {
-      Alert.alert('Please wait', alertMessageForNostrSendError(e));
+      showAppNotice('Please wait', alertMessageForNostrSendError(e));
       return;
     }
     if (!activeRelaysCSV(relayEntries)) {
-      Alert.alert('Error', 'Please keep at least one relay enabled');
+      showAppNotice('Error', 'Please keep at least one relay enabled');
+      return;
+    }
+    if (!(await authenticateBeforeCoSign())) {
       return;
     }
     let backend = spendBackend;
@@ -2428,6 +2489,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       setSpendBackend(backend);
     }
     nostrAbortRef.current = false;
+    nostrAttemptIdRef.current = beginMpcFlowAttempt();
     TssProvider.resetMpcCancelState('nostr');
     TssProvider.markMpcInProgress('nostr');
     setMpcDone(false);
@@ -2567,20 +2629,16 @@ const MobileNostrPairing = ({navigation}: any) => {
             setPairingActive(false);
             return;
           }
-          if (
-            !signedPsbt ||
-            signedPsbt.includes('error') ||
-            signedPsbt.includes('failed')
-          ) {
+          if (!signedPsbt || typeof signedPsbt !== 'string') {
             setSpendSignOutcome('failed');
             if (
               !nostrAbortRef.current &&
               !isMpcAbortedOrCanceledError(signedPsbt) &&
               shouldShowMpcFlowAlert(nostrFlowAlertGate())
             ) {
-              showMpcFlowAlert(
-                'Operation Error',
-                `Could not sign PSBT.\n${String(signedPsbt)}`,
+              showMpcSignFailure(
+                'Could not sign PSBT',
+                String(signedPsbt || 'Empty result'),
                 nostrFlowAlertGate(),
               );
             }
@@ -2589,6 +2647,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           }
           dbg(localNpub, 'PSBT signed successfully');
           keepAliveOutcomeRef.current = 'success';
+          clearMpcFlowAttempt(nostrAttemptIdRef.current ?? undefined);
           dbg(
             'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
           );
@@ -2619,9 +2678,9 @@ const MobileNostrPairing = ({navigation}: any) => {
             !isMpcAbortedOrCanceledError(e) &&
             shouldShowMpcFlowAlert(nostrFlowAlertGate())
           ) {
-            showMpcFlowAlert(
-              'Operation Error',
-              `Could not sign PSBT.\n${e?.message}`,
+            showMpcSignFailure(
+              'Could not sign PSBT',
+              e?.message || String(e),
               nostrFlowAlertGate(),
             );
           }
@@ -2637,8 +2696,8 @@ const MobileNostrPairing = ({navigation}: any) => {
           !isMpcAbortedOrCanceledError(error) &&
           shouldShowMpcFlowAlert(nostrFlowAlertGate())
         ) {
-          showMpcFlowAlert(
-            'Error',
+          showMpcSignFailure(
+            'Could not sign PSBT',
             alertMessageForNostrSendError(error),
             nostrFlowAlertGate(),
           );
@@ -2686,7 +2745,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     }
     const pending = pendingKeyshareRef.current;
     if (!pending) {
-      Alert.alert('Nothing to save', 'Run wallet setup again.');
+      showAppNotice('Nothing to save', 'Run wallet setup again.');
       return false;
     }
     try {
@@ -2706,7 +2765,9 @@ const MobileNostrPairing = ({navigation}: any) => {
           ...pending,
           pending: {kind: 'legacy-gg18', json: persisted},
         };
-        rememberNostrLegacyFlag(JSON.parse(persisted));
+        rememberNostrLegacyFlag(
+          JSON.parse(quoteOversizedJsonIntegers(persisted)),
+        );
       }
       keysharePersistedRef.current = true;
       // F21: the pairing nsec's JS job is done (DKG + finalize
@@ -2723,7 +2784,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       return true;
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);
-      Alert.alert('Could not save wallet', message);
+      showAppNotice('Could not save wallet', message);
       return false;
     }
   };
@@ -2740,15 +2801,17 @@ const MobileNostrPairing = ({navigation}: any) => {
     );
   };
   const abortFinishedNostrSetup = () => {
-    Alert.alert(
-      'Abort wallet setup?',
-      'The new keyshare on this phone will be deleted. You can run setup again.',
-      [
-        {text: 'Keep going', style: 'cancel'},
-        {
-          text: 'Abort',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAppPrompt({
+      icon: 'delete',
+      title: 'Discard this wallet?',
+      hint: 'The new share on this phone is deleted.',
+      cancelLabel: 'Keep it',
+      confirmLabel: 'Discard',
+      tone: 'danger',
+    }).then(async ok => {
+      if (!ok) {
+        return;
+      }
             try {
               await EncryptedStorage.removeItem(KEYSHARE_STORAGE_KEY);
             } catch {
@@ -2765,10 +2828,7 @@ const MobileNostrPairing = ({navigation}: any) => {
               deviceTwo: false,
               deviceThree: false,
             });
-          },
-        },
-      ],
-    );
+    });
   };
   const formatFiat = (price?: string) =>
     new Intl.NumberFormat('en-US', {
@@ -2778,18 +2838,18 @@ const MobileNostrPairing = ({navigation}: any) => {
     }).format(Number(price));
   const copyConnectionDetails = () => {
     Clipboard.setString(connectionDetails);
-    Alert.alert(
+    showAppNotice(
       'Copied',
       '- Pairing data copied.\n- Paste them to other device(s)',
     );
   };
   const shareConnectionDetails = async () => {
     if (!connectionDetails) {
-      Alert.alert('Error', 'Connection details are not ready yet');
+      showAppNotice('Error', 'Connection details are not ready yet');
       return;
     }
     if (!connectionQrRef.current) {
-      Alert.alert('Error', 'QR Code is not ready yet');
+      showAppNotice('Error', 'QR Code is not ready yet');
       return;
     }
     try {
@@ -2818,7 +2878,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       setIsQRModalVisible(false);
     } catch (error: any) {
       dbg('Error sharing connection details (QR + text):', error);
-      Alert.alert('Error', 'Failed to share connection QR code');
+      showAppNotice('Error', 'Failed to share connection QR code');
     }
   };
   const showQRModal = () => {
@@ -2852,7 +2912,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       await handlePeerConnectionInput(text, peerNum);
     } catch (error) {
       dbg('Error pasting:', error);
-      Alert.alert('Error', 'Failed to paste from clipboard');
+      showAppNotice('Error', 'Failed to paste from clipboard');
     }
   };
   const clearPeerConnection = (peerNum: 1 | 2) => {
@@ -2896,7 +2956,7 @@ const MobileNostrPairing = ({navigation}: any) => {
     } catch (error: any) {
       setIsPreParamsReady(false);
       dbg('Error preparing device:', error);
-      Alert.alert('Error', error?.toString() || 'Failed to prepare device');
+      showAppNotice('Error', error?.toString() || 'Failed to prepare device');
     } finally {
       setIsPreparing(false);
       setPrepCounter(0);
@@ -3207,7 +3267,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           : theme.colors.bitcoinOrange,
     },
     sendModeCheckmark: {
-      color: theme.colors.background,
+      color: theme.colors.white,
       fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.bold,
     },
@@ -3617,7 +3677,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       color: theme.colors.textSecondary,
     },
     stepNumberCompleted: {
-      color: theme.colors.background,
+      color: theme.colors.white,
     },
     stepLine: {
       flex: 1,
@@ -3840,7 +3900,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           : theme.colors.bitcoinOrange,
     },
     checkboxCheckmark: {
-      color: theme.colors.background,
+      color: theme.colors.white,
       fontSize: theme.fontSizes?.lg || 16,
       fontFamily: theme.fontFamilies?.bold,
     },
@@ -3906,13 +3966,14 @@ const MobileNostrPairing = ({navigation}: any) => {
     },
     preparingProgressContainer: {
       width: '100%',
-      alignItems: 'center',
+      alignSelf: 'stretch',
+      alignItems: 'stretch',
       marginBottom: 16,
     },
     preparingProgressTrack: {
-      width: 200,
+      width: '100%',
       height: 6,
-      backgroundColor: theme.colors.border + '40',
+      backgroundColor: theme.colors.border,
       borderRadius: 3,
       overflow: 'hidden',
     },
@@ -3928,7 +3989,6 @@ const MobileNostrPairing = ({navigation}: any) => {
       flexDirection: 'row',
       alignItems: 'center',
       marginBottom: 8,
-      justifyContent: 'center',
     },
     preparingStatusIndicator: {
       width: 8,
@@ -4090,7 +4150,7 @@ const MobileNostrPairing = ({navigation}: any) => {
           : theme.colors.bitcoinOrange,
     },
     checkmark: {
-      color: theme.colors.background,
+      color: theme.colors.white,
       fontSize: theme.fontSizes?.lg || 16,
       fontFamily: theme.fontFamilies?.bold,
     },
@@ -5657,8 +5717,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                       </View>
                     )}
                   {/* Preparing Modal */}
-                  {isPreparing && (
-                    <Modal
+                  <AppModal
                       transparent={true}
                       visible={isPreparing}
                       onRequestClose={
@@ -5669,12 +5728,8 @@ const MobileNostrPairing = ({navigation}: any) => {
                           <MpcProgressModalHeader
                             icon={require('../assets/prepare-icon.png')}
                             title={prepareCopy.title}
-                            subtitle={getMpcKeepAlivePrepareModalSubtitle(
-                              keepAliveOs,
-                              keepAliveHintOpts,
-                            )}
+                            subtitle={prepareCopy.subtitle}
                           />
-                          <MpcKeepAliveHints />
                           {/* Loading Indicator */}
                           <View style={styles.preparingProgressContainer}>
                             <View style={styles.preparingProgressTrack}>
@@ -5703,11 +5758,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                               </Text>
                             ) : null}
                           </View>
+                          <MpcKeepAliveHints />
                         </View>
                       </GlassModalOverlay>
-                    </Modal>
-                  )}
-                  <Modal
+                    </AppModal>
+                  <AppModal
                     visible={showRelayConfig}
                     transparent
                     animationType="fade"
@@ -5742,14 +5797,14 @@ const MobileNostrPairing = ({navigation}: any) => {
                               showSave
                               onSave={async () => {
                                 if (!activeRelaysCSV(relayEntries)) {
-                                  Alert.alert(
+                                  showAppNotice(
                                     'Error',
                                     'Please keep at least one relay enabled',
                                   );
                                   return;
                                 }
                                 await saveNostrRelayEntries(relayEntries);
-                                Alert.alert(
+                                showAppNotice(
                                   'Saved',
                                   'Nostr relays saved for this device.',
                                 );
@@ -5759,9 +5814,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                         </View>
                       </GlassModalOverlay>
                     </KeyboardAvoidingView>
-                  </Modal>
+                  </AppModal>
                   {/* Help Modal */}
-                  <Modal
+                  <AppModal
                     visible={showHelpModal}
                     transparent={true}
                     animationType="fade"
@@ -5900,7 +5955,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                         </ScrollView>
                       </View>
                     </GlassModalOverlay>
-                  </Modal>
+                  </AppModal>
                   {/* Final Step - Check other devices are prepared */}
                   {!isSendBitcoin &&
                     !isSignPSBT &&
@@ -6091,10 +6146,9 @@ const MobileNostrPairing = ({navigation}: any) => {
               );
             })()}
           {/* Keygen Modal - Similar to MobilesPairing */}
-          {isPairing && !isSendBitcoin && !isSignPSBT && (
-            <Modal
+          <AppModal
               transparent={true}
-              visible={isPairing}
+              visible={isPairing && !isSendBitcoin && !isSignPSBT}
               animationType="fade"
               onRequestClose={
                 () => {} /* non-dismissible: block Android back */
@@ -6121,13 +6175,11 @@ const MobileNostrPairing = ({navigation}: any) => {
                   />
                 </View>
               </GlassModalOverlay>
-            </Modal>
-          )}
+            </AppModal>
           {/* Co-Signing Modal - Similar to MobilesPairing send_btc and sign_psbt */}
-          {isPairing && (isSendBitcoin || isSignPSBT) && (
-            <Modal
+          <AppModal
               transparent={true}
-              visible={isPairing}
+              visible={isPairing && (isSendBitcoin || isSignPSBT)}
               animationType="fade"
               onRequestClose={
                 () => {} /* non-dismissible: block Android back */
@@ -6202,8 +6254,7 @@ const MobileNostrPairing = ({navigation}: any) => {
                   )}
                 </View>
               </GlassModalOverlay>
-            </Modal>
-          )}
+            </AppModal>
           {/* Success and Backup UI - Only show for keygen, not for send BTC or sign PSBT */}
           {mpcDone && !isSendBitcoin && !isSignPSBT && (
             <SetupFinishStepper
@@ -6380,7 +6431,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         subtitle="Point camera at the connection QR from the other device"
       />
       {/* QR Code Modal */}
-      <Modal
+      <AppModal
         visible={isQRModalVisible}
         transparent={true}
         animationType="fade"
@@ -6448,7 +6499,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             </View>
           </View>
         </GlassModalOverlay>
-      </Modal>
+      </AppModal>
       {/* Backup Modal */}
       <BackupKeyshareModal
         visible={isBackupModalVisible}
@@ -6458,6 +6509,25 @@ const MobileNostrPairing = ({navigation}: any) => {
       <SignedTxBroadcastModal
         visible={!!signedTxRawHex}
         rawTxHex={signedTxRawHex ?? ''}
+        payment={
+          broadcastSuccessPayloadRef.current
+            ? {
+                toAddress: broadcastSuccessPayloadRef.current.toAddress,
+                amountSatoshi: String(
+                  broadcastSuccessPayloadRef.current.satoshiAmount,
+                ),
+                feeSatoshi: String(
+                  broadcastSuccessPayloadRef.current.satoshiFees,
+                ),
+                changeAddress:
+                  broadcastSuccessPayloadRef.current.outputs?.find(
+                    output =>
+                      output.scriptpubkey_address !==
+                      broadcastSuccessPayloadRef.current?.toAddress,
+                  )?.scriptpubkey_address ?? '',
+              }
+            : null
+        }
         onBroadcastSuccess={async (txId: string) => {
           const p = broadcastSuccessPayloadRef.current;
           broadcastSuccessPayloadRef.current = null;

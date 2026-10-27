@@ -69,6 +69,8 @@ struct CeremonyTokenRecord {
   // natively; nil = unbound (legacy mints). Enforced at keysign
   // by contentBindingOk when present.
   var boundDigest: String? = nil
+  // One move from the handshake session onto the derived setup session.
+  var rebound: Bool = false
 }
 
 enum CeremonyTokens {
@@ -113,18 +115,19 @@ enum CeremonyTokens {
     return id
   }
 
-  /// F20 content binding. Unbound token (boundDigest == nil,
-  /// legacy mints) → ok. Bound token: the PSBT actually being
-  /// signed must hash to the confirmed digest; on mismatch the
-  /// whole session is revoked (a swapped artifact kills the
-  /// ceremony, never signs) and false returned. Unknown token →
-  /// false (verify() has already failed closed by then).
+  /// F20 content binding. Every PSBT sign and BTC send ceremony
+  /// MUST carry a non-nil boundDigest from the native confirmation
+  /// sheet; an unbound token (boundDigest == nil, e.g. minted via
+  /// requestSignCeremonyToken for LAN handshake / cancel) or a
+  /// mismatched digest fails closed and revokes the session.
   static func contentBindingOk(token: String, actualDigestHex: String?) -> Bool {
     lock.lock()
     defer { lock.unlock() }
     guard let rec = tokens[token] else { return false }
-    guard let bound = rec.boundDigest else { return true }
-    if let actualDigestHex, actualDigestHex == bound { return true }
+    if let bound = rec.boundDigest, !bound.isEmpty,
+       let actualDigestHex, actualDigestHex == bound {
+      return true
+    }
     revokeSessionInner(rec.sessionID)
     return false
   }
@@ -149,6 +152,30 @@ enum CeremonyTokens {
   /// handshake IS the ceremony, minted at initSession start.
   static func verifyTransport(token: String, sessionID: String) -> Bool {
     verifyInner(token: token, allowedClasses: [.sign, .keygen], sessionID: sessionID)
+  }
+
+  /// Move a live keygen token from the handshake session onto the
+  /// setup session derived after the phones connect. One move.
+  /// Same-session calls are a no-op success. Sign and other classes
+  /// stay put.
+  static func rebindSession(token: String, newSessionID: String) -> Bool {
+    if newSessionID.isEmpty { return false }
+    lock.lock()
+    defer { lock.unlock() }
+    guard var rec = tokens[token] else { return false }
+    if isTerminal(rec.state) { return false }
+    if rec.opClass != .keygen { return false }
+    if rec.state == .minted && nowMs() > rec.expiresAtMs {
+      rec.state = .expired
+      tokens[token] = rec
+      return false
+    }
+    if rec.sessionID == newSessionID { return true }
+    if rec.rebound { return false }
+    rec.sessionID = newSessionID
+    rec.rebound = true
+    tokens[token] = rec
+    return true
   }
 
   /// 3b-4 B19: authorize cancel AND atomically revoke the token's

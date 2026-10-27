@@ -14,6 +14,7 @@ jest.mock('../native_modules', () => ({
     requestExportCeremonyToken: jest.fn(),
     requestImportCeremonyToken: jest.fn(),
     requestConfigCeremonyToken: jest.fn(),
+    requestWalletSetupCeremonyToken: jest.fn(),
     completeCeremonyToken: jest.fn(async () => true),
     releaseCeremonyToken: jest.fn(async () => true),
     // NOTE: requestCeremonyToken (generic) and
@@ -37,6 +38,7 @@ import {
   requestImportCeremonyToken,
   requestKeygenCeremonyToken,
   requestSignCeremonyToken,
+  requestWalletSetupCeremonyToken,
 } from '../services/ceremonyAuth';
 
 const native = BBMTLibNativeModule as any;
@@ -48,6 +50,7 @@ const PER_OP: Array<[string, (s: string) => Promise<string>]> = [
   ['requestExportCeremonyToken', requestExportCeremonyToken],
   ['requestImportCeremonyToken', requestImportCeremonyToken],
   ['requestConfigCeremonyToken', requestConfigCeremonyToken],
+  ['requestWalletSetupCeremonyToken', requestWalletSetupCeremonyToken],
 ];
 
 beforeEach(() => {
@@ -104,7 +107,7 @@ describe('3b-1 no generic mint (malicious-mint simulation)', () => {
     expect(native.requestCeremonyTokenTest).toBeUndefined();
     const silentMinters = Object.keys(native).filter(
       n =>
-        !/^(request(Sign|Keygen|Export|Import|Config)CeremonyToken|completeCeremonyToken|releaseCeremonyToken)$/.test(
+        !/^(request(Sign|Keygen|Export|Import|Config)CeremonyToken|requestWalletSetupCeremonyToken|completeCeremonyToken|releaseCeremonyToken)$/.test(
           n,
         ) && /token|mint|ceremony/i.test(n),
     );

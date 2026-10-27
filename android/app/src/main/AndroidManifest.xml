@@ -52,7 +52,18 @@
             android:documentLaunchMode="never"
             android:windowSoftInputMode="adjustResize"
             android:screenOrientation="portrait"
-            android:exported="true">
+            android:exported="true" />
+
+        <!-- Share and open-in land here, not on MainActivity. The launcher is an
+             activity-alias, so a SEND aimed at MainActivity resumes the showcase
+             and never delivers the file. -->
+        <activity
+            android:name=".ShareRelayActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:launchMode="standard">
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -69,7 +80,14 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <data android:mimeType="*/*" />
             </intent-filter>
-            <!-- Tap-to-open in chat: VIEW content:// URIs almost never contain .share -->
+            <!-- Tap-to-open from any app: the URI often has no .share in the path,
+                 and the MIME type is whatever the sender picked. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="*/*" />
+                <data android:scheme="file" android:mimeType="*/*" />
+            </intent-filter>
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

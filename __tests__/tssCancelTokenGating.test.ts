@@ -5,6 +5,7 @@ jest.mock('../native_modules', () => ({
     cancelMpcSession: jest.fn(),
     cancelNostrMpc: jest.fn(),
     requestSignCeremonyToken: jest.fn(),
+    requestSignTransportCeremonyToken: jest.fn(),
     requestKeygenCeremonyToken: jest.fn(),
     completeCeremonyToken: jest.fn(),
     releaseCeremonyToken: jest.fn(),
@@ -59,6 +60,9 @@ beforeEach(() => {
   native.dklsCancelMpcSession.mockResolvedValue(null);
   native.dklsCancelNostrMpc.mockResolvedValue(null);
   native.requestSignCeremonyToken.mockResolvedValue('tok-cancel-fresh');
+  native.requestSignTransportCeremonyToken.mockResolvedValue(
+    'tok-cancel-fresh',
+  );
   native.requestKeygenCeremonyToken.mockResolvedValue('tok-cancel-kg');
   native.completeCeremonyToken.mockResolvedValue(true);
   native.releaseCeremonyToken.mockResolvedValue(true);
@@ -94,8 +98,8 @@ describe('3b-4 B19 cancel gating (F10-bridge)', () => {
       'sess-cancel-2',
       'tok-stale-1',
     );
-    // B19 stuck-cancel: fresh token for the SAME session re-auths.
-    expect(native.requestSignCeremonyToken).toHaveBeenCalledWith(
+    // B19 stuck-cancel: silent transport mint for the SAME session.
+    expect(native.requestSignTransportCeremonyToken).toHaveBeenCalledWith(
       'sess-cancel-2',
     );
     expect(native.dklsCancelMpcSession).toHaveBeenNthCalledWith(
@@ -110,7 +114,7 @@ describe('3b-4 B19 cancel gating (F10-bridge)', () => {
     expect(native.requestKeygenCeremonyToken).toHaveBeenCalledWith(
       'sess-cancel-3',
     );
-    expect(native.requestSignCeremonyToken).not.toHaveBeenCalled();
+    expect(native.requestSignTransportCeremonyToken).not.toHaveBeenCalled();
     expect(native.dklsCancelMpcSession).toHaveBeenCalledWith(
       'sess-cancel-3',
       'tok-cancel-kg',

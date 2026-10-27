@@ -36,6 +36,10 @@ export const getPinnedRemoteIP = () => (ips.length ? ips[ips.length - 1] : '');
 
 export const getPinnedRemoteIPs = () => [...ips];
 
+export const clearPinnedRemoteIPs = () => {
+  ips = [];
+};
+
 /**
  * Reset navigation config to MainTabs with Wallet tab selected (or Device when Wallet hidden).
  * Options: showPlay, showUtxos, showAddresses, showPsbt, showWallet (default true for Wallet).
@@ -836,6 +840,9 @@ export const explorerWebBaseFromApiUrl = apiUrl => {
   if (/\/signet\/api\/?$/i.test(s)) {
     return s.replace(/\/signet\/api\/?$/i, '/signet');
   }
+  if (/\/testnet4\/api\/?$/i.test(s)) {
+    return s.replace(/\/testnet4\/api\/?$/i, '/testnet4');
+  }
   if (/\/testnet\/api\/?$/i.test(s)) {
     return s.replace(/\/testnet\/api\/?$/i, '/testnet');
   }
@@ -845,9 +852,26 @@ export const explorerWebBaseFromApiUrl = apiUrl => {
   return s;
 };
 
-// API Endpoints Configuration
-const MAINNET_APIS = ['https://mempool.space/api'];
-const TESTNET_APIS = ['https://mempool.space/testnet/api'];
+// Built-in copy of the reviewed pin (90a154c7). Used only when that
+// fetch fails or returns nothing. Mainnet is /api; testnet4 is the
+// same hosts except emzy, on /testnet4/api.
+export const MAINNET_APIS = [
+  'https://mempool.space/api',
+  'https://mempool.ninja/api',
+  'https://mempool.emzy.de/api',
+  'https://strategy.mempool.space/api',
+  'https://benpool.mempool.space/api',
+  'https://mempool.guide/api',
+  'https://metaplanet.mempool.space/api',
+];
+export const TESTNET_APIS = [
+  'https://mempool.space/testnet4/api',
+  'https://mempool.ninja/testnet4/api',
+  'https://mempool.guide/testnet4/api',
+  'https://strategy.mempool.space/testnet4/api',
+  'https://benpool.mempool.space/testnet4/api',
+  'https://metaplanet.mempool.space/testnet4/api',
+];
 
 // F35: the dynamic mempool/relay lists live in a GitHub repo whose
 // main branch moves. Fetch from a REVIEWED, PINNED commit — a repo
@@ -855,12 +879,18 @@ const TESTNET_APIS = ['https://mempool.space/testnet/api'];
 // traffic until a pinned update ships in an app release (which is
 // a reviewed change). To update: verify the new list content,
 // bump MEMPOOL_HOSTS_COMMIT, and name the review in the commit.
-const MEMPOOL_HOSTS_COMMIT = 'b94706d435c6d70b00867605f96892c4a5d1e545';
+//
+// 90a154c7 (2026-10-26, signed): MAINNET.md is space, ninja, emzy,
+// strategy, benpool, guide, metaplanet (orangefren removed).
+// TESTNET4.md is those hosts except emzy, as host roots mapped here
+// to /testnet4/api. NOSTR.md matches the previous pin b94706d4.
+const MEMPOOL_HOSTS_COMMIT = '90a154c7af314e79dfa9337a4679f2d052b9375c';
 const MEMPOOL_HOSTS_BASE = `https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/${MEMPOOL_HOSTS_COMMIT}`;
 // F35: parsing bounds (a compromised-or-corrupt fetch must not
 // yield an unbounded list or a multi-MB regex scan).
 const MAX_LIST_BODY_CHARS = 64 * 1024;
 const MAX_LIST_ENTRIES = 32;
+const LIST_FETCH_TIMEOUT_MS = 8000;
 
 // F35: strict https mempool-host validation (hostname, not
 // substring — a URL like https://evil.com/?x=mempool must fail).
@@ -885,38 +915,104 @@ const isValidRelayUrl = url => {
   }
 };
 
-// Function to fetch dynamic API endpoints from GitHub (pinned commit)
-export const fetchDynamicAPIEndpoints = async () => {
+const fetchPinnedMarkdown = async fileName => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LIST_FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(`${MEMPOOL_HOSTS_BASE}/README.md`);
+    const response = await fetch(`${MEMPOOL_HOSTS_BASE}/${fileName}`, {
+      signal: controller.signal,
+    });
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
-
     const markdownText = await response.text();
     if (markdownText.length > MAX_LIST_BODY_CHARS) {
       throw new Error('dynamic API list exceeds size bound');
     }
+    return markdownText;
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
-    // Parse markdown to extract URLs
-    const urlRegex = /https:\/\/[^\s\]]+/g;
-    const urls = markdownText.match(urlRegex) || [];
+const extractHttpsUrls = markdownText => {
+  const urlRegex = /https:\/\/[^\s\]]+/g;
+  return markdownText.match(urlRegex) || [];
+};
 
-    // Filter and format URLs to ensure they have /api suffix
-    const apiEndpoints = urls
-      .filter(isValidMempoolApiUrl)
-      .slice(0, MAX_LIST_ENTRIES)
-      .map(url => {
-        // Remove trailing slash if present
-        const cleanUrl = url.replace(/\/$/, '');
-        // Add /api suffix if not already present
-        return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
-      })
-      .filter((url, index, self) => self.indexOf(url) === index); // Remove duplicates
+const dedupeUrls = urls =>
+  urls.filter((url, index, self) => self.indexOf(url) === index);
 
-    return apiEndpoints;
+/** Host root or explicit /api, never a testnet or signet path. */
+const toMainnetCatalogApi = url => {
+  const cleanUrl = url.replace(/\/$/, '');
+  if (/\/testnet|\/signet/i.test(cleanUrl)) {
+    return null;
+  }
+  return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
+};
+
+/**
+ * TESTNET4.md lists public host roots (https://mempool.space). Map those
+ * to /testnet4/api. Keep an explicit /testnet4 or /testnet4/api URL.
+ * Drop mainnet /api, legacy /testnet, and /signet so the file cannot
+ * point testnet traffic at another chain.
+ */
+const toTestnet4CatalogApi = url => {
+  const clean = url.replace(/\/$/, '');
+  if (/\/signet(\/|$)/i.test(clean)) {
+    return null;
+  }
+  if (/\/testnet(?!4)(\/|$)/i.test(clean)) {
+    return null;
+  }
+  if (/\/testnet4\/api$/i.test(clean)) {
+    return clean;
+  }
+  if (/\/testnet4$/i.test(clean)) {
+    return `${clean}/api`;
+  }
+  try {
+    const parsed = new URL(clean);
+    if (parsed.pathname === '/' || parsed.pathname === '') {
+      return `${parsed.origin}/testnet4/api`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+// Pinned MAINNET.md (reviewed commit). Empty on failure — caller falls back.
+export const fetchDynamicAPIEndpoints = async () => {
+  try {
+    const markdownText = await fetchPinnedMarkdown('MAINNET.md');
+    return dedupeUrls(
+      extractHttpsUrls(markdownText)
+        .filter(isValidMempoolApiUrl)
+        .slice(0, MAX_LIST_ENTRIES)
+        .map(toMainnetCatalogApi)
+        .filter(Boolean),
+    );
   } catch (error) {
     dbg('Failed to fetch dynamic API endpoints:', error);
+    return [];
+  }
+};
+
+// Pinned TESTNET4.md. Host roots become /testnet4/api. Empty on failure.
+export const fetchDynamicTestnetAPIEndpoints = async () => {
+  try {
+    const markdownText = await fetchPinnedMarkdown('TESTNET4.md');
+    return dedupeUrls(
+      extractHttpsUrls(markdownText)
+        .filter(isValidMempoolApiUrl)
+        .slice(0, MAX_LIST_ENTRIES)
+        .map(toTestnet4CatalogApi)
+        .filter(Boolean),
+    );
+  } catch (error) {
+    dbg('Failed to fetch dynamic testnet API endpoints:', error);
     return [];
   }
 };
@@ -927,9 +1023,10 @@ export const getMainnetAPIList = async () => {
   return dynamicEndpoints.length > 0 ? dynamicEndpoints : MAINNET_APIS;
 };
 
-// Helper function to get testnet API endpoints (only hardcoded endpoint)
+// Helper function to get testnet4 API endpoints (dynamic + fallback)
 export const getTestnetAPIList = async () => {
-  return TESTNET_APIS;
+  const dynamicEndpoints = await fetchDynamicTestnetAPIEndpoints();
+  return dynamicEndpoints.length > 0 ? dynamicEndpoints : TESTNET_APIS;
 };
 
 // Default Nostr relays
@@ -1372,8 +1469,11 @@ function metaNeedsPersistAfterEnrich(before, after) {
 export const saveKeyshareMetadata = async (metaInput, opts = {}) => {
   const throwOnError = opts.throwOnError === true;
   try {
-    const parsed =
-      typeof metaInput === 'string' ? JSON.parse(metaInput) : metaInput;
+    let parsed = metaInput;
+    if (typeof metaInput === 'string') {
+      const {quoteOversizedJsonIntegers} = require('./utils/keyshareDevView');
+      parsed = JSON.parse(quoteOversizedJsonIntegers(metaInput));
+    }
     const meta = normalizeKeyshareMetaObject(parsed);
     const json = JSON.stringify(meta);
     const {repo, CONFIG_KEYS} = loadAppConfigRepository();

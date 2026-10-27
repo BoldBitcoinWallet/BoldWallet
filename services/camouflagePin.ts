@@ -1,3 +1,4 @@
+/* eslint-disable no-bitwise */
 /**
  * 4-digit camouflage PIN — stored as salt+SHA-256 in SQLite `app_config`.
  * Default off on the Bold icon. Forced on while a camouflage launcher icon is active.

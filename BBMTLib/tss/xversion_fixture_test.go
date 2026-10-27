@@ -20,11 +20,24 @@ func xversionFixture(t *testing.T, name string) string {
 	return string(b)
 }
 
-func TestXVersion_TrioChunkFromV410(t *testing.T) {
-	derivedKey, err := DeriveLANSessionKey("xv-session-1", "192.168.1.20")
+// F32: the public derivation is retired — current code refuses it
+// (TRIO_LEGACY_KEY_REFUSED). The v4.1.0 wire format is pinned below
+// by recomputing the retired formula inline in-test (archaeology
+// only: proves the fixture still decrypts, never used in production).
+func xversionLegacyTrioKey(t *testing.T) string {
+	t.Helper()
+	if _, err := DeriveLANSessionKey("xv-session-1", "192.168.1.20"); err == nil {
+		t.Fatal("public trio derivation must be refused (F32)")
+	}
+	key, err := Sha256("xv-session-1,192.168.1.20")
 	if err != nil {
 		t.Fatal(err)
 	}
+	return key
+}
+
+func TestXVersion_TrioChunkFromV410(t *testing.T) {
+	derivedKey := xversionLegacyTrioKey(t)
 	got, err := DecryptLANRelayPayload(xversionFixture(t, "lan-trio-chunk.txt"), derivedKey)
 	if err != nil {
 		t.Fatalf("decrypt v4.1.0 trio chunk: %v", err)
@@ -35,10 +48,7 @@ func TestXVersion_TrioChunkFromV410(t *testing.T) {
 }
 
 func TestXVersion_TagFromV410(t *testing.T) {
-	derivedKey, err := DeriveLANSessionKey("xv-session-1", "192.168.1.20")
-	if err != nil {
-		t.Fatal(err)
-	}
+	derivedKey := xversionLegacyTrioKey(t)
 	tag, err := computePayloadAuthTag(xversionFixture(t, "payload.txt"), derivedKey)
 	if err != nil {
 		t.Fatal(err)

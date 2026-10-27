@@ -4,25 +4,42 @@
 
 jest.mock('../utils', () => ({dbg: jest.fn()}));
 
-const mockInvalidate = jest.fn();
+const mockInvalidate = jest.fn((..._args: unknown[]) => undefined);
 jest.mock('../services/repositories/SyncRepository', () => ({
   __esModule: true,
   default: {invalidate: (...args: unknown[]) => mockInvalidate(...args)},
 }));
 
-const mockEnqueue = jest.fn(
-  async (_label: string, job: (setProgress: (c: number, t: number) => void) => Promise<unknown>) =>
-    job(jest.fn()),
-);
+const mockEnqueue = jest.fn(async (...args: unknown[]) => {
+  const job = args[1] as (
+    setProgress: (c: number, t: number) => void,
+  ) => Promise<unknown>;
+  return job(jest.fn());
+});
 jest.mock('../services/ApiQueue', () => ({
   __esModule: true,
   default: {enqueue: (...args: unknown[]) => mockEnqueue(...args)},
 }));
 
-const mockSyncAddressesAtomic = jest.fn(async () => undefined);
+const mockSyncAddressesAtomic = jest.fn(
+  async (..._args: unknown[]) => undefined,
+);
 jest.mock('../services/sync/TransactionSyncer', () => ({
   __esModule: true,
-  default: {syncAddressesAtomic: (...args: unknown[]) => mockSyncAddressesAtomic(...args)},
+  default: {
+    syncAddressesAtomic: (...args: unknown[]) =>
+      mockSyncAddressesAtomic(...args),
+  },
+}));
+
+const mockUtxoSyncAddresses = jest.fn(
+  async (..._args: unknown[]) => undefined,
+);
+jest.mock('../services/sync/UtxoSyncer', () => ({
+  __esModule: true,
+  default: {
+    syncAddresses: (...args: unknown[]) => mockUtxoSyncAddresses(...args),
+  },
 }));
 
 const mockPause = jest.fn();
@@ -35,20 +52,25 @@ jest.mock('../services/sync/SyncCoordinator', () => ({
   },
 }));
 
-const mockGetWalletBalanceAggregate = jest.fn(async () => ({btc: '0'}));
-const mockGetBitcoinPrice = jest.fn(async () => ({}));
-const mockGetActive = jest.fn(async () => [
+const mockGetWalletBalanceAggregate = jest.fn(
+  async (..._args: unknown[]) => ({btc: '0'}),
+);
+const mockGetBitcoinPrice = jest.fn(async (..._args: unknown[]) => ({}));
+const mockGetActive = jest.fn(async (..._args: unknown[]) => [
   {address: 'addr1'},
   {address: 'addr2'},
 ]);
-const mockGetHd = jest.fn(async () => [{address: 'addr1'}]);
+const mockGetHd = jest.fn(async (..._args: unknown[]) => [
+  {address: 'addr1'},
+]);
 jest.mock('../services/WalletService', () => ({
   WalletService: {
     getInstance: () => ({
       getWalletBalanceAggregate: (...args: unknown[]) =>
         mockGetWalletBalanceAggregate(...args),
       getBitcoinPrice: (...args: unknown[]) => mockGetBitcoinPrice(...args),
-      getActiveAddressesWithPaths: (...args: unknown[]) => mockGetActive(...args),
+      getActiveAddressesWithPaths: (...args: unknown[]) =>
+        mockGetActive(...args),
       getHdAddressesWithPaths: (...args: unknown[]) => mockGetHd(...args),
     }),
   },
@@ -112,6 +134,16 @@ describe('runWalletRefreshSession', () => {
       ],
       'https://mempool.space/api',
       expect.any(Function),
+      {force: false},
+    );
+    expect(mockUtxoSyncAddresses).toHaveBeenCalledWith(
+      [
+        {address: 'addr1', network: 'mainnet', derivationPath: undefined},
+        {address: 'addr2', network: 'mainnet', derivationPath: undefined},
+      ],
+      'https://mempool.space/api',
+      expect.any(Function),
+      {force: false},
     );
   });
 });

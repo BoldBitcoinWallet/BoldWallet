@@ -97,6 +97,10 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)projectMetadata:(NSString *)fullJson;
 + (NSString *)redactedStructure:(NSString *)fullJson;
 + (NSString *)sha256:(NSString *)message;
+// F32 (Option A): trio ECDH exchange for LAN keygen.
++ (NSString *)trioECDHPhase1:(NSString *)server session:(NSString *)session selfParty:(NSString *)selfParty parties:(NSString *)parties;
++ (NSString *)trioECDHConfirm:(NSString *)handle session:(NSString *)session;
++ (NSString *)trioECDHAbort:(NSString *)handle;
 + (NSString *)secureRandom:(int)length;
 + (NSString *)secP256k1RecoverR:(NSString *)r s:(NSString *)s v:(NSString *)v h:(NSString *)h;
 + (NSString *)getDerivedPubKey:(NSString *)hexPub hexChain:(NSString *)hexChain path:(NSString *)path isEdDSA:(BOOL)isEdDSA;

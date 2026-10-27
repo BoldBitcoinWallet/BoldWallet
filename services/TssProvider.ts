@@ -11,7 +11,7 @@ import {
   requestKeygenCeremonyToken,
   requestPsbtSignCeremonyToken,
   requestSendSignCeremonyToken,
-  requestSignCeremonyToken,
+  requestSignTransportCeremonyToken,
 } from './ceremonyAuth';
 import {
   markMpcInProgress,
@@ -114,7 +114,7 @@ async function withCancelToken<T>(
   const fresh =
     ceremonyClass === 'keygen'
       ? await requestKeygenCeremonyToken(freshSession)
-      : await requestSignCeremonyToken(freshSession);
+      : await requestSignTransportCeremonyToken(freshSession);
   try {
     return await invoke(fresh);
   } finally {
@@ -311,17 +311,15 @@ export const TssProvider = {
   },
 
   /**
-   * 3b-2b B21: LAN ECIES device keypair. Same single-call
-   * `keygen` ceremony as nostrKeypair.
+   * LAN pairing key. Created when the user taps Pair. Not the
+   * wallet share, so it does not raise its own approval.
    */
-  async eciesKeypair(ceremonyToken?: string): Promise<string> {
-    return withCeremonyToken(
-      undefined,
-      ceremonyToken,
-      requestKeygenCeremonyToken,
-      'keygen',
-      token => BBMTLibNativeModule.eciesKeypair(token),
-    );
+  async eciesKeypair(): Promise<string> {
+    const out = await BBMTLibNativeModule.eciesKeypair('');
+    if (!out || typeof out !== 'string') {
+      throw new Error('LAN keypair generation failed');
+    }
+    return out;
   },
 
   /**
@@ -329,7 +327,8 @@ export const TssProvider = {
    * ceremony token (sign|keygen) — the token is REQUIRED:
    * transport never mints (a mint fallback inside poll/retry
    * loops would prompt-spam). The phase owner (initSession)
-   * mints, passes, and completes.
+   * mints and passes the token. Spend completes it after the
+   * handshake. Setup keeps it for keygen and save.
    */
   async publishData(
     port: string,
@@ -584,8 +583,8 @@ export const TssProvider = {
     ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
-    // F20-1b: sends mint via the native payment confirmation,
-    // binding the token to this exact payment.
+    // F20-1b: sends mint a token bound to this payment. The
+    // payment sheet and device prompt run on Broadcast.
     const sendMint = (sid: string) =>
       requestSendSignCeremonyToken(sid, {
         toAddress,
@@ -647,8 +646,8 @@ export const TssProvider = {
     ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
-    // F20-1b: sends mint via the native payment confirmation,
-    // binding the token to this exact payment.
+    // F20-1b: sends mint a token bound to this payment. The
+    // payment sheet and device prompt run on Broadcast.
     const sendMint = (sid: string) =>
       requestSendSignCeremonyToken(sid, {
         toAddress,

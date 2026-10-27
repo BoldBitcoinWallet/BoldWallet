@@ -1,5 +1,5 @@
 import React, {useCallback, useEffect, useRef} from 'react';
-import {Alert} from 'react-native';
+import {showAppNotice} from '../services/appPrompt';
 import {CommonActions} from '@react-navigation/native';
 import type {NavigationContainerRef} from '@react-navigation/native';
 import {dbg} from '../utils';
@@ -17,14 +17,14 @@ type Props = {
 };
 
 function showWalletRequiredAlert(): void {
-  Alert.alert(
+  showAppNotice(
     'Wallet required',
     'Set up or restore a wallet before opening a Bitcoin payment link.',
   );
 }
 
 function showUnsupportedUrlAlert(): void {
-  Alert.alert('Unsupported link', 'This link is not supported by BoldWallet.');
+  showAppNotice('Unsupported link', 'This link is not supported by BoldWallet.');
 }
 
 const IncomingUrlHandler = ({isAuthenticated, navigationRef}: Props) => {
@@ -95,7 +95,7 @@ const IncomingUrlHandler = ({isAuthenticated, navigationRef}: Props) => {
         return;
       }
       if (isAuthenticated) {
-        void processIncomingUrl(url);
+        processIncomingUrl(url);
       }
     },
     [isAuthenticated, processIncomingUrl],
@@ -118,7 +118,7 @@ const IncomingUrlHandler = ({isAuthenticated, navigationRef}: Props) => {
       }
       enqueueIncomingUrl(initialUrl);
     };
-    void consumeInitialUrl();
+    consumeInitialUrl();
     return () => {
       cancelled = true;
     };

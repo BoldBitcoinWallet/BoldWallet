@@ -1,3 +1,4 @@
+/* eslint-disable no-bitwise */
 import {
   parseLanDiceCommits,
   parseNostrDiceCommits,

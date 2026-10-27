@@ -1,5 +1,7 @@
 # F32 analysis: trio LAN session key derived from public values (decision required)
 
+> **Status: IMPLEMENTED (Option A — SAS-authenticated P-256 ECDH + Burmester-Desmedt ring exchange)** in commit `0188e10f`, consolidated on `security/hardenings`. Public `sha256(sessionID + "," + masterHost)` derivation is retired (`TRIO_LEGACY_KEY_REFUSED`); mixed-version trio keygen with pre-ECDH peers fails closed (`TRIO_PEER_OUTDATED`).
+
 ## Verified facts
 
 - `BBMTLib/tss/lan_crypto.go:10` — `DeriveLANSessionKey(sessionID, masterHost)`

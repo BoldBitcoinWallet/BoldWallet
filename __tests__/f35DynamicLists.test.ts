@@ -23,10 +23,15 @@ jest.mock('../services/LocalCache', () => ({
 
 import LocalCache from '../services/LocalCache';
 import {
+  explorerWebBaseFromApiUrl,
   fetchDynamicAPIEndpoints,
   fetchDynamicNostrRelays,
+  fetchDynamicTestnetAPIEndpoints,
   getMainnetAPIList,
   getNostrRelays,
+  getTestnetAPIList,
+  MAINNET_APIS,
+  TESTNET_APIS,
 } from '../utils';
 
 const cache = LocalCache as unknown as {
@@ -34,8 +39,7 @@ const cache = LocalCache as unknown as {
   setItem: jest.Mock;
 };
 
-const PIN =
-  'b94706d435c6d70b00867605f96892c4a5d1e545';
+const PIN = '90a154c7af314e79dfa9337a4679f2d052b9375c';
 
 function mockFetchOnce(text: string, ok = true): void {
   (global.fetch as jest.Mock).mockResolvedValueOnce({
@@ -60,7 +64,7 @@ describe('F35 pinned dynamic lists', () => {
     mockFetchOnce('- https://mempool.space\n');
     const out = await fetchDynamicAPIEndpoints();
     expect((global.fetch as jest.Mock).mock.calls[0][0]).toContain(
-      `/mempool-space-hosts/${PIN}/README.md`,
+      `/mempool-space-hosts/${PIN}/MAINNET.md`,
     );
     expect(out).toEqual(['https://mempool.space/api']);
   });
@@ -88,9 +92,7 @@ describe('F35 pinned dynamic lists', () => {
       ok: true,
       text: async () => 'x'.repeat(64 * 1024 + 1),
     });
-    expect(await getMainnetAPIList()).toEqual([
-      'https://mempool.space/api',
-    ]);
+    expect(await getMainnetAPIList()).toEqual(MAINNET_APIS);
   });
 
   test('relay fetch uses the pinned commit and drops non-wss', async () => {
@@ -128,5 +130,47 @@ describe('F35 pinned dynamic lists', () => {
     expect(out).toEqual(['wss://bbw-nostr.xyz']);
     // No refetch needed: one valid cached entry short-circuits.
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  test('mainnet list drops testnet and signet URLs', async () => {
+    mockFetchOnce(
+      [
+        '- https://mempool.space',
+        '- https://mempool.space/testnet4',
+        '- https://mempool.space/signet',
+      ].join('\n'),
+    );
+    expect(await getMainnetAPIList()).toEqual(['https://mempool.space/api']);
+  });
+
+  test('testnet4 list maps host roots and drops mainnet /api', async () => {
+    mockFetchOnce(
+      [
+        '- https://mempool.space',
+        '- https://mempool.ninja/testnet4',
+        '- https://mempool.space/api',
+        '- https://evil.com/?x=mempool',
+        '- https://mempool.space/testnet/api',
+      ].join('\n'),
+    );
+    const out = await fetchDynamicTestnetAPIEndpoints();
+    expect((global.fetch as jest.Mock).mock.calls[0][0]).toContain(
+      `/mempool-space-hosts/${PIN}/TESTNET4.md`,
+    );
+    expect(out).toEqual([
+      'https://mempool.space/testnet4/api',
+      'https://mempool.ninja/testnet4/api',
+    ]);
+  });
+
+  test('testnet API list falls back when the pinned file is missing', async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce({ok: false});
+    expect(await getTestnetAPIList()).toEqual(TESTNET_APIS);
+  });
+
+  test('explorer web base uses testnet4', () => {
+    expect(
+      explorerWebBaseFromApiUrl('https://mempool.space/testnet4/api'),
+    ).toBe('https://mempool.space/testnet4');
   });
 });

@@ -1,4 +1,10 @@
-import {Alert, NativeModules, Text, TextInput} from 'react-native';
+jest.mock('react-native-toast-message', () => ({
+  __esModule: true,
+  default: {show: jest.fn()},
+}));
+
+import {NativeModules, Text, TextInput} from 'react-native';
+import Toast from 'react-native-toast-message';
 import TestRenderer, {act} from 'react-test-renderer';
 
 jest.mock('../components/GlassModalOverlay', () => {
@@ -86,7 +92,7 @@ const V2_BLOB = 'BW2$mock-ciphertext-bytes-no-share-here';
 describe('BackupKeyshareModal export opacity (F15)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    jest.spyOn(Toast, 'show').mockImplementation(() => {});
     (getKeyshareMetadata as jest.Mock).mockResolvedValue(META);
     (getKeyshareLabel as jest.Mock).mockReturnValue('KeyShare1');
     exportEncrypt.mockResolvedValue(V2_BLOB);
@@ -151,9 +157,11 @@ describe('BackupKeyshareModal export opacity (F15)', () => {
     (RNFS.stat as jest.Mock).mockResolvedValueOnce({size: 0});
     await renderAndExport('Correct-Horse-12!');
     expect(Share.open).not.toHaveBeenCalled();
-    expect(Alert.alert).toHaveBeenCalledWith(
-      'Error',
-      expect.stringContaining('could not be written'),
+    expect(Toast.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text1: 'Error',
+        text2: expect.stringContaining('could not be written'),
+      }),
     );
   });
 

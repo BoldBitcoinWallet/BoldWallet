@@ -1,5 +1,6 @@
 import React, {useState} from 'react';
-import {Modal, View, Text, Image, Pressable} from 'react-native';
+import {View, Text, Image, Pressable} from 'react-native';
+import AppModal from './AppModal';
 import AppPressable from './AppPressable';
 import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
@@ -113,7 +114,7 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
     setDoNotRemind(prev => !prev);
   };
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent={true}
       animationType="fade"
@@ -182,7 +183,7 @@ const LegacyWalletModal: React.FC<LegacyWalletModalProps> = ({
           </View>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 export default LegacyWalletModal;

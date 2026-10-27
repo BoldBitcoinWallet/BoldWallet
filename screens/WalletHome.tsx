@@ -1,16 +1,17 @@
 import React, {useEffect, useState, useCallback, useRef, useMemo} from 'react';
+import {confirmAppPrompt, showAppNotice} from '../services/appPrompt';
 import {
   View,
   Text,
   NativeModules,
   Image,
-  Alert,
   Platform,
   PermissionsAndroid,
   ActivityIndicator,
   StyleSheet,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
+import {DISSOLVE_FADE} from '../components/DissolveFade';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -25,6 +26,7 @@ import {useNavigation, useRoute, useIsFocused, RouteProp} from '@react-navigatio
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {AppState, DeviceEventEmitter, type EmitterSubscription} from 'react-native';
 import EncryptedStorage from 'react-native-encrypted-storage';
+import {armModalDismiss} from '../components/AppModal';
 import SendBitcoinModal from './SendBitcoinModal';
 import Toast from 'react-native-toast-message';
 import TransactionList from '../components/TransactionList';
@@ -119,11 +121,9 @@ import {
 } from '../services/sendBalanceRecheck';
 import {
   isWalletOnline,
-  notifyWalletOnlineToggle,
-  setWalletOnline,
   useWalletOnline,
 } from '../services/walletOnlineStore';
-import WalletOfflineSandboxModal from '../components/WalletOfflineSandboxModal';
+import {openWalletOfflineSandbox} from '../services/walletOfflineSandboxPrompt';
 import {
   parsePairingCodeFromScannedData,
   computeExtensionBindResponseQr,
@@ -145,6 +145,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const [address, setAddress] = useState<string>(cachedAddress);
   const [loading, setLoading] = useState<boolean>(!hasCachedData);
   const [isSendModalVisible, setIsSendModalVisible] = useState<boolean>(false);
+  const sendDismissRef = useRef<(() => void) | null>(null);
+  const transportDismissRef = useRef<(() => void) | null>(null);
   const [isTransportModalVisible, setIsTransportModalVisible] =
     useState<boolean>(false);
   const [pendingSendParams, setPendingSendParams] = useState<{
@@ -220,9 +222,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   const walletOnline = useWalletOnline();
   /** Set when user confirms abort — hide refreshing state immediately until sync actually stops. */
   const [abortRequested, setAbortRequested] = useState(false);
-  const [offlineSandboxModalVisible, setOfflineSandboxModalVisible] =
-    useState(false);
-  const pendingOnlineActionRef = useRef<(() => void) | null>(null);
   const [isCheckingBalanceForSend, setIsCheckingBalanceForSend] =
     useState(false);
   const [isCurrencySelectorVisible, setIsCurrencySelectorVisible] =
@@ -269,13 +268,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const keyshare = await getKeyshareMetadata();
       if (!keyshare) {
         extensionBindAlertShownRef.current = false;
-        Alert.alert('Error', 'Keyshare not found.');
+        showAppNotice('Error', 'Keyshare not found.');
         return;
       }
       const pubKey = keyshare.pub_key || '';
       if (!pubKey) {
         extensionBindAlertShownRef.current = false;
-        Alert.alert('Error', 'Keyshare info is not available.');
+        showAppNotice('Error', 'Keyshare info is not available.');
         return;
       }
       // Spec v2: pubkey only — master chaincode never leaves the device.
@@ -288,7 +287,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     } catch (e) {
       dbg('Extension bind from scan failed:', e);
       extensionBindAlertShownRef.current = false;
-      Alert.alert('Error', 'Failed to generate response QR.');
+      showAppNotice('Error', 'Failed to generate response QR.');
     }
   }, []);
 
@@ -349,7 +348,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // Ref to guard against concurrent re-initializations and refresh during network switch
   const isReinitInProgressRef = useRef(false);
   // Stable ref for fetchData to avoid circular dependencies
-  const fetchDataRef = useRef<(() => Promise<void>) | null>(null);
+  const fetchDataRef = useRef<
+    ((activeOnly?: boolean, forceTx?: boolean) => Promise<void>) | null
+  >(null);
   // Ref to control TransactionList (imperative refresh)
   const transactionListRef = useRef<
     import('../components/TransactionList').TransactionListHandle | null
@@ -471,10 +472,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
     // Sum ALL per-address rows for this network (avoids stale subset when walletAddresses
     // lists 37 discovery addresses but only 10 were refreshed in the last API sync).
+    const storedBalances =
+      addrs.length > 0
+        ? balanceRepository.getBalancesForAddresses(addrs, network)
+        : balanceRepository.getBalancesForNetwork(network);
     let totalConfirmed = 0;
     let totalPending = 0;
     let newestFetch = 0;
-    for (const stored of balanceRepository.getBalancesForNetwork(network)) {
+    for (const stored of storedBalances) {
       totalConfirmed += stored.balanceSats;
       totalPending += stored.pendingSats;
       if (stored.fetchedAt > newestFetch) newestFetch = stored.fetchedAt;
@@ -564,7 +569,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   // API → DB → UI: trigger API calls that write to DB, then refresh UI from DB.
   // Even if APIs fail, refreshFromDB still runs and shows whatever is in the DB.
   const fetchData = useCallback(
-    async (activeOnly: boolean = true) => {
+    async (activeOnly: boolean = true, forceTx: boolean = false) => {
       if (!isWalletOnline()) {
         refreshFromDBRef.current();
         setSyncEngineReady(true);
@@ -614,6 +619,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           pendingSent: _pendingSent,
           activeOnly,
           includeTx: true,
+          forceTx,
         });
         setLastSyncFailed(false);
       } catch (error) {
@@ -714,6 +720,19 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         if (cancelled) return;
         setWalletAddresses(arr.map(a => a.address));
         setWalletAddressesReady(true);
+        // B1: restart change-index safety net — log-only, never blocks UI.
+        if (walletRepository.getHdState(network, effectiveType)?.restoreDone) {
+          ws
+            .reconcileChangeIndexAfterRestart(network, effectiveType)
+            .then(r => {
+              if (r.bumped) {
+                dbg('[WalletHome] change index reconciled after restart', r);
+              }
+            })
+            .catch(err =>
+              dbg('[WalletHome] change index reconcile failed (non-fatal)', err),
+            );
+        }
       } catch (e) {
         dbg('[WalletHome] Address list load error', e);
         if (!cancelled) {
@@ -1043,20 +1062,11 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       action();
       return;
     }
-    pendingOnlineActionRef.current = action;
-    setOfflineSandboxModalVisible(true);
-  }, []);
-  const dismissOfflineSandboxModal = useCallback(() => {
-    pendingOnlineActionRef.current = null;
-    setOfflineSandboxModalVisible(false);
-  }, []);
-  const goOnlineFromSandboxModal = useCallback(() => {
-    const pending = pendingOnlineActionRef.current;
-    pendingOnlineActionRef.current = null;
-    setOfflineSandboxModalVisible(false);
-    setWalletOnline(true);
-    notifyWalletOnlineToggle(true);
-    pending?.();
+    openWalletOfflineSandbox({
+      message:
+        'Your wallet is set to the offline sandbox. This action needs the Internet. Cached balances and history stay available while offline.',
+      onGoOnline: action,
+    });
   }, []);
   const {theme} = useTheme();
   const isDarkMode = theme.colors.background !== '#ffffff';
@@ -1123,7 +1133,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     [btcPrice, selectedCurrency],
   );
   const headerTitle = React.useCallback(
-    () => <HeaderProvider apiBase={resolvedWalletApi} />,
+    () => <HeaderProvider apiBase={resolvedWalletApi} connectionStatus />,
     [resolvedWalletApi],
   );
   const headerRight = React.useCallback(
@@ -1185,7 +1195,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     const checkPermission = async () => {
       const hasPermission = await requestCameraPermission();
       if (!hasPermission) {
-        Alert.alert(
+        showAppNotice(
           'Camera Permission Denied',
           'You need to grant camera permissions to use this feature.',
         );
@@ -1336,10 +1346,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addrType);
           dbg('WalletHome: Setting default address type to segwit-native');
         }
-        // Use cached price for fast init — the live price will be fetched by
-        // fetchData() right after isInitialized is set to true.  Calling
-        // getBitcoinPrice() here would block initialization for 5-35 s while
-        // the round-robin tries every endpoint on a slow connection.
+        // Paint the saved price immediately. The live quote is fetched in
+        // parallel by SyncCoordinator, then every 2 minutes while the app is
+        // open. Calling getBitcoinPrice() here would block boot.
         let currency = appConfigRepository.get(CONFIG_KEYS.CURRENCY);
         const priceResponse = await walletService.getCachePrice();
         if (!currency) {
@@ -1563,13 +1572,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }
     } catch (error) {
       dbg('WalletHome: handleSend validation failed', error);
-      Alert.alert(
+      showAppNotice(
         'Send failed',
         'Could not start co-signing. Please try again.',
       );
       return;
     }
     setIsSending(true);
+    const sendClosed = armModalDismiss(sendDismissRef);
     setIsSendModalVisible(false);
     try {
       const hasNostrSupport = await resolveNostrTransportSupport();
@@ -1644,14 +1654,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         changeAddress: changeAddress ?? null,
         brantaInitiated: brantaInitiated === true,
       });
-      setTimeout(() => {
-        setIsTransportModalVisible(true);
-        setIsSending(false);
-      }, 300);
+      await sendClosed;
+      setIsTransportModalVisible(true);
+      setIsSending(false);
     } catch (error) {
       dbg('WalletHome: handleSend failed', error);
       setIsSending(false);
-      Alert.alert(
+      showAppNotice(
         'Send failed',
         'Could not start co-signing. Please try again.',
       );
@@ -1695,15 +1704,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
     // Validate required parameters
     if (!addressTypeToUse || addressTypeToUse.trim() === '') {
-      Alert.alert('Error', 'Address type is required for send transaction');
+      showAppNotice('Error', 'Address type is required for send transaction');
       return;
     }
     if (!derivationPathToUse || derivationPathToUse.trim() === '') {
-      Alert.alert('Error', 'Derivation path is required for send transaction');
+      showAppNotice('Error', 'Derivation path is required for send transaction');
       return;
     }
     if (!networkToUse || networkToUse.trim() === '') {
-      Alert.alert('Error', 'Network is required for send transaction');
+      showAppNotice('Error', 'Network is required for send transaction');
       return;
     }
     const routeName =
@@ -1736,6 +1745,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     if (pendingSendParams.brantaInitiated) {
       navigationParams.brantaInitiated = true;
     }
+    const transportClosed = armModalDismiss(transportDismissRef);
+    setIsTransportModalVisible(false);
+    await transportClosed;
     dbg('=== WalletHome: Navigating to pairing screen ===', {
       routeName,
       transport,
@@ -1894,7 +1906,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         const currentLabel =
           networkForValidation === 'mainnet' ? 'mainnet' : 'testnet';
         const addressLabel = otherNetwork === 'mainnet' ? 'mainnet' : 'testnet';
-        Alert.alert(
+        showAppNotice(
           'Wrong network',
           `This address is for ${addressLabel} but you're on ${currentLabel}. Switch network in Settings or scan an address for ${currentLabel}.`,
         );
@@ -1923,7 +1935,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       }
       // Validate Bitcoin address
       if (!validateBitcoinAddress(decoded.toAddress)) {
-        Alert.alert(
+        showAppNotice(
           'Invalid Address',
           'The scanned QR code contains an invalid Bitcoin address.',
         );
@@ -1933,7 +1945,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       const amountSats = Big(decoded.amountSats);
       const feeSats = Big(decoded.feeSats);
       if (amountSats.lte(0) || feeSats.lte(0)) {
-        Alert.alert(
+        showAppNotice(
           'Invalid Amount',
           'The scanned QR code contains invalid amount or fee values.',
         );
@@ -2130,7 +2142,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, []);
   // Animated style for balance update
   const balanceAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: balanceUpdateAnimation.value,
+    opacity: DISSOLVE_FADE ? 1 : balanceUpdateAnimation.value,
   }));
 
   // Pulse the balance text opacity while loading so the value stays readable
@@ -2151,7 +2163,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
   }, [isBalanceLoading, shimmerOpacity]);
 
   const shimmerAnimStyle = useAnimatedStyle(() => ({
-    opacity: shimmerOpacity.value,
+    opacity: DISSOLVE_FADE ? 1 : shimmerOpacity.value,
   }));
 
   /**
@@ -2384,12 +2396,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                                     displayFiat === '-' ? '0' : displayFiat;
                                   const symbol =
                                     getCurrencySymbol(selectedCurrency);
+                                  const numeric = Number(fiatValue);
+                                  if (!Number.isFinite(numeric)) {
+                                    return '-';
+                                  }
                                   const formattedFiat = balanceFormattingEnabled
-                                    ? presentFiat(fiatValue)
+                                    ? presentFiat(numeric)
                                     : fiatValue;
-                                  return isNaN(Number(formattedFiat))
-                                    ? '-'
-                                    : symbol + formattedFiat;
+                                  return symbol + formattedFiat;
                                 })()}
                           </Text>
                         </Animated.View>
@@ -2455,7 +2469,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   if (balance > 0) {
                     setIsSendModalVisible(true);
                   } else {
-                    Alert.alert(
+                    showAppNotice(
                       'Insufficient Balance',
                       "You don't have any satoshis to send.",
                     );
@@ -2475,7 +2489,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     if (decision.kind === 'openSend') {
                       setIsSendModalVisible(true);
                     } else if (decision.kind === 'insufficient') {
-                      Alert.alert(
+                      showAppNotice(
                         'Insufficient Balance',
                         "You don't have any satoshis to send.",
                       );
@@ -2489,7 +2503,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                       if (decision.openSend) {
                         setIsSendModalVisible(true);
                       } else {
-                        Alert.alert(
+                        showAppNotice(
                           'Could not confirm balance',
                           "Couldn't refresh spendable balance. Tap the bar to retry.",
                         );
@@ -2503,7 +2517,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                       text2: 'Tap the bar to retry.',
                       position: 'top',
                     });
-                    Alert.alert(
+                    showAppNotice(
                       'Could not confirm balance',
                       "Couldn't refresh spendable balance. Tap the bar to retry.",
                     );
@@ -2654,36 +2668,37 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         healthHint={syncErrorMessage ? null : healthHint}
         onRefresh={() => {
           runOrPromptOnline(() => {
-            fetchData();
+            fetchData(true, true);
           });
         }}
         onAbortRequested={() => {
-          Alert.alert(
-            'Cancel sync?',
-            'Stop the current sync and show cached data?',
-            [
-              {text: 'No', style: 'cancel'},
-              {
-                text: 'Yes',
-                onPress: () => {
-                  setAbortRequested(true);
-                  mempoolClient.abortAll();
-                  apiQueue.clear();
-                },
-              },
-            ],
-          );
+          confirmAppPrompt({
+            icon: 'sync',
+            title: 'Stop sync?',
+            hint: 'Cached data stays on screen.',
+            cancelLabel: 'Keep syncing',
+            confirmLabel: 'Stop',
+          }).then(ok => {
+            if (!ok) {
+              return;
+            }
+            setAbortRequested(true);
+            mempoolClient.abortAll();
+            apiQueue.clear();
+          });
         }}
         onLongPress={() => {
           runOrPromptOnline(() => {
-            Alert.alert(
-              'Full sync',
-              'Re-scan all addresses and sync balances and transactions. Existing data is kept. Continue?',
-              [
-                {text: 'Cancel', style: 'cancel'},
-              {
-                text: 'Continue',
-                onPress: async () => {
+            confirmAppPrompt({
+              icon: 'sync',
+              title: 'Sync everything?',
+              hint: 'Addresses are scanned again. Saved data stays.',
+              cancelLabel: 'Not now',
+              confirmLabel: 'Sync',
+            }).then(async ok => {
+              if (!ok) {
+                return;
+              }
                   const effectiveType =
                     addressType || userAddressType || 'segwit-native';
                   const api = resolveStoredMempoolApiBase(network);
@@ -2717,10 +2732,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                   setSyncStatus(null);
                   await fetchData(false);
                   transactionListRef.current?.reloadFromCache?.();
-                },
-              },
-            ],
-          );
+            });
           });
         }}
         theme={theme}
@@ -2761,13 +2773,16 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           deferInitialFetch
           onPullRefresh={async () => {
             if (!isWalletOnline()) {
-              pendingOnlineActionRef.current = () => {
-                fetchDataRef.current?.();
-              };
-              setOfflineSandboxModalVisible(true);
+              openWalletOfflineSandbox({
+                message:
+                  'Your wallet is set to the offline sandbox. Refresh needs the Internet. Cached balances and history stay available while offline.',
+                onGoOnline: () => {
+                  fetchDataRef.current?.(true, true);
+                },
+              });
               return;
             }
-            await fetchDataRef.current?.();
+            await fetchDataRef.current?.(true, true);
           }}
           isBlurred={isBlurred}
         />
@@ -2840,11 +2855,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         visible={isCurrencySelectorVisible}
         onClose={() => setIsCurrencySelectorVisible(false)}
         onSelect={handleCurrencySelect}
+        onRates={rates => {
+          setPriceData(rates);
+          const rate = rates[selectedCurrency];
+          if (rate > 0) {
+            setBtcPrice(String(rate));
+            setBtcRate(rate);
+          }
+        }}
         currentCurrency={selectedCurrency}
         availableCurrencies={priceData}
       />
-      {isSendModalVisible && (
-        <SendBitcoinModal
+      <SendBitcoinModal
           visible={isSendModalVisible}
           btcToFiatRate={sendModalRate}
           walletBalance={sendModalBalance}
@@ -2859,11 +2881,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             setInitialSendBrantaRawQr(null);
           }}
           onSend={handleSend}
+          onDismiss={() => sendDismissRef.current?.()}
           selectedCurrency={selectedCurrency}
         />
-      )}
       <TransportModeSelector
         visible={isTransportModalVisible}
+        onDismiss={() => transportDismissRef.current?.()}
         onClose={() => {
           setIsTransportModalVisible(false);
           setPendingSendParams(null);
@@ -2873,7 +2896,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         }}
         onSelect={(transport: 'local' | 'nostr') => {
           navigateToPairing(transport);
-          setIsTransportModalVisible(false);
         }}
         title="Co-Sign Via…"
         description=""
@@ -2888,14 +2910,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         index={restoreProgress?.index}
         gapIndex={restoreProgress?.gapIndex}
       />
-      <WalletOfflineSandboxModal
-        visible={offlineSandboxModalVisible}
-        onClose={dismissOfflineSandboxModal}
-        onKeepOffline={dismissOfflineSandboxModal}
-        onGoOnline={goOnlineFromSandboxModal}
-      />
-      {isReceiveModalVisible && (
-        <ReceiveModal
+      <ReceiveModal
+          visible={isReceiveModalVisible}
           address={receivePathInfo?.address ?? address}
           addressType={addressType}
           baseApi={resolvedWalletApi}
@@ -2908,18 +2924,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           }}
           receivePathInfo={receivePathInfo}
         />
-      )}
       {/* Signed PSBT Modal */}
-      {signedPsbt && (
-        <SignedPSBTModal
-          visible={isSignedPSBTModalVisible}
-          signedPsbtBase64={signedPsbt}
+      <SignedPSBTModal
+          visible={!!signedPsbt && isSignedPSBTModalVisible}
+          signedPsbtBase64={signedPsbt ?? ''}
           onClose={() => {
             setIsSignedPSBTModalVisible(false);
             setSignedPsbt(null);
           }}
         />
-      )}
     </SafeAreaView>
   );
 };

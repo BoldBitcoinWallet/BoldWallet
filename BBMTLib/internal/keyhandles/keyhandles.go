@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"sync"
 )
 
@@ -162,12 +163,33 @@ func liveIDLocked() string {
 	return staged.id
 }
 
+// UnmarshalMapUseNumber decodes a JSON object into map[string]any using
+// json.Decoder.UseNumber so GG18 *big.Int fields (>308 digits, bare JSON
+// numbers) never overflow float64 during metadata projection, backend
+// sniffing, redaction, or staged import/finalize.
+func UnmarshalMapUseNumber(fullJSON []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(fullJSON))
+	dec.UseNumber()
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil {
+		return nil, err
+	}
+	if m == nil {
+		return nil, fmt.Errorf("json: top-level null")
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
+		return nil, fmt.Errorf("json: trailing data")
+	}
+	return m, nil
+}
+
 // SniffBackend mirrors JS detectKeyshareTssBackend: explicit
 // tss_backend wins; else ecdsa_local_data → gg18; else
 // non-empty share_b64 → dkls23; default gg18.
 func SniffBackend(fullJSON []byte) Backend {
-	var m map[string]any
-	if err := json.Unmarshal(fullJSON, &m); err != nil {
+	m, err := UnmarshalMapUseNumber(fullJSON)
+	if err != nil {
 		return BackendGG18
 	}
 	if b, _ := m["tss_backend"].(string); b == string(BackendDKLS23) {
@@ -189,8 +211,8 @@ func SniffBackend(fullJSON []byte) Backend {
 // "<redacted object>" (the ecdsa_local_data subtree). All other
 // values pass through verbatim.
 func RedactedStructure(fullJSON []byte) ([]byte, error) {
-	var m map[string]any
-	if err := json.Unmarshal(fullJSON, &m); err != nil {
+	m, err := UnmarshalMapUseNumber(fullJSON)
+	if err != nil {
 		return nil, fmt.Errorf("redact: %w", err)
 	}
 	redactValue := func(key string, v any) any {
@@ -226,8 +248,8 @@ func RedactedStructure(fullJSON []byte) ([]byte, error) {
 // Unknown/absent keys are omitted; secret keys can never appear
 // (projection, not redaction).
 func MetadataJSON(fullJSON []byte) ([]byte, error) {
-	var m map[string]any
-	if err := json.Unmarshal(fullJSON, &m); err != nil {
+	m, err := UnmarshalMapUseNumber(fullJSON)
+	if err != nil {
 		return nil, fmt.Errorf("metadata: %w", err)
 	}
 	out := make(map[string]any, len(MetadataAllowlist))

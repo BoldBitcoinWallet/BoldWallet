@@ -1,10 +1,10 @@
-import {Alert} from 'react-native';
+import {confirmAppPrompt, showAppNotice} from './appPrompt';
 import {CommonActions} from '@react-navigation/native';
 import RNFS from 'react-native-fs';
 import {safeUnlink} from './rnfsSafe';
 import {persistStagedKeyshare} from './walletSetupOrchestrator';
 import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigRepository';
-import LocalCache from './LocalCache';
+import {clearCachesBeforeWalletSession} from './walletSessionReset';
 import {
   completeCeremonyToken,
   newCeremonySessionID,
@@ -154,12 +154,14 @@ export async function finalizeKeyshareImport(
   ceremonyToken?: string,
   ceremonySessionID?: string,
 ): Promise<void> {
-  const persistOpts =
-    ceremonyToken !== undefined && ceremonySessionID !== undefined
+  const persistOpts = {
+    ...(ceremonyToken !== undefined && ceremonySessionID !== undefined
       ? {ceremonyToken, ceremonySessionID}
-      : undefined;
+      : {}),
+    origin: 'imported' as const,
+  };
   await persistStagedKeyshare(handle, persistOpts);
-  await LocalCache.clear();
+  await clearCachesBeforeWalletSession();
   appConfigRepository.remove(CONFIG_KEYS.CURRENT_ADDRESS);
   const isLegacyPath = resolveUseLegacyDerivationPaths({
     created_at: parsed.created_at ?? null,
@@ -227,16 +229,17 @@ export async function importKeyshareFromBase64(
 export function showWalletAlreadyLoadedAlert(
   onOpenSettings?: () => void,
 ): void {
-  const buttons: Array<{text: string; onPress?: () => void; style?: 'cancel'}> =
-    [{text: 'OK', style: 'cancel'}];
-  if (onOpenSettings) {
-    buttons.unshift({text: 'Open Settings', onPress: onOpenSettings});
-  }
-  Alert.alert(
-    'Wallet already set up',
-    'A keyshare is already loaded. Delete the wallet keyshare from Settings before importing a new one.',
-    buttons,
-  );
+  confirmAppPrompt({
+    icon: 'wallet',
+    title: 'A wallet is already here',
+    hint: 'Remove it in Settings before importing another.',
+    cancelLabel: onOpenSettings ? 'OK' : undefined,
+    confirmLabel: onOpenSettings ? 'Settings' : 'OK',
+  }).then(ok => {
+    if (ok && onOpenSettings) {
+      onOpenSettings();
+    }
+  });
 }
 
 export function showKeyshareImportError(error: unknown): void {
@@ -245,19 +248,19 @@ export function showKeyshareImportError(error: unknown): void {
     return;
   }
   if (error instanceof WrongKeysharePasswordError) {
-    Alert.alert('Wrong Password', 'Could not import keyshare');
+    showAppNotice('Wrong Password', 'Could not import keyshare');
     return;
   }
   if (error instanceof IncomingFileTooLargeError) {
-    Alert.alert(
+    showAppNotice(
       'File Too Large',
       'Shared files must be 1 MB or smaller. Keyshare backups and PSBTs are only a few KB.',
     );
     return;
   }
   if (error instanceof InvalidKeyshareError) {
-    Alert.alert('Error', 'Failed to import the file');
+    showAppNotice('Error', 'Failed to import the file');
     return;
   }
-  Alert.alert('Error', 'Failed to import the file');
+  showAppNotice('Error', 'Failed to import the file');
 }

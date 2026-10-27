@@ -1,4 +1,9 @@
-import {Alert} from 'react-native';
+jest.mock('react-native-toast-message', () => ({
+  __esModule: true,
+  default: {show: jest.fn()},
+}));
+
+import Toast from 'react-native-toast-message';
 import {
   alertSecureStorageError,
   secureStorageKindOf,
@@ -8,7 +13,7 @@ import {
 describe('secure storage errors (F3/F4)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+    jest.spyOn(Toast, 'show').mockImplementation(() => {});
   });
 
   it('F3: maps all four native kinds to copy', () => {
@@ -37,13 +42,15 @@ describe('secure storage errors (F3/F4)', () => {
     expect(
       alertSecureStorageError(new Error('[SECURE_STORAGE_UNAVAILABLE] x')),
     ).toBe(true);
-    expect(Alert.alert).toHaveBeenCalledTimes(1);
-    expect(Alert.alert).toHaveBeenCalledWith(
-      'Secure Storage Unavailable',
-      expect.stringContaining('screen lock'),
+    expect(Toast.show).toHaveBeenCalledTimes(1);
+    expect(Toast.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text1: 'Secure Storage Unavailable',
+        text2: expect.stringContaining('screen lock'),
+      }),
     );
     expect(alertSecureStorageError(new Error('plain failure'))).toBe(false);
-    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(Toast.show).toHaveBeenCalledTimes(1);
   });
 
   it('F15b-1: repeats within the window are suppressed, still handled', () => {
@@ -51,20 +58,20 @@ describe('secure storage errors (F3/F4)', () => {
     // module-level dedupe state cannot leak between tests.
     const err = () => new Error('[SECURE_STORAGE_LOCKED] x');
     expect(alertSecureStorageError(err())).toBe(true);
-    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(Toast.show).toHaveBeenCalledTimes(1);
     expect(alertSecureStorageError(err())).toBe(true);
     expect(alertSecureStorageError(err())).toBe(true);
-    expect(Alert.alert).toHaveBeenCalledTimes(1);
+    expect(Toast.show).toHaveBeenCalledTimes(1);
   });
 
   it('F15b-1: a different message is not suppressed', () => {
     expect(alertSecureStorageError(new Error('[SECURE_STORAGE_LOCKED] x'))).toBe(
       true,
     );
-    const before = (Alert.alert as jest.Mock).mock.calls.length;
+    const before = (Toast.show as jest.Mock).mock.calls.length;
     expect(
       alertSecureStorageError(new Error('[SECURE_STORAGE_CORRUPTED] x')),
     ).toBe(true);
-    expect((Alert.alert as jest.Mock).mock.calls.length).toBe(before + 1);
+    expect((Toast.show as jest.Mock).mock.calls.length).toBe(before + 1);
   });
 });

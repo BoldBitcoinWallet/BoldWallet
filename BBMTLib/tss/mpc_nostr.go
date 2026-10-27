@@ -205,7 +205,7 @@ func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionI
 
 	// Parse keyshare JSON
 	var keyshare LocalStateNostr
-	if err := json.Unmarshal([]byte(keyshareJSON), &keyshare); err != nil {
+	if err := json.Unmarshal([]byte(NormalizeQuotedBigIntJSON(keyshareJSON)), &keyshare); err != nil {
 		return "", fmt.Errorf("failed to parse keyshare JSON: %w", err)
 	}
 
@@ -268,7 +268,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 
 	// Parse keyshare JSON
 	var keyshare LocalStateNostr
-	if err := json.Unmarshal([]byte(keyshareJSON), &keyshare); err != nil {
+	if err := json.Unmarshal([]byte(NormalizeQuotedBigIntJSON(keyshareJSON)), &keyshare); err != nil {
 		return "", fmt.Errorf("failed to parse keyshare JSON: %w", err)
 	}
 
@@ -1542,7 +1542,7 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 		pumpCancel()
 		return "", fmt.Errorf("fail to normalize chain code: %w", normErr)
 	}
-	_, err = tssService.KeygenECDSA(&KeygenRequest{
+	keygenResp, err := tssService.KeygenECDSA(&KeygenRequest{
 		LocalPartyID: localNpub,
 		AllParties:   partiesCSV,
 		ChainCodeHex: chainCodeHex,
@@ -1556,6 +1556,21 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 			return "", nostrtransport.WrapPeerAbort(reason, err)
 		}
 		return "", fmt.Errorf("keygen failed: %w", err)
+	}
+	if keygenResp == nil || strings.TrimSpace(keygenResp.PubKey) == "" {
+		pumpCancel()
+		return "", fmt.Errorf("F39: GG18 keygen produced no group key — refusing to return share")
+	}
+	// F39: post-DKG group-key cross-check for GG18 nostr (shared core
+	// with DKLS, above). Runs while the pump is still alive; a
+	// mismatch fails closed — localState is never returned.
+	// Old-version peers warn and proceed (same mixed-version rule).
+	if gkErr := nostrtransport.CollectGroupKeyConsensus(
+		ctx, cfg, coordinator, pump,
+		keygenResp.PubKey, localNpub, allParties,
+	); gkErr != nil {
+		pumpCancel()
+		return "", gkErr
 	}
 
 	Logln("BBMTLog", "ECDSA keygen response ok")

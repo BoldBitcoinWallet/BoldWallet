@@ -1,13 +1,14 @@
 import React, {useCallback, useRef, useState} from 'react';
+import {showAppNotice} from '../services/appPrompt';
 import {
   View,
   Text,
-  Modal,
   StyleSheet,
   Image,
   Linking,
-  Alert,
+
 } from 'react-native';
+import AppModal from '../components/AppModal';
 import AppPressable from '../components/AppPressable';
 import StaticQRCode from '../components/StaticQRCode';
 import AppText from '../components/AppText';
@@ -17,6 +18,7 @@ import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
 import {safeUnlink} from '../services/rnfsSafe';
 import {dbg} from '../utils';
+import walletRepository from '../services/repositories/WalletRepository';
 import {useTheme} from '../theme';
 import {capitalize} from 'lodash';
 export type ReceivePathInfo = {path: string; index: number; address: string} | null;
@@ -27,6 +29,8 @@ const ReceiveModal: React.FC<{
   baseApi: string;
   network: string;
   onClose: () => void;
+  /** Keep mounted and pass false so iOS can finish presenting before close. */
+  visible?: boolean;
   receivePathInfo?: ReceivePathInfo;
   /** When showing a change address, path chip reads "Change #n" instead of "Receive #n". */
   pathChain?: 'receive' | 'change';
@@ -36,6 +40,7 @@ const ReceiveModal: React.FC<{
   baseApi,
   network,
   onClose,
+  visible = true,
   receivePathInfo,
   pathChain = 'receive',
 }) => {
@@ -44,11 +49,13 @@ const ReceiveModal: React.FC<{
   const [isCopied, setIsCopied] = useState(false);
   const copyToClipboard = useCallback(() => {
     Clipboard.setString(address);
+    // B2: keep this address in the active refresh set until first used.
+    walletRepository.pinAddress(network, addressType, address);
     setIsCopied(true);
     setTimeout(() => {
       setIsCopied(false);
     }, 350);
-  }, [address]);
+  }, [address, network, addressType]);
   const formatAddressType = (addrType: string) => {
     if (addrType === 'segwit-native') {
       return 'Native SegWit';
@@ -64,7 +71,7 @@ const ReceiveModal: React.FC<{
   const shareQRCode = useCallback(async () => {
     dbg('shareQRCode...');
     if (!qrRef.current) {
-      Alert.alert('Error', 'QR Code is not ready yet');
+      showAppNotice('Error', 'QR Code is not ready yet');
       return;
     }
     try {
@@ -91,14 +98,16 @@ const ReceiveModal: React.FC<{
           isNewTask: true,
           failOnCancel: false,
         });
+        // B2: shared address stays in the active refresh set until first used.
+        walletRepository.pinAddress(network, addressType, address);
         dbg('Share completed successfully');
         await safeUnlink(filePath);
       });
     } catch (error) {
       dbg('Error sharing QR code:', error);
-      Alert.alert('Error', 'Failed to share QR code');
+      showAppNotice('Error', 'Failed to share QR code');
     }
-  }, [address, network]);
+  }, [address, network, addressType]);
   const styles = StyleSheet.create({
     modalContainer: {
       flex: 1,
@@ -309,8 +318,8 @@ const ReceiveModal: React.FC<{
     },
   });
   return (
-    <Modal
-      visible={true}
+    <AppModal
+      visible={visible}
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}>
@@ -428,7 +437,7 @@ const ReceiveModal: React.FC<{
           </View>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 export default ReceiveModal;

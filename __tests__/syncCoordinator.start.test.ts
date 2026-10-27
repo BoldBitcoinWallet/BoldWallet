@@ -4,15 +4,17 @@
 
 jest.mock('../utils', () => ({dbg: jest.fn()}));
 
-const mockDiscover = jest.fn(async () => undefined);
-const mockGetHd = jest.fn(async () => []);
-const mockGetActive = jest.fn(async () => []);
+const mockDiscover = jest.fn(async (..._args: unknown[]) => undefined);
+const mockGetHd = jest.fn(async (..._args: unknown[]) => []);
+const mockGetActive = jest.fn(async (..._args: unknown[]) => []);
 jest.mock('../services/WalletService', () => ({
   WalletService: {
     getInstance: () => ({
-      discoverHdIndexesForNetwork: (...args: unknown[]) => mockDiscover(...args),
+      discoverHdIndexesForNetwork: (...args: unknown[]) =>
+        mockDiscover(...args),
       getHdAddressesWithPaths: (...args: unknown[]) => mockGetHd(...args),
-      getActiveAddressesWithPaths: (...args: unknown[]) => mockGetActive(...args),
+      getActiveAddressesWithPaths: (...args: unknown[]) =>
+        mockGetActive(...args),
     }),
   },
 }));

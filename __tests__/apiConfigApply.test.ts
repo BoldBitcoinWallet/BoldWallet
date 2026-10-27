@@ -2,6 +2,11 @@ jest.mock('react-native', () => ({
   Alert: {alert: jest.fn()},
 }));
 
+jest.mock('react-native-toast-message', () => ({
+  __esModule: true,
+  default: {show: jest.fn()},
+}));
+
 jest.mock('../native_modules', () => ({
   BBMTLibNativeModule: {
     setAPI: jest.fn(),
@@ -39,7 +44,7 @@ jest.mock('../utils', () => ({
   dbg: jest.fn(),
 }));
 
-import {Alert} from 'react-native';
+import {currentAppPrompt, respondAppPrompt} from '../services/appPrompt';
 import {BBMTLibNativeModule} from '../native_modules';
 import {
   defaultConfirmApiUrls,
@@ -50,7 +55,6 @@ import {
 import {TssProvider} from '../services/TssProvider';
 
 const native = BBMTLibNativeModule as any;
-const alertMock = Alert.alert as jest.Mock;
 
 function authRejection() {
   return Object.assign(new Error('nope'), {code: 'CEREMONY_AUTH_REQUIRED'});
@@ -233,23 +237,15 @@ describe('3b-2d config gating (F10-bridge B15-B16)', () => {
     );
   });
 
-  test('default confirm resolves true on Approve, false on Cancel', async () => {
+  test('default confirm resolves true on Use it, false on Cancel', async () => {
     const pApprove = defaultConfirmApiUrls(['https://u.example/api']);
-    expect(alertMock).toHaveBeenCalledTimes(1);
-    const buttons = alertMock.mock.calls[0][2] as Array<{
-      text: string;
-      onPress: () => void;
-    }>;
-    expect(alertMock.mock.calls[0][1]).toContain('https://u.example/api');
-    buttons.find(b => b.text === 'Approve')!.onPress();
+    expect(currentAppPrompt()?.detail).toContain('https://u.example/api');
+    expect(currentAppPrompt()?.confirmLabel).toBe('Use it');
+    respondAppPrompt(true);
     await expect(pApprove).resolves.toBe(true);
 
     const pCancel = defaultConfirmApiUrls(['https://u.example/api']);
-    const buttons2 = alertMock.mock.calls[1][2] as Array<{
-      text: string;
-      onPress: () => void;
-    }>;
-    buttons2.find(b => b.text === 'Cancel')!.onPress();
+    respondAppPrompt(false);
     await expect(pCancel).resolves.toBe(false);
   });
 

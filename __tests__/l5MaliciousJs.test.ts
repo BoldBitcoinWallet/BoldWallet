@@ -29,6 +29,7 @@ jest.mock('../native_modules', () => ({
     cancelMpcSession: jest.fn(),
     cancelNostrMpc: jest.fn(),
     requestSignCeremonyToken: jest.fn(),
+    requestSignTransportCeremonyToken: jest.fn(),
     requestPsbtSignCeremonyToken: jest.fn(),
     requestSendSignCeremonyToken: jest.fn(),
     requestKeygenCeremonyToken: jest.fn(),
@@ -129,7 +130,8 @@ function last<T>(args: unknown[]): T {
 function installStrictNative(): void {
   mintRegistry.clear();
   native.requestSignCeremonyToken.mockImplementation(mintStub('sign'));
-  // F20: PSBT confirmation minter — same 'sign' class issuance.
+  native.requestSignTransportCeremonyToken.mockImplementation(mintStub('sign'));
+  // F20: PSBT silent digest-bound mint — same 'sign' class issuance.
   native.requestPsbtSignCeremonyToken.mockImplementation(mintStub('sign'));
   native.requestSendSignCeremonyToken.mockImplementation(mintStub('sign'));
   native.requestKeygenCeremonyToken.mockImplementation(mintStub('keygen'));
@@ -195,10 +197,7 @@ function installStrictNative(): void {
     gate(a[0], ['keygen']);
     return '{"npub":"npub1x"}';
   });
-  native.eciesKeypair.mockImplementation(async (...a: unknown[]) => {
-    gate(a[0], ['keygen']);
-    return '{"pub":"aa"}';
-  });
+  native.eciesKeypair.mockImplementation(async () => '{"pub":"aa"}');
   native.publishData.mockImplementation(async (...a: unknown[]) => {
     gate(a[a.length - 2], ['sign', 'keygen'], last(a));
     return 'published';
@@ -482,9 +481,6 @@ describe('3b-5 L5 malicious-JS simulation (F10-bridge)', () => {
     await expect(native.nostrKeypair()).rejects.toMatchObject({
       code: 'CEREMONY_AUTH_REQUIRED',
     });
-    await expect(native.eciesKeypair('')).rejects.toMatchObject({
-      code: 'CEREMONY_AUTH_REQUIRED',
-    });
     await expect(
       native.publishData('1', '2', 'e', 'r', 'duo'),
     ).rejects.toMatchObject({code: 'CEREMONY_AUTH_REQUIRED'});
@@ -538,6 +534,9 @@ describe('3b-5 L5 malicious-JS simulation (F10-bridge)', () => {
       (auth.match(/export function request(Sign|Keygen|Export|Import|Config)CeremonyToken\(/g) ??
         []).length,
     ).toBe(5);
+    expect(auth).toMatch(
+      /export function requestWalletSetupCeremonyToken\(/,
+    );
     expect(auth).not.toMatch(/export (async )?function requestCeremonyToken\(/);
     const provider = read('services/TssProvider.ts');
     expect(provider).not.toMatch(/requestCeremonyToken\(/);
@@ -555,6 +554,8 @@ describe('3b-5 L5 malicious-JS simulation (F10-bridge)', () => {
       (swift.match(/func request(Sign|Keygen|Export|Import|Config)CeremonyToken/g) ??
         []).length,
     ).toBe(5);
+    expect(kt).toContain('fun requestWalletSetupCeremonyToken(');
+    expect(swift).toContain('func requestWalletSetupCeremonyToken(');
   });
 
   test('all 25 gated methods carry ceremonyToken on both platforms (source-text)', () => {
@@ -615,7 +616,11 @@ describe('3b-5 L5 malicious-JS simulation (F10-bridge)', () => {
       // ceremonyToken ~830 chars in; the 800-char window truncated it.
       const mDecl = m.slice(m.indexOf(name), m.indexOf(name) + 1100);
       expect(mDecl).toContain('ceremonyToken');
-      // …and each side verifies (or decides/consumes) before work.
+      // Pairing device keys are created from the Pair tap. The wallet
+      // share methods still verify a ceremony token before work.
+      if (name === 'eciesKeypair') {
+        continue;
+      }
       expect(ktDecl + swiftDecl).toMatch(
         /CeremonyTokens\.(verify|verifySingleCall|verifyTransport|cancelConsume)|CeremonyApiAllowlist\.decide|gateApiUrls/,
       );
@@ -654,12 +659,13 @@ describe('3b-5 L5 malicious-JS simulation (F10-bridge)', () => {
       'psbt',
     );
     expect(sig).toBe('signed-psbt');
-    // Cancel after completion re-auths via fresh mint (stuck path).
-    const mintCalls = (native.requestSignCeremonyToken as jest.Mock).mock
-      .calls.length;
+    // Cancel after completion re-auths via silent transport mint (stuck path).
+    const mintCalls = (
+      native.requestSignTransportCeremonyToken as jest.Mock
+    ).mock.calls.length;
     await TssProvider.cancelMpcSession('sess-rt-1');
     expect(
-      (native.requestSignCeremonyToken as jest.Mock).mock.calls.length,
+      (native.requestSignTransportCeremonyToken as jest.Mock).mock.calls.length,
     ).toBe(mintCalls + 1);
     // No live session entries leak.
     expect(findLiveCeremonyToken()).toBeUndefined();

@@ -116,6 +116,40 @@ export function spendableSats(
   return selectedSats;
 }
 
+/**
+ * Shrink a send so amount + fee fits in the spendable balance.
+ * Returns the new amount in sats, or null when the amount should stay.
+ * A lower fee does not increase the amount. A fee that consumes the
+ * whole balance returns null so the fee controls stay on screen.
+ */
+export function clampSendAmountSats(
+  amountSats: number,
+  feeSats: number,
+  balanceSats: number,
+): number | null {
+  if (
+    !Number.isFinite(amountSats) ||
+    !Number.isFinite(feeSats) ||
+    !Number.isFinite(balanceSats)
+  ) {
+    return null;
+  }
+  const amount = Math.floor(amountSats);
+  const fee = Math.floor(feeSats);
+  const balance = Math.floor(balanceSats);
+  if (amount <= 0 || fee < 0 || balance <= 0) {
+    return null;
+  }
+  if (amount + fee <= balance) {
+    return null;
+  }
+  const room = balance - fee;
+  if (room <= 0 || room >= amount) {
+    return null;
+  }
+  return room;
+}
+
 export function sumSelectedSats(
   utxos: Array<{txid: string; vout: number; valueSats: number}>,
   selectedKeys: Set<string> | null,

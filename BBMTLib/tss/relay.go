@@ -291,6 +291,132 @@ func getGroupKeygen(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(out)
 }
 
+// F32: trio ECDH pubkey exchange. Each party posts its ephemeral P-256
+// pubkey (130-hex uncompressed); peers poll until every party is
+// present, then derive the same SAS. Values are public by design (the
+// secrecy comes from the ECDH private keys, which never leave the
+// device); the endpoint mirrors the F39 groupkey pattern. Stored per
+// (session, party), merged like completions.
+func trioECDHKey(sessionID string) string {
+	return "ecdh-keygen-" + sessionID
+}
+
+type trioECDHPubPost struct {
+	Party  string `json:"party"`
+	Pubkey string `json:"pubkey"`
+}
+
+func postTrioECDHPub(w http.ResponseWriter, r *http.Request) {
+	sessionID := getSessionID(r)
+
+	var post trioECDHPubPost
+	if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+	post.Party = strings.TrimSpace(post.Party)
+	post.Pubkey = strings.ToLower(strings.TrimSpace(post.Pubkey))
+	if post.Party == "" || len(post.Pubkey) != 130 || !strings.HasPrefix(post.Pubkey, "04") || !isHexString(post.Pubkey) {
+		http.Error(w, "invalid party or pubkey (130-hex uncompressed P-256)", http.StatusBadRequest)
+		return
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	k := trioECDHKey(sessionID)
+	pubs := map[string]string{}
+	if data, found := getData(k); found {
+		if prev, ok := data.(map[string]string); ok && prev != nil {
+			pubs = prev
+		}
+	}
+	pubs[post.Party] = post.Pubkey
+	setData(k, pubs)
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func getTrioECDHPubs(w http.ResponseWriter, r *http.Request) {
+	sessionID := getSessionID(r)
+	k := trioECDHKey(sessionID)
+
+	mutex.Lock()
+	data, found := getData(k)
+	mutex.Unlock()
+
+	out := map[string]string{}
+	if found {
+		if prev, ok := data.(map[string]string); ok && prev != nil {
+			out = prev
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
+}
+
+// F32: trio ECDH BD round. Each party posts X_i (64-hex, the XOR of
+// its two pairwise secrets); peers poll until every party is present
+// and require X_1^X_2^...^X_n == 0 (see verifyTrioXXor), so a forged
+// X aborts the exchange instead of splitting the group key.
+func trioECDHXKey(sessionID string) string {
+	return "ecdh-xchg-" + sessionID
+}
+
+type trioECDHXPost struct {
+	Party string `json:"party"`
+	X     string `json:"x"`
+}
+
+func postTrioECDHX(w http.ResponseWriter, r *http.Request) {
+	sessionID := getSessionID(r)
+
+	var post trioECDHXPost
+	if err := json.NewDecoder(r.Body).Decode(&post); err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+	post.Party = strings.TrimSpace(post.Party)
+	post.X = strings.ToLower(strings.TrimSpace(post.X))
+	if post.Party == "" || len(post.X) != 64 || !isHexString(post.X) {
+		http.Error(w, "invalid party or x (64-hex)", http.StatusBadRequest)
+		return
+	}
+
+	mutex.Lock()
+	defer mutex.Unlock()
+
+	k := trioECDHXKey(sessionID)
+	xs := map[string]string{}
+	if data, found := getData(k); found {
+		if prev, ok := data.(map[string]string); ok && prev != nil {
+			xs = prev
+		}
+	}
+	xs[post.Party] = post.X
+	setData(k, xs)
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+func getTrioECDHX(w http.ResponseWriter, r *http.Request) {
+	sessionID := getSessionID(r)
+	k := trioECDHXKey(sessionID)
+
+	mutex.Lock()
+	data, found := getData(k)
+	mutex.Unlock()
+
+	out := map[string]string{}
+	if found {
+		if prev, ok := data.(map[string]string); ok && prev != nil {
+			out = prev
+		}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
+}
+
 // ---- Message Handlers ----
 func postMessage(w http.ResponseWriter, r *http.Request) {
 	sessionID := getSessionID(r)
@@ -406,6 +532,12 @@ func listen(port string) *http.Server {
 	// F39: post-DKG group-key hash exchange (see postGroupKeygen).
 	r.HandleFunc("/groupkey/keygen/{sessionID}", postGroupKeygen).Methods("POST")
 	r.HandleFunc("/groupkey/keygen/{sessionID}", getGroupKeygen).Methods("GET")
+	// F32: trio ECDH pubkey exchange (see postTrioECDHPub).
+	r.HandleFunc("/ecdh/keygen/{sessionID}", postTrioECDHPub).Methods("POST")
+	r.HandleFunc("/ecdh/keygen/{sessionID}", getTrioECDHPubs).Methods("GET")
+	// F32: trio ECDH BD round (X values, see postTrioECDHX).
+	r.HandleFunc("/ecdh/xchg/{sessionID}", postTrioECDHX).Methods("POST")
+	r.HandleFunc("/ecdh/xchg/{sessionID}", getTrioECDHX).Methods("GET")
 
 	// Message Routes
 	r.HandleFunc("/message/{sessionID}", postMessage).Methods("POST")

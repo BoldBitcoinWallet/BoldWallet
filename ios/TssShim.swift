@@ -80,6 +80,19 @@ func TssSha256(_ message: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.sha256(message), error)
 }
 
+// F32 (Option A): trio ECDH exchange for LAN keygen.
+func TssTrioECDHPhase1(_ server: String, _ session: String, _ selfParty: String, _ parties: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.trioECDHPhase1(server, session: session, selfParty: selfParty, parties: parties), error)
+}
+
+func TssTrioECDHConfirm(_ handle: String, _ session: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.trioECDHConfirm(handle, session: session), error)
+}
+
+func TssTrioECDHAbort(_ handle: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.trioECDHAbort(handle), error)
+}
+
 func TssSecureRandom(_ length: Int32, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.secureRandom(length), error)
 }

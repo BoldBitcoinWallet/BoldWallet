@@ -1,3 +1,4 @@
+/* eslint-disable no-bitwise */
 import {NativeModules} from 'react-native';
 import {
   canonicalAllForCommits,

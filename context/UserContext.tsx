@@ -13,7 +13,9 @@ import {
   resolveStoredMempoolApiBase,
 } from '../services/mempoolApiBase';
 import {BBMTLibNativeModule} from '../native_modules';
-import {ensureMempoolApiApplied} from '../services/apiConfigApply';
+import {ensureFeeApisApplied, ensureMempoolApiApplied} from '../services/apiConfigApply';
+import mempoolClient from '../services/MempoolClient';
+import {ensureMempoolProvidersSeeded} from '../services/mempoolProvidersStore';
 import {
   getReceivePath,
   resolveUseLegacyDerivationPaths,
@@ -147,7 +149,9 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     const syncApi = async () => {
       try {
         if (!network || !apiBase) return;
-        await ensureMempoolApiApplied(network, apiBase);
+        // Stored selection already on screen. Do not show the
+        // "Allow API endpoint?" alert again when network or provider changes.
+        await ensureMempoolApiApplied(network, apiBase, null);
       } catch {
         // no-op
       }
@@ -410,7 +414,13 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         appConfigRepository.set('api', nextApi);
         setNetwork(newNetwork);
         setApiBase(nextApi);
-        await ensureMempoolApiApplied(newNetwork, nextApi);
+        // Endpoints were already chosen for this network. Skip the
+        // in-app allow alert; a custom host still gets the OS prompt.
+        await ensureMempoolApiApplied(newNetwork, nextApi, null);
+        const providerNet = newNetwork === 'mainnet' ? 'mainnet' : 'testnet4';
+        const enabled = await ensureMempoolProvidersSeeded(providerNet);
+        mempoolClient.setPublicBases(enabled);
+        await ensureFeeApisApplied(enabled, null);
       } catch {
         // no-op
       }

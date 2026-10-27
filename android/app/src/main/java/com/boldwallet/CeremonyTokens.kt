@@ -78,6 +78,7 @@ object CeremonyTokens {
         // natively; null = unbound (legacy mints). Enforced at
         // keysign by contentBindingOk when present.
         val boundDigest: String? = null,
+        val rebound: Boolean = false,
     )
 
     private val lock = Any()
@@ -149,6 +150,28 @@ object CeremonyTokens {
     }
 
     /**
+     * Move a live keygen token from the handshake session onto the
+     * setup session derived after the phones connect. One move.
+     * Same-session calls succeed without consuming that move.
+     */
+    fun rebindSession(token: String, newSessionID: String): Boolean {
+        if (newSessionID.isEmpty()) return false
+        synchronized(lock) {
+            val rec = tokens[token] ?: return false
+            if (isTerminal(rec.state)) return false
+            if (rec.opClass != OpClass.KEYGEN) return false
+            if (rec.state == State.MINTED && nowMs() > rec.expiresAtMs) {
+                tokens[token] = rec.copy(state = State.EXPIRED)
+                return false
+            }
+            if (rec.sessionID == newSessionID) return true
+            if (rec.rebound) return false
+            tokens[token] = rec.copy(sessionID = newSessionID, rebound = true)
+            return true
+        }
+    }
+
+    /**
      * 3b-4 B19: authorize cancel AND atomically revoke the token's
      * session (false = reject, nothing revoked). Accepts live
      * sign|keygen tokens; when the call carries a session it must
@@ -179,18 +202,19 @@ object CeremonyTokens {
     }
 
     /**
-     * F20 content binding. Unbound token (boundDigest == null,
-     * legacy mints) → ok. Bound token: the PSBT actually being
-     * signed must hash to the confirmed digest; on mismatch the
-     * whole session is revoked (a swapped artifact kills the
-     * ceremony, never signs) and false returned. Unknown token →
-     * false (verify() has already failed closed by then).
+     * F20 content binding. Every PSBT sign and BTC send ceremony
+     * MUST carry a non-null boundDigest from the native confirmation
+     * sheet; an unbound token (boundDigest == null, e.g. minted via
+     * requestSignCeremonyToken for LAN handshake / cancel) or a
+     * mismatched digest fails closed and revokes the session.
      */
     fun contentBindingOk(token: String, actualDigestHex: String?): Boolean {
         synchronized(lock) {
             val rec = tokens[token] ?: return false
-            val bound = rec.boundDigest ?: return true
-            if (actualDigestHex != null && actualDigestHex == bound) return true
+            val bound = rec.boundDigest
+            if (!bound.isNullOrEmpty() && actualDigestHex != null && actualDigestHex == bound) {
+                return true
+            }
             revokeSession(rec.sessionID)
             return false
         }

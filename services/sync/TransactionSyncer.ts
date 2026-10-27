@@ -59,19 +59,24 @@ class TransactionSyncer {
     addresses: Array<{address: string; network: string}>,
     apiBase: string,
     onProgress?: (current: number, total: number) => void,
+    options?: {force?: boolean},
   ): Promise<void> {
     if (!addresses.length) return;
-    // Skip full fetch when every address was synced recently (same TTL as syncAddress).
-    // Prevents duplicate work when UI re-enqueues "Syncing transactions…" (e.g. effect re-run).
+    // Per-address TTL: only re-fetch addresses that are stale (force still
+    // refreshes the whole list). One stale neighbor no longer re-hits every URL.
     const txDbTtlMs = getTransactionDbTtlMs();
-    const allFresh = addresses.every(({address, network}) =>
-      syncRepository.isFresh(
-        'transactions',
-        `${address}_${network}`,
-        txDbTtlMs,
-      ),
-    );
-    if (allFresh) {
+    const toFetch =
+      options?.force === true
+        ? addresses
+        : addresses.filter(
+            ({address, network}) =>
+              !syncRepository.isFresh(
+                'transactions',
+                `${address}_${network}`,
+                txDbTtlMs,
+              ),
+          );
+    if (!toFetch.length) {
       dbg(
         'TransactionSyncer: syncAddressesAtomic skipped — all',
         addresses.length,
@@ -81,21 +86,36 @@ class TransactionSyncer {
       );
       return;
     }
+    if (toFetch.length < addresses.length) {
+      dbg(
+        'TransactionSyncer: syncAddressesAtomic fetching',
+        toFetch.length,
+        'of',
+        addresses.length,
+        'addresses (rest fresh)',
+      );
+    }
     const cleanApi = apiBase.replace(/\/+$/, '');
     const concurrency = mempoolClient.syncPoolConcurrency(cleanApi);
     const knownAtStart = transactionRepository.getKnownTxids(
-      addresses[0]?.network ?? 'mainnet',
+      toFetch[0]?.network ?? addresses[0]?.network ?? 'mainnet',
     );
-    let fetchedCount = 0;
+    let nextStartAt = 0;
+    const paceAddressStart = async () => {
+      const now = Date.now();
+      const scheduled = Math.max(now, nextStartAt);
+      nextStartAt = scheduled + INTER_ADDRESS_DELAY_MS;
+      const wait = scheduled - now;
+      if (wait > 0) {
+        await sleep(wait);
+      }
+    };
 
     const perAddress = await mapPool(
-      addresses,
+      toFetch,
       concurrency,
       async ({address, network}) => {
-        if (concurrency === 1 && fetchedCount > 0) {
-          await sleep(INTER_ADDRESS_DELAY_MS);
-        }
-        fetchedCount++;
+        await paceAddressStart();
         const knownTxids = new Set(knownAtStart);
         const entityKey = `${address}_${network}`;
         const savedCursor = syncRepository.getCursor('transactions', entityKey);
@@ -113,7 +133,11 @@ class TransactionSyncer {
 
             const res = await with429Retry<ApiTx[]>(
               'TransactionSyncer',
-              () => mempoolClient.get<ApiTx[]>(url),
+              () =>
+                mempoolClient.get<ApiTx[]>(
+                  url,
+                  cursor ? undefined : {fresh: true},
+                ),
             );
             if (!res.ok || !Array.isArray(res.data)) {
               throw new TxSyncError(
@@ -222,9 +246,9 @@ class TransactionSyncer {
       cursor: row.cursor,
     }));
 
-    // All succeeded — write all batches then update cursors
-    for (const batch of allBatches) {
-      transactionRepository.upsertTransactionBatch([batch]);
+    // All succeeded — write all batches in a single SQLite transaction, then update cursors
+    if (allBatches.length) {
+      transactionRepository.upsertTransactionBatch(allBatches);
     }
     if (missingLinks.length) {
       transactionRepository.ensureAddressLinks(missingLinks);
@@ -267,7 +291,8 @@ class TransactionSyncer {
 
         const res = await with429Retry<ApiTx[]>(
           'TransactionSyncer',
-          () => mempoolClient.get<ApiTx[]>(url),
+          () =>
+            mempoolClient.get<ApiTx[]>(url, cursor ? undefined : {fresh: true}),
         );
         if (!res.ok || !Array.isArray(res.data)) break;
 

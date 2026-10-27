@@ -11,6 +11,9 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -38,6 +41,11 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
         /** If full [JSONObject] parse fails (huge MPC blob), still read `nsec` for Nostr. */
         private val NSEC_FIELD_REGEX = Pattern.compile("\"nsec\"\\s*:\\s*\"([^\"]*)\"")
+
+        /** Secret keys whose values are the dev-view redaction marker. */
+        private val REDACTED_STRUCTURE_MARKER = Pattern.compile(
+            "\"(share_b64|nsec|ecdsa_local_data)\"\\s*:\\s*\"(?:<redacted|\\\\u003credacted)[^\"]*\"",
+        )
     }
 
     private fun extractNsecStringViaRegex(raw: String): String? {
@@ -183,13 +191,46 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     private fun loadKeyshareJSONFromRNES(): String? {
         val prefs = rnesEncryptedPrefs()
         val raw = prefs.getString(KEY_KEYSHARE, null) ?: return null
-        if (!KeyshareEnvelope.isEnvelope(raw)) {
+        val plain = if (!KeyshareEnvelope.isEnvelope(raw)) {
             KeyshareEnvelope.ensureEnveloped(prefs, KEY_KEYSHARE)
             val migrated = prefs.getString(KEY_KEYSHARE, null) ?: return null
             if (!KeyshareEnvelope.isEnvelope(migrated)) return null
-            return KeyshareEnvelope.decryptKeyshareJson(migrated)
+            KeyshareEnvelope.decryptKeyshareJson(migrated)
+        } else {
+            KeyshareEnvelope.decryptKeyshareJson(raw)
         }
-        return KeyshareEnvelope.decryptKeyshareJson(raw)
+        return healGg18QuotedBigInts(prefs, plain)
+    }
+
+    /**
+     * Detect + heal GG18 shares corrupted by JS stringifying oversized
+     * ints as JSON strings. Persists bare-number form when fixable.
+     */
+    private fun healGg18QuotedBigInts(
+        prefs: android.content.SharedPreferences,
+        plain: String,
+    ): String {
+        val issue = Gg18KeyshareBigIntRepair.detectIssue(plain)
+        if (issue == Gg18KeyshareBigIntRepair.ISSUE_SCI) {
+            ld("gg18BigIntRepair", "issue=scientific_float action=unrecoverable")
+            return plain
+        }
+        if (issue != Gg18KeyshareBigIntRepair.ISSUE_QUOTED) {
+            return plain
+        }
+        ld("gg18BigIntRepair", "issue=quoted_oversized_ints action=repair")
+        val repaired = Gg18KeyshareBigIntRepair.emitBareOversizedIntegers(plain)
+        if (repaired == plain) {
+            return plain
+        }
+        try {
+            val envelope = KeyshareEnvelope.encryptKeyshareJson(repaired)
+            prefs.edit().putString(KEY_KEYSHARE, envelope).commit()
+            ld("gg18BigIntRepair", "issue=quoted_oversized_ints action=persist_ok")
+        } catch (e: Exception) {
+            ld("gg18BigIntRepair", "persist failed: ${e.message}")
+        }
+        return repaired
     }
 
     /**
@@ -203,6 +244,16 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             ld(method, "REFUSED to resolve share bytes to JS")
             throw IllegalStateException("Refusing to expose keyshare secrets to JS")
         }
+    }
+
+    /**
+     * Dev tree view keeps secret keys so the shape is visible, but only
+     * when each value is a `<redacted …>` marker. Any other occurrence
+     * of those labels is still refused.
+     */
+    private fun guardRedactedStructureResolve(value: String, method: String) {
+        val stripped = REDACTED_STRUCTURE_MARKER.matcher(value).replaceAll("")
+        guardJsSafeResolve(stripped, method)
     }
 
     /** F15b-1: staged DKG/import results must carry a handle ID. */
@@ -397,7 +448,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         var obj: JSONObject? = null
         var parseEx: JSONException? = null
         try {
-            obj = JSONObject(raw)
+            obj = JSONObject(Gg18KeyshareBigIntRepair.quoteOversizedIntegersForJsonObject(raw))
         } catch (e: JSONException) {
             parseEx = e
         }
@@ -1436,11 +1487,8 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
         Thread {
             try {
-                // 3b-2b B21: single-call keygen ceremony (no MPC session yet).
-                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.KEYGEN)) {
-                    rejectCeremonyUnauthorized(promise)
-                    return@Thread
-                }
+                // Pairing device key only. The Pair tap is the intent.
+                // The wallet share still requires the setup ceremony prompt.
                 if (rejectBbmtUnavailable(promise, "eciesKeypair")) return@Thread
                 val result = DklsNative.bbmtGenerateKeyPairNative()
                 if (result.startsWith("error:")) {
@@ -1575,9 +1623,11 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
         Thread {
             try {
-                // 3b-2e B18: strict import ceremony (shared with stage, or
-                // the setup-commit flow's own save ceremony).
-                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.IMPORT, ceremonySessionID)) {
+                // Backup import uses an import token. A wallet just created
+                // on this phone reuses its setup (keygen) token.
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.IMPORT, ceremonySessionID) &&
+                    !CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, ceremonySessionID)
+                ) {
                     rejectCeremonyUnauthorized(promise)
                     return@Thread
                 }
@@ -1662,7 +1712,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     promise.reject("KEYSHARE_STRUCT_ERROR", redacted.removePrefix("error:"), null)
                     return@Thread
                 }
-                guardJsSafeResolve(redacted, "getKeyshareStructureRedacted")
+                guardRedactedStructureResolve(redacted, "getKeyshareStructureRedacted")
                 promise.resolve(redacted)
             } catch (e: SecureStorageException) {
                 promise.reject("KEYSHARE_STRUCT_ERROR", e.message, e)
@@ -1730,13 +1780,35 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * F20 fused confirmation: the ONLY sign-token mint for PSBT
-     * sign ceremonies. Parses the PSBT in Go (bbmtPsbtConfirmation —
-     * never JS-supplied summary values), renders the outputs/fee/
-     * network on a native sheet, and mints a digest-bound sign
-     * token only after the user taps Confirm AND authenticates.
-     * Cancel/dismiss settles as CEREMONY_AUTH_REQUIRED (the same
-     * no-mint outcome as declining the prompt; nothing is minted).
+     * Silent SIGN mint for LAN handshake transport and cancel paths.
+     * No OS prompt — co-sign approval waits until broadcast or export.
+     */
+    @ReactMethod
+    fun requestSignTransportCeremonyToken(sessionID: String?, promise: Promise) {
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        if (sessionID.isEmpty()) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        try {
+            promise.resolve(
+                CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, sessionID),
+            )
+        } catch (e: Exception) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Ceremony authorization required for this call",
+                e,
+            )
+        }
+    }
+
+    /**
+     * F20: silent digest-bound SIGN mint for PSBT keysign. Parses the
+     * PSBT in Go; the user approves later when exporting the signed PSBT.
      */
     @ReactMethod
     fun requestPsbtSignCeremonyToken(
@@ -1777,8 +1849,11 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     )
                     return@Thread
                 }
-                val summary = buildPsbtConfirmationSummary(json)
-                showPsbtConfirmation(sessionID, digest, summary, promise)
+                promise.resolve(
+                    CeremonyTokens.mint(
+                        CeremonyTokens.OpClass.SIGN, sessionID, digest,
+                    ),
+                )
             } catch (e: Throwable) {
                 promise.reject(
                     "CEREMONY_PSBT_INVALID",
@@ -1787,6 +1862,87 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 )
             }
         }.start()
+    }
+
+    /**
+     * Approve exporting a signed PSBT (copy / share / QR). Shows the
+     * Go-parsed summary, then the device credential. Does not mint.
+     */
+    @ReactMethod
+    fun confirmPsbtExport(psbtBase64: String?, promise: Promise) {
+        if (psbtBase64 == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "confirmPsbtExport")) {
+                    return@Thread
+                }
+                val confirmation = DklsNative.bbmtPsbtConfirmationNative(psbtBase64)
+                val json = try {
+                    JSONObject(confirmation)
+                } catch (e: JSONException) {
+                    promise.reject(
+                        "CEREMONY_PSBT_INVALID",
+                        "Could not read this transaction.",
+                        e,
+                    )
+                    return@Thread
+                }
+                val summary = buildPsbtConfirmationSummary(json)
+                showPsbtExportConfirmation(summary, promise)
+            } catch (e: Throwable) {
+                promise.reject(
+                    "CEREMONY_PSBT_INVALID",
+                    "Could not read this transaction.",
+                    e,
+                )
+            }
+        }.start()
+    }
+
+    private fun showPsbtExportConfirmation(summary: String, promise: Promise) {
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        var settled = false
+        activity.runOnUiThread {
+            try {
+                val dialog = AlertDialog.Builder(activity)
+                    .setTitle("Confirm export")
+                    .setMessage(summary)
+                    .setPositiveButton("Confirm") { _, _ ->
+                        settled = true
+                        promptAndMint(
+                            CeremonyTokens.OpClass.SIGN, "psbt-export",
+                            "Authenticate to export", "Approve sharing this signed PSBT",
+                            promise, skipMint = true,
+                        )
+                    }
+                    .setNegativeButton("Cancel") { _, _ ->
+                        if (!settled) {
+                            settled = true
+                            rejectCeremonyUnauthorized(promise)
+                        }
+                    }
+                    .create()
+                dialog.setOnCancelListener {
+                    if (!settled) {
+                        settled = true
+                        rejectCeremonyUnauthorized(promise)
+                    }
+                }
+                dialog.show()
+            } catch (e: Exception) {
+                if (!settled) {
+                    settled = true
+                    rejectCeremonyUnauthorized(promise)
+                }
+            }
+        }
     }
 
     /** Renders the Go-parsed summary. Amounts stay in sats — exact. */
@@ -1821,63 +1977,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         return s.toLongOrNull() ?: o.optLong("amount", 0L)
     }
 
-    private fun showPsbtConfirmation(
-        sessionID: String,
-        digest: String,
-        summary: String,
-        promise: Promise,
-    ) {
-        val activity = reactApplicationContext.currentActivity
-        if (activity == null) {
-            rejectCeremonyUnauthorized(promise)
-            return
-        }
-        var settled = false
-        activity.runOnUiThread {
-            try {
-                val dialog = AlertDialog.Builder(activity)
-                    .setTitle("Confirm transaction")
-                    .setMessage(summary)
-                    .setPositiveButton("Confirm") { _, _ ->
-                        settled = true
-                        promptAndMint(
-                            CeremonyTokens.OpClass.SIGN, sessionID,
-                            "Authenticate to sign", "Approve the signing ceremony",
-                            promise, boundDigest = digest,
-                        )
-                    }
-                    .setNegativeButton("Cancel") { _, _ ->
-                        if (!settled) {
-                            settled = true
-                            rejectCeremonyUnauthorized(promise)
-                        }
-                    }
-                    .create()
-                dialog.setOnCancelListener {
-                    if (!settled) {
-                        settled = true
-                        rejectCeremonyUnauthorized(promise)
-                    }
-                }
-                dialog.show()
-            } catch (e: Exception) {
-                if (!settled) {
-                    settled = true
-                    rejectCeremonyUnauthorized(promise)
-                }
-            }
-        }
-    }
-
     /**
-     * F20 Phase 1b: fused send confirmation. No PSBT exists yet,
-     * so the sheet renders the JS-supplied payment fields — BUT
-     * the minted token binds sha256 over the canonical payment
-     * string (SendBinding), and every send keysign recomputes it
-     * over its actual arguments. A JS swap after confirmation
-     * (different address/amount/fee/change) mismatches natively
-     * and revokes. The banner network is derived from the
-     * destination address prefix, not from JS claims.
+     * F20 Phase 1b: mint a sign token bound to this payment without
+     * a prompt. The user approves later, on Broadcast, because a
+     * signature alone does not publish the transaction.
      */
     @ReactMethod
     fun requestSendSignCeremonyToken(
@@ -1901,6 +2004,42 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         val digest = SendBinding.digest(
             toAddress, amountSatoshi, feeSatoshi, changeAddress,
         )
+        // Signing does not publish. The payment sheet and biometric
+        // run later, when the user taps Broadcast.
+        try {
+            promise.resolve(
+                CeremonyTokens.mint(
+                    CeremonyTokens.OpClass.SIGN, sessionID, digest,
+                ),
+            )
+        } catch (e: Exception) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Ceremony authorization required for this call",
+                e,
+            )
+        }
+    }
+
+    /**
+     * Spend approval for an already-signed transaction. Shows the
+     * payment, then the device credential, and resolves only if both
+     * succeed. Does not mint a ceremony token.
+     */
+    @ReactMethod
+    fun confirmSpendBroadcast(
+        toAddress: String?,
+        amountSatoshi: String?,
+        feeSatoshi: String?,
+        changeAddress: String?,
+        promise: Promise,
+    ) {
+        if (toAddress == null || amountSatoshi == null ||
+            feeSatoshi == null || changeAddress == null
+        ) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
         val banner = if (SendBinding.isTestnetAddress(toAddress)) {
             "TESTNET4 — no real value"
         } else {
@@ -1928,9 +2067,9 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     .setPositiveButton("Confirm") { _, _ ->
                         settled = true
                         promptAndMint(
-                            CeremonyTokens.OpClass.SIGN, sessionID,
-                            "Authenticate to sign", "Approve the payment",
-                            promise, boundDigest = digest,
+                            CeremonyTokens.OpClass.SIGN, "broadcast",
+                            "Authenticate to broadcast", "Approve sending this payment",
+                            promise, skipMint = true,
                         )
                     }
                     .setNegativeButton("Cancel") { _, _ ->
@@ -2012,6 +2151,19 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
+    fun requestWalletSetupCeremonyToken(sessionID: String?, promise: Promise) {
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
+        promptAndMint(
+            CeremonyTokens.OpClass.KEYGEN, sessionID,
+            "Create this wallet with these phones", "Approve wallet setup", promise,
+        )
+    }
+
+    @ReactMethod
     fun requestExportCeremonyToken(sessionID: String?, promise: Promise) {
         // F11: JS null reaches Kotlin as null; non-null params would
         // crash the bridge (intrinsic check -> RuntimeException).
@@ -2071,6 +2223,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         subtitle: String,
         promise: Promise,
         boundDigest: String? = null,
+        skipMint: Boolean = false,
     ) {
         if (sessionID.isEmpty()) {
             promise.reject(
@@ -2099,7 +2252,12 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             )
             return
         }
-        activity.runOnUiThread {
+        // BiometricPrompt posted before the host activity is RESUMED never
+        // calls back (airgap scanner finish, and a share intent that has
+        // not reached onResume). Wait; do not mint and do not reject early.
+        runWhenHostResumed(
+            activity,
+            Runnable {
             try {
                 val executor = ContextCompat.getMainExecutor(activity)
                 val callback = object : BiometricPrompt.AuthenticationCallback() {
@@ -2107,9 +2265,13 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         result: BiometricPrompt.AuthenticationResult,
                     ) {
                         try {
-                            promise.resolve(
-                                CeremonyTokens.mint(opClass, sessionID, boundDigest),
-                            )
+                            if (skipMint) {
+                                promise.resolve(true)
+                            } else {
+                                promise.resolve(
+                                    CeremonyTokens.mint(opClass, sessionID, boundDigest),
+                                )
+                            }
                         } catch (e: Exception) {
                             promise.reject(
                                 "CEREMONY_AUTH_REQUIRED",
@@ -2148,6 +2310,59 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     e,
                 )
             }
+            },
+            Runnable {
+                promise.reject(
+                    "CEREMONY_AUTH_REQUIRED",
+                    "Confirm to continue — authenticate in the prompt.",
+                    null,
+                )
+            },
+        )
+    }
+
+    /**
+     * Run [block] on the main thread once [activity] is RESUMED.
+     * [onAbandoned] runs if the activity is destroyed first.
+     */
+    private fun runWhenHostResumed(
+        activity: FragmentActivity,
+        block: Runnable,
+        onAbandoned: Runnable,
+    ) {
+        activity.runOnUiThread {
+            if (activity.isFinishing || activity.isDestroyed) {
+                onAbandoned.run()
+                return@runOnUiThread
+            }
+            if (activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                block.run()
+                return@runOnUiThread
+            }
+            activity.lifecycle.addObserver(object : DefaultLifecycleObserver {
+                private var settled = false
+
+                private fun settle(run: Runnable) {
+                    if (settled) {
+                        return
+                    }
+                    settled = true
+                    activity.lifecycle.removeObserver(this)
+                    run.run()
+                }
+
+                override fun onResume(owner: LifecycleOwner) {
+                    if (activity.isFinishing || activity.isDestroyed) {
+                        settle(onAbandoned)
+                    } else {
+                        settle(block)
+                    }
+                }
+
+                override fun onDestroy(owner: LifecycleOwner) {
+                    settle(onAbandoned)
+                }
+            })
         }
     }
 
@@ -2187,9 +2402,87 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }
     }
 
+    /** Point the setup approval at the session derived after connect. */
+    @ReactMethod
+    fun rebindCeremonySession(token: String?, sessionID: String?, promise: Promise) {
+        if (token == null || sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        if (CeremonyTokens.rebindSession(token, sessionID)) {
+            promise.resolve(true)
+        } else {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Ceremony authorization required for this call",
+                null,
+            )
+        }
+    }
+
     // NOTE: NO debug test mint here. The prompt-bypassing mint
     // lives in src/debug (CeremonyTestModule) + Swift #if DEBUG —
     // absent from release binaries. Guardrailed in jest.
+
+    /**
+     * Detect + repair GG18 quoted *big.Int JSON in the stored keyshare.
+     * Resolves {detected, repaired, issue} — never share bytes.
+     * Safe to call every launch (idempotent).
+     */
+    @ReactMethod
+    fun repairGg18KeyshareBigInts(promise: Promise) {
+        Thread {
+            try {
+                val prefs = rnesEncryptedPrefs()
+                val raw = prefs.getString(KEY_KEYSHARE, null)
+                val out = Arguments.createMap()
+                if (raw == null || raw.isBlank()) {
+                    out.putBoolean("detected", false)
+                    out.putBoolean("repaired", false)
+                    out.putString("issue", Gg18KeyshareBigIntRepair.ISSUE_EMPTY)
+                    promise.resolve(out)
+                    return@Thread
+                }
+                val plain = if (!KeyshareEnvelope.isEnvelope(raw)) {
+                    if (!raw.contains("ecdsa_local_data")) {
+                        out.putBoolean("detected", false)
+                        out.putBoolean("repaired", false)
+                        out.putString("issue", Gg18KeyshareBigIntRepair.ISSUE_NOT_GG18)
+                        promise.resolve(out)
+                        return@Thread
+                    }
+                    raw
+                } else {
+                    KeyshareEnvelope.decryptKeyshareJson(raw)
+                }
+                val issue = Gg18KeyshareBigIntRepair.detectIssue(plain)
+                val detected = issue == Gg18KeyshareBigIntRepair.ISSUE_QUOTED ||
+                    issue == Gg18KeyshareBigIntRepair.ISSUE_SCI
+                out.putBoolean("detected", detected)
+                out.putString("issue", issue)
+                if (issue != Gg18KeyshareBigIntRepair.ISSUE_QUOTED) {
+                    if (issue == Gg18KeyshareBigIntRepair.ISSUE_SCI) {
+                        ld(
+                            "gg18BigIntRepair",
+                            "issue=scientific_float action=unrecoverable",
+                        )
+                    }
+                    out.putBoolean("repaired", false)
+                    promise.resolve(out)
+                    return@Thread
+                }
+                val repaired = healGg18QuotedBigInts(prefs, plain)
+                val fixed = Gg18KeyshareBigIntRepair.detectIssue(repaired) ==
+                    Gg18KeyshareBigIntRepair.ISSUE_NONE
+                out.putBoolean("repaired", fixed)
+                promise.resolve(out)
+            } catch (e: SecureStorageException) {
+                promise.reject("GG18_BIGINT_REPAIR_ERROR", e.message, e)
+            } catch (e: Exception) {
+                promise.reject("GG18_BIGINT_REPAIR_ERROR", e.message, e)
+            }
+        }.start()
+    }
 
     /**
      * F15b-1 migration bootstrap (§1.5 step 7): idempotent
@@ -2231,6 +2524,60 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             ld("sha256", "error: ${e.stackTraceToString()}")
             promise.reject("SHA256_ERROR", "Failed to compute SHA256: ${e.message}", e)
         }
+    }
+
+    // F32 (Option A): trio ECDH exchange for LAN keygen. Phase 1 blocks
+    // polling for peers (bounded server-side), so all three run off the
+    // bridge thread. Typed TRIO_* errors reject to JS for handling.
+    @ReactMethod
+    fun trioECDHPhase1(server: String?, session: String?, selfParty: String?, parties: String?, promise: Promise) {
+        if (server == null || session == null || selfParty == null || parties == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "trioECDHPhase1")) return@Thread
+                val result = DklsNative.bbmtTrioECDHPhase1Native(server, session, selfParty, parties)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("TRIO_ECDH_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun trioECDHConfirm(handle: String?, session: String?, promise: Promise) {
+        if (handle == null || session == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "trioECDHConfirm")) return@Thread
+                val result = DklsNative.bbmtTrioECDHConfirmNative(handle, session)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("TRIO_ECDH_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun trioECDHAbort(handle: String?, promise: Promise) {
+        if (handle == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "trioECDHAbort")) return@Thread
+                val result = DklsNative.bbmtTrioECDHAbortNative(handle)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("TRIO_ECDH_ERROR", e.message, e)
+            }
+        }.start()
     }
 
     @ReactMethod
@@ -2497,7 +2844,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                     return@Thread
                 }
-                val obj = JSONObject(raw)
+                val obj = JSONObject(Gg18KeyshareBigIntRepair.quoteOversizedIntegersForJsonObject(raw))
                 val out = JSONObject()
                 val keys = arrayOf(
                     "pub_key",

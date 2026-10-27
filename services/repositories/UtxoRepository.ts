@@ -126,23 +126,33 @@ class UtxoRepository {
   getUtxosForNetwork(network: string, addressType?: string): StoredUtxo[] {
     const purposeByType: Record<string, string> = {
       'segwit-native': "m/84'",
+      'segwit-compatible': "m/49'",
       segwit: "m/49'",
       legacy: "m/44'",
+      taproot: "m/86'",
     };
     const pathPrefix = addressType ? purposeByType[addressType] : undefined;
     try {
-      const {rows} = pathPrefix
-        ? database.execute(
-            `SELECT * FROM utxos
-             WHERE network = ? AND derivation_path LIKE ?
-             ORDER BY value_sats DESC`,
-            [network, `${pathPrefix}%`],
-          )
-        : database.execute(
-            'SELECT * FROM utxos WHERE network = ? ORDER BY value_sats DESC',
-            [network],
-          );
-      return rows.map(this._rowToUtxo);
+      const {rows} =
+        addressType && pathPrefix
+          ? database.execute(
+              `SELECT * FROM utxos
+               WHERE network = ?
+                 AND (
+                   derivation_path LIKE ?
+                   OR address IN (
+                     SELECT address FROM wallet_addresses
+                     WHERE network = ? AND address_type = ?
+                   )
+                 )
+               ORDER BY value_sats DESC`,
+              [network, `${pathPrefix}%`, network, addressType],
+            )
+          : database.execute(
+              'SELECT * FROM utxos WHERE network = ? ORDER BY value_sats DESC',
+              [network],
+            );
+      return dedupeUtxosByOutpoint(rows.map(this._rowToUtxo));
     } catch (err) {
       dbg('UtxoRepository.getUtxosForNetwork error', err);
       return [];

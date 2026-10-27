@@ -17,6 +17,14 @@
  */
 import {Buffer} from 'buffer';
 
+jest.mock('../services/walletOrigin', () => ({
+  markWalletCreated: jest.fn(),
+  markWalletImported: jest.fn(),
+  isCreatedWallet: jest.fn(() => false),
+  shouldSeedFreshHd: jest.fn(() => false),
+  FRESH_DISCOVERY_STATUS: 'fresh',
+}));
+
 jest.mock('../native_modules', () => ({
   BBMTLibNativeModule: {
     dklsMpcTssSetup: jest.fn(),

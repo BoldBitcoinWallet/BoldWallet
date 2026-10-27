@@ -47,10 +47,11 @@ describe('3b-4 F4 ceremony auth wiring (mint requires OS prompt)', () => {
         /fun request(Sign|Keygen|Export|Import|Config)CeremonyToken/,
       ),
     ).toBe(5);
-    // 1 definition + 5 class entries + F20 PSBT/send confirmation
-    // sheets (each gated behind its native Confirm + this prompt);
-    // any further caller fails the build until reviewed here.
-    expect(countMatches(kt, /promptAndMint\(/)).toBe(8);
+    // 1 definition + 5 class entries + the wallet-setup keygen
+    // prompt + F20 PSBT/send confirmation sheets (each gated
+    // behind its native Confirm + this prompt); any further
+    // caller fails the build until reviewed here.
+    expect(countMatches(kt, /promptAndMint\(/)).toBe(9);
   });
 
   test('Android: prompt requires biometric-or-device-credential', () => {
@@ -94,10 +95,11 @@ describe('3b-4 F4 ceremony auth wiring (mint requires OS prompt)', () => {
         /func request(Sign|Keygen|Export|Import|Config)CeremonyToken/,
       ),
     ).toBe(5);
-    // 1 definition + 5 class entries + F20 PSBT/send confirmation
-    // sheets (each gated behind its native Confirm + this prompt);
-    // any further caller fails the build until reviewed here.
-    expect(countMatches(swift, /promptAndMint\(/)).toBe(8);
+    // 1 definition + 5 class entries + the wallet-setup keygen
+    // prompt + F20 PSBT/send confirmation sheets (each gated
+    // behind its native Confirm + this prompt); any further
+    // caller fails the build until reviewed here.
+    expect(countMatches(swift, /promptAndMint\(/)).toBe(9);
   });
 
   test('iOS: prompt requires biometric-or-passcode with no-lock refuse', () => {

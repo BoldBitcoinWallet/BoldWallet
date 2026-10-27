@@ -2,14 +2,15 @@ package tss
 
 import (
 	"fmt"
-	"strings"
 )
 
-// DeriveLANSessionKey returns the AES session key used for trio LAN (and legacy duo DKLS tests).
-// Matches mobile: sha256(sessionID + "," + masterHost).
+// DeriveLANSessionKey is retired (F32, Option A). Trio LAN session keys
+// now come from the SAS-authenticated ECDH exchange (TrioECDHPhase1 +
+// TrioECDHConfirm) — deriving from public sessionID/masterHost values
+// is exactly the break being closed, so this fails closed instead of
+// deriving. Callers: pass ECDH-derived keys explicitly.
 func DeriveLANSessionKey(sessionID, masterHost string) (string, error) {
-	seed := strings.Join([]string{sessionID, masterHost}, ",")
-	return Sha256(seed)
+	return "", errTrioLegacyRefused
 }
 
 // ConfigureLANTransportKeys sets global ECIES keys used by MessengerImp when sessionKey is empty.

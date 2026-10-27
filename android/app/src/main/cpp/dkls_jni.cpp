@@ -125,6 +125,58 @@ Java_com_boldwallet_DklsNative_bbmtSha256Jni(JNIEnv *env, jclass, jstring msg) {
   return out;
 }
 
+// F32 (Option A): trio ECDH exchange for LAN keygen. Phase 1 runs both
+// rounds and returns {"handle","sas","parties"} JSON; phase 2 derives
+// the session key after user SAS confirmation; abort wipes a handle.
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtTrioECDHPhase1Jni(
+    JNIEnv *env, jclass, jstring server, jstring session, jstring selfParty, jstring parties) {
+  if (!bbmt_jni_check_strings(env, {server, session, selfParty, parties})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
+  const char *sv = env->GetStringUTFChars(server, nullptr);
+  const char *s = env->GetStringUTFChars(session, nullptr);
+  const char *sp = env->GetStringUTFChars(selfParty, nullptr);
+  const char *p = env->GetStringUTFChars(parties, nullptr);
+  jstring out = to_jstring(env, BbmtTrioECDHPhase1(
+      const_cast<char *>(sv), const_cast<char *>(s),
+      const_cast<char *>(sp), const_cast<char *>(p)));
+  env->ReleaseStringUTFChars(server, sv);
+  env->ReleaseStringUTFChars(session, s);
+  env->ReleaseStringUTFChars(selfParty, sp);
+  env->ReleaseStringUTFChars(parties, p);
+  return out;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtTrioECDHConfirmJni(
+    JNIEnv *env, jclass, jstring handle, jstring session) {
+  if (!bbmt_jni_check_strings(env, {handle, session})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
+  const char *h = env->GetStringUTFChars(handle, nullptr);
+  const char *s = env->GetStringUTFChars(session, nullptr);
+  jstring out = to_jstring(env, BbmtTrioECDHConfirm(
+      const_cast<char *>(h), const_cast<char *>(s)));
+  env->ReleaseStringUTFChars(handle, h);
+  env->ReleaseStringUTFChars(session, s);
+  return out;
+}
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtTrioECDHAbortJni(JNIEnv *env, jclass, jstring handle) {
+  if (!bbmt_jni_check_strings(env, {handle})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
+  const char *h = env->GetStringUTFChars(handle, nullptr);
+  jstring out = to_jstring(env, BbmtTrioECDHAbort(const_cast<char *>(h)));
+  env->ReleaseStringUTFChars(handle, h);
+  return out;
+}
+
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtSecureRandomJni(JNIEnv *env, jclass, jint length) {
   return to_jstring(env, BbmtSecureRandom(static_cast<int>(length)));

@@ -2207,8 +2207,9 @@ export const createStyles = (theme: Theme): Styles => ({
     justifyContent: 'space-between',
   },
   containerCompact: {
-    minHeight: 228,
+    minHeight: 0,
     padding: 14,
+    paddingBottom: 16,
   },
   trackLabelRow: {
     flexDirection: 'row',
@@ -2260,7 +2261,7 @@ export const createStyles = (theme: Theme): Styles => ({
   visualTrackCompact: {
     alignItems: 'center',
     paddingTop: 6,
-    paddingBottom: 18,
+    paddingBottom: 22,
     minHeight: 64,
   },
   chainAhead: {

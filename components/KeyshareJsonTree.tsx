@@ -55,6 +55,7 @@ type TreeNodeProps = {
     textSecondary: string;
     border: string;
     key: string;
+    ripple: string;
   };
 };
 

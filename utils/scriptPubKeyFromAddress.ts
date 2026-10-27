@@ -1,3 +1,4 @@
+/* eslint-disable no-bitwise */
 import {Buffer} from 'buffer';
 import {sha256} from '@noble/hashes/sha256';
 

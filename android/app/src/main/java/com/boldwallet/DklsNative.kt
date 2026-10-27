@@ -166,6 +166,20 @@ object DklsNative {
 
     fun bbmtSha256Native(msg: String): String = loaded { unwrap(bbmtSha256Jni(msg)) }
 
+    // F32 (Option A): trio ECDH exchange for LAN keygen.
+    fun bbmtTrioECDHPhase1Native(
+        server: String,
+        session: String,
+        selfParty: String,
+        parties: String,
+    ): String = loaded { unwrap(bbmtTrioECDHPhase1Jni(server, session, selfParty, parties)) }
+
+    fun bbmtTrioECDHConfirmNative(handle: String, session: String): String =
+        loaded { unwrap(bbmtTrioECDHConfirmJni(handle, session)) }
+
+    fun bbmtTrioECDHAbortNative(handle: String): String =
+        loaded { unwrap(bbmtTrioECDHAbortJni(handle)) }
+
     fun bbmtSecureRandomNative(length: Int): String = loaded { bbmtSecureRandomJni(length) }
 
     fun bbmtFetchDataNative(url: String, decKey: String, payload: String): String =
@@ -325,6 +339,14 @@ object DklsNative {
     private external fun helloDkgJni(): String
     private external fun bbmtGenerateKeyPairJni(): String
     private external fun bbmtSha256Jni(msg: String): String
+    private external fun bbmtTrioECDHPhase1Jni(
+        server: String,
+        session: String,
+        selfParty: String,
+        parties: String,
+    ): String
+    private external fun bbmtTrioECDHConfirmJni(handle: String, session: String): String
+    private external fun bbmtTrioECDHAbortJni(handle: String): String
     private external fun bbmtSecureRandomJni(length: Int): String
     private external fun bbmtFetchDataJni(url: String, decKey: String, payload: String): String
     private external fun bbmtPublishDataJni(

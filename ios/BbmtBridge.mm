@@ -191,6 +191,22 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   NSString *out = wrap(BbmtSha256(k0));
   free(k0); return out;
 }
+// F32 (Option A): trio ECDH exchange for LAN keygen.
++ (NSString *)trioECDHPhase1:(NSString *)server session:(NSString *)session selfParty:(NSString *)selfParty parties:(NSString *)parties {
+  char *k0=dupC(server); char *k1=dupC(session); char *k2=dupC(selfParty); char *k3=dupC(parties);
+  NSString *out = wrap(BbmtTrioECDHPhase1(k0, k1, k2, k3));
+  free(k0); free(k1); free(k2); free(k3); return out;
+}
++ (NSString *)trioECDHConfirm:(NSString *)handle session:(NSString *)session {
+  char *k0=dupC(handle); char *k1=dupC(session);
+  NSString *out = wrap(BbmtTrioECDHConfirm(k0, k1));
+  free(k0); free(k1); return out;
+}
++ (NSString *)trioECDHAbort:(NSString *)handle {
+  char *k0=dupC(handle);
+  NSString *out = wrap(BbmtTrioECDHAbort(k0));
+  free(k0); return out;
+}
 + (NSString *)secureRandom:(int)length {
   return wrap(BbmtSecureRandom(length));
 }

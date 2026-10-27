@@ -35,7 +35,7 @@ import {dbg} from '../../utils';
 
 const BALANCE_INTERVAL_MS = 120_000;
 const HD_DISCOVERY_INTERVAL_MS = 1_200_000; // 20 minutes
-const PRICE_INTERVAL_MS = 240_000;
+const PRICE_INTERVAL_MS = 120_000;
 const UTXO_INTERVAL_MS = 180_000;
 const TX_INTERVAL_MS = 180_000;
 const HD_DISCOVERY_STALE_MS = 2 * 60 * 60 * 1000; // 2 hours
@@ -135,6 +135,8 @@ export class SyncCoordinator {
 
     // First cycle is not a forced HD re-scan — that is reserved for stale
     // discoveryLastAt (2h), long-press, and Settings restore.
+    // Price does not wait for that discovery.
+    this._syncPrice();
     this._syncAll(false);
 
     // Schedule periodic syncs
@@ -156,7 +158,7 @@ export class SyncCoordinator {
       BALANCE_INTERVAL_MS,
     );
     this._priceTimer = setInterval(() => {
-      if (!this._shouldSkipSync()) {
+      if (this._priceAllowed()) {
         this._syncPrice();
       }
     }, PRICE_INTERVAL_MS);
@@ -175,8 +177,9 @@ export class SyncCoordinator {
     this._appStateSubscription = AppState.addEventListener(
       'change',
       (state: AppStateStatus) => {
-        if (state === 'active' && this._running && !this._shouldSkipSync()) {
-          dbg('SyncCoordinator: app foregrounded — Home owns resume refresh');
+        if (state === 'active' && this._running && this._priceAllowed()) {
+          dbg('SyncCoordinator: app foregrounded — refreshing price if stale');
+          this._syncPrice();
         }
       },
     );
@@ -197,6 +200,7 @@ export class SyncCoordinator {
       }
       if (this._pauseCount === 0) {
         dbg('SyncCoordinator: wallet online — syncing');
+        this._syncPrice();
         this._syncAll();
       }
     });
@@ -246,6 +250,15 @@ export class SyncCoordinator {
   /** MPC pause or in-app offline sandbox — skip background HTTP. */
   private _shouldSkipSync(): boolean {
     return this._pauseCount > 0 || !isWalletOnline();
+  }
+
+  /** Price runs only while the app is open and the wallet is online. */
+  private _priceAllowed(): boolean {
+    const state = AppState.currentState;
+    if (state && state !== 'active') {
+      return false;
+    }
+    return !this._shouldSkipSync();
   }
 
   /** Stop all timers and release listeners. */
@@ -302,13 +315,8 @@ export class SyncCoordinator {
         return;
       }
 
-      // Serialized API phases (price first — few requests), then per-address syncers
-      // one at a time. Avoids pumping balance + txs + UTXOs + price in parallel
-      // against the same apiBase, which eases rate limits on public and custom hosts.
-      await this._syncPrice();
-      if (this._shouldSkipSync()) {
-        return;
-      }
+      // Serialized API phases, one at a time. Price has its own 2-minute
+      // loop and is not held behind discovery.
       await this._syncBalances();
       if (this._shouldSkipSync()) {
         return;
@@ -500,7 +508,7 @@ export class SyncCoordinator {
   }
 
   private async _syncPrice(): Promise<void> {
-    if (!this._config || this._shouldSkipSync()) return;
+    if (!this._config || !this._priceAllowed()) return;
     try {
       await priceSyncer.syncCurrentPrice(this._config.apiBase);
     } catch (err) {

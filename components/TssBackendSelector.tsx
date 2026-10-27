@@ -1,5 +1,6 @@
 import React, {useEffect, useState} from 'react';
-import {View, Text, StyleSheet, Modal, Image, Linking} from 'react-native';
+import {View, Text, StyleSheet, Image, Linking} from 'react-native';
+import AppModal from './AppModal';
 import AppPressable from './AppPressable';
 import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
@@ -254,7 +255,7 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
   };
 
   return (
-    <Modal
+    <AppModal
       transparent
       visible={visible}
       animationType="fade"
@@ -358,7 +359,7 @@ const TssBackendSelector: React.FC<TssBackendSelectorProps> = ({
           </View>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 

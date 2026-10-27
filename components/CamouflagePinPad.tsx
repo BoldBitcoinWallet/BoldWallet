@@ -53,17 +53,15 @@ const CamouflagePinPad: React.FC<CamouflagePinPadProps> = ({
           borderColor: theme.colors.text,
         },
         dotError: {
-          borderColor: theme.colors.error || '#C0392B',
-          backgroundColor: theme.colors.error || '#C0392B',
+          borderColor: '#C0392B',
+          backgroundColor: '#C0392B',
         },
         hint: {
           minHeight: 20,
           marginBottom: 16,
           fontSize: theme.fontSizes?.sm || 13,
           fontFamily: theme.fontFamilies?.regular,
-          color: error
-            ? theme.colors.error || '#C0392B'
-            : theme.colors.textSecondary,
+          color: error ? '#C0392B' : theme.colors.textSecondary,
           textAlign: 'center',
         },
         grid: {

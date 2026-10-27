@@ -139,24 +139,29 @@ async function requestToken(
 }
 
 /**
- * Mint a SIGN token. ALWAYS shows the OS prompt (native, fixed
- * copy "Authenticate to sign"); resolves the opaque token on
- * success. Rejects CeremonyNoLockError (Q3 fail-closed) or
- * CeremonyAuthRequiredError (cancel/failure).
+ * Mint a SIGN token with the OS prompt ("Authenticate to sign").
+ * Used on Start/Join co-signing and PSBT. Digest-bound send/PSBT
+ * keysign mints stay silent; broadcast/export still confirm separately.
  */
 export function requestSignCeremonyToken(sessionID: string): Promise<string> {
   return requestToken('requestSignCeremonyToken', 'sign', sessionID);
 }
 
 /**
+ * Silent SIGN mint for stuck-cancel re-auth when no live token remains.
+ * Start co-signing uses requestSignCeremonyToken (prompted) instead.
+ */
+export function requestSignTransportCeremonyToken(
+  sessionID: string,
+): Promise<string> {
+  return requestToken('requestSignTransportCeremonyToken', 'sign', sessionID);
+}
+
+/**
  * F20: mint a SIGN token bound to one PSBT artifact. Native
- * parses the PSBT (Go), shows the outputs/fee/network on a
- * native confirmation sheet, and mints only after Confirm +
- * OS auth. The token carries the confirmed artifact digest;
- * native keysign rejects any different PSBT. Cancel/decline
- * rejects CeremonyAuthRequiredError (nothing minted);
- * unparsable PSBT rejects with the native CEREMONY_PSBT_INVALID
- * message.
+ * parses the PSBT (Go) and mints a digest-bound token with no
+ * prompt. Export/share shows Confirm + biometric later. Unparsable
+ * PSBT rejects with CEREMONY_PSBT_INVALID.
  */
 export async function requestPsbtSignCeremonyToken(
   sessionID: string,
@@ -189,11 +194,9 @@ export async function requestPsbtSignCeremonyToken(
 
 /**
  * F20 Phase 1b: mint a SIGN token bound to one send payment.
- * Native shows the payment on a native sheet and mints only
- * after Confirm + OS auth; the token binds the canonical
- * payment string and native send keysign rejects any different
- * address/amount/fee/change. This is the ONLY minter the send
- * wrappers use.
+ * Native binds the canonical payment string and send keysign
+ * rejects any different address, amount, fee, or change.
+ * The payment sheet and device prompt wait until Broadcast.
  */
 export async function requestSendSignCeremonyToken(
   sessionID: string,
@@ -241,11 +244,127 @@ export async function requestSendSignCeremonyToken(
   }
 }
 
-/** Mint a KEYGEN token (wallet setup + pairing identity). */
+export type SpendBroadcastPayment = {
+  toAddress: string;
+  amountSatoshi: string;
+  feeSatoshi: string;
+  changeAddress: string;
+};
+
+/**
+ * Approve an already-signed payment just before it is published
+ * or shared. Native shows the payment, then the device credential.
+ * Cancel rejects CeremonyAuthRequiredError.
+ */
+export async function confirmSpendBroadcast(
+  payment: SpendBroadcastPayment,
+): Promise<void> {
+  try {
+    const fn = BBMTLibNativeModule.confirmSpendBroadcast as
+      | ((
+          toAddress: string,
+          amountSatoshi: string,
+          feeSatoshi: string,
+          changeAddress: string,
+        ) => Promise<unknown>)
+      | undefined;
+    if (typeof fn !== 'function') {
+      throw new CeremonyAuthRequiredError();
+    }
+    await fn(
+      payment.toAddress,
+      payment.amountSatoshi,
+      payment.feeSatoshi,
+      payment.changeAddress,
+    );
+  } catch (error) {
+    if (
+      error instanceof CeremonyNoLockError ||
+      error instanceof CeremonyAuthRequiredError
+    ) {
+      throw error;
+    }
+    dbg('confirmSpendBroadcast failed', error);
+    throw mapCeremonyError(error);
+  }
+}
+
+/**
+ * Approve exporting a signed PSBT (copy / share / QR). Native shows
+ * the Go-parsed summary, then the device credential. Does not mint.
+ */
+export async function confirmPsbtExport(psbtBase64: string): Promise<void> {
+  try {
+    const fn = BBMTLibNativeModule.confirmPsbtExport as
+      | ((psbtBase64: string) => Promise<unknown>)
+      | undefined;
+    if (typeof fn !== 'function') {
+      throw new CeremonyAuthRequiredError();
+    }
+    await fn(psbtBase64);
+  } catch (error) {
+    if (
+      error instanceof CeremonyNoLockError ||
+      error instanceof CeremonyAuthRequiredError
+    ) {
+      throw error;
+    }
+    dbg('confirmPsbtExport failed', error);
+    throw mapCeremonyError(error);
+  }
+}
+
+/** Mint a KEYGEN token (pairing identity and other keygen calls). */
 export function requestKeygenCeremonyToken(
   sessionID: string,
 ): Promise<string> {
   return requestToken('requestKeygenCeremonyToken', 'keygen', sessionID);
+}
+
+/**
+ * One approval for a wallet setup: connect, create the shares, and
+ * save them. Same keygen class as requestKeygenCeremonyToken, with
+ * copy that names this action.
+ */
+export function requestWalletSetupCeremonyToken(
+  sessionID: string,
+): Promise<string> {
+  return requestToken('requestWalletSetupCeremonyToken', 'keygen', sessionID);
+}
+
+/** Point a live setup token at the session derived after connect. */
+export async function rebindCeremonySession(
+  token: string,
+  sessionID: string,
+): Promise<void> {
+  try {
+    const fn = BBMTLibNativeModule.rebindCeremonySession as
+      | ((token: string, sessionID: string) => Promise<unknown>)
+      | undefined;
+    if (typeof fn !== 'function') {
+      throw new CeremonyAuthRequiredError();
+    }
+    const ok = await fn(token, sessionID);
+    if (ok !== true) {
+      throw new CeremonyAuthRequiredError();
+    }
+    for (const [id, entry] of sessionTokens) {
+      if (entry.token === token) {
+        sessionTokens.delete(id);
+        sessionTokens.set(sessionID, entry);
+        break;
+      }
+    }
+  } catch (error) {
+    if (
+      error instanceof CeremonyNoLockError ||
+      error instanceof CeremonyAuthRequiredError
+    ) {
+      throw error;
+    }
+    dbg('rebindCeremonySession failed', error);
+    throw mapCeremonyError(error);
+  }
 }
 
 /** Mint an EXPORT token (backup export). */

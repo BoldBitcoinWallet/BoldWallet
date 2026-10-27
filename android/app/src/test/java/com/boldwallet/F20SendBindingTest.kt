@@ -81,4 +81,15 @@ class F20SendBindingTest {
             ),
         )
     }
+
+    @Test
+    fun unboundSignTokenRejectedForSendAndRevokes() {
+        val token = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "sess-send")
+        assertFalse(
+            CeremonyTokens.contentBindingOk(
+                token, SendBinding.digest("tb1qdest", "1000", "10", "tb1qchange"),
+            ),
+        )
+        assertEquals(CeremonyTokens.State.REVOKED, CeremonyTokens.stateOf(token))
+    }
 }

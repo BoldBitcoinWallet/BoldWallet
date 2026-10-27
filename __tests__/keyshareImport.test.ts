@@ -1,6 +1,10 @@
 import {Buffer} from 'buffer';
 (global as any).Buffer = (global as any).Buffer || Buffer;
 
+jest.mock('react-native-toast-message', () => ({
+  __esModule: true,
+  default: {show: jest.fn(), hide: jest.fn()},
+}));
 jest.mock('@react-navigation/native', () => ({
   CommonActions: {
     reset: jest.fn((payload: unknown) => payload),
@@ -25,6 +29,9 @@ jest.mock('../services/rnfsSafe', () => ({
 jest.mock('../services/LocalCache', () => ({
   __esModule: true,
   default: {clear: jest.fn()},
+}));
+jest.mock('../services/walletSessionReset', () => ({
+  clearCachesBeforeWalletSession: jest.fn(async () => {}),
 }));
 jest.mock('../App', () => ({
   isDebugLoggingEnabled: () => false,
@@ -73,6 +80,7 @@ import {
 } from '../services/keyshareImport';
 import {TssProvider} from '../services/TssProvider';
 import {persistStagedKeyshare} from '../services/walletSetupOrchestrator';
+import {clearCachesBeforeWalletSession} from '../services/walletSessionReset';
 import {
   bufferToUr,
   createUrDecoder,
@@ -201,11 +209,11 @@ describe('keyshareImport (F1 mapping, F15b-1 staged)', () => {
       {pub_key: 'abc', local_party_key: 'KeyShare1'},
       {setActiveNetwork, navigate},
     );
-    // No owner ceremony: finalize passes opts through as undefined.
-    expect(persistStagedKeyshare).toHaveBeenCalledWith(
-      'ab'.repeat(16),
-      undefined,
-    );
+    // No owner ceremony: finalize still marks the wallet as imported.
+    expect(persistStagedKeyshare).toHaveBeenCalledWith('ab'.repeat(16), {
+      origin: 'imported',
+    });
+    expect(clearCachesBeforeWalletSession).toHaveBeenCalled();
     expect(setActiveNetwork).toHaveBeenCalledWith('mainnet');
     expect(navigate).toHaveBeenCalled();
   });
@@ -237,6 +245,7 @@ describe('keyshareImport (F1 mapping, F15b-1 staged)', () => {
     expect(persistStagedKeyshare).toHaveBeenCalledWith('ab'.repeat(16), {
       ceremonyToken: 'tok-imp-owner',
       ceremonySessionID: 'sess-imp-owner',
+      origin: 'imported',
     });
     expect(native.completeCeremonyToken).toHaveBeenCalledWith('tok-imp-owner');
     expect(native.releaseCeremonyToken).not.toHaveBeenCalled();

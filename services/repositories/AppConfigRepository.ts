@@ -58,6 +58,11 @@ export const CONFIG_KEYS = {
   /** Android battery-exemption sheet: user chose don’t ask again. */
   MPC_BATTERY_EXEMPT_DONT_ASK: 'mpc_battery_exempt_dont_ask',
   /**
+   * Informational ceremony notices (finished, interrupted, return, Live
+   * Activity). Absent = on. The Android progress notification stays required.
+   */
+  CEREMONY_NOTICES: 'ceremony_notices',
+  /**
    * One-time copy of leftover EncryptedStorage prefs into `app_config`.
    */
   ENCRYPTED_PREFS_MIGRATION_DONE: 'encrypted_prefs_migration_done',
@@ -86,6 +91,11 @@ export const CONFIG_KEYS = {
    */
   NAV_MENU_STYLE: 'nav_menu_style',
   /**
+   * Auto lock after leaving the app: `instant` | `1m` | `5m` | `never`.
+   * Absent = `1m`.
+   */
+  WALLET_AUTO_LOCK: 'wallet_auto_lock',
+  /**
    * Camouflage / unlock PIN lockout. Consecutive wrong entries, then epoch-ms
    * until the pad may be used again (30s after 3 failures).
    */
@@ -99,12 +109,24 @@ export const CONFIG_KEYS = {
   LAN_MASTER_HOST: 'lan_master_host',
   LAN_IS_MASTER: 'lan_is_master',
   LAN_IS_TRIO: 'lan_is_trio',
+  /**
+   * How this keyshare arrived. `created` = keygen on this device (no chain
+   * history yet). `imported` = backup restore, which must gap-scan.
+   * Absent = treat as imported so older wallets keep the full scan.
+   */
+  WALLET_ORIGIN: 'wallet_origin',
   LAN_PEER_PUBKEY2: 'lan_peer_pubkey2',
   /**
    * JSON array of `{ url, enabled }` mainnet mempool REST bases (failover pool).
    * Primary `api` / `api_mainnet` stay in sync with the first enabled entry.
    */
   MEMPOOL_PROVIDERS_ENTRIES: 'mempool_providers_entries',
+  /**
+   * JSON array of `{ url, enabled }` testnet4 mempool REST bases.
+   * Kept separate from the mainnet list. Primary `api_testnet4` stays in
+   * sync with the first enabled entry.
+   */
+  MEMPOOL_PROVIDERS_ENTRIES_TESTNET: 'mempool_providers_entries_testnet',
 } as const;
 
 export type ConfigKey = (typeof CONFIG_KEYS)[keyof typeof CONFIG_KEYS];

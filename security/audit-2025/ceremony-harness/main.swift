@@ -253,6 +253,17 @@ check(CeremonyOpClass.parse("admin") == nil, "parse rejects unknown")
 check(CeremonyOpClass.parse("") == nil, "parse rejects empty")
 check(CeremonyOpClass.parse("transport") == nil, "no transport class (rides parent)")
 
+// F20 content binding: bound digest must match, unbound sign token fails closed and revokes.
+reset()
+let boundTok = CeremonyTokens.mint(opClass: .sign, sessionID: "f20-1", boundDigest: "abcd1234")
+check(CeremonyTokens.contentBindingOk(token: boundTok, actualDigestHex: "abcd1234"), "F20 matching bound digest passes")
+check(!CeremonyTokens.contentBindingOk(token: boundTok, actualDigestHex: "ffff0000"), "F20 mismatched digest fails")
+check(CeremonyTokens.stateOf(token: boundTok) == .revoked, "F20 mismatch revokes session")
+reset()
+let unboundTok = CeremonyTokens.mint(opClass: .sign, sessionID: "f20-unbound")
+check(!CeremonyTokens.contentBindingOk(token: unboundTok, actualDigestHex: "abcd1234"), "F20 unbound sign token rejected at keysign")
+check(CeremonyTokens.stateOf(token: unboundTok) == .revoked, "F20 unbound sign token revokes session")
+
 if failures == 0 {
   print("CEREMONY HARNESS PASSED")
 } else {

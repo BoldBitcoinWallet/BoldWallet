@@ -242,12 +242,86 @@ func TestLanJoinKeygenTrioStaggerMobile(t *testing.T) {
 	})
 }
 
+// F32: trio JoinKeygen with empty keys must refuse the retired public
+// derivation immediately (no relay needed — normalize runs first).
+// Full trio DKG coverage lives in the explicit-key tests above.
 func TestLanJoinKeygenTrioDerivedSessionKey(t *testing.T) {
+	chaincode := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	_, err := JoinKeygen(
+		"KeyShare1", "KeyShare1,KeyShare2,KeyShare3",
+		"test-lan-trio-derived-refused", "http://127.0.0.1:9",
+		chaincode, "", "", "",
+	)
+	if err == nil {
+		t.Fatal("empty-keys trio JoinKeygen must fail closed")
+	}
+	if !strings.Contains(err.Error(), "TRIO_LEGACY_KEY_REFUSED") {
+		t.Fatalf("must be TRIO_LEGACY_KEY_REFUSED, got: %v", err)
+	}
+}
+
+// F32 (Option A): full trio DKG driven by an ECDH-derived session key —
+// the production composition (exchange on one relay, DKG with the
+// derived key). Proves the 64-hex ECDH output is a working DKG key.
+func TestLanJoinKeygenTrioECDHSessionKey(t *testing.T) {
 	skipIntegrationIfShort(t, "LAN DKG integration")
+	t.Setenv("TRIO_ECDH_SEC", "60")
+
+	ecdhPort := freeTestPort(t)
+	ecdhServer := "http://127.0.0.1:" + ecdhPort
+	_, _ = tss.StopRelay()
+	time.Sleep(300 * time.Millisecond)
+	if _, err := tss.RunRelay(ecdhPort); err != nil {
+		t.Fatalf("RunRelay: %v", err)
+	}
+	waitForRelayHTTP(ecdhServer, 3*time.Second)
+
+	session := "test-lan-trio-ecdh-derived"
+	parties := []string{"KeyShare1", "KeyShare2", "KeyShare3"}
+	type pres struct {
+		out string
+		err error
+	}
+	ch := make(chan pres, len(parties))
+	var wg sync.WaitGroup
+	for _, p := range parties {
+		wg.Add(1)
+		go func(party string) {
+			defer wg.Done()
+			out, err := tss.TrioECDHPhase1(ecdhServer, session, party, strings.Join(parties, ","))
+			ch <- pres{out: out, err: err}
+		}(p)
+	}
+	wg.Wait()
+	close(ch)
+	sas := ""
+	handle := ""
+	for r := range ch {
+		if r.err != nil {
+			t.Fatalf("ECDH phase1: %v", r.err)
+		}
+		var decoded map[string]string
+		if err := json.Unmarshal([]byte(r.out), &decoded); err != nil {
+			t.Fatalf("ECDH decode: %v", err)
+		}
+		if sas == "" {
+			sas = decoded["sas"]
+			handle = decoded["handle"]
+		} else if decoded["sas"] != sas {
+			t.Fatalf("SAS divergence in DKG-key test")
+		}
+	}
+	// Any party's handle confirms to the same ceremony key; use one.
+	sessionKey, err := tss.TrioECDHConfirm(handle, session)
+	if err != nil {
+		t.Fatalf("ECDH confirm: %v", err)
+	}
+	_, _ = tss.StopRelay()
+
 	runLanJoinKeygenTrio(t, trioKeygenOpts{
-		session:    "test-lan-trio-derived-session",
-		sessionKey: "",
-		staggerMs:  []int{0, 2000, 4000},
+		session:    "test-lan-trio-ecdh-dkg",
+		sessionKey: sessionKey,
+		staggerMs:  []int{0, 0, 0},
 	})
 }
 

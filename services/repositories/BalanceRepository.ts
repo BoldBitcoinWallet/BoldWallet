@@ -65,11 +65,11 @@ class BalanceRepository {
     }
   }
 
-  /** Get all balances for a given network (used for aggregate calculation). */
+  /** Get all per-address balances for a given network (excludes synthetic aggregate_* rows). */
   getBalancesForNetwork(network: string): AddressBalance[] {
     try {
       const {rows} = database.execute(
-        'SELECT * FROM address_balances WHERE network = ?',
+        "SELECT * FROM address_balances WHERE network = ? AND address NOT LIKE 'aggregate_%'",
         [network],
       );
       return rows.map(r => ({
@@ -86,23 +86,69 @@ class BalanceRepository {
     }
   }
 
-  /** Sum all confirmed + pending balances across all addresses for a network. */
-  getAggregateBalance(network: string): {
+  /** Get balances for a specific address list on a network. */
+  getBalancesForAddresses(
+    addresses: string[],
+    network: string,
+  ): AddressBalance[] {
+    if (!addresses.length) return [];
+    try {
+      const placeholders = addresses.map(() => '?').join(',');
+      const {rows} = database.execute(
+        `SELECT * FROM address_balances
+         WHERE network = ? AND address IN (${placeholders})`,
+        [network, ...addresses],
+      );
+      return rows.map(r => ({
+        address: r.address as string,
+        network: r.network as string,
+        balanceSats: r.balance_sats as number,
+        pendingSats: r.pending_sats as number,
+        hasNonzero: (r.has_nonzero as number) === 1,
+        fetchedAt: r.fetched_at as number,
+      }));
+    } catch (err) {
+      dbg('BalanceRepository.getBalancesForAddresses error', err);
+      return [];
+    }
+  }
+
+  /**
+   * Sum confirmed + pending balances across addresses for a network
+   * (optionally scoped to a specific address list, always excluding synthetic aggregate_* rows).
+   */
+  getAggregateBalance(
+    network: string,
+    addresses?: string[],
+  ): {
     balanceSats: number;
     pendingSats: number;
     hasNonzero: boolean;
     fetchedAt: number;
   } {
     try {
-      const {rows} = database.execute(
-        `SELECT
-           COALESCE(SUM(balance_sats), 0) AS total_confirmed,
-           COALESCE(SUM(pending_sats), 0) AS total_pending,
-           MAX(fetched_at)                AS newest_fetch
-         FROM address_balances
-         WHERE network = ?`,
-        [network],
-      );
+      const hasAddressFilter = Array.isArray(addresses) && addresses.length > 0;
+      const placeholders = hasAddressFilter
+        ? addresses!.map(() => '?').join(',')
+        : '';
+      const sql = hasAddressFilter
+        ? `SELECT
+             COALESCE(SUM(balance_sats), 0) AS total_confirmed,
+             COALESCE(SUM(pending_sats), 0) AS total_pending,
+             MAX(fetched_at)                AS newest_fetch
+           FROM address_balances
+           WHERE network = ?
+             AND address NOT LIKE 'aggregate_%'
+             AND address IN (${placeholders})`
+        : `SELECT
+             COALESCE(SUM(balance_sats), 0) AS total_confirmed,
+             COALESCE(SUM(pending_sats), 0) AS total_pending,
+             MAX(fetched_at)                AS newest_fetch
+           FROM address_balances
+           WHERE network = ?
+             AND address NOT LIKE 'aggregate_%'`;
+      const params = hasAddressFilter ? [network, ...addresses!] : [network];
+      const {rows} = database.execute(sql, params);
       if (!rows.length) {
         return {balanceSats: 0, pendingSats: 0, hasNonzero: false, fetchedAt: 0};
       }

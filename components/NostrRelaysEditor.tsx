@@ -1,6 +1,6 @@
 import React, {useMemo, useState} from 'react';
+import {confirmAppPrompt, showAppNotice} from '../services/appPrompt';
 import {
-  Alert,
   Image,
   StyleSheet,
   Text,
@@ -51,28 +51,27 @@ export default function NostrRelaysEditor({
       return;
     }
     if (!isValidRelayUrl(url)) {
-      Alert.alert('Error', `Invalid relay URL: ${url}\n${RELAY_SCHEME_ERROR}`);
+      showAppNotice('Error', `Invalid relay URL: ${url}\n${RELAY_SCHEME_ERROR}`);
       return;
     }
     if (entries.some(e => e.url === url)) {
-      Alert.alert('Already added', 'That relay is already in the list.');
+      showAppNotice('Already added', 'That relay is already in the list.');
       return;
     }
     if (isUnreliableNostrRelay(url)) {
-      Alert.alert(
-        'Unreliable relay',
-        'This relay often blocks large MPC messages. You can still add it.',
-        [
-          {text: 'Cancel', style: 'cancel'},
-          {
-            text: 'Add anyway',
-            onPress: () => {
-              onChange([...entries, {url, enabled: true}]);
-              setAddUrl('');
-            },
-          },
-        ],
-      );
+      confirmAppPrompt({
+        icon: 'relay',
+        title: 'This relay is flaky',
+        hint: 'Large wallet messages are often blocked.',
+        cancelLabel: 'Skip',
+        confirmLabel: 'Add it',
+      }).then(ok => {
+        if (!ok) {
+          return;
+        }
+        onChange([...entries, {url, enabled: true}]);
+        setAddUrl('');
+      });
       return;
     }
     onChange([...entries, {url, enabled: true}]);
@@ -83,11 +82,11 @@ export default function NostrRelaysEditor({
     const urls = parseRelayUrls(pasteText);
     const invalid = firstInvalidRelayUrl(urls);
     if (invalid) {
-      Alert.alert('Error', `Invalid relay URL: ${invalid}\n${RELAY_SCHEME_ERROR}`);
+      showAppNotice('Error', `Invalid relay URL: ${invalid}\n${RELAY_SCHEME_ERROR}`);
       return;
     }
     if (urls.length === 0) {
-      Alert.alert('Error', 'Please enter at least one relay URL');
+      showAppNotice('Error', 'Please enter at least one relay URL');
       return;
     }
     const existing = new Set(entries.map(e => e.url));

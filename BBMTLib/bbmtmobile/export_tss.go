@@ -352,3 +352,32 @@ func BbmtNostrMpcSignPSBT(relays, nsec, parties, npubsSorted, keyshare, psbt *C.
 		mustGoStr(relays, "relays"), mustGoStr(nsec, "nsec"), mustGoStr(parties, "parties"), mustGoStr(npubsSorted, "npubsSorted"), mustGoStr(keyshare, "keyshare"), mustGoStr(psbt, "psbt"),
 	))
 }
+
+// F32 (Option A): trio ECDH exchange for LAN keygen. Phase 1 runs both
+// exchange rounds and returns {"handle","sas","parties"} JSON; the SAS
+// is shown on the pairing screens for user compare. Phase 2 runs after
+// user confirmation and returns the ceremony session-key hex. Abort
+// wipes a phase-1 handle (SAS mismatch). mustGoStr rejects nulls with
+// typed errors (F11), matching every other export here.
+
+//export BbmtTrioECDHPhase1
+func BbmtTrioECDHPhase1(server, session, selfParty, parties *C.char) (out *C.char) {
+	defer recoverBridge(&out)
+	return cString(tss.TrioECDHPhase1(
+		mustGoStr(server, "server"), mustGoStr(session, "session"), mustGoStr(selfParty, "selfParty"), mustGoStr(parties, "parties"),
+	))
+}
+
+//export BbmtTrioECDHConfirm
+func BbmtTrioECDHConfirm(handle, session *C.char) (out *C.char) {
+	defer recoverBridge(&out)
+	return cString(tss.TrioECDHConfirm(
+		mustGoStr(handle, "handle"), mustGoStr(session, "session"),
+	))
+}
+
+//export BbmtTrioECDHAbort
+func BbmtTrioECDHAbort(handle *C.char) (out *C.char) {
+	defer recoverBridge(&out)
+	return cString(tss.TrioECDHAbort(mustGoStr(handle, "handle")))
+}

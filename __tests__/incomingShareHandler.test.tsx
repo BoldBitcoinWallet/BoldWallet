@@ -1,5 +1,11 @@
+jest.mock('react-native-toast-message', () => ({
+  __esModule: true,
+  default: {show: jest.fn()},
+}));
+
 import React from 'react';
-import {Alert, AppState} from 'react-native';
+import {AppState} from 'react-native';
+import Toast from 'react-native-toast-message';
 import TestRenderer, {act} from 'react-test-renderer';
 import IncomingShareHandler from '../components/IncomingShareHandler';
 
@@ -16,6 +22,10 @@ jest.mock('../utils', () => ({
 const mockSetActiveNetwork = jest.fn();
 const mockClassifyIncomingFile = jest.fn();
 const mockReadBackupBlobFromUri = jest.fn();
+const mockImportKeyshareFromBase64 = jest.fn(
+  async (..._args: unknown[]) => undefined,
+);
+const mockShowKeyshareImportError = jest.fn();
 const mockSubscribeToSharedFiles = jest.fn();
 const mockGetInitialSharedFileUri = jest.fn();
 const mockModalProps = jest.fn();
@@ -36,9 +46,10 @@ jest.mock('../services/incomingFileClassifier', () => ({
 }));
 
 jest.mock('../services/keyshareImport', () => ({
-  importKeyshareFromBase64: jest.fn(),
+  importKeyshareFromBase64: (...args: unknown[]) =>
+    mockImportKeyshareFromBase64(...args),
   readBackupBlobFromUri: (uri: string) => mockReadBackupBlobFromUri(uri),
-  showKeyshareImportError: jest.fn(),
+  showKeyshareImportError: (error: unknown) => mockShowKeyshareImportError(error),
   showWalletAlreadyLoadedAlert: jest.fn(),
   WalletAlreadyLoadedError: class WalletAlreadyLoadedError extends Error {},
 }));
@@ -75,7 +86,7 @@ describe('IncomingShareHandler', () => {
     mockClearPendingSharedFile.mockResolvedValue(undefined);
 
     mockSubscribeToSharedFiles.mockImplementation((listener: (uri: string) => void) => {
-      void listener;
+      listener;
       return () => {};
     });
 
@@ -92,12 +103,18 @@ describe('IncomingShareHandler', () => {
       .spyOn(AppState, 'addEventListener')
       .mockImplementation((type: string, listener: (state: any) => void) => {
         if (type === 'change') {
-          appStateHandler = listener;
+          appStateHandler = (state: string) => {
+            Object.defineProperty(AppState, 'currentState', {
+              configurable: true,
+              value: state,
+            });
+            listener(state);
+          };
         }
         return {remove: jest.fn()} as never;
       });
 
-    jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+    jest.spyOn(Toast, 'show').mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -131,14 +148,64 @@ describe('IncomingShareHandler', () => {
     expect(mockClassifyIncomingFile).toHaveBeenCalledWith(
       'file:///tmp/pending_keyshare.share',
     );
+    expect(mockReadBackupBlobFromUri).not.toHaveBeenCalled();
+    expect(mockImportKeyshareFromBase64).not.toHaveBeenCalled();
+    expect(mockShowKeyshareImportError).not.toHaveBeenCalled();
+
+    const lastModalCall = mockModalProps.mock.calls[mockModalProps.mock.calls.length - 1]?.[0] as
+      | {visible?: boolean; onSubmit?: (password: string) => Promise<void>}
+      | undefined;
+    expect(lastModalCall?.visible).toBe(true);
+
+    await act(async () => {
+      await lastModalCall?.onSubmit?.('backup-password');
+    });
+
     expect(mockReadBackupBlobFromUri).toHaveBeenCalledWith(
       'file:///tmp/pending_keyshare.share',
     );
+    expect(mockImportKeyshareFromBase64).toHaveBeenCalledWith(
+      'encrypted-keyshare-content',
+      'backup-password',
+      expect.objectContaining({setActiveNetwork: mockSetActiveNetwork}),
+    );
+  });
+
+  it('opens the password modal when the blob cannot be read yet', async () => {
+    mockClassifyIncomingFile.mockRejectedValue(new Error('Permission Denial'));
+
+    await act(async () => {
+      TestRenderer.create(
+        <IncomingShareHandler
+          isAuthenticated={true}
+          navigationRef={navigationRef as never}
+        />,
+      );
+    });
+
+    await act(async () => {
+      appStateHandler?.('active');
+    });
+    await flush();
+    await flush();
+
+    expect(mockShowKeyshareImportError).not.toHaveBeenCalled();
+    expect(mockImportKeyshareFromBase64).not.toHaveBeenCalled();
+    expect(Toast.show).not.toHaveBeenCalled();
 
     const lastModalCall = mockModalProps.mock.calls[mockModalProps.mock.calls.length - 1]?.[0] as
-      | {visible?: boolean}
+      | {visible?: boolean; onSubmit?: (password: string) => Promise<void>}
       | undefined;
     expect(lastModalCall?.visible).toBe(true);
+
+    mockReadBackupBlobFromUri.mockRejectedValueOnce(new Error('Could not read keyshare file'));
+    await act(async () => {
+      await lastModalCall?.onSubmit?.('backup-password');
+    });
+
+    expect(mockReadBackupBlobFromUri).toHaveBeenCalled();
+    expect(mockImportKeyshareFromBase64).not.toHaveBeenCalled();
+    expect(mockShowKeyshareImportError).toHaveBeenCalledTimes(1);
   });
 
   it('shows unsupported alert for unknown shared file kinds', async () => {
@@ -161,9 +228,11 @@ describe('IncomingShareHandler', () => {
     await flush();
     await flush();
 
-    expect(Alert.alert).toHaveBeenCalledWith(
-      'Unsupported file',
-      'This file type is not supported by BoldWallet.',
+    expect(Toast.show).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text1: 'Unsupported file',
+        text2: 'This file type is not supported by BoldWallet.',
+      }),
     );
     expect(mockReadBackupBlobFromUri).not.toHaveBeenCalled();
     expect(mockClearPendingSharedFile).toHaveBeenCalled();

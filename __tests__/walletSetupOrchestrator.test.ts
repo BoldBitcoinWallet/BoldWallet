@@ -1,3 +1,4 @@
+/* eslint-disable no-bitwise */
 jest.mock('../services/WalletService', () => ({
   waitMS: jest.fn(() => Promise.resolve()),
 }));
@@ -45,9 +46,21 @@ jest.mock('../utils', () => ({
   saveKeyshareMetadata: jest.fn(() => Promise.resolve()),
 }));
 
+jest.mock('../services/walletOrigin', () => ({
+  markWalletCreated: jest.fn(),
+  markWalletImported: jest.fn(),
+  isCreatedWallet: jest.fn(() => false),
+  shouldSeedFreshHd: jest.fn(() => false),
+  FRESH_DISCOVERY_STATUS: 'fresh',
+}));
+
 jest.mock('../services/walletGuard', () => ({
   assertNoExistingWallet: jest.fn(() => Promise.resolve()),
   WalletAlreadyLoadedError: class WalletAlreadyLoadedError extends Error {},
+}));
+
+jest.mock('../services/secureStorageErrors', () => ({
+  secureStorageMessageFor: jest.fn(() => null),
 }));
 
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -69,6 +82,7 @@ import {
   WALLET_SETUP_PREPARE_TIMEOUT_MIN,
 } from '../services/walletSetupOrchestrator';
 import {resolveTssBackendForKeygen} from '../services/tssBackend';
+import {quoteOversizedJsonIntegers} from '../utils/keyshareDevView';
 
 describe('walletSetupOrchestrator', () => {
   beforeEach(() => {
@@ -120,6 +134,33 @@ describe('walletSetupOrchestrator', () => {
     });
     expect(JSON.parse(out).nsec).toBe(existing);
     expect(JSON.parse(out).nostr_npub).toBe('npub1x');
+  });
+
+  it('finalizeKeyshareForStorage preserves GG18 big.Int as bare numbers for Go', () => {
+    const {
+      assertJsonSafeForGoBigIntUnmarshal,
+      buildGoShapedGg18KeyshareJson,
+      GG18_HUGE_ALPHA,
+      naiveJsRoundTripCorruptsGg18BigInts,
+    } = require('./fixtures/mpcKeyshareFixtures');
+    const input = buildGoShapedGg18KeyshareJson();
+    expect(naiveJsRoundTripCorruptsGg18BigInts(input)).toBe(true);
+    const out = finalizeKeyshareForStorage(input, {
+      partyNsec: 'nsec1gg18test',
+      nostrNpub: 'npub1gg18',
+    });
+    assertJsonSafeForGoBigIntUnmarshal(out);
+    expect(out).toContain(`"Alpha":${GG18_HUGE_ALPHA}`);
+    expect(out).not.toContain(`"Alpha":"${GG18_HUGE_ALPHA}"`);
+    expect(JSON.parse(quoteOversizedJsonIntegers(out)).nostr_npub).toBe(
+      'npub1gg18',
+    );
+  });
+
+  it('finalizeKeyshareForStorage without Nostr opts leaves Go JSON untouched', () => {
+    const {buildGoShapedGg18KeyshareJson} = require('./fixtures/mpcKeyshareFixtures');
+    const input = buildGoShapedGg18KeyshareJson();
+    expect(finalizeKeyshareForStorage(input)).toBe(input);
   });
 
   it('F15b-1: persistStagedKeyshare persists via native, mirrors metadata', async () => {
@@ -178,7 +219,11 @@ describe('walletSetupOrchestrator', () => {
   });
 
   it('F19: persistWalletKeyshare legacy path still writes + mirrors (GG18)', async () => {
-    const json = JSON.stringify({pub_key: 'aa', share_b64: 'bb'});
+    const {
+      assertJsonSafeForGoBigIntUnmarshal,
+      buildGoShapedGg18KeyshareJson,
+    } = require('./fixtures/mpcKeyshareFixtures');
+    const json = buildGoShapedGg18KeyshareJson();
     (EncryptedStorage.getItem as jest.Mock).mockResolvedValue(json);
     (BBMTLibNativeModule.hasKeyshareInSecureStorage as jest.Mock)
       .mockResolvedValue(true);
@@ -187,6 +232,7 @@ describe('walletSetupOrchestrator', () => {
       nostrNpub: 'npub1legacy',
     });
     expect(saved).toContain('"nsec"');
+    assertJsonSafeForGoBigIntUnmarshal(saved);
     expect(EncryptedStorage.setItem).toHaveBeenCalledWith('keyshare', saved);
     expect(saveKeyshareMetadata).toHaveBeenCalled();
   });

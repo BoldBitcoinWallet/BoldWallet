@@ -214,12 +214,12 @@ describe('3b-2b keygen token gating (F15b-2 / F10-bridge B9-B12, B20-B21)', () =
     expect(native.completeCeremonyToken).toHaveBeenCalledWith('tok-keygen-1');
   });
 
-  test('eciesKeypair mints a fresh single-call keygen ceremony (B21)', async () => {
+  test('eciesKeypair does not mint a ceremony', async () => {
     const out = await TssProvider.eciesKeypair();
     expect(out).toContain('"pub"');
-    expect(native.requestKeygenCeremonyToken).toHaveBeenCalledTimes(1);
-    expect(native.eciesKeypair).toHaveBeenCalledWith('tok-keygen-1');
-    expect(native.completeCeremonyToken).toHaveBeenCalledWith('tok-keygen-1');
+    expect(native.requestKeygenCeremonyToken).not.toHaveBeenCalled();
+    expect(native.eciesKeypair).toHaveBeenCalledWith('');
+    expect(native.completeCeremonyToken).not.toHaveBeenCalled();
   });
 
   test('keypair mint failure never reaches the generator', async () => {

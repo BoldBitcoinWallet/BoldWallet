@@ -1,3 +1,4 @@
+/* eslint-disable no-bitwise */
 import {BBMTLibNativeModule} from '../native_modules';
 
 const HEX_RE = /^[0-9a-f]+$/i;

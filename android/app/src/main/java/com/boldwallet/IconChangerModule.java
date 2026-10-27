@@ -151,6 +151,18 @@ public class IconChangerModule extends ReactContextBaseJavaModule {
      * Returns the preset id when exactly one launcher alias is enabled; otherwise null.
      * Manifest default: DefaultIconActivity on, camouflage aliases off.
      */
+    /** Class name of the enabled launcher alias. Share handoff must target this, not MainActivity. */
+    static String enabledLauncherClass(Context context) {
+        String preset = detectSingleEnabledPreset(context);
+        if (preset == null) {
+            SharedPreferences prefs =
+                    context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+            preset = normalizePresetId(prefs.getString(CURRENT_ICON_KEY, PRESET_DEFAULT));
+        }
+        String alias = PRESET_ALIASES.get(preset);
+        return alias != null ? alias : DEFAULT_ICON_ACTIVITY;
+    }
+
     static String detectSingleEnabledPreset(Context context) {
         PackageManager pm = context.getPackageManager();
         String packageName = context.getPackageName();

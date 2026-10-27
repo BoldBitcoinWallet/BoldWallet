@@ -7,11 +7,12 @@ import {
   RefreshControl,
   ActivityIndicator,
   Platform,
-  Alert,
 } from 'react-native';
+import {confirmAppPrompt} from '../services/appPrompt';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
 import {useTheme, themes} from '../theme';
+import {useFloatingScrollPadding} from '../components/FloatingTabBar';
 import {COMMON_FONT_CONFIGS} from '../theme/fonts';
 import {useUser} from '../context/UserContext';
 import {
@@ -39,6 +40,7 @@ import UtxoDetailsModal from '../components/UtxoDetailsModal';
 import utxoTagRepository from '../services/repositories/UtxoTagRepository';
 import {outpointKey} from '../services/utxoCoinControl';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {isTestnetMempoolApiBase} from '../services/mempoolProvidersStore';
 import AppPressable from '../components/AppPressable';
 import {CacheIndicator} from '../components/CacheIndicator';
 import {
@@ -48,12 +50,10 @@ import {
 } from '../services/mempoolHealth';
 import {
   isWalletOnline,
-  notifyWalletOnlineToggle,
-  setWalletOnline,
   useWalletOnline,
 } from '../services/walletOnlineStore';
+import {openWalletOfflineSandbox} from '../services/walletOfflineSandboxPrompt';
 import CurrencySelector from '../components/CurrencySelector';
-import WalletOfflineSandboxModal from '../components/WalletOfflineSandboxModal';
 
 /** Mempool.space UTXO item: txid, vout, value (sats), status { confirmed, block_height?, block_hash?, block_time? }. */
 type ApiUtxo = {
@@ -136,6 +136,7 @@ function addressMatchesNetwork(addr: string, isTestnetApi: boolean): boolean {
 
 const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const {theme} = useTheme();
+  const floatingScrollPadding = useFloatingScrollPadding();
   const {
     activeApiProvider: apiBase,
     activeNetwork: network,
@@ -164,9 +165,6 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [syncErrorMessage, setSyncErrorMessage] = useState<string | null>(null);
   const [lastSyncFailed, setLastSyncFailed] = useState(false);
   const [abortRequested, setAbortRequested] = useState(false);
-  const [offlineSandboxModalVisible, setOfflineSandboxModalVisible] =
-    useState(false);
-  const pendingOnlineActionRef = React.useRef<(() => void) | null>(null);
   const [detailsUtxo, setDetailsUtxo] = useState<UtxoWithPath | null>(null);
   const [tagByOutpoint, setTagByOutpoint] = useState<Map<string, string>>(
     () => new Map(),
@@ -223,7 +221,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     };
   }, [selectedCurrency]);
 
-  const fetchUtxos = useCallback(async () => {
+  const fetchUtxos = useCallback(async (force = false) => {
     const base = apiBase?.trim();
     if (!base) {
       setFetchError('No API configured');
@@ -232,7 +230,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }
     const cleanBase = base.replace(/\/+$/, '').replace(/\/api\/?$/, '');
     const apiUrl = `${cleanBase}/api`;
-    const isTestnetApi = /\/testnet(\/|$)/.test(apiUrl);
+    const isTestnetApi = isTestnetMempoolApiBase(apiUrl);
     setFetchError(null);
 
     // Resolve HD addresses once, outside the try block so the catch can use them.
@@ -293,6 +291,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           addressesForSyncer,
           apiUrl,
           (current, total) => setRefreshProgress({current, total}),
+          {force},
         );
       }
       const allFromDB = utxoRepository.getUtxosForAddresses(
@@ -452,31 +451,20 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
   const onRefresh = useCallback(() => {
     if (!isWalletOnline()) {
-      pendingOnlineActionRef.current = () => {
-        setRefreshing(true);
-        fetchUtxos();
-      };
-      setOfflineSandboxModalVisible(true);
+      openWalletOfflineSandbox({
+        message:
+          'Your wallet is set to the offline sandbox. Refresh needs the Internet. Cached balances and history stay available while offline.',
+        onGoOnline: () => {
+          setRefreshing(true);
+          fetchUtxos(true);
+        },
+      });
       setRefreshing(false);
       return;
     }
     setRefreshing(true);
-    fetchUtxos();
+    fetchUtxos(true);
   }, [fetchUtxos]);
-
-  const dismissOfflineSandboxModal = useCallback(() => {
-    pendingOnlineActionRef.current = null;
-    setOfflineSandboxModalVisible(false);
-  }, []);
-
-  const goOnlineFromSandboxModal = useCallback(() => {
-    const pending = pendingOnlineActionRef.current;
-    pendingOnlineActionRef.current = null;
-    setOfflineSandboxModalVisible(false);
-    setWalletOnline(true);
-    notifyWalletOnlineToggle(true);
-    pending?.();
-  }, []);
 
   const isDarkMode = theme.colors.background !== '#ffffff';
   const cardBg = isDarkMode ? theme.colors.cardBackground : '#ffffff';
@@ -1140,78 +1128,81 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
           lastSyncFailed={lastSyncFailed}
           healthHint={syncErrorMessage ? null : healthHint}
           onAbortRequested={() => {
-            Alert.alert(
-              'Cancel sync?',
-              'Stop the current sync and show cached data?',
-              [
-                {text: 'No', style: 'cancel'},
-                {
-                  text: 'Yes',
-                  onPress: () => {
-                    setAbortRequested(true);
-                    mempoolClient.abortAll();
-                    apiQueue.clear();
-                  },
-                },
-              ],
-            );
+            confirmAppPrompt({
+              icon: 'sync',
+              title: 'Stop sync?',
+              hint: 'Cached data stays on screen.',
+              cancelLabel: 'Keep syncing',
+              confirmLabel: 'Stop',
+            }).then(ok => {
+              if (!ok) {
+                return;
+              }
+              setAbortRequested(true);
+              mempoolClient.abortAll();
+              apiQueue.clear();
+            });
           }}
           onLongPress={() => {
             if (!isWalletOnline()) {
-              pendingOnlineActionRef.current = () => {
-                Alert.alert(
-                  'Full sync',
-                  'Re-scan all addresses and sync. Existing data is kept. Continue?',
-                  [
-                    {text: 'Cancel', style: 'cancel'},
-                    {
-                      text: 'Continue',
-                      onPress: async () => {
-                        const effectiveType = addressType || 'segwit-native';
-                        const api =
-                          apiBase || resolveStoredMempoolApiBase(network);
-                        setRefreshing(true);
-                        try {
-                          dbg(
-                            '[UtxosScreen] Long-press: full sync (discovery + refresh)',
-                          );
-                          setRefreshStatusMessage('Discovering addresses…');
-                          await WalletService.getInstance().discoverHdIndexesForNetwork(
-                            network,
-                            effectiveType,
-                            api,
-                            chain =>
-                              setRefreshStatusMessage(
-                                `Scanning ${
-                                  chain === 'external' ? 'receive' : 'change'
-                                } addresses…`,
-                              ),
-                          );
-                          setRefreshStatusMessage('Rebuilding wallet data…');
-                        } catch (e) {
-                          dbg(
-                            '[UtxosScreen] Long-press reconstruction error',
-                            e,
-                          );
-                        }
-                        setRefreshStatusMessage(null);
-                        onRefresh();
-                      },
-                    },
-                  ],
-                );
-              };
-              setOfflineSandboxModalVisible(true);
+              openWalletOfflineSandbox({
+                message:
+                  'Your wallet is set to the offline sandbox. Sync needs the Internet. Cached balances and history stay available while offline.',
+                onGoOnline: () => {
+                  confirmAppPrompt({
+                    icon: 'sync',
+                    title: 'Sync everything?',
+                    hint: 'Addresses are scanned again. Saved data stays.',
+                    cancelLabel: 'Not now',
+                    confirmLabel: 'Sync',
+                  }).then(async ok => {
+                    if (!ok) {
+                      return;
+                    }
+                    const effectiveType = addressType || 'segwit-native';
+                    const api =
+                      apiBase || resolveStoredMempoolApiBase(network);
+                    setRefreshing(true);
+                    try {
+                      dbg(
+                        '[UtxosScreen] Long-press: full sync (discovery + refresh)',
+                      );
+                      setRefreshStatusMessage('Discovering addresses…');
+                      await WalletService.getInstance().discoverHdIndexesForNetwork(
+                        network,
+                        effectiveType,
+                        api,
+                        chain =>
+                          setRefreshStatusMessage(
+                            `Scanning ${
+                              chain === 'external' ? 'receive' : 'change'
+                            } addresses…`,
+                          ),
+                      );
+                      setRefreshStatusMessage('Rebuilding wallet data…');
+                    } catch (e) {
+                      dbg(
+                        '[UtxosScreen] Long-press reconstruction error',
+                        e,
+                      );
+                    }
+                    setRefreshStatusMessage(null);
+                    onRefresh();
+                  });
+                },
+              });
               return;
             }
-            Alert.alert(
-              'Full sync',
-              'Re-scan all addresses and sync. Existing data is kept. Continue?',
-              [
-                {text: 'Cancel', style: 'cancel'},
-                {
-                  text: 'Continue',
-                  onPress: async () => {
+            confirmAppPrompt({
+              icon: 'sync',
+              title: 'Sync everything?',
+              hint: 'Addresses are scanned again. Saved data stays.',
+              cancelLabel: 'Not now',
+              confirmLabel: 'Sync',
+            }).then(async ok => {
+              if (!ok) {
+                return;
+              }
                     const effectiveType = addressType || 'segwit-native';
                     const api =
                       apiBase || resolveStoredMempoolApiBase(network);
@@ -1238,10 +1229,7 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
                     }
                     setRefreshStatusMessage(null);
                     onRefresh();
-                  },
-                },
-              ],
-            );
+            });
           }}
           theme={theme}
           isRefreshing={refreshing && !abortRequested}
@@ -1258,7 +1246,10 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
       <FlatList
         style={styles.flexOne}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          {paddingBottom: 32 + floatingScrollPadding},
+        ]}
         data={utxosWithPath}
         renderItem={renderUtxoItem}
         keyExtractor={item => `${item.txid}:${item.vout}:${item.address}`}
@@ -1291,6 +1282,14 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         visible={isCurrencySelectorVisible}
         onClose={() => setIsCurrencySelectorVisible(false)}
         onSelect={handleCurrencySelect}
+        onRates={rates => {
+          setPriceData(rates);
+          const rate = rates[selectedCurrency];
+          if (rate > 0) {
+            setBtcPrice(String(rate));
+            setBtcRate(rate);
+          }
+        }}
         currentCurrency={selectedCurrency}
         availableCurrencies={priceData}
       />
@@ -1324,12 +1323,6 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
         }
         selectedCurrency={selectedCurrency}
         btcRate={btcRate}
-      />
-      <WalletOfflineSandboxModal
-        visible={offlineSandboxModalVisible}
-        onClose={dismissOfflineSandboxModal}
-        onKeepOffline={dismissOfflineSandboxModal}
-        onGoOnline={goOnlineFromSandboxModal}
       />
     </View>
   );

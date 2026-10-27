@@ -258,6 +258,16 @@ export function pickRate(rates: FeeRates, strategy: FeeStrategy): number {
   }
 }
 
+/** Matches Go MaxFeeRateSatVb / checkFeeRateSanity. */
+export const MAX_FEE_RATE_SAT_VB = 10_000;
+
+export function clampFeeRateSatVb(rate: number): number {
+  if (!Number.isFinite(rate)) {
+    return 1;
+  }
+  return Math.max(1, Math.min(MAX_FEE_RATE_SAT_VB, Math.round(rate)));
+}
+
 // ---------------------------------------------------------------------------
 // 6. estimateFee — main entry point (two-pass, mirrors Go)
 // ---------------------------------------------------------------------------
@@ -269,16 +279,28 @@ export async function estimateFee(params: {
   changeAddress: string;
   strategy: FeeStrategy;
   apiBase: string;
+  /** When set, overrides the named strategy rate (clamped 1–10000). */
+  feeRateSatVb?: number;
 }): Promise<FeeEstimate> {
-  const {utxos, receiverAddress, amountSats, changeAddress, strategy, apiBase} =
-    params;
+  const {
+    utxos,
+    receiverAddress,
+    amountSats,
+    changeAddress,
+    strategy,
+    apiBase,
+    feeRateSatVb,
+  } = params;
 
   if (!utxos.length) {
     throw new Error('No UTXOs available for fee estimation');
   }
 
   const rates = await fetchFeeRates(apiBase);
-  const feeRate = pickRate(rates, strategy);
+  const feeRate =
+    feeRateSatVb != null
+      ? clampFeeRateSatVb(feeRateSatVb)
+      : pickRate(rates, strategy);
 
   const receiverType = detectAddressType(receiverAddress);
   const changeType = detectAddressType(changeAddress || receiverAddress);

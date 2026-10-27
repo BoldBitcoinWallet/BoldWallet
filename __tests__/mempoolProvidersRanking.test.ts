@@ -170,4 +170,45 @@ describe('MempoolClient syncPoolConcurrency + ranked failover', () => {
       true,
     );
   });
+
+  it('does not rewrite a testnet4 URL onto mainnet hosts', async () => {
+    mempoolClient.setPublicBases([
+      'https://mempool.space/api',
+      'https://mempool.emzy.de/api',
+    ]);
+    await mempoolClient.get(
+      'https://mempool.space/testnet4/api/blocks/tip/height',
+    );
+    const calls = (global.fetch as jest.Mock).mock.calls.map(c => String(c[0]));
+    expect(calls[0]).toContain('https://mempool.space/testnet4/api/');
+    expect(calls[0]).not.toContain('emzy.de');
+  });
+
+  it('fails a testnet4 request over the enabled testnet4 pool', async () => {
+    mempoolClient.setPublicBases([
+      'https://slow.example/testnet4/api',
+      'https://fast.example/testnet4/api',
+    ]);
+    recordMempoolAttempt({
+      ok: true,
+      timeout: false,
+      status: 200,
+      durationMs: 40,
+      at: Date.now(),
+      host: 'https://fast.example/testnet4',
+    });
+    recordMempoolAttempt({
+      ok: false,
+      timeout: false,
+      status: 503,
+      durationMs: 40,
+      at: Date.now(),
+      host: 'https://slow.example/testnet4',
+    });
+    await mempoolClient.get(
+      'https://slow.example/testnet4/api/blocks/tip/height',
+    );
+    const calls = (global.fetch as jest.Mock).mock.calls.map(c => String(c[0]));
+    expect(calls[0]).toContain('https://fast.example/testnet4/api/');
+  });
 });

@@ -1,15 +1,16 @@
 import React, {useEffect, useRef, useState} from 'react';
+import {showAppNotice} from '../services/appPrompt';
 import {
-  Modal,
   View,
   Text,
   Image,
-  Alert,
+
   StyleSheet,
   ActivityIndicator,
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
+import AppModal from './AppModal';
 import {Buffer} from 'buffer';
 import type {UR} from '@ngraveio/bc-ur';
 import AppPressable from './AppPressable';
@@ -112,7 +113,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       } catch (error) {
         dbg('Error encrypting airgap keyshare:', error);
         if (!cancelled) {
-          Alert.alert(
+          showAppNotice(
             'Error',
             error instanceof Error
               ? error.message
@@ -372,7 +373,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
   const pinReady = !!pin && !!exportUr && !isEncrypting;
 
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent={true}
       animationType="fade"
@@ -490,7 +491,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
           </View>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 

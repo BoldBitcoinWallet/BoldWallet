@@ -115,13 +115,17 @@ func TestF2_CallerPaths_RejectTampered(t *testing.T) {
 			return NostrJoinKeysign("wss://relay.test", nsec, "npub1x,npub1y", "sess", "key", tampered, "msg")
 		}},
 		{"lan.go keysign", func() (string, error) {
-			return JoinKeysign("http://127.0.0.1:9", "k", "KeyShare1,KeyShare2", "sess", "", "", "", tampered, "msg")
+			// F32: explicit session key (all-empty no longer derives) so
+			// the tampered share still reaches the binding check.
+			return JoinKeysign("http://127.0.0.1:9", "k", "KeyShare1,KeyShare2", "sess", strings.Repeat("cd", 32), "", "", tampered, "msg")
 		}},
 		{"keysign.go nostr sighash", func() (string, error) {
 			return NostrJoinKeysignWithSighash("wss://relay.test", nsec, "npub1x,npub1y", "sess", "key", tampered, "m/0", sighash)
 		}},
 		{"keysign.go lan sighash", func() (string, error) {
-			return JoinKeysignWithSighash("http://127.0.0.1:9", "k", "KeyShare1,KeyShare2", "sess", "", "", "", tampered, "m/0", sighash)
+			// F32: explicit session key (all-empty no longer derives) so
+			// the tampered share still reaches the binding check.
+			return JoinKeysignWithSighash("http://127.0.0.1:9", "k", "KeyShare1,KeyShare2", "sess", strings.Repeat("cd", 32), "", "", tampered, "m/0", sighash)
 		}},
 	}
 	for _, tc := range cases {

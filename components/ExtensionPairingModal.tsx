@@ -1,5 +1,6 @@
 import React from 'react';
-import {Modal, View, Image, StyleSheet} from 'react-native';
+import {View, Image, StyleSheet} from 'react-native';
+import AppModal from './AppModal';
 import AppPressable from './AppPressable';
 import AppText from './AppText';
 import GlassModalOverlay from './GlassModalOverlay';
@@ -89,7 +90,7 @@ const ExtensionPairingModal: React.FC<ExtensionPairingModalProps> = ({
   );
 
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent={true}
       animationType="fade"
@@ -162,7 +163,7 @@ const ExtensionPairingModal: React.FC<ExtensionPairingModalProps> = ({
           </View>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 

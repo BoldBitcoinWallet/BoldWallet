@@ -108,18 +108,18 @@ const AnimatedUrQr: React.FC<AnimatedUrQrProps> = ({
     return <Text style={hintStyle}>{fallbackText}</Text>;
   }
   const displayFrame = totalParts > 0 ? (frameIndex % totalParts) + 1 : 1;
+  const quietPlateStyle = [
+    styles.quietPlate,
+    {
+      borderColor: isLightTheme
+        ? theme.colors.blackOverlay10
+        : 'rgba(0,0,0,0.12)',
+    },
+  ];
   return (
     <>
       <View style={containerStyle}>
-        <View
-          style={[
-            styles.quietPlate,
-            {
-              borderColor: isLightTheme
-                ? theme.colors.blackOverlay10
-                : 'rgba(0,0,0,0.12)',
-            },
-          ]}>
+        <View style={quietPlateStyle}>
           <QRCode
             value={qrData}
             size={size}

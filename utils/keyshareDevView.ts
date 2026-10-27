@@ -8,7 +8,11 @@ const MAX_JSON_NUMBER_DIGITS = 16;
 /**
  * Go `json.Marshal` writes `*big.Int` (GG18 `ecdsa_local_data.Alpha`, `NTildei`, etc.)
  * as bare JSON numbers. `JSON.parse` turns values above ~1e308 into `Infinity`.
- * Quote oversized integer literals so they survive as decimal strings.
+ * Quote oversized integer literals so they survive as decimal strings in JS.
+ *
+ * Go `*big.Int` UnmarshalJSON does NOT accept JSON strings — only bare number
+ * tokens (or null). After a JS round-trip, re-emit quoted digit strings as
+ * bare numbers via {@link emitBareOversizedJsonIntegers}.
  */
 export function quoteOversizedJsonIntegers(raw: string): string {
   const minDigits = MAX_JSON_NUMBER_DIGITS + 1;
@@ -17,6 +21,19 @@ export function quoteOversizedJsonIntegers(raw: string): string {
     'g',
   );
   return raw.replace(re, '$1"$2"');
+}
+
+/**
+ * Inverse of {@link quoteOversizedJsonIntegers} for persist output:
+ * `"Alpha":"123…"` → `"Alpha":123…` so Go math/big can unmarshal.
+ */
+export function emitBareOversizedJsonIntegers(raw: string): string {
+  const minDigits = MAX_JSON_NUMBER_DIGITS + 1;
+  const re = new RegExp(
+    `([:\\[,]\\s*)"(-?\\d{${minDigits},})"(?=\\s*[,\\}\\]\\]])`,
+    'g',
+  );
+  return raw.replace(re, '$1$2');
 }
 
 export function parseKeyshareJsonForDevView(

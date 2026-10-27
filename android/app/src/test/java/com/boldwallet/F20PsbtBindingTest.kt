@@ -79,11 +79,13 @@ class F20PsbtBindingTest {
     }
 
     @Test
-    fun unboundLegacyTokenUnaffected() {
+    fun unboundSignTokenRejectedAtKeysignAndRevokes() {
         val token = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "sess-1")
-        assertTrue(CeremonyTokens.contentBindingOk(token, "0".repeat(64)))
-        assertTrue(CeremonyTokens.contentBindingOk(token, null))
-        assertTrue(
+        assertFalse(CeremonyTokens.contentBindingOk(token, vectorDigest))
+        assertEquals(
+            CeremonyTokens.State.REVOKED, CeremonyTokens.stateOf(token),
+        )
+        assertFalse(
             CeremonyTokens.verify(token, CeremonyTokens.OpClass.SIGN, "sess-1"),
         )
     }

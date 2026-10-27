@@ -27,8 +27,8 @@ type stagedHandleJSON struct {
 // DKLs entries additionally pass full F2 binding verification in
 // ImportBackupStaged.
 func requireImportableJSON(plaintext string) (map[string]any, error) {
-	var m map[string]any
-	if err := json.Unmarshal([]byte(plaintext), &m); err != nil {
+	m, err := keyhandles.UnmarshalMapUseNumber([]byte(plaintext))
+	if err != nil {
 		return nil, fmt.Errorf("not a recognized backup format")
 	}
 	pub, _ := m["pub_key"].(string)
@@ -48,8 +48,9 @@ func ImportBackupStaged(blob, password string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	plain := []byte(res.Plaintext)
-	if _, err := requireImportableJSON(res.Plaintext); err != nil {
+	normalizedPlain := tss.NormalizeQuotedBigIntJSON(res.Plaintext)
+	plain := []byte(normalizedPlain)
+	if _, err := requireImportableJSON(normalizedPlain); err != nil {
 		// Legacy backups have no MAC: garbage content means wrong
 		// password OR corruption (B1 UX preserved). v2 content
 		// failures are unreachable post-GCM — format error stands.
@@ -137,8 +138,9 @@ func FinalizeStagedForPersist(handle, nsec, npub string) (string, error) {
 		return "", fmt.Errorf("unknown or expired keyshare handle")
 	}
 	defer clear(raw)
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
+	normalized := tss.NormalizeQuotedBigIntJSON(string(raw))
+	m, err := keyhandles.UnmarshalMapUseNumber([]byte(normalized))
+	if err != nil {
 		return "", fmt.Errorf("staged keyshare corrupt: %w", err)
 	}
 	if nsec != "" {
@@ -159,5 +161,5 @@ func FinalizeStagedForPersist(handle, nsec, npub string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("finalize marshal: %w", err)
 	}
-	return string(out), nil
+	return tss.NormalizeQuotedBigIntJSON(string(out)), nil
 }

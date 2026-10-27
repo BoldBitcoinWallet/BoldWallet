@@ -8,6 +8,7 @@ import EncryptedStorage from 'react-native-encrypted-storage';
 import {BBMTLibNativeModule} from '../native_modules';
 import {KEYSHARE_STORAGE_KEY, saveKeyshareMetadata} from '../utils';
 import {assertNoExistingWallet} from './walletGuard';
+import {markWalletCreated, markWalletImported} from './walletOrigin';
 import {secureStorageMessageFor} from './secureStorageErrors';
 import {waitMS} from './WalletService';
 import {
@@ -19,10 +20,19 @@ import {
   resolveEffectiveLanKeygenContext,
 } from './lanMpcSetup';
 import {
+  abortTrioECDHTransport,
+  beginTrioECDHTransport,
+  confirmTrioECDHTransport,
+  confirmTrioSasWithUser,
   resolveLanKeygenTransportKeys,
   type LanMpcTransportKeys,
+  type TrioECDHBeginResult,
 } from './lanMpcTransport';
 import {assertTrioLanKeygenReady} from './trioLanKeygenPreflight';
+import {
+  emitBareOversizedJsonIntegers,
+  quoteOversizedJsonIntegers,
+} from '../utils/keyshareDevView';
 import {LAN_KEYGEN_STATUS} from './walletSetupUi';
 import {parseLanKeygenSessionPayload} from './lanSession';
 import {
@@ -150,6 +160,13 @@ export type LanKeygenOrchestrationResult = {
   diceCommitments: string[];
   diceDigests: string[];
   diceUsed: boolean;
+  /**
+   * F32 trio only: ECDH phase-1 output. transport.sessionKey is EMPTY
+   * until the caller shows `sas` on the pairing screen, the user
+   * confirms the codes match on every device, and confirmTrioECDHTransport
+   * fills the session key in. Absent for duo.
+   */
+  trioECDH?: TrioECDHBeginResult;
 };
 
 /** Skip keeps base. Dice replaces it with a hash of this phone's rolls only. */
@@ -261,14 +278,31 @@ export async function runLanWalletKeygen(
     )
   ).trim();
 
-  const transport = await resolveLanKeygenTransportKeys({
-    isTrio,
-    keypairJson: input.keypairJson,
-    peerPubkey: input.peerPubkey,
-    sessionID,
-    masterHost: relayHost,
-    sha256: (msg: string) => BBMTLibNativeModule.sha256(msg),
-  });
+  // F32 trio: SAS-authenticated ECDH replaces the retired public
+  // derivation. Phase 1 runs here (both relay rounds); the SAS compare
+  // and phase 2 happen in the pairing screen via trioECDH below, so the
+  // user confirms matching codes before any key material derives.
+  let transport: LanMpcTransportKeys;
+  let trioECDH: TrioECDHBeginResult | undefined;
+  if (isTrio) {
+    const begun = await beginTrioECDHTransport({
+      server,
+      sessionID,
+      partyID,
+      partiesCSV,
+    });
+    trioECDH = begun;
+    transport = {sessionKey: '', encKey: '', decKey: ''};
+  } else {
+    transport = await resolveLanKeygenTransportKeys({
+      isTrio,
+      keypairJson: input.keypairJson,
+      peerPubkey: input.peerPubkey,
+      sessionID,
+      masterHost: relayHost,
+      sha256: (msg: string) => BBMTLibNativeModule.sha256(msg),
+    });
+  }
 
   // Dice stays on this phone. The wire tag is a 6-hex check, not this chaincode.
   const diceRes = await chaincodeFromLocalDice(chaincode, input.diceSets);
@@ -291,7 +325,36 @@ export async function runLanWalletKeygen(
     diceCommitments: diceRes.localCommits,
     diceDigests: [],
     diceUsed: diceRes.diceUsed,
+    trioECDH,
   };
+}
+
+/**
+ * F32 trio step 2 (pairing screen, after runLanWalletKeygen): show the
+ * SAS compare code, and on explicit user confirmation derive the
+ * ceremony session key into orch.transport. Throws a user-facing
+ * message on decline/mismatch (handle wiped) — the caller surfaces it
+ * and stops before invokeLanWalletKeygen. No-op for duo (no trioECDH).
+ */
+export async function finishTrioECDHAfterUserCompare(
+  orch: LanKeygenOrchestrationResult,
+): Promise<void> {
+  const pending = orch.trioECDH;
+  if (!pending) {
+    return;
+  }
+  const match = await confirmTrioSasWithUser(pending.sas);
+  if (!match) {
+    await abortTrioECDHTransport(pending.handle);
+    throw new Error(
+      'Security codes did not match on all devices — pairing stopped before any wallet was created. Check your Wi-Fi and start again.',
+    );
+  }
+  orch.transport.sessionKey = await confirmTrioECDHTransport(
+    pending.handle,
+    orch.sessionID,
+  );
+  orch.trioECDH = undefined;
 }
 
 /** Invoke native LAN keygen for the resolved backend. */
@@ -299,6 +362,7 @@ export async function invokeLanWalletKeygen(
   orch: LanKeygenOrchestrationResult,
   ppmFile: string,
   setupMode?: SetupMode,
+  ceremonyToken?: string,
 ): Promise<SetupResult> {
   return TssProvider.mpcTssSetup(
     orch.server,
@@ -312,6 +376,7 @@ export async function invokeLanWalletKeygen(
     orch.chaincode,
     setupMode,
     orch.backend,
+    ceremonyToken,
   );
 }
 
@@ -401,24 +466,39 @@ export type FinalizeKeyshareOpts = {
   // persist mints its own save ceremony.
   ceremonyToken?: string;
   ceremonySessionID?: string;
+  /** Keygen defaults to created. Import must pass imported. */
+  origin?: 'created' | 'imported';
 };
 
 /**
  * Ensure full keyshare JSON has Nostr credentials before EncryptedStorage persist.
  * Does not alter MPC fields (share_b64, committee, etc.).
+ *
+ * GG18: Go marshals `*big.Int` as bare JSON numbers. Naïve `JSON.parse` turns
+ * values above ~1e308 into Infinity / scientific floats. Quote oversized ints
+ * for the JS round-trip, then {@link emitBareOversizedJsonIntegers} so the
+ * stored blob again uses bare number tokens — Go's `*big.Int` UnmarshalJSON
+ * rejects JSON strings (`cannot unmarshal "\"123…\"" into a *big.Int`).
+ *
+ * When no Nostr opts are provided, return the raw Go JSON unchanged (LAN).
  */
 export function finalizeKeyshareForStorage(
   keyshareJson: string,
   opts?: FinalizeKeyshareOpts,
 ): string {
-  const parsed = JSON.parse(keyshareJson) as Record<string, unknown>;
+  if (!opts?.partyNsec && !opts?.nostrNpub) {
+    return keyshareJson;
+  }
+  const parsed = JSON.parse(
+    quoteOversizedJsonIntegers(keyshareJson),
+  ) as Record<string, unknown>;
   if (opts?.partyNsec && (!parsed.nsec || String(parsed.nsec).trim() === '')) {
     parsed.nsec = nsecFieldForKeyshareJson(opts.partyNsec);
   }
   if (opts?.nostrNpub && (!parsed.nostr_npub || String(parsed.nostr_npub).trim() === '')) {
     parsed.nostr_npub = opts.nostrNpub;
   }
-  return JSON.stringify(parsed);
+  return emitBareOversizedJsonIntegers(JSON.stringify(parsed));
 }
 
 /** Shown while native keygen reports done but secure storage write is still in flight. */
@@ -479,6 +559,7 @@ export async function persistStagedKeyshare(
       'Key share was lost during setup. Please run wallet setup again.',
     );
   }
+  recordWalletOrigin(opts);
   return meta;
 }
 
@@ -493,9 +574,7 @@ export async function persistWalletKeyshare(
   keyshareJson: string,
   opts?: FinalizeKeyshareOpts,
 ): Promise<string> {
-  const finalized = opts
-    ? finalizeKeyshareForStorage(keyshareJson, opts)
-    : keyshareJson;
+  const finalized = finalizeKeyshareForStorage(keyshareJson, opts);
   if (!finalized || String(finalized).trim() === '') {
     throw new Error('Invalid keyshare: empty payload');
   }
@@ -524,5 +603,14 @@ export async function persistWalletKeyshare(
       'Key share was lost during setup. Please run wallet setup again.',
     );
   }
+  recordWalletOrigin(opts);
   return finalized;
+}
+
+function recordWalletOrigin(opts?: FinalizeKeyshareOpts): void {
+  if (opts?.origin === 'imported') {
+    markWalletImported();
+    return;
+  }
+  markWalletCreated();
 }

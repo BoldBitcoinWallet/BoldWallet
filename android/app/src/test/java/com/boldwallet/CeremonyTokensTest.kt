@@ -277,6 +277,19 @@ class CeremonyTokensTest {
     }
 
     @Test
+    fun testSetupRebind_MovesKeygenSessionOnce() {
+        val sign = CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, "pay")
+        assertFalse(CeremonyTokens.rebindSession(sign, "elsewhere"))
+        assertTrue(CeremonyTokens.verify(sign, CeremonyTokens.OpClass.SIGN, "pay"))
+        val t = CeremonyTokens.mint(CeremonyTokens.OpClass.KEYGEN, "handshake")
+        assertTrue(CeremonyTokens.rebindSession(t, "dkg-session"))
+        assertTrue(CeremonyTokens.verify(t, CeremonyTokens.OpClass.KEYGEN, "dkg-session"))
+        assertFalse(CeremonyTokens.verify(t, CeremonyTokens.OpClass.KEYGEN, "handshake"))
+        assertFalse(CeremonyTokens.rebindSession(t, "other-session"))
+        assertTrue(CeremonyTokens.verify(t, CeremonyTokens.OpClass.KEYGEN, "dkg-session"))
+    }
+
+    @Test
     fun testF15b2_OpClassWireParsing() {
         assertEquals(
             CeremonyTokens.OpClass.SIGN,

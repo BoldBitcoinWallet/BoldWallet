@@ -1,4 +1,4 @@
-import {Alert} from 'react-native';
+import {confirmAppPrompt} from './appPrompt';
 import {BBMTLibNativeModule} from '../native_modules';
 import {dbg} from '../utils';
 import appConfigRepository, {
@@ -61,13 +61,16 @@ export async function maybePromptPostMigrationBackup(
   } catch {
     /* prompt anyway — one extra prompt beats a missed backup */
   }
-  Alert.alert(
-    'Keyshare storage upgraded',
-    'Your keyshare storage was upgraded. Make sure you have a current backup.',
-    [
-      {text: 'Later', style: 'cancel'},
-      {text: 'Open backup', onPress: onOpenBackup},
-    ],
-  );
+  confirmAppPrompt({
+    icon: 'backup',
+    title: 'Storage was upgraded',
+    hint: 'Make a fresh backup when you can.',
+    cancelLabel: 'Later',
+    confirmLabel: 'Back up',
+  }).then(ok => {
+    if (ok) {
+      onOpenBackup();
+    }
+  });
   return true;
 }

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -99,27 +98,17 @@ func FetchUTXOs(address string) (result []UTXO, err error) {
 
 	url := fmt.Sprintf("%s/address/%s/utxo", _api_url, address)
 	Logf("Fetching UTXOs from endpoint: %s", url)
-	resp, err := http.Get(url)
+	bodyBytes, status, err := mempoolHTTPGet(url)
 	if err != nil {
 		Logf("Error fetching UTXOs from %s: %v", url, err)
 		return nil, fmt.Errorf("failed to fetch UTXOs: %w", err)
 	}
-	defer resp.Body.Close()
 
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		Logf("Error response from %s: HTTP %d - %s", url, resp.StatusCode, string(body))
-		return nil, fmt.Errorf("failed to fetch UTXOs: HTTP %d - %s", resp.StatusCode, string(body))
+	if status != http.StatusOK {
+		Logf("Error response from %s: HTTP %d - %s", url, status, string(bodyBytes))
+		return nil, fmt.Errorf("failed to fetch UTXOs: HTTP %d - %s", status, string(bodyBytes))
 	}
-	Logf("Successfully fetched UTXOs from %s (HTTP %d)", url, resp.StatusCode)
-
-	// Read the response body to log it
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		Logf("Error reading response body from %s: %v", url, err)
-		return nil, fmt.Errorf("failed to read UTXO response: %w", err)
-	}
+	Logf("Successfully fetched UTXOs from %s (HTTP %d)", url, status)
 
 	// Log the raw response (first 500 chars to avoid huge logs)
 	bodyStr := string(bodyBytes)
@@ -191,12 +180,14 @@ func FetchUTXODetails(txID string, vout uint32) (result *wire.TxOut, isWitnessRe
 
 	url := fmt.Sprintf("%s/tx/%s", _api_url, txID)
 	Logf("Fetching UTXO details from endpoint: %s", url)
-	resp, err := http.Get(url)
+	bodyBytes, status, err := mempoolHTTPGet(url)
 	if err != nil {
 		Logf("Error fetching UTXO details from %s: %v", url, err)
 		return nil, false, fmt.Errorf("failed to fetch transaction details: %w", err)
 	}
-	defer resp.Body.Close()
+	if status != http.StatusOK {
+		return nil, false, fmt.Errorf("failed to fetch transaction details: HTTP %d - %s", status, string(bodyBytes))
+	}
 
 	var txData struct {
 		Vout []struct {
@@ -204,7 +195,7 @@ func FetchUTXODetails(txID string, vout uint32) (result *wire.TxOut, isWitnessRe
 			Value        int64  `json:"value"`
 		} `json:"vout"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&txData); err != nil {
+	if err := json.Unmarshal(bodyBytes, &txData); err != nil {
 		return nil, false, fmt.Errorf("failed to parse transaction response: %w", err)
 	}
 
@@ -270,14 +261,17 @@ func RecommendedFees(feeType string) (int, error) {
 		fee_url := strings.TrimSuffix(url, "/")
 		url := fmt.Sprintf("%s/v1/fees/recommended", fee_url)
 		Logf("Fetching recommended fees from endpoint: %s (fee type: %s)", url, feeType)
-		resp, err := http.Get(url)
+		bodyBytes, status, err := mempoolHTTPGet(url)
 		if err != nil {
 			Logf("Error fetching fees from %s: %v, trying next endpoint", url, err)
 			continue
 		}
-		defer resp.Body.Close()
+		if status != http.StatusOK {
+			Logf("Error fetching fees from %s: HTTP %d, trying next endpoint", url, status)
+			continue
+		}
 		var fees FeeResponse
-		if err := json.NewDecoder(resp.Body).Decode(&fees); err != nil {
+		if err := json.Unmarshal(bodyBytes, &fees); err != nil {
 			continue
 		}
 		var rate int
@@ -336,42 +330,18 @@ func PostTx(rawTxHex string) (string, error) {
 }
 
 func postTxOnce(rawTxHex string) (string, error) {
-	// Define the Blockstream API endpoint for broadcasting transactions
 	url := fmt.Sprintf("%s/tx", _api_url)
 	Logf("Broadcasting transaction to endpoint: %s", url)
 
-	// Create a POST request with the raw transaction hex as the body
-	req, err := http.NewRequest("POST", url, bytes.NewBufferString(rawTxHex))
-	if err != nil {
-		Logf("Error creating POST request to %s: %v", url, err)
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set appropriate headers
-
-	// Send the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	body, status, err := mempoolHTTPPost(url, rawTxHex)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
-
-	// Check the response status
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+	if status != http.StatusOK {
 		return "", fmt.Errorf("failed to broadcast transaction: %s", string(body))
-	} else {
-		Logf("ok")
 	}
-	// Read the transaction ID (txid) from the response body
-	txid, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	// Return the txid as a string
-	return string(txid), nil
+	Logf("ok")
+	return string(body), nil
 }
 
 // SelectUTXOs selects the optimal set of UTXOs based on the strategy

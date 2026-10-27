@@ -223,6 +223,16 @@ export function getHostQuality(host: string): MempoolHealthQuality | null {
   return qualityFromAttempt(samples[samples.length - 1]);
 }
 
+/** Newest recorded attempt for this host, if any. */
+export function getHostLatestAttempt(host: string): MempoolAttempt | null {
+  const key = (host || '').replace(/\/+$/, '');
+  const samples = hostAttempts.get(key);
+  if (!samples || samples.length === 0) {
+    return null;
+  }
+  return samples[samples.length - 1];
+}
+
 /** Record a completed network attempt. Does not affect HTTP return values. */
 export function recordMempoolAttempt(sample: MempoolAttempt): void {
   if (sample.host) {

@@ -1,7 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {
-  CANONICAL_TESTNET_MEMPOOL_API_BASE,
   getStoredNetworkKey,
   resolveStoredMempoolApiBase,
 } from '../services/mempoolApiBase';
@@ -12,7 +11,7 @@ import {
 } from '../services/mempoolProvidersStore';
 import mempoolClient from '../services/MempoolClient';
 import {ensureFeeApisApplied, ensureMempoolApiApplied} from '../services/apiConfigApply';
-import {dbg, getTestnetAPIList} from '../utils';
+import {dbg} from '../utils';
 
 interface NetworkContextType {
   network: string;
@@ -24,19 +23,10 @@ interface NetworkContextType {
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
 
 async function applyFeeAndFailoverBases(net: string): Promise<void> {
-  if (net === 'mainnet') {
-    const enabled = await ensureMempoolProvidersSeeded();
-    mempoolClient.setPublicBases(enabled);
-    await ensureFeeApisApplied(enabled);
-    return;
-  }
-  const testnetAPIs = await getTestnetAPIList();
-  mempoolClient.setPublicBases([]);
-  await ensureFeeApisApplied(
-    testnetAPIs.length > 0
-      ? testnetAPIs
-      : [CANONICAL_TESTNET_MEMPOOL_API_BASE],
-  );
+  const providerNet = net === 'mainnet' ? 'mainnet' : 'testnet4';
+  const enabled = await ensureMempoolProvidersSeeded(providerNet);
+  mempoolClient.setPublicBases(enabled);
+  await ensureFeeApisApplied(enabled);
 }
 
 export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -88,17 +78,16 @@ export const NetworkProvider: React.FC<{ children: React.ReactNode }> = ({ child
       appConfigRepository.set('api', newAPI);
       setApiBase(newAPI);
       await ensureMempoolApiApplied(network, newAPI);
-      if (network === 'mainnet') {
-        const list = await loadMempoolProviderEntries();
-        const enabled = activeProviderUrls(list);
-        // Never seed disabled hosts. If the list is empty, use the new API only
-        // (caller is setting primary — still a single enabled target).
-        const bases = enabled.length > 0 ? enabled : [newAPI];
-        // If newAPI is not among enabled, do not add it as a silent extra host;
-        // primary config was updated above — pool stays enabled-only.
-        mempoolClient.setPublicBases(bases);
-        await ensureFeeApisApplied(bases);
-      }
+      const providerNet = network === 'mainnet' ? 'mainnet' : 'testnet4';
+      const list = await loadMempoolProviderEntries(providerNet);
+      const enabled = activeProviderUrls(list);
+      // Never seed disabled hosts. If the list is empty, use the new API only
+      // (caller is setting primary — still a single enabled target).
+      const bases = enabled.length > 0 ? enabled : [newAPI];
+      // If newAPI is not among enabled, do not add it as a silent extra host;
+      // primary config was updated above — pool stays enabled-only.
+      mempoolClient.setPublicBases(bases);
+      await ensureFeeApisApplied(bases);
       dbg('NetworkContext: API updated to:', newAPI);
     } catch (error) {
       dbg('NetworkContext: Error updating API:', error);

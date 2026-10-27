@@ -1,17 +1,19 @@
-import React, {useState, useRef} from 'react';
+import React, {useEffect, useState} from 'react';
+import {showAppNotice} from '../services/appPrompt';
 import {
   View,
   StyleSheet,
-  TextInput,
-  Alert,
+
   ScrollView,
   KeyboardAvoidingView,
   Platform,
   Image,
+  TextInput,
 } from 'react-native';
 import {useRoute} from '@react-navigation/native';
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
+import MempoolProvidersEditor from '../components/MempoolProvidersEditor';
 import RestoringIndexesModal from '../components/RestoringIndexesModal';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
@@ -25,26 +27,31 @@ import balanceRepository from '../services/repositories/BalanceRepository';
 import balanceSyncer from '../services/sync/BalanceSyncer';
 import transactionSyncer from '../services/sync/TransactionSyncer';
 import utxoSyncer from '../services/sync/UtxoSyncer';
-import syncCoordinator from '../services/sync/SyncCoordinator';
-import apiQueue from '../services/ApiQueue';
+import {clearCachesBeforeWalletSession} from '../services/walletSessionReset';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
 import {
   CANONICAL_TESTNET_MEMPOOL_API_BASE,
-  getStoredUserMempoolApiBaseFromDb,
-  isTestnetNetworkKey,
-  normalizeUserMempoolApiInput,
   resolveStoredMempoolApiBase,
   validateMempoolApiBaseReachable,
 } from '../services/mempoolApiBase';
 import {
   activeProviderUrls,
   exclusiveEnable,
+  hostnameFromMempoolApiBase,
+  isValidProviderUrl,
   loadDefaultMempoolProviderEntries,
   loadMempoolProviderEntries,
+  normalizeProviderUrl,
   primaryProviderUrl,
+  PROVIDER_SCHEME_ERROR,
+  providerListSummary,
+  providerNetworkKey,
+  providerUrlMatchesNetwork,
   saveMempoolProviderEntries,
+  type MempoolProviderEntry,
+  type ProviderNetwork,
 } from '../services/mempoolProvidersStore';
 
 import {ensureFeeApisApplied} from '../services/apiConfigApply';
@@ -64,9 +71,16 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     showPsbtTab,
     showWalletTab,
   } = useUser();
-  const [pendingAPI, setPendingAPI] = useState(() =>
-    getStoredUserMempoolApiBaseFromDb(activeNetwork),
-  );
+  const providerNetwork: ProviderNetwork = providerNetworkKey(activeNetwork);
+  const isTestnet = providerNetwork === 'testnet4';
+  const [entries, setEntries] = useState<MempoolProviderEntry[]>([]);
+  const [curated, setCurated] = useState<MempoolProviderEntry[]>([]);
+  const [providersReady, setProvidersReady] = useState(false);
+  const [endpointsOpen, setEndpointsOpen] = useState(false);
+  const [ownServerUrl, setOwnServerUrl] = useState('');
+  const [ownServerError, setOwnServerError] = useState<string | null>(null);
+  const [verifiedOwnUrl, setVerifiedOwnUrl] = useState<string | null>(null);
+  const [verifyingOwn, setVerifyingOwn] = useState(false);
   const [isAPISaving, setIsAPISaving] = useState(false);
   const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
   const [restoreProgress, setRestoreProgress] = useState<{
@@ -77,79 +91,57 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     progress?: {current: number; total: number};
   } | null>(null);
 
-  const [isFocused, setIsFocused] = useState(false);
-  const inputRef = useRef<TextInput>(null);
+  const fallbackBase = isTestnet
+    ? CANONICAL_TESTNET_MEMPOOL_API_BASE
+    : 'https://mempool.space/api';
+
+  useEffect(() => {
+    let cancelled = false;
+    setProvidersReady(false);
+    Promise.all([
+      loadDefaultMempoolProviderEntries(providerNetwork),
+      loadMempoolProviderEntries(providerNetwork),
+    ])
+      .then(([defaults, stored]) => {
+        if (cancelled) {
+          return;
+        }
+        setCurated(defaults);
+        setEntries(stored);
+        setOwnServerUrl('');
+        setOwnServerError(null);
+        setVerifiedOwnUrl(null);
+        setProvidersReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setProvidersReady(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [providerNetwork]);
 
   const seedClientFromEnabled = async (enabled: string[]) => {
-    const bases =
-      enabled.length > 0 ? enabled : ['https://mempool.space/api'];
+    const bases = enabled.length > 0 ? enabled : [fallbackBase];
     mempoolClient.setPublicBases(bases);
     try {
-      // Direct mint: URL already on screen in the save flow.
+      // Direct mint: the chosen endpoints are on screen in this flow.
       await ensureFeeApisApplied(bases, null);
     } catch {
       // no-op
     }
   };
 
-  // Save API and proceed — exclusive-enable the typed URL (even if curated).
-  const saveAPIAndProceed = async (api: string) => {
-    // If no API entered, just proceed
-    if (!api || api.trim() === '') {
-      await handleProceed();
-      return;
-    }
-
-    const normalizedApi = isTestnetNetworkKey(activeNetwork)
-      ? CANONICAL_TESTNET_MEMPOOL_API_BASE
-      : normalizeUserMempoolApiInput(api);
-    dbg('Original API URL:', api);
-    dbg('Normalized API URL:', normalizedApi);
-    setIsAPISaving(true);
-    try {
-      const isValid = await validateMempoolApiBaseReachable(normalizedApi);
-      if (!isValid) {
-        Alert.alert(
-          'Invalid API Endpoint',
-          'The selected API endpoint is not responding correctly. Please choose a different endpoint or skip.',
-        );
-        return;
-      }
-      if (!isTestnetNetworkKey(activeNetwork)) {
-        const curated = await loadDefaultMempoolProviderEntries();
-        const exclusive = exclusiveEnable(normalizedApi, curated);
-        saveMempoolProviderEntries(exclusive);
-        await seedClientFromEnabled(activeProviderUrls(exclusive));
-      }
-      await setActiveApiProvider(normalizedApi);
-      setPendingAPI(normalizedApi);
-      dbg('=== API saved and propagated successfully:', normalizedApi);
-      await handleProceed(normalizedApi);
-    } catch (error) {
-      dbg('Error in saveAPIAndProceed:', error);
-      Alert.alert('Error', 'Failed to save API endpoint. Please try again.');
-    } finally {
-      setIsAPISaving(false);
-    }
-  };
-
-  const handleAPISelection = (api: string) => {
-    setPendingAPI(api);
-  };
-
-  const getInputContainerStyle = () => {
-    if (isFocused) {
-      return [
-        styles.apiInputContainer,
-        {
-          borderColor:
-            theme.colors.background === '#ffffff'
-              ? theme.colors.primary
-              : theme.colors.bitcoinOrange,
-        },
-      ];
-    }
-    return styles.apiInputContainer;
+  const persistAndProceed = async (list: MempoolProviderEntry[]) => {
+    const saved = saveMempoolProviderEntries(list, providerNetwork);
+    const enabled = activeProviderUrls(saved);
+    const primary = primaryProviderUrl(saved, fallbackBase);
+    await seedClientFromEnabled(enabled);
+    await setActiveApiProvider(primary);
+    dbg('=== API saved and propagated successfully:', primary);
+    await handleProceed(primary);
   };
 
   const navigateToHome = () => {
@@ -175,8 +167,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       'UserPreferenceScreen: Running full re-indexing (discovery + sync) with API:',
       apiUrl.slice(0, 40),
     );
-    syncCoordinator.stop();
-    apiQueue.clear();
+    await clearCachesBeforeWalletSession();
     setIsRestoringIndexes(true);
     setRestoreProgress(null);
     await waitMS(250);
@@ -226,7 +217,10 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
             prev ? {...prev, progress: {current, total}} : null,
           ),
       );
-      const agg = balanceRepository.getAggregateBalance(network);
+      const agg = balanceRepository.getAggregateBalance(
+        network,
+        addressesWithPaths.map(a => a.address),
+      );
       balanceRepository.setBalance({
         address: `aggregate_${network}_${addressType}`,
         network,
@@ -271,27 +265,80 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     }
   };
 
-  const handleSkip = async () => {
-    try {
-      if (!isTestnetNetworkKey(activeNetwork)) {
-        const list = await loadMempoolProviderEntries();
-        await seedClientFromEnabled(activeProviderUrls(list));
-        const primary = primaryProviderUrl(list);
-        await setActiveApiProvider(primary);
-        await runRestoreIfNeeded(primary);
-      } else {
-        const fallbackApi =
-          activeApiProvider || resolveStoredMempoolApiBase(activeNetwork);
-        await runRestoreIfNeeded(fallbackApi);
-      }
-      navigateToHome();
-    } catch (e) {
-      Alert.alert(
-        'Restore failed',
-        e instanceof Error
-          ? e.message
-          : 'Index discovery or sync failed. Please try again.',
+  const verifyOwnServer = async (
+    raw: string,
+    list: MempoolProviderEntry[],
+  ): Promise<MempoolProviderEntry[] | null> => {
+    const url = normalizeProviderUrl(raw);
+    if (!url || !isValidProviderUrl(url)) {
+      setOwnServerError(PROVIDER_SCHEME_ERROR);
+      return null;
+    }
+    if (!providerUrlMatchesNetwork(url, providerNetwork)) {
+      setOwnServerError(
+        isTestnet
+          ? 'Testnet endpoints must be a testnet4 API, for example https://mempool.space/testnet4/api'
+          : 'Mainnet endpoints must not be testnet or signet URLs.',
       );
+      return null;
+    }
+    setVerifyingOwn(true);
+    setOwnServerError(null);
+    try {
+      const reachable = await validateMempoolApiBaseReachable(url);
+      if (!reachable) {
+        setOwnServerError('This server did not answer');
+        return null;
+      }
+      const next = exclusiveEnable(url, list);
+      setEntries(next);
+      setVerifiedOwnUrl(url);
+      setOwnServerUrl('');
+      return next;
+    } finally {
+      setVerifyingOwn(false);
+    }
+  };
+
+  const handleContinue = async () => {
+    if (isAPISaving || isRestoringIndexes || verifyingOwn || !providersReady) {
+      return;
+    }
+    setIsAPISaving(true);
+    try {
+      let list = entries;
+      const pending = ownServerUrl.trim();
+      if (pending) {
+        const verified = await verifyOwnServer(pending, entries);
+        if (!verified) {
+          return;
+        }
+        list = verified;
+      }
+      const enabled = activeProviderUrls(list);
+      if (enabled.length === 0) {
+        showAppNotice(
+          'Keep one endpoint on',
+          'At least one endpoint must stay on.',
+        );
+        return;
+      }
+      const checks = await Promise.all(
+        enabled.map(async url => validateMempoolApiBaseReachable(url)),
+      );
+      if (!checks.some(Boolean)) {
+        showAppNotice(
+          'Invalid API Endpoint',
+          'None of the enabled endpoints responded. Turn on another one, or check the address.',
+        );
+        return;
+      }
+      await persistAndProceed(list);
+    } catch (error) {
+      dbg('Error in handleContinue:', error);
+      showAppNotice('Error', 'Failed to save API endpoint. Please try again.');
+    } finally {
+      setIsAPISaving(false);
     }
   };
 
@@ -304,7 +351,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       await runRestoreIfNeeded(apiUrl);
       navigateToHome();
     } catch (e) {
-      Alert.alert(
+      showAppNotice(
         'Restore failed',
         e instanceof Error
           ? e.message
@@ -378,31 +425,156 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       fontFamily: theme.fontFamilies?.regular,
       color: theme.colors.textSecondary,
       lineHeight: 18,
-      marginBottom: 4,
     },
-    infoCardTechNote: {
+    networkBadge: {
+      alignSelf: 'flex-start',
+      marginTop: 10,
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    networkBadgeText: {
       fontSize: theme.fontSizes?.xs || 12,
-      fontFamily: theme.fontFamilies?.medium,
-      color: theme.colors.textSecondary,
-      lineHeight: 16,
-      marginTop: 6,
-      fontStyle: 'italic',
+      fontFamily: theme.fontFamilies?.bold,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    ownServerCard: {
+      backgroundColor: theme.colors.cardBackground,
+      borderRadius: 12,
+      padding: 16,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    ownServerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      marginTop: 12,
+    },
+    ownServerInput: {
+      flex: 1,
+      minWidth: 0,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 10,
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      fontSize: theme.fontSizes?.sm || 13,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.text,
+      backgroundColor: theme.colors.background,
+    },
+    verifyButton: {
+      borderRadius: 10,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    verifyButtonText: {
+      fontSize: theme.fontSizes?.sm || 13,
+      fontFamily: theme.fontFamilies?.bold,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.white
+          : theme.colors.background,
+    },
+    ownServerError: {
+      marginTop: 8,
+      fontSize: theme.fontSizes?.sm || 13,
+      fontFamily: theme.fontFamilies?.regular,
+      color: theme.colors.danger,
+      lineHeight: 18,
+    },
+    verifiedRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      flexWrap: 'wrap',
+      gap: 8,
+      marginTop: 12,
+    },
+    verifiedHost: {
+      flexShrink: 1,
+      fontSize: theme.fontSizes?.base || 14,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+    },
+    reachableChip: {
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 999,
+      backgroundColor: theme.colors.receivedOverlay15,
+      borderWidth: 1,
+      borderColor: theme.colors.success + '66',
+    },
+    reachableText: {
+      fontSize: theme.fontSizes?.xs || 12,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.success,
+    },
+    changeAction: {
+      fontSize: theme.fontSizes?.sm || 13,
+      fontFamily: theme.fontFamilies?.bold,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     apiSection: {
-      marginBottom: 20,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      borderRadius: 12,
+      backgroundColor: theme.colors.cardBackground,
+      overflow: 'hidden',
+    },
+    collapseHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 14,
+      paddingVertical: 12,
+      gap: 12,
+    },
+    collapseHeaderText: {
+      flex: 1,
+      minWidth: 0,
     },
     apiSectionTitle: {
       fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
-      marginBottom: 8,
+      marginBottom: 2,
     },
-    apiSectionDescription: {
+    collapseAction: {
       fontSize: theme.fontSizes?.sm || 13,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.bold,
+      color:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
+    collapseChevron: {
+      fontSize: 12,
       color: theme.colors.textSecondary,
-      marginBottom: 12,
-      lineHeight: 18,
+    },
+    editorWrap: {
+      paddingHorizontal: 12,
+      paddingBottom: 12,
     },
     apiInputContainer: {
       borderWidth: 1.5,
@@ -430,38 +602,28 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       justifyContent: 'center',
       flexDirection: 'row',
       gap: 8,
-      marginBottom: 12,
-      minHeight: 48,
+      minHeight: 52,
+      marginBottom: 0,
     },
     proceedButtonDisabled: {
       opacity: 0.5,
     },
     proceedButtonText: {
-      fontSize: theme.fontSizes?.base || 14,
+      fontSize: theme.fontSizes?.lg || 16,
       fontFamily: theme.fontFamilies?.bold,
       color:
         theme.colors.background === '#ffffff'
           ? theme.colors.white
-          : theme.colors.text,
+          : theme.colors.background,
     },
     proceedButtonIcon: {
-      width: 20,
-      height: 20,
-      marginRight: 8,
+      width: 18,
+      height: 18,
     },
-    skipButton: {
-      alignItems: 'center',
-      justifyContent: 'center',
-      paddingVertical: 10,
-    },
-    skipButtonText: {
-      fontSize: theme.fontSizes?.base || 14,
-      fontFamily: theme.fontFamilies?.medium,
-      color:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.primary
-          : theme.colors.bitcoinOrange,
-      textDecorationLine: 'underline',
+    ctaBar: {
+      paddingHorizontal: 24,
+      paddingTop: 8,
+      paddingBottom: 8,
     },
   });
 
@@ -496,61 +658,163 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
                 style={styles.infoCardIcon}
                 resizeMode="contain"
               />
+              <AppText style={styles.infoCardTitle}>Lookup servers</AppText>
+            </View>
+            <AppText style={styles.infoCardDescription} tone="muted">
+              Start with your Mempool endpoint. Public endpoints are listed
+              below.
+            </AppText>
+            <View style={styles.networkBadge}>
+              <AppText style={styles.networkBadgeText}>
+                {isTestnet ? 'Testnet' : 'Mainnet'}
+              </AppText>
+            </View>
+          </View>
+
+          <View style={styles.ownServerCard}>
+            <View style={styles.infoCardHeader}>
+              <Image
+                source={require('../assets/mempool-icon.png')}
+                style={styles.infoCardIcon}
+                resizeMode="contain"
+              />
               <AppText style={styles.infoCardTitle}>
-                Privacy / Mempool.Space
+                Your Mempool endpoint
               </AppText>
             </View>
             <AppText style={styles.infoCardDescription} tone="muted">
-              Bold collects zero user data. Users are anonymous and no personal
-              data is collected or shared. However, public mempool servers can
-              see your Bitcoin addresses, potentially link them to your IP
-              address, Geolocation or Device Agent. For that, you can point to
-              your own self-hosted mempool.space to protect privacy.
+              Public endpoints can collect your IP, location, and lookup
+              metadata. Yours keeps that to you.
             </AppText>
-            <AppText style={styles.infoCardTechNote} tone="muted">
-              Enter a mempool.space API endpoint (mainnet) or just skip that.
-              {'\n'}
-              Validate uses only that host; Skip keeps the curated public pool.
-              {'\n'}
-              You can change this later from Settings.
-            </AppText>
+            {verifiedOwnUrl ? (
+              <View style={styles.verifiedRow}>
+                <AppText style={styles.verifiedHost} numberOfLines={1}>
+                  {hostnameFromMempoolApiBase(verifiedOwnUrl)}
+                </AppText>
+                <View style={styles.reachableChip}>
+                  <AppText style={styles.reachableText}>Reachable</AppText>
+                </View>
+                <AppPressable
+                  onPress={() => {
+                    setOwnServerUrl(verifiedOwnUrl);
+                    setVerifiedOwnUrl(null);
+                    setOwnServerError(null);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Change your Mempool endpoint"
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <AppText style={styles.changeAction}>Change</AppText>
+                </AppPressable>
+              </View>
+            ) : (
+              <View style={styles.ownServerRow}>
+                <TextInput
+                  style={styles.ownServerInput}
+                  value={ownServerUrl}
+                  onChangeText={text => {
+                    setOwnServerUrl(text);
+                    if (ownServerError) {
+                      setOwnServerError(null);
+                    }
+                  }}
+                  placeholder={
+                    isTestnet
+                      ? 'https://mempool.example/testnet4/api'
+                      : 'https://mempool.example/api'
+                  }
+                  placeholderTextColor={theme.colors.textSecondary + '80'}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  keyboardType="url"
+                  returnKeyType="done"
+                  editable={!verifyingOwn}
+                  onSubmitEditing={() => {
+                    if (ownServerUrl.trim()) {
+                      verifyOwnServer(ownServerUrl, entries);
+                    }
+                  }}
+                />
+                <AppPressable
+                  style={[
+                    styles.verifyButton,
+                    (!ownServerUrl.trim() || verifyingOwn) &&
+                      styles.proceedButtonDisabled,
+                  ]}
+                  disabled={!ownServerUrl.trim() || verifyingOwn}
+                  onPress={() => verifyOwnServer(ownServerUrl, entries)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Verify your Mempool endpoint"
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <AppText style={styles.verifyButtonText}>
+                    {verifyingOwn ? 'Verifying…' : 'Verify'}
+                  </AppText>
+                </AppPressable>
+              </View>
+            )}
+            {ownServerError ? (
+              <AppText style={styles.ownServerError}>{ownServerError}</AppText>
+            ) : null}
           </View>
 
           <View style={styles.apiSection}>
-            <AppText style={styles.apiSectionTitle}>
-              Mempool Provider URL
-            </AppText>
-            <AppText style={styles.apiSectionDescription} tone="muted">
-              Enter your endpoint URL (e.g., https://mempool.space/api)
-            </AppText>
-            <View style={getInputContainerStyle()}>
-              <TextInput
-                ref={inputRef}
-                style={styles.apiTextInput}
-                returnKeyType="done"
-                value={pendingAPI}
-                onChangeText={handleAPISelection}
-                onFocus={() => setIsFocused(true)}
-                onBlur={() => setIsFocused(false)}
-                placeholder="https://mempool.space/api"
-                placeholderTextColor={theme.colors.textSecondary + '80'}
-                autoCapitalize="none"
-                autoCorrect={false}
-              />
-            </View>
+            <AppPressable
+              style={styles.collapseHeader}
+              onPress={() => setEndpointsOpen(open => !open)}
+              accessibilityRole="button"
+              accessibilityState={{expanded: endpointsOpen}}
+              accessibilityLabel="Endpoints"
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <View style={styles.collapseHeaderText}>
+                <AppText style={styles.apiSectionTitle}>Endpoints</AppText>
+                <AppText tone="muted">
+                  {providersReady
+                    ? providerListSummary(entries)
+                    : 'Loading…'}
+                </AppText>
+              </View>
+              <AppText style={styles.collapseAction}>
+                {endpointsOpen ? 'Hide' : 'Choose'}
+              </AppText>
+              <AppText
+                style={styles.collapseChevron}
+                accessibilityElementsHidden>
+                {endpointsOpen ? '▼' : '▶'}
+              </AppText>
+            </AppPressable>
+            {endpointsOpen ? (
+              <View style={styles.editorWrap}>
+                <MempoolProvidersEditor
+                  network={providerNetwork}
+                  curatedUrls={curated.map(entry => entry.url)}
+                  entries={entries}
+                  onChange={setEntries}
+                  showSave={false}
+                  showDefaults={false}
+                />
+              </View>
+            ) : null}
           </View>
-
+        </ScrollView>
+        <View style={styles.ctaBar}>
           <AppPressable
             style={[
               styles.proceedButton,
-              (isAPISaving || isRestoringIndexes || pendingAPI.trim() === '') &&
+              (isAPISaving ||
+                isRestoringIndexes ||
+                verifyingOwn ||
+                !providersReady ||
+                (activeProviderUrls(entries).length === 0 &&
+                  ownServerUrl.trim().length === 0)) &&
                 styles.proceedButtonDisabled,
             ]}
-            onPress={() => {
-              saveAPIAndProceed(pendingAPI);
-            }}
+            onPress={handleContinue}
             disabled={
-              isAPISaving || isRestoringIndexes || pendingAPI.trim() === ''
+              isAPISaving ||
+              isRestoringIndexes ||
+              verifyingOwn ||
+              !providersReady ||
+              (activeProviderUrls(entries).length === 0 &&
+                ownServerUrl.trim().length === 0)
             }
             android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
             <Image
@@ -562,23 +826,15 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
                   tintColor:
                     theme.colors.background === '#ffffff'
                       ? theme.colors.white
-                      : theme.colors.text,
+                      : theme.colors.background,
                 },
               ]}
             />
-            <AppText style={styles.proceedButtonText} tone="onPrimary">
-              {isAPISaving ? 'Validating...' : 'Validate and Proceed'}
+            <AppText style={styles.proceedButtonText}>
+              {isAPISaving ? 'Checking…' : 'Continue'}
             </AppText>
           </AppPressable>
-
-          <AppPressable
-            style={styles.skipButton}
-            onPress={handleSkip}
-            disabled={isAPISaving || isRestoringIndexes}
-            android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-            <AppText style={styles.skipButtonText}>Skip for now</AppText>
-          </AppPressable>
-        </ScrollView>
+        </View>
       </KeyboardAvoidingView>
       <RestoringIndexesModal
         visible={isRestoringIndexes}

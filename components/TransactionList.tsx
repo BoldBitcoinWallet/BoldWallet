@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import AppPressable from './AppPressable';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {useFloatingScrollPadding} from './FloatingTabBar';
 import mempoolClient from '../services/MempoolClient';
 import Toast from 'react-native-toast-message';
 import moment from 'moment';
@@ -37,6 +38,7 @@ import TransactionListSkeleton from './TransactionListSkeleton';
 import {WalletService} from '../services/WalletService';
 import TransactionDetailsModal from './TransactionDetailsModal';
 import transactionRepository from '../services/repositories/TransactionRepository';
+import {isTestnetMempoolApiBase} from '../services/mempoolProvidersStore';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import {isBrantaEnabled} from '../services/BrantaService';
 import apiQueue from '../services/ApiQueue';
@@ -290,6 +292,7 @@ const TransactionList = React.forwardRef<
     const {theme: appTheme} = useAppTheme();
     const {showSats, balanceFormattingEnabled} = useUser();
     const insets = useSafeAreaInsets();
+    const floatingScrollPadding = useFloatingScrollPadding();
     // Add refs to track mounting state and prevent memory leaks
     const isMounted = useRef(true);
     const abortController = useRef<AbortController | null>(null);
@@ -491,7 +494,7 @@ const TransactionList = React.forwardRef<
             return;
           }
           // Guard against network/address mismatch using baseApi
-          const isTestnetApi = /\/testnet(\/|$)/.test(url);
+          const isTestnetApi = isTestnetMempoolApiBase(url);
           const addressMatchesNetwork = (a: string, testnetApi: boolean) => {
             if (!a) return false;
             if (testnetApi) {
@@ -529,7 +532,6 @@ const TransactionList = React.forwardRef<
           );
           const cleanBaseApi = url.replace(/\/+$/, '').replace(/\/api\/?$/, '');
           let responseData: any[];
-          let multiHasMore = false;
           if (isMultiAddress && addresses && addresses.length > 0 && network) {
             try {
               // After long-press rebuild parent calls refresh(true) → use full list; else active set only
@@ -587,31 +589,12 @@ const TransactionList = React.forwardRef<
             }
           }
           if (isMultiAddress && addresses && addresses.length > 0) {
-            let fetchList: string[];
-            if (useFullSyncOnceRef.current) {
-              useFullSyncOnceRef.current = false;
-              fetchList = addresses;
-            } else if (network && (addressType || 'segwit-native')) {
-              const activeWithPaths =
-                await WalletService.getInstance().getActiveAddressesWithPaths(
-                  network,
-                  addressType || 'segwit-native',
-                );
-              fetchList =
-                activeWithPaths.length > 0
-                  ? activeWithPaths.map(a => a.address)
-                  : addresses;
-            } else {
-              fetchList = addresses;
-            }
-            const result =
-              await WalletService.getInstance().fetchTransactionsForAddresses(
-                cleanBaseApi,
-                fetchList,
-              );
-            responseData = result.txs;
-            setAddressCursors(result.cursors);
-            multiHasMore = Object.values(result.cursors).some(c => c !== null);
+            // Network is required for TransactionSyncer. Without it, stay on SQLite.
+            dbg(
+              'TransactionList: multi-address without network; loading from DB',
+            );
+            await loadFromCache();
+            return;
           } else {
             const apiUrl = `${cleanBaseApi}/api/address/${address}/txs`;
             dbg('Starting fetch transactions from:', apiUrl);
@@ -766,9 +749,7 @@ const TransactionList = React.forwardRef<
               }
               return sortTxs(Array.from(merged.values()));
             });
-            setHasMoreTransactions(
-              isMultiAddress ? multiHasMore : newTransactions.length > 0,
-            );
+            setHasMoreTransactions(newTransactions.length > 0);
             if (!isMultiAddress && newTransactions.length > 0) {
               setLastSeenTxId(newTransactions[newTransactions.length - 1].txid);
             }
@@ -1214,7 +1195,7 @@ const TransactionList = React.forwardRef<
       },
       listContent: {
         flexGrow: 1,
-        paddingBottom: 8 + insets.bottom,
+        paddingBottom: 8 + insets.bottom + floatingScrollPadding,
       },
       transactionItem: {
         padding: 10,
@@ -1830,8 +1811,7 @@ const TransactionList = React.forwardRef<
             />
           }
         />
-        {selectedTransaction && (
-          <TransactionDetailsModal
+        <TransactionDetailsModal
             visible={isDetailsModalVisible}
             transaction={selectedTransaction}
             onClose={() => {
@@ -1895,11 +1875,40 @@ const TransactionList = React.forwardRef<
                   )
                 : null
             }
+            onChainStatus={(
+              txid: string,
+              next: {confirmed: boolean; blockHeight: number | null},
+            ) => {
+              const patch = (tx: any) => {
+                if (!tx || tx.txid !== txid) {
+                  return tx;
+                }
+                return {
+                  ...tx,
+                  status: {
+                    ...(tx.status ?? {}),
+                    confirmed: next.confirmed,
+                    block_height: next.confirmed ? next.blockHeight : null,
+                    block_time: next.confirmed ? tx.status?.block_time : null,
+                    block_hash: next.confirmed ? tx.status?.block_hash : null,
+                  },
+                };
+              };
+              setSelectedTransaction((prev: any) => patch(prev));
+              setTransactions(prev => prev.map(tx => patch(tx)));
+              transactionRepository.applyChainStatus(
+                txid,
+                network || 'mainnet',
+                {
+                  confirmed: next.confirmed,
+                  blockHeight: next.blockHeight,
+                },
+              );
+            }}
             addressPathMap={addressPathMap}
             isBlurred={isBlurred}
             network={network}
           />
-        )}
       </View>
     );
   },

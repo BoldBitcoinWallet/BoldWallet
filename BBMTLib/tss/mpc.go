@@ -261,7 +261,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 		close(endCh)
 		return "", fmt.Errorf("fail to normalize chain code: %w", err)
 	}
-	_, err = tssServerImp.KeygenECDSA(&KeygenRequest{
+	keygenResp, err := tssServerImp.KeygenECDSA(&KeygenRequest{
 		LocalPartyID: key,
 		AllParties:   strings.Join(parties, ","),
 		ChainCodeHex: chainCodeHex,
@@ -313,6 +313,21 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	time.Sleep(time.Second)
 	if err = endSession(server, session); err != nil {
 		Logln("BBMTLog", "Warning: endSession", "error", err)
+	}
+	// F39: post-DKG group-key cross-check for GG18 (mirrors the DKLS
+	// wiring in dkls/lan.go). keygenResp.PubKey is the hex-encoded
+	// group point — deterministic across honest parties. A mismatch
+	// fails closed: localState is never returned. Old-version relays
+	// warn and proceed (same mixed-version rule as DKLS).
+	if keygenResp == nil || strings.TrimSpace(keygenResp.PubKey) == "" {
+		close(endCh)
+		wg.Wait()
+		return "", fmt.Errorf("F39: GG18 keygen produced no group key — refusing to return share")
+	}
+	if gkErr := exchangeGroupKeyConsensus(server, session, key, parties, keygenResp.PubKey); gkErr != nil {
+		close(endCh)
+		wg.Wait()
+		return "", gkErr
 	}
 	status.Step++
 	status.Info = "session ended"

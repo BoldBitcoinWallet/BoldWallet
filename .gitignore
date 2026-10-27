@@ -130,19 +130,25 @@ BBMTLib/scripts/*.share
 **/test-nostr-keygen-3party-output/
 **/test-nostr-keysign-output/
 **/nostr-keygen-output/
+**/nostr-keygen-trio-output/
 **/nostr-keysign-output/
+**/nostr-test-output/
+**/lan-keygen-output/
+**/test-e2e-output/
 **/test-output/
 **/test-data/
 # Test output JSON files
 **/test-*-output/*.json
 **/nostr-*-output/*.json
+**/KeyShare*.json
+**/KeyShare*.sig.json
 
 #
-# Release scripts ARE versioned (exception below): they take all secrets from
-# the environment and must never contain hardcoded passwords. See
-# android/BUILD-SECRETS.md. The keystore itself stays untracked.
-!android/signed-release.sh
-!android/generate-signed-bundle.sh
+# Release signing helpers and secrets stay local. Never put passwords in
+# tracked files. The keystore itself stays untracked.
+android/generate-signed-bundle.sh
+android/signed-release.sh
+android/BUILD-SECRETS.md
 android/app/BoldBitcoinWallet.jks
 android/app/release/
 android/app-release.apk.sha256

@@ -304,8 +304,6 @@ function purgeRetiredTestnet3Rows(): void {
     'utxos',
     'transactions',
     'transaction_addresses',
-    'tx_inputs',
-    'tx_outputs',
     'pending_transactions',
     'branta_verified_txs',
   ];

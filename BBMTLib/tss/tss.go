@@ -382,7 +382,13 @@ func (s *ServiceImpl) KeysignECDSA(req *KeysignRequest) (*KeysignResponse, error
 	}
 
 	var localState LocalState
-	if err := json.Unmarshal([]byte(localStateStr), &localState); err != nil {
+	// JS may have persisted *big.Int fields as quoted decimal strings;
+	// normalize back to bare numbers before Go unmarshal (recoverable).
+	localStateJSON := NormalizeQuotedBigIntJSON(localStateStr)
+	if localStateJSON != localStateStr {
+		Logln("BBMTLog", "gg18BigIntRepair: issue=quoted_oversized_ints action=normalize")
+	}
+	if err := json.Unmarshal([]byte(localStateJSON), &localState); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal local state, error: %w", err)
 	}
 	if localState.ECDSALocalData.ECDSAPub == nil {

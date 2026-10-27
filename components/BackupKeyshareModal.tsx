@@ -1,6 +1,6 @@
 import React, {useState} from 'react';
+import {showAppNotice} from '../services/appPrompt';
 import {
-  Modal,
   View,
   Text,
   Image,
@@ -8,9 +8,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
-  Alert,
+
   StyleSheet,
 } from 'react-native';
+import AppModal from './AppModal';
 import AppPressable from './AppPressable';
 import {NativeModules} from 'react-native';
 import Share from 'react-native-share';
@@ -106,19 +107,15 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
 
   const handleBackup = async () => {
     if (!validatePassword(password)) {
-      const missingRequirements = passwordErrors.join('\n• ');
-      Alert.alert(
-        'Password Requirements Not Met',
-        `Your password must meet all of the following requirements:\n\n• ${missingRequirements}\n\nPlease update your password and try again.`,
+      showAppNotice(
+        'Password too weak',
+        'It still misses a requirement shown above.',
       );
       return;
     }
 
     if (password !== confirmPassword) {
-      Alert.alert(
-        'Passwords Do Not Match',
-        'The password and confirmation password must be identical. Please check both fields and try again.',
-      );
+      showAppNotice('Passwords do not match', 'Enter the same password twice.');
       return;
     }
 
@@ -133,7 +130,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
 
         // Create filename based on pub_key hash and keyshare number
         if (!meta.pub_key) {
-          Alert.alert('Error', 'Keyshare missing pub_key.');
+          showAppNotice('Error', 'Keyshare missing pub_key.');
           return;
         }
 
@@ -173,7 +170,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
         const written = await RNFS.stat(filePath);
         if (!written.size) {
           await safeUnlink(filePath);
-          Alert.alert(
+          showAppNotice(
             'Error',
             'Backup file could not be written. Your keyshare is unchanged — please try again.',
           );
@@ -198,11 +195,11 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
           onBackupComplete();
         }
       } else {
-        Alert.alert('Error', 'Invalid keyshare.');
+        showAppNotice('Error', 'Invalid keyshare.');
       }
     } catch (error) {
       dbg('Error encrypting or sharing keyshare:', error);
-      Alert.alert('Error', 'Failed to encrypt or share the keyshare.');
+      showAppNotice('Error', 'Failed to encrypt or share the keyshare.');
     }
   };
 
@@ -375,7 +372,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
   });
 
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent={true}
       animationType="fade"
@@ -536,7 +533,7 @@ const BackupKeyshareModal: React.FC<BackupKeyshareModalProps> = ({
           </View>
         </GlassModalOverlay>
       </KeyboardAvoidingView>
-    </Modal>
+    </AppModal>
   );
 };
 

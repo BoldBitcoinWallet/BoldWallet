@@ -3,7 +3,6 @@ import UIKit
 
 @objc(KeyshareShareAppDelegate)
 class KeyshareShareAppDelegate: NSObject {
-  private static let supportedSharedExtensions: Set<String> = ["share", "psbt"]
 
   @objc static func handleIncomingURL(_ url: URL) -> Bool {
     let scheme = url.scheme?.lowercased() ?? ""
@@ -22,8 +21,9 @@ class KeyshareShareAppDelegate: NSObject {
       return false
     }
     if url.isFileURL {
-      let ext = url.pathExtension.lowercased()
-      if supportedSharedExtensions.contains(ext), KeyshareShareStorage.copyIncomingFile(at: url) != nil {
+      let hinted = url.lastPathComponent
+      if let staged = KeyshareShareStorage.stageWalletFile(sourceURL: url, suggestedName: hinted),
+         KeyshareShareStorage.copyIncomingFile(at: staged) != nil {
         KeyshareShareModule.notifyPendingShare()
         return true
       }

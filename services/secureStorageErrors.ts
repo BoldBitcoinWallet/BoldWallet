@@ -3,7 +3,7 @@
  * Keychain) to user-facing copy. Native layers tag these errors with a
  * stable `[SECURE_STORAGE_<KIND>]` token in the code or message.
  */
-import {Alert} from 'react-native';
+import {showAppNotice} from './appPrompt';
 export type SecureStorageKind =
   | 'INVALIDATED'
   | 'LOCKED'
@@ -80,6 +80,6 @@ export function alertSecureStorageError(error: unknown): boolean {
   }
   lastAlertMessage = message;
   lastAlertAt = now;
-  Alert.alert('Secure Storage Unavailable', message);
+  showAppNotice('Secure Storage Unavailable', message);
   return true;
 }

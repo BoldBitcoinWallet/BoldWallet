@@ -151,4 +151,23 @@ func TestF15b1_MetadataProjection(t *testing.T) {
 		strings.Contains(string(graw), "F15B-GG18-SECRET") {
 		t.Error("gg18 metadata leaks share material")
 	}
+	// GG18 with realistic 400-digit bare *big.Int (past float64 1e308 limit)
+	// must not fail MetadataJSON, RedactedStructure, or SniffBackend.
+	hugeBareGG18 := []byte(`{"tss_backend":"gg18","pub_key":"03cc","chain_code_hex":"dd",` +
+		`"local_party_key":"KeyShare1","keygen_committee_keys":["KeyShare1","KeyShare2"],` +
+		`"created_at":1710000000,"ecdsa_local_data":{"Alpha":` + strings.Repeat("9", 400) + `}}`)
+	if got := SniffBackend(hugeBareGG18); got != BackendGG18 {
+		t.Fatalf("huge bare gg18 sniff: got %s", got)
+	}
+	hmeta, err := MetadataJSON(hugeBareGG18)
+	if err != nil {
+		t.Fatalf("huge bare gg18 metadata failed (float64 overflow regression): %v", err)
+	}
+	if !strings.Contains(string(hmeta), `"chain_code_hex":"dd"`) ||
+		strings.Contains(string(hmeta), "ecdsa_local_data") {
+		t.Fatalf("huge bare gg18 metadata unexpected: %s", string(hmeta))
+	}
+	if _, err := RedactedStructure(hugeBareGG18); err != nil {
+		t.Fatalf("huge bare gg18 redact failed: %v", err)
+	}
 }

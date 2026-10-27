@@ -11,6 +11,11 @@
 // SHA256 Method
 RCT_EXTERN_METHOD(sha256:(NSString *)message resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
+// F32 (Option A): trio ECDH exchange for LAN keygen.
+RCT_EXTERN_METHOD(trioECDHPhase1:(NSString *)server session:(NSString *)session selfParty:(NSString *)selfParty parties:(NSString *)parties resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(trioECDHConfirm:(NSString *)handle session:(NSString *)session resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(trioECDHAbort:(NSString *)handle resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(secureRandom:(int)length resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // ECIES Key Pair Generation
@@ -402,15 +407,22 @@ RCT_EXTERN_METHOD(getKeyshareMetadataJSON:(RCTPromiseResolveBlock)resolve reject
 RCT_EXTERN_METHOD(getKeyshareStructureRedacted:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(destroyKeyshareHandles:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(ensureKeyshareEnveloped:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(repairGg18KeyshareBigInts:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // 3b-1 ceremony tokens: per-ceremony mint ONLY (hardcoded class +
 // prompt copy each). No generic mint exists by design.
 RCT_EXTERN_METHOD(requestSignCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-// F20: fused PSBT confirmation mint (native sheet, digest-bound).
+RCT_EXTERN_METHOD(requestSignTransportCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+// F20: silent digest-bound PSBT sign mint. Export confirm is separate.
 RCT_EXTERN_METHOD(requestPsbtSignCeremonyToken:(NSString *)sessionID psbtBase64:(NSString *)psbtBase64 resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-// F20-1b: fused send confirmation mint (native sheet, payment-bound).
+RCT_EXTERN_METHOD(confirmPsbtExport:(NSString *)psbtBase64 resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+// F20-1b: silent payment-bound send mint. Broadcast confirm is separate.
 RCT_EXTERN_METHOD(requestSendSignCeremonyToken:(NSString *)sessionID toAddress:(NSString *)toAddress amountSatoshi:(NSString *)amountSatoshi feeSatoshi:(NSString *)feeSatoshi changeAddress:(NSString *)changeAddress resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(confirmSpendBroadcast:(NSString *)toAddress amountSatoshi:(NSString *)amountSatoshi feeSatoshi:(NSString *)feeSatoshi changeAddress:(NSString *)changeAddress resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(requestKeygenCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(requestWalletSetupCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(rebindCeremonySession:(NSString *)token sessionID:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(requestExportCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(requestImportCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(requestConfigCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)

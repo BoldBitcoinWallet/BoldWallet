@@ -9,6 +9,7 @@ import {
   recordMempoolAttempt,
   type MempoolAttempt,
 } from './mempoolHealth';
+import {tracedMempoolFetch} from './tracedMempoolFetch';
 import {isWalletOnline, isWalletOfflineError, subscribeWalletOnline} from './walletOnlineStore';
 import {dbg} from '../utils';
 
@@ -44,8 +45,7 @@ export async function probeMempoolApiBase(apiRoot: string): Promise<void> {
     return;
   }
   const url = `${base}/blocks/tip/hash`;
-  const hostMatch = url.match(/^(https?:\/\/[^/]+)/);
-  const host = hostMatch ? hostMatch[1] : undefined;
+  const host = base.replace(/\/api\/?$/, '') || undefined;
   const startedAt = Date.now();
   // MempoolClient parses JSON; tip/hash is a raw hex string, so use get()
   // only for cache/offline gating of the round-trip via a height probe
@@ -57,7 +57,7 @@ export async function probeMempoolApiBase(apiRoot: string): Promise<void> {
     PROVIDER_HEALTH_PROBE_TIMEOUT_MS,
   );
   try {
-    const res = await fetch(url, {
+    const res = await tracedMempoolFetch(url, {
       method: 'GET',
       headers: {Accept: 'text/plain, application/json'},
       signal: controller.signal,
@@ -89,6 +89,9 @@ export async function probeMempoolApiBase(apiRoot: string): Promise<void> {
   }
 }
 
+/** At most this many tip-hash probes in flight at once. */
+const PROBE_CONCURRENCY = 4;
+
 /** One tip-hash probe per unique API root. Does not loop. */
 export async function probeMempoolApiBasesOnce(
   apiRoots: string[],
@@ -106,7 +109,20 @@ export async function probeMempoolApiBasesOnce(
     seen.add(base);
     unique.push(base);
   }
-  await Promise.all(unique.map(base => probeMempoolApiBase(base)));
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < unique.length) {
+      const base = unique[next];
+      next += 1;
+      await probeMempoolApiBase(base);
+    }
+  };
+  await Promise.all(
+    Array.from(
+      {length: Math.min(PROBE_CONCURRENCY, unique.length)},
+      () => worker(),
+    ),
+  );
 }
 
 async function probe(): Promise<void> {
@@ -126,7 +142,7 @@ function ensureTimer(): void {
     return;
   }
   timer = setInterval(() => {
-    void probe();
+    probe();
   }, PROVIDER_HEALTH_POLL_MS);
 }
 
@@ -144,7 +160,7 @@ export function setProviderHealthApiBase(nextApiBase: string): void {
   }
   apiBase = normalized;
   if (started && isWalletOnline() && apiBase) {
-    void probe();
+    probe();
   }
 }
 
@@ -154,7 +170,7 @@ export function startProviderHealthPoller(nextApiBase?: string): void {
   }
   if (started) {
     if (isWalletOnline() && apiBase) {
-      void probe();
+      probe();
     }
     return;
   }
@@ -162,7 +178,7 @@ export function startProviderHealthPoller(nextApiBase?: string): void {
   onlineUnsub = subscribeWalletOnline(online => {
     if (online) {
       ensureTimer();
-      void probe();
+      probe();
       return;
     }
     clearTimer();

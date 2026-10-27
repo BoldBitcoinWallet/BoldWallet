@@ -1,8 +1,8 @@
 # Wave 6 — F20 design: native PSBT confirmation (for sign-off)
 
-> **Status: IMPLEMENTED** on `security/wave6-f20-f35` (Go 818a7bb8,
-> Android 6ef6726f, iOS 8bc7a0a7, JS 6db0e962, 1b native a5142b5a).
-> Tracker F20 = Implemented, pending QA/merge. Two deviations from
+> **Status: IMPLEMENTED** on `security/wave6-f20-f35` and consolidated on `security/hardenings` (Go 818a7bb8,
+> Android 6ef6726f, iOS 8bc7a0a7, JS 6db0e962, 1b native a5142b5a, strict unbound-token rejection 6d674c50).
+> Tracker F20 = Done. Two deviations from
 > §2/§7 as designed: the sheet is the platform alert dialog
 > (AlertDialog / UIAlertController) rather than a custom secure
 > view, and the send binding excludes the network field (address

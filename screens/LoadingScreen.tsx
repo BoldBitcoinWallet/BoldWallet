@@ -8,11 +8,11 @@ import {
   Animated,
   Easing,
   Pressable,
-  Modal,
   AccessibilityInfo,
   AppState,
   Platform,
 } from 'react-native';
+import AppModal from '../components/AppModal';
 import Toast from 'react-native-toast-message';
 import {dbg} from '../utils';
 import {createToastConfig} from '../utils/toastConfig';
@@ -1256,7 +1256,7 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
             />
           </View>
         ) : null}
-        <Modal
+        <AppModal
           visible={!camouflageOn && showUpdateModal}
           transparent
           animationType="fade"
@@ -1290,7 +1290,7 @@ const LoadingScreen = ({onRetry}: {onRetry: () => void | Promise<void>}) => {
               </View>
             </View>
           </GlassModalOverlay>
-        </Modal>
+        </AppModal>
       </View>
       <View pointerEvents="box-none" style={styles.toastWrapper}>
         <Toast config={createToastConfig(theme)} />

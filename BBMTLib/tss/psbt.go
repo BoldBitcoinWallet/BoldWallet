@@ -47,7 +47,7 @@ func MpcSignPSBT(
 
 	// Parse keyshare JSON to get xpub and chaincode for deriving public keys
 	var keyshareData LocalState
-	if err := json.Unmarshal([]byte(keyshare), &keyshareData); err != nil {
+	if err := json.Unmarshal([]byte(NormalizeQuotedBigIntJSON(keyshare)), &keyshareData); err != nil {
 		return "", fmt.Errorf("failed to parse keyshare JSON: %w", err)
 	}
 	if keyshareData.PubKey == "" {
@@ -933,7 +933,7 @@ func runNostrMpcSignPSBTInternal(
 
 	// Parse keyshare JSON to get xpub and chaincode for deriving public keys
 	var keyshareData LocalStateNostr
-	if err := json.Unmarshal([]byte(keyshareJSON), &keyshareData); err != nil {
+	if err := json.Unmarshal([]byte(NormalizeQuotedBigIntJSON(keyshareJSON)), &keyshareData); err != nil {
 		return "", fmt.Errorf("failed to parse keyshare JSON: %w", err)
 	}
 	if keyshareData.PubKey == "" {

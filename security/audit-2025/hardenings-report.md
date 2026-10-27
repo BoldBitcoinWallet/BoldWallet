@@ -2,34 +2,34 @@
 
 ## 1. Header
 
-- **Release:** v4.1.1 (`feature/hardenings` @ `655d66ce`, tag `v4.1.1` → `515fe036`)
-- **Date:** 2026-10-25
+- **Release:** v4.1.1 (consolidated branch `security/hardenings`)
+- **Date:** 2026-10-26
 - **Scope:** BoldWallet React Native app, native bridge (Android/iOS), Go/gomobile MPC core (DKLs23 + GG18), keyshare backup and storage, LAN/Nostr ceremony transport, build and release toolchain.
-- **Methodology:** red-team threat model (malicious co-signer, malicious LAN relay, malicious JS/npm, rooted device, stolen backup, compromised build pipeline), adversarial code review of every layer, native instrumentation (bridge-spy and heap checks), Go and JVM test gates, and real-device QA checklists (release-owner executed).
-- **Finding tracker:** `security/audit-2025/mpc-remediation-tracker.md` (canonical status), `security/audit-2025/mpc-regression-test-plan.md`, `security/audit-2025/wave2-pr-notes.md`, `security/audit-2025/wave3-design.md`, `security/audit-2025/build-notes.md`.
+- **Methodology:** red-team threat model (malicious co-signer, malicious LAN relay, malicious JS/npm, rooted device, stolen backup, compromised build pipeline), adversarial code review of every layer, native instrumentation (bridge-spy and heap checks), Go and JVM test gates, cross-version v4.1.0 ↔ v4.1.1 compatibility fixtures, and real-device QA checklists (release-owner executed).
+- **Finding tracker:** `security/audit-2025/mpc-remediation-tracker.md` (canonical status), `security/audit-2025/mpc-regression-test-plan.md`, `security/audit-2025/wave2-pr-notes.md`, `security/audit-2025/wave3-design.md`, `security/audit-2025/wave6-f20-design.md`, `security/audit-2025/f32-analysis.md`, `security/audit-2025/build-notes.md`.
 
 ## 2. Executive Summary
 
-This release is the consolidated remediation of a full security audit of the BoldWallet MPC wallet: 5 implementation waves, a toolchain rebuild track, and 3 pre-ship fixes. The dominant themes were (1) keyshare plaintext crossing trust boundaries it never needed to cross, (2) unauthenticated encryption and fail-open error paths, and (3) a shipped native library built with a known-vulnerable Go toolchain on both platforms.
+This release is the consolidated remediation of a full security audit of the BoldWallet MPC wallet on `security/hardenings`: 6 implementation waves, a toolchain rebuild track, pre-ship fixes, and the F32/F39/F41b protocol track. The dominant themes were (1) keyshare plaintext crossing trust boundaries it never needed to cross, (2) unauthenticated encryption, unverified transaction/group-key parameters, and fail-open error paths, and (3) a shipped native library built with a known-vulnerable Go toolchain on both platforms.
 
-**Totals:** 52 tracked items (F1–F41 + sub-rows + section items).
+**Totals:** 53 tracked items (F1–F42 + sub-rows + section items).
 
 | Severity | Critical | High | Med-High | Medium | Low-Med | Low | Not rated* |
 |---|---|---|---|---|---|---|---|
-| Count | 7 | 23 | 2 | 11 | 1 | 3 | 5 |
+| Count | 7 | 23 | 2 | 11 | 1 | 4 | 5 |
 
 \* process items, sub-items, and not-a-finding closures (F34, F24b, F14-B, F22, axios hygiene).
 
 | Disposition | Count | Items |
 |---|---|---|
-| Done | 35 | see §3 |
-| Documented residual | 1 | F26 |
+| Done / Implemented in v4.1.1 | 42 | see §3 (Waves 1–6 + F32/F39/F41b) |
+| Documented residual / non-feature | 3 | F26, F40, F42 |
 | Not-a-finding / N-A (closed with evidence) | 3 | F7, F14-B, F22 |
 | Skipped (manual process) | 1 | F34 |
 | Partial (remainder deferred) | 1 | F5 |
 | Accepted residual | 1 | F16b |
-| Tracked watch item | 1 | F41b |
-| Deferred to v4.1.2+ / Wave 6+ | 9 | F8, F20, F31, F32, F35, F36, F38, F39, F40 |
+| Tracked watch item (CI-gated) | 1 | F41b |
+| Deferred to v4.1.2+ | 1 | F8 |
 
 **Top 3 highest-impact fixes**
 
@@ -37,13 +37,13 @@ This release is the consolidated remediation of a full security audit of the Bol
 2. **Backup fund-diversion chain (B1: F1 + F2 + F16).** Before: backups were AES-CBC (no MAC, tamper undetectable) with a single SHA-256(password) KDF and a 3-rule password gate, and import never checked that the file's `pub_key` matched the share — a tampered backup silently diverted deposits to attacker addresses. After: AES-256-GCM + Argon2id, versioned format with pre-KDF parameter caps, import-time `pub_key`/ciphersuite binding, full 5-rule export policy. Legacy backups still import.
 3. **Shipped vulnerable toolchain (F29).** v4.1.0 shipped `libbbmtmobile.so` built with Go 1.26.0 (forged-certificate x509 CVE class) — verified on Android (multi-arch) and iOS (`4.1.0 (71)` archive, strings `go1.26.0`). v4.1.1 rebuilds on Go 1.26.10 with a verification gate (`F28-exp`) that fails the build if any artifact is below 1.26.10.
 
-**What remains open at v4.1.1 (explicit):** F20 (native PSBT-confirmation screen — not started), F31 (no fee-rate cap), F32 (LAN trio key derived from public values), F35 (unsigned GitHub-raw endpoint/relay lists), F36 (no device-integrity signals), F38 (WebView wildcard origin), F39 (no post-DKG group-key cross-check), F40 (no DKLs23 key refresh), F8 (cleartext to LAN IPs), F5 remainder (native-held nsec handle), F16b (accepted — airgap 6-digit PIN), F26 (documented timing residual), F41b (go-ethereum pin watch), F34 (artifact `.sha256`/`.asc` produced manually on the GitHub release).
+**What remains open at v4.1.1 (explicit):** F8 (cleartext to LAN IPs — load-bearing for raw IP pairing), F5 remainder (native-held nsec handle), F16b (accepted — airgap 6-digit PIN), F26 (documented timing residual), F40 (documented non-feature — manual key rotation via new wallet), F41b (go-ethereum pin watch, gated by CI govulncheck), F42 (historical test keyshares in git history only, 0 at HEAD), F34 (artifact `.sha256`/`.asc` produced manually on the GitHub release). Wave 6 items (F20, F31, F32, F35, F36, F38, F39) are now implemented in v4.1.1.
 
 **Trust-model delta (one paragraph).** After v4.1.1, an attacker needs a user-present, ceremony-bound authorization (or physical access plus a strong backup password) to cause the wallet to do anything security-relevant: JavaScript alone can no longer reach secret material or invoke signing; a stolen backup is an offline Argon2id brute-force problem, not a silent key swap; a LAN or Nostr relay can delay or drop messages but can no longer oracle, forge-accept, or suppress ceremonies invisibly; and the shipped binary is provably built with a patched toolchain and pinned dependencies. §4 details each attacker class.
 
 ## 3. Findings by Category
 
-Commit references: fix commit where single, wave merge otherwise. Waves: W1 = B1 (`c6d2613f`), W2 (`2d634e91`), W3a (`9d52d812`), W3b (`88501dcd`), W4 (`84c54eaa` on main), W5 (branch commits, into `feature/hardenings` `8d88ec95`), T411 = v4.1.1 track (`746bdd8d`), A = Phase A pre-ship fixes on `feature/hardenings`.
+Commit references: fix commit where single, wave merge otherwise. Waves: W1 = B1 (`c6d2613f`), W2 (`2d634e91`), W3a (`9d52d812`), W3b (`88501dcd`), W4 (`84c54eaa`), W5 (`8d88ec95`), T411 = v4.1.1 toolchain track (`746bdd8d`), A = Phase A pre-ship fixes (`0195d75c`, `f6168bfc`, `655d66ce`), W6 = Wave 6 (`2dfb9278`) + F32/F39/F41b (`0188e10f`..`5b9693d2`) + F20/Testnet4 tightening (`6d674c50`), consolidated on `security/hardenings`.
 
 ### Cryptographic storage
 
@@ -115,50 +115,52 @@ Commit references: fix commit where single, wave merge otherwise. Waves: W1 = B1
 | F14-B | `nsec` inside exportable backup | Not-a-finding — `nsec` is one facet of a single secret bundle under the B1 envelope + F16 gate; splitting it breaks cross-device restore. Audit overreach (product decision) |
 | F22 | Suspected secret material in ceremony logs | Not-applicable — traced to the repo's own sanitizer over-matching (`keyshare` substring in monikers); bypass audit found no secret material. `relay.go` `%+v` trim remains a hygiene note |
 
-### Deferred to future work (v4.1.2+ / Wave 6+)
+### Wave 6 & F32 additions (shipped in v4.1.1)
+
+| ID | Sev | Description | Disposition |
+|---|---|---|---|
+| F20 | High | No native PSBT/send confirmation screen | Implemented — fused native PSBT & send confirmation sheets + strict SHA-256 content-digest binding (`contentBindingOk` rejects unbound tokens and mismatches, revoking session) (`818a7bb8`..`a5142b5a`) |
+| F31 | Med | No fee-rate cap on the mempool path | Implemented — `MaxFeeRateSatVB = 10000` + `checkFeeVsAmount` bound (`524dc08d`) |
+| F32 | High | Trio LAN key = `sha256(sessionID + "," + masterHost)` (public inputs) | Implemented — SAS-authenticated P-256 ECDH + Burmester-Desmedt ring round (`XOR` invariant check) + 6-digit compare code; legacy derivation retired (`0188e10f`) |
+| F35 | High | Mempool hosts + Nostr relays fetched unsigned from GitHub raw | Implemented — pinned to a reviewed commit, size/entry bounds, strict `https:`/`wss:` hostname validation (`fa6ac142`). v4.1.1 pin was `b94706d4`; this branch pins signed `90a154c7` (`a88a35ce`) |
+| F36 | Med | No root/jailbreak/Play Integrity/App Attest signals (biometry only) | Implemented — client-side native integrity signals + warn-and-confirm on extractive actions (`6a51776b`) |
+| F38 | Low | WebView `originWhitelist: ['*']` (quotes marquee, escaped, nav-gated) | Implemented — locked to `['about:blank']` with file access disabled (`a031e07b`) |
+| F39 | Med | No post-DKG group-key cross-check | Implemented — post-DKG group-key unanimity check across DKLs23 and GG18 (LAN + Nostr), fail-closed on mismatch (`bc19e176`, `324c8a6c`) |
+| F40 | Med | DKLs23 key refresh unavailable (lib `tss_refresh_new` → `ProtocolMismatch`; manual rotation exists) | Documented non-feature — manual rotation via new wallet (`7d547475`) |
+| F41b | Low | Transitive go-ethereum pin (v1.17.0) needs review at each ecies bump | Gated — `govulncheck` CI job in `bbmtlib-test.yml` (`5b9693d2`) |
+| F42 | Low | Developer test keyshares in Nov–Dec 2025 git history | Documented — 0 tracked at HEAD, output dirs gitignored (`b1e1f688`) |
+
+### Deferred to future work (v4.1.2+)
 
 | ID | Sev | Description | Disposition |
 |---|---|---|---|
 | F5 | High | `nsec` in JS heap (backup half closed via F14-B) | Partial — F21 cleared post-finalize state; native-held nsec handle deferred to v4.1.2+ |
 | F8 | High | Global Android cleartext + ws/http | Deferred — known residual in v4.1.1 release notes; IP literals cannot be domain-scoped (§5) |
 | F16b | Med | Airgap export is a 6-digit PIN over SHA-256/CBC | Accepted residual — attack requires visual capture; longer PIN or PAKE deferred |
-| F20 | High | No native PSBT-confirmation screen (JS-supplied summary is spoofable) | Deferred — not started (Wave 6) |
-| F31 | Med | No fee-rate cap on the mempool path | Deferred (Wave 6) |
-| F32 | High | Trio LAN key = `sha256(sessionID + "," + masterHost)` (public inputs) | Deferred — protocol change (Wave 6) |
-| F35 | High | Mempool hosts + Nostr relays fetched unsigned from GitHub raw | Deferred (Wave 6) |
-| F36 | Med | No root/jailbreak/Play Integrity/App Attest signals (biometry only) | Deferred (v4.1.2) |
-| F38 | Low | WebView `originWhitelist: ['*']` (quotes marquee, escaped, nav-gated) | Deferred (v4.1.2) |
-| F39 | Med | No post-DKG group-key cross-check | Deferred (Wave 6) |
-| F40 | Med | DKLs23 key refresh unavailable (lib `tss_refresh_new` → `ProtocolMismatch`; manual rotation exists) | Deferred (v4.1.2+) |
-| F41b | Low | Transitive go-ethereum pin (v1.17.0) needs review at each ecies bump | Tracked watch item (§5) |
 
 ## 4. What an Attacker Can No Longer Do
 
 **Stolen backup file.** *Before:* offline attack was cheap and silent — CBC without a MAC meant tampering was undetectable, the key was a single unsalted SHA-256 of the password, gating allowed weak passwords, and a substituted `pub_key` made the victim deposit to attacker addresses while holding a genuine share. *Now:* the backup is AES-256-GCM (any tampered byte rejects), keyed by Argon2id with per-file salt (≈250 ms/guess on-device, parameter caps reject crafted headers pre-KDF), import binds `pub_key` to the share's group key, and export requires the full password policy. Legacy CBC backups still import — with the known caveat that legacy tamper is only detectable as garbage output (documented, unavoidable without a MAC).
 
-**Lost or stolen device.** *Before:* Android storage could silently fall back to plaintext prefs; the iOS keychain item had no protection class. *Now:* Android fails closed with typed errors (StrongBox→TEE, never plaintext) and iOS keyshares live in `WhenPasscodeSetThisDeviceOnly` items that do not migrate with backups. Ceremonies refuse to start on a device without a screen lock. Residual: a determined attacker with the unlocked device and heavy instrumentation is out of scope for any software wallet; F36 (no integrity signals) is the tracked gap.
+**Lost or stolen device.** *Before:* Android storage could silently fall back to plaintext prefs; the iOS keychain item had no protection class. *Now:* Android fails closed with typed errors (StrongBox→TEE, never plaintext) and iOS keyshares live in `WhenPasscodeSetThisDeviceOnly` items that do not migrate with backups. Ceremonies refuse to start on a device without a screen lock, and client-side device-integrity signals (root/jailbreak/Frida/emulator, F36) warn and require explicit confirmation before extractive actions. Residual: a determined attacker with the unlocked device and heavy instrumentation can hook client-side checks (full Play Integrity / App Attest requires a backend, which this app does not use).
 
-**Malicious npm package / compromised JS.** *Before:* any JS — app code or dependency — could call 35+ bridge methods, copy the full keyshare to the clipboard, and read share plaintext off the bridge. *Now:* shares are native-held end-to-end (persist, import-decrypt, read, sign); JS receives handles and allowlisted metadata only; all 25 sensitive methods require a ceremony token that JS cannot mint (mint requires an OS-visible prompt); clipboard secret export is removed; bridge inputs are validated so malformed calls produce typed errors instead of panics or error-text-as-value exfil channels. A malicious package can still annoy (denied prompts, cancelled ceremonies — each mint needs user presence, so even that is bounded) but cannot reach key material or produce a signature.
+**Malicious npm package / compromised JS.** *Before:* any JS — app code or dependency — could call 35+ bridge methods, copy the full keyshare to the clipboard, read share plaintext off the bridge, or display one transaction while signing another. *Now:* shares are native-held end-to-end (persist, import-decrypt, read, sign); JS receives handles and allowlisted metadata only; all 25 sensitive methods require a ceremony token that JS cannot mint (mint requires an OS-visible prompt); PSBT signing and BTC sends require a fused native confirmation sheet (parsed in Go for PSBTs, canonicalized for sends) that binds the token to the exact SHA-256 artifact digest (`contentBindingOk` rejects unbound sign tokens and any swapped payload, revoking the session) (F20, F20-1b); dynamic mempool/relay lists are pinned to a reviewed commit (`90a154c7` on this branch; `b94706d4` in the v4.1.1 notes) and strictly validated (F35); mempool fee rates are sanity-capped at `10,000 sat/vB` and bounded against the payment amount (F31); clipboard secret export is removed; bridge inputs are validated so malformed calls produce typed errors instead of panics or error-text-as-value exfil channels.
 
-**Malicious LAN relay.** *Before:* crafted ciphertexts yielded a padding oracle via the delete/keep differential; empty-tag messages skipped verification entirely; unbounded HTTP clients could be hung forever; one-line prefix cancels killed unrelated sessions. *Now:* all reject classes are observably identical; empty/unknown tags reject (producer census proved no legit untagged sender); the DKLs pump verifies `h1`/`d1` tags; clients time out (5 s/10 s); cancel is exact-match. A relay can still drop or delay messages (availability), but cannot distinguish, forge-accept, or poison. Residuals: F26 (timing, documented), F32 (trio key is public-derived — a LAN *peer*, not just relay, can derive it), F8 (cleartext transport to LAN IPs).
+**Malicious LAN relay / LAN observer.** *Before:* crafted ciphertexts yielded a padding oracle via the delete/keep differential; empty-tag messages skipped verification entirely; trio LAN session keys derived from public `sha256(sessionID + "," + masterHost)`; unbounded HTTP clients could be hung forever; one-line prefix cancels killed unrelated sessions. *Now:* all reject classes are observably identical; empty/unknown tags reject (producer census proved no legit untagged sender); the DKLs pump verifies `h1`/`d1` tags; trio LAN keygen runs SAS-authenticated P-256 ECDH + a Burmester-Desmedt ring round (`XOR` invariant check) with a 6-digit compare code across all 3 devices (F32); clients time out (5 s/10 s); cancel is exact-match. A relay can still drop or delay messages (availability), but cannot distinguish, forge-accept, derive the trio session key, or poison. Residuals: F26 (timing, documented), F8 (cleartext HTTP transport to raw LAN IPs).
 
-**Malicious build pipeline.** *Before:* gradle could ship a stale prebuilt `.so` while JNI sources said otherwise (this actually happened: F11's JNI fixes were initially tested against a stale binary), the shipped app contained Go 1.26.0, Node was EOL, and an unused HTTP library carried 35 advisories. *Now:* the `.so` carries a source-hash stamp that fails the build on mismatch, `verify-native-artifacts.sh` fails if any artifact is below Go 1.26.10 (both merge-gated and release-machine steps), CI pins Go/Node exactly, govulncheck reports 0 reachable vulnerabilities, and the unused dependency is gone. Residual: F34 artifact signatures are manual (process control, not automation); F41b (pin review duty).
+**Malicious build pipeline.** *Before:* gradle could ship a stale prebuilt `.so` while JNI sources said otherwise (this actually happened: F11's JNI fixes were initially tested against a stale binary), the shipped app contained Go 1.26.0, Node was EOL, and an unused HTTP library carried 35 advisories. *Now:* the `.so` carries a source-hash stamp that fails the build on mismatch, `verify-native-artifacts.sh` fails if any artifact is below Go 1.26.10 (both merge-gated and release-machine steps), CI pins Go/Node exactly and runs `govulncheck` on `BBMTLib` (F41b), `govulncheck` reports 0 reachable vulnerabilities (`ecies/go` v2.0.8 + `go-ethereum` v1.17.0, F41), and the unused dependency is gone. Residual: F34 artifact signatures are manual (process control, not automation); F41b (pin review duty).
 
-**Malicious peer (GG18 co-signer / Nostr relay).** *Before:* GG18 signing/setup was the last untokenized path; errors from Go resolved as if they were signatures/handles; cancel-by-prefix could suppress a victim's ceremonies. *Now:* GG18 is token-gated with operation-specific prompts, errors reject on both platforms, cancel is exact and revokes the ceremony token atomically. A malicious peer can still abort ceremonies (inherent to threshold protocols), but cannot extract shares via these paths, cannot replay into stale sessions (fresh 128+ bit session IDs per ceremony), and cannot turn bridge errors into values. Residual: F39 — nothing cross-checks that both devices derived the *same* group key at DKG time; the failure mode is fund lockout, not theft (in-protocol DKG commitments plus F2's import binding mitigate).
+**Malicious peer (GG18 co-signer / Nostr relay).** *Before:* GG18 signing/setup was the last untokenized path; errors from Go resolved as if they were signatures/handles; cancel-by-prefix could suppress a victim's ceremonies; divergent group keys after DKG went undetected until deposit. *Now:* GG18 is token-gated with operation-specific prompts, errors reject on both platforms, cancel is exact and revokes the ceremony token atomically, and post-DKG group-key unanimity is verified across DKLs23 and GG18 (LAN + Nostr) before any share is returned or persisted (`DKG_GROUP_KEY_MISMATCH` fails closed, while mixed-version ceremonies with older peers warn and proceed after timeout) (F39).
 
 ## 5. Residual Risks
 
-Stated plainly — these ship in v4.1.1:
+Stated plainly — these remain after v4.1.1:
 
-- **F20 (High, not started) — native PSBT-confirmation screen.** Signing assumes the UI presented the correct PSBT. A compromised JS/UI layer could show the user one transaction and ask the native side to sign a different one. The ceremony token authorizes *a* signing ceremony, not *this* PSBT. Wave 6.
-- **F35 (High) — unsigned GitHub-raw endpoint lists.** Mempool API hosts and Nostr relay lists are fetched from `raw.githubusercontent.com` Markdown with no signature or commit pinning. A repo compromise redirects API/relay traffic (and feeds the F31 fee path). Wave 6.
-- **F32 (High) — LAN trio key is public-derived.** `sha256(sessionID + "," + masterHost)`; both inputs are exchanged in the clear. Anyone on the LAN can derive the key and forge trio messages. F6/F24 closed the oracle and forgery-*acceptance* gaps on tagged paths, but the key itself has no secret input. Protocol change; Wave 6.
-- **F31 (Medium) — no fee-rate cap.** A malicious or compromised mempool endpoint can suggest an inflated fee (only a 1 sat/vB floor exists). The compromised-endpoint path is more reachable given F35. Wave 6.
-- **F8 (High-as-tracked) — cleartext HTTP to LAN IPs.** `network_security_config` cannot allowlist IP literals, and LAN pairing depends on cleartext `http://<LAN-IP>`. Full scoping needs runtime peer verification. Wave 6/5.5. Listed as a known residual in the v4.1.1 release notes.
-- **F39 (Medium) — no post-DKG group-key cross-check.** Divergent group keys after DKG lock funds (availability), they do not steal them. Wave 6.
-- **F40 (Medium) — no DKLs23 key refresh.** The library returns `ProtocolMismatch` for DKLs23 (refresh is FROST-only). Share rotation today means creating a new wallet and moving funds. v4.1.2+.
-- **F36 (Medium) — no device-integrity signals.** No root/jailbreak detection, Play Integrity, or App Attest anywhere in the app (biometry only). Defense-in-depth gap on rooted devices. v4.1.2.
-- **F41b (Low) — transitive pin maintenance.** F41 was resolved by an explicit `require github.com/ethereum/go-ethereum v1.17.0` overriding ecies v2.0.8's transitive v1.13.5. Future ecies bumps may re-introduce a conflicting go-ethereum requirement, and future go-ethereum CVEs below the pin will not apply. Review the pin at every ecies bump; the govulncheck gate catches regressions.
+- **F8 (High-as-tracked, deferred) — cleartext HTTP to LAN IPs.** `network_security_config` cannot allowlist IP literals, and LAN pairing depends on cleartext `http://<LAN-IP>` (while MPC payloads themselves are ECIES- or ECDH/AES-encrypted and `h1`/`d1`-tagged). Full transport-level scoping needs runtime peer verification. Listed as a known residual in the v4.1.1 release notes.
+- **F40 (Medium, documented non-feature) — no DKLs23 key refresh.** `libtss` returns `ProtocolMismatch` for DKLs23 (refresh is FROST-only). Share rotation is performed manually by creating a new wallet and moving funds.
+- **F36 residual (Low-Med) — client-side integrity signals only.** Root/jailbreak/Frida/emulator detection runs locally on the device (`getDeviceIntegritySignals`) and gates extractive actions with a warning; a hooked device can spoof client-side checks, and hardware attestation (Play Integrity / App Attest) requires a backend server that BoldWallet does not have.
+- **F41b (Low, CI-gated) — transitive pin maintenance.** F41 was resolved by an explicit `require github.com/ethereum/go-ethereum v1.17.0` overriding ecies v2.0.8's transitive v1.13.5, gated by a `govulncheck` CI job (`bbmtlib-test.yml`). Review the pin at every ecies bump.
+- **F42 (Low, historical) — developer test keyshares in Nov–Dec 2025 git history.** 101 `gitleaks` hits in historical MPC test-output files; 0 files tracked at HEAD and output directories are gitignored.
 - **F14-B (documented) — `nsec` inside the keyshare backup.** Deliberate: the backup is a single secret bundle under one envelope; a facet-specific warning would falsely imply differential sensitivity. Splitting breaks cross-device restore.
 - **F16b (accepted) — airgap 6-digit PIN.** Attack requires capturing the animated QR *and* observing PIN entry (visual access). Longer PIN or PAKE deferred to v4.1.2+.
 - **F26 (documented) — timing residual.** Reject paths differ by ~25 µs (panic/recover cost). Indistinguishable against a passive observer under LAN jitter; an active LAN-local adversary with ≥10k repeated trials could potentially distinguish. The `<50ms` test is a hang-check, not a timing proof.
@@ -176,34 +178,36 @@ Per wave (full detail in `mpc-remediation-tracker.md` §close-outs; regression c
 - **Wave 4.** F6 oracle tests (uniform DELETE observed across 4 failure classes; timing medians documented, not claimed constant-time; `-race` clean); F11 fuzz/validation suites (Go seam 6/6, JVM 47/47, instrumented 5/5); real-device QA 4/4 passed (2026-10-25): JNI null-arg on ARM Android (typed error, no crash), `setAPI file://` rejected on real iOS, LAN ceremony over real WiFi, tampered message fails cleanly.
 - **Wave 5.** F28 stamp tamper proofs (C++ and Go source edits both fail the build with the re-run message); F12 exact-match tests (8, incl. poison-window and sibling isolation); F24/F24b tag tests; F27 forced-error tests (instrumented suite 16/16 on arm64 emulator); jest 758.
 - **v4.1.1 track + Phase A.** `go version -m` shows `go1.26.10` on all 3 Android ABIs inside the built APK; iOS archives contain only `go1.26.10` strings; `verify-native-artifacts.sh` PASS; govulncheck `./...` = **0 reachable** (19–20 module-required not-called); Go `-race` full suites green (tss 65 s, dkls 235 s); `./gradlew test` green (141 tests across variants, 0 failures); instrumented `:app` 16/16; jest 763 (758 + 5 F37) with the single pre-existing urBytesQr frames failure (baseline-identical since before the audit waves); tsc 32 / eslint 16 errors, both baseline-identical in untouched files; binary growth +5% worst-arch vs the 15% budget.
+- **Wave 6 + F32/F39/F41b (`security/hardenings`).** Phase-0 cross-version compatibility fixtures (`6d1bec8b`, v4.1.0 ↔ v4.1.1 DKLs shares, trio AES chunks, duo ECIES v2.0.3 ↔ v2.0.8 ciphertexts, legacy CBC backups) green under `-race`; F20/F20-1b Go `TestF20_*`, Kotlin `F20PsbtBindingTest` + `F20SendBindingTest` (including strict unbound-token rejection & revocation `6d674c50`), Swift `f20-harness` + `ceremony-harness` green, instrumented 16/16 on physical Android 13 (`2304FPN6DG`); F31 `f31_fee_cap_test.go` green; F35 `f35DynamicLists` 7/7 (including Testnet4 API list alignment); F32 `trio_ecdh_test.go` (8 Go exchange + trio DKG composition tests) + `lanMpcTransport.test.ts` (11 jest tests) green; F39 `f39_groupkey_test.go` + nostr/GG18 consensus tests green; F36 `deviceIntegrity` 8/8; F38 WebView tests green; `verify-native-artifacts.sh` PASS (69 JNI symbols, Go 1.26.10, `ecies/go` v2.0.8).
 - **Device QA records.** Waves 3 and 4 QA were executed and reported passed by the release owner (2026-10-24 / 2026-10-25). Device models, OS versions, and runner names were not recorded in the tracker at the time and remain "pending fill-in" — the pass/fail record stands, the device inventory does not. Future waves should record all four fields.
-- **Known verification gaps (honest).** (1) `xcodebuild test` *execution* was not run: the build phases fail under this shell's sandbox-exec profile (environmental; mechanism disjoint from all changes) and the sole iOS test is the stock React Native template asserting literal "Welcome to React" text — it has never been maintained and fails by design. `xcodebuild build` and `build-for-testing` both SUCCEEDED; details in `build-notes.md` §2. (2) Two transient environment failures occurred during Phase A — gradle offline cache misses and a corrupted `node_modules` caused by a pipe-masked `npm ci` exit code (see `build-notes.md` §1) — both were root-caused, fixed, and re-verified with unpiped exit codes. (3) FROST and DKLs23 *vendored fork diffs* vs upstream were never reviewed (owner-side, still open as a process item). (4) `gitleaks`/`trufflehog` over full git history remains owner-side.
+- **Known verification gaps (honest).** (1) `xcodebuild test` *execution* was not run: the build phases fail under this shell's sandbox-exec profile (environmental; mechanism disjoint from all changes) and the sole iOS test is the stock React Native template asserting literal "Welcome to React" text — it has never been maintained and fails by design. `xcodebuild build` and `build-for-testing` both SUCCEEDED; details in `build-notes.md` §2. (2) Two transient environment failures occurred during Phase A — gradle offline cache misses and a corrupted `node_modules` caused by a pipe-masked `npm ci` exit code (see `build-notes.md` §1) — both were root-caused, fixed, and re-verified with unpiped exit codes. (3) FROST and DKLs23 *vendored fork diffs* vs upstream were never reviewed (owner-side, still open as a process item).
 
 ## 7. Future Work (v4.1.2+)
 
-- **Wave 6 (protocol/mechanism):** F20 (native PSBT-confirmation screen), F35 (signed/pinned endpoint lists), F31 (fee-rate cap), F32 (secret-derived LAN trio key — protocol change), F39 (post-DKG group-key cross-check), F8 (runtime peer verification to retire cleartext), F24b-oracle analysis for F41's ECIES path.
-- **v4.1.2 (platform/hygiene):** F36 (Play Integrity / App Attest), F38 (WebView tightening), F40 (DKLs23 refresh or re-DKG UX), F5 remainder (native-held `nsec` handle), F16b (longer airgap PIN or PAKE), F41b (pin review at each ecies bump).
+- **v4.1.2+ (platform/hygiene):** F8 (runtime peer verification to retire Android LAN cleartext base-config), F5 remainder (native-held `nsec` handle during pairing), F16b (longer airgap PIN or PAKE), F40 (DKLs23 key refresh if `libtss` adds protocol support), F41b (pin review at each `ecies` bump).
 - **Long-term (out of scope, not queued):** GG18 deprecation path — (1) tokenize (done, 3b-6); (2) stop issuing new GG18 keyshares at DKG; (3) remove GG18 signing only after telemetry proves zero GG18 keyshares remain. Multi-quarter; not this year.
 - No timelines are committed for any of the above.
 
 ## 8. Audit Trail
 
-**Wave branches (final tips) and merges:**
+**Wave branches (final tips) and merges into `security/hardenings`:**
 
-| Track | Branch tip | Lands on `feature/hardenings` via |
+| Track | Branch tip | Lands on `security/hardenings` via |
 |---|---|---|
-| Wave 1 (B1: F1, F1b, F2, F16) | `security/b1-backup-crypto` | merge `c6d2613f` (→ main) |
-| Wave 2 (F15-half, F3, F4) | `security/wave2-f15-f3-f4` | merge `2d634e91` (→ main) |
-| Wave 3a (F15b-1, F10-clipboard) | `security/wave3a-f15b1-f10clip` | merge `9d52d812` (→ main) |
-| Wave 3b (F15b-2, F18, F10-bridge, F19, F21, F23) | `security/wave3b-f15b2-f18-f10` | merge `88501dcd` (→ main) |
-| Wave 4 (F6, F11) | `security/wave4-f6-f11` @ `0619ac20` | merge `84c54eaa` (main, post-QA) |
-| Wave 5 (F28, F25, F12, F13, F14-A, F24, F27, F26) | `security/wave5-f12-f14-f13` @ `2535430e` | merge `8d88ec95` (→ `feature/hardenings`) |
-| v4.1.1 toolchain (F29, F30, F28-exp) | `security/v4.1.1-toolchain` @ `ec5421ae` | merge `746bdd8d` (→ `feature/hardenings`) |
-| Phase A pre-ship fixes (F41, F37, axios) | direct on `feature/hardenings` | `0195d75c`, `f6168bfc`, `655d66ce` |
+| Wave 1 (B1: F1, F1b, F2, F16) | `security/b1-backup-crypto` | merge `c6d2613f` |
+| Wave 2 (F15-half, F3, F4) | `security/wave2-f15-f3-f4` | merge `2d634e91` |
+| Wave 3a (F15b-1, F10-clipboard) | `security/wave3a-f15b1-f10clip` | merge `9d52d812` |
+| Wave 3b (F15b-2, F18, F10-bridge, F19, F21, F23) | `security/wave3b-f15b2-f18-f10` | merge `88501dcd` |
+| Wave 4 (F6, F11) | `security/wave4-f6-f11` @ `0619ac20` | merge `84c54eaa` |
+| Wave 5 (F28, F25, F12, F13, F14-A, F24, F27, F26) | `security/wave5-f12-f14-f13` @ `2535430e` | merge `8d88ec95` |
+| v4.1.1 toolchain (F29, F30, F28-exp) | `security/v4.1.1-toolchain` @ `ec5421ae` | merge `746bdd8d` |
+| Phase A pre-ship fixes (F41, F37, axios) | `feature/hardenings` | `0195d75c`, `f6168bfc`, `655d66ce` |
+| Wave 6 (F20, F31, F35, F36, F38, F39, F42) | `security/wave6-f20-f35` @ `c1f6ce0a` | merge `2dfb9278` |
+| F32 + F39-GG18 + F40 + F41b + F20/Testnet4 polish | `security/f32-trio-ecdh` → `security/hardenings` | `0188e10f`..`6d674c50` |
 
-**Consolidation:** `feature/hardenings` = main (`84c54eaa`) + `746bdd8d` (v4.1.1 track) + `8d88ec95` (Wave 5, one tracker conflict resolved keeping both sides; stale F27-GG18 Open row dropped) + Phase A fixes + docs (tracker close-outs `235ac023`, CHANGELOG `2a16842d`, this report).
+**Consolidation:** `security/hardenings` aggregates the entire delta since `v4.1.0` (`92362c6b`): Waves 1–6, Testnet4 migration (`0092854c`), v4.1.1 toolchain rebuild (`746bdd8d`), Phase A pre-ship fixes, F32/F39/F41b, F20 strict unbound-token rejection + Testnet4 API list alignment (`6d674c50`), and final documentation sync.
 
-**Tag:** `v4.1.1` (annotated) — tag object `515fe036`, commit `655d66ce`. Local only; **not pushed**. The tag message lists F41/F37/axios as fixed in this release and names the residuals.
+**Release & Tagging:** Branch merges, `v4.1.1` tag management, and remote pushes are managed directly by the release owner from `security/hardenings`.
 
 **Source-report gap disclosure:**
 

@@ -1,4 +1,4 @@
-import {Alert} from 'react-native';
+import {confirmAppPrompt} from './appPrompt';
 import {
   completeCeremonyToken,
   isCeremonyAuthRejection,
@@ -26,18 +26,13 @@ export type ApiUrlConfirmFn = (urls: string[]) => Promise<boolean>;
 
 /** In-app confirm showing the exact URLs (the OS prompt cannot). */
 export function defaultConfirmApiUrls(urls: string[]): Promise<boolean> {
-  return new Promise(resolve => {
-    Alert.alert(
-      'Allow API endpoint?',
-      `BoldWallet wants to use a new API endpoint:\n${urls.join(
-        '\n',
-      )}\n\nOnly approve endpoints you trust.`,
-      [
-        {text: 'Cancel', style: 'cancel', onPress: () => resolve(false)},
-        {text: 'Approve', onPress: () => resolve(true)},
-      ],
-      {cancelable: true, onDismiss: () => resolve(false)},
-    );
+  return confirmAppPrompt({
+    icon: 'network',
+    title: 'Use this endpoint?',
+    detail: urls.join('\n'),
+    hint: 'Only if you trust it.',
+    cancelLabel: 'Cancel',
+    confirmLabel: 'Use it',
   });
 }
 

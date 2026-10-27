@@ -1,3 +1,4 @@
+/* eslint-disable no-bitwise */
 /**
  * diceEntropy — local dice-only master chaincode.
  * Opt-in: finalChaincode = SHA256('BOLD-DICE-CHAINCODE-v1' || canonicalAllAscii).

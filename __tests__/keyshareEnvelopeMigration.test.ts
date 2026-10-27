@@ -1,3 +1,8 @@
+jest.mock('react-native-toast-message', () => ({
+  __esModule: true,
+  default: {show: jest.fn()},
+}));
+
 jest.mock('../native_modules', () => ({
   BBMTLibNativeModule: {ensureKeyshareEnveloped: jest.fn()},
 }));
@@ -16,8 +21,8 @@ jest.mock('../services/secureStorageErrors', () => ({
   alertSecureStorageError: jest.fn(),
 }));
 
-import {Alert} from 'react-native';
 import {BBMTLibNativeModule} from '../native_modules';
+import {currentAppPrompt, respondAppPrompt} from '../services/appPrompt';
 import appConfigRepository from '../services/repositories/AppConfigRepository';
 import {alertSecureStorageError} from '../services/secureStorageErrors';
 import {
@@ -30,7 +35,6 @@ const repo = appConfigRepository as any;
 
 beforeEach(() => {
   jest.clearAllMocks();
-  jest.spyOn(Alert, 'alert').mockImplementation(() => {});
 });
 
 describe('F15b-1 envelope migration bootstrap', () => {
@@ -64,10 +68,10 @@ describe('F15b-1 envelope migration bootstrap', () => {
     await expect(maybePromptPostMigrationBackup(false, onOpen)).resolves.toBe(
       false,
     );
-    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(currentAppPrompt()).toBeNull();
   });
 
-  test('prompt fires once and Open backup navigates', async () => {
+  test('prompt fires once and Back up navigates', async () => {
     repo.getBool.mockReturnValue(false);
     const onOpen = jest.fn();
     await expect(maybePromptPostMigrationBackup(true, onOpen)).resolves.toBe(
@@ -77,11 +81,9 @@ describe('F15b-1 envelope migration bootstrap', () => {
       'envelope_migration_backup_prompted',
       'true',
     );
-    expect(Alert.alert).toHaveBeenCalledTimes(1);
-    const buttons = (Alert.alert as jest.Mock).mock.calls[0][2];
-    const open = buttons.find((b: any) => b.text === 'Open backup');
-    expect(open).toBeDefined();
-    open.onPress();
+    expect(currentAppPrompt()?.confirmLabel).toBe('Back up');
+    respondAppPrompt(true);
+    await Promise.resolve();
     expect(onOpen).toHaveBeenCalledTimes(1);
   });
 
@@ -90,6 +92,6 @@ describe('F15b-1 envelope migration bootstrap', () => {
     await expect(
       maybePromptPostMigrationBackup(true, jest.fn()),
     ).resolves.toBe(false);
-    expect(Alert.alert).not.toHaveBeenCalled();
+    expect(currentAppPrompt()).toBeNull();
   });
 });

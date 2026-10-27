@@ -2,11 +2,12 @@ import appConfigRepository, {
   CONFIG_KEYS,
 } from './repositories/AppConfigRepository';
 import {dbg, getMainnetAPIList} from '../utils';
+import {tracedMempoolFetch} from './tracedMempoolFetch';
 import {isWalletOnline} from './walletOnlineStore';
 
 const MEMPOOL_API_VALIDATE_TIMEOUT_MS = 10_000;
 
-/** Single allowed Mempool REST base for Bitcoin testnet (no custom / mainnet hosts). */
+/** Default public Mempool REST base for Bitcoin testnet4. */
 export const CANONICAL_TESTNET_MEMPOOL_API_BASE =
   'https://mempool.space/testnet4/api';
 
@@ -52,7 +53,7 @@ export async function validateMempoolApiBaseReachable(
       () => controller.abort(),
       MEMPOOL_API_VALIDATE_TIMEOUT_MS,
     );
-    const response = await fetch(testUrl, {
+    const response = await tracedMempoolFetch(testUrl, {
       method: 'GET',
       headers: {
         Accept: 'application/json',
@@ -205,4 +206,42 @@ export function getStoredUserMempoolApiBaseFromDb(network: string): string {
   }
   const global = appConfigRepository.get('api');
   return global ?? '';
+}
+
+/** A stored BTC quote younger than this is still shown. */
+export const PRICE_FRESH_MS = 120_000;
+
+/**
+ * Live BTC/fiat rates always come from mainnet `GET /api/v1/prices`.
+ * Strip a trailing `/testnet4` only when it sits immediately before `/api`,
+ * so `https://mempool.space/testnet4/api` stays `https://mempool.space/api`
+ * and is never rewritten into `https://mempool.spaceapi`.
+ */
+export function mainnetPricesUrl(apiBase: string): string {
+  const base = (apiBase || '')
+    .replace(/\/+$/, '')
+    .replace(/\/testnet4?(?=\/api\/?$)/, '');
+  return `${base}/v1/prices`;
+}
+
+/**
+ * Currency map from a mempool `/v1/prices` body.
+ * Keeps positive 3-letter codes (USD, EUR, …) and drops `time` and other fields.
+ */
+export function fiatRatesFromPrices(
+  data: Record<string, unknown> | null | undefined,
+): Record<string, number> {
+  const rates: Record<string, number> = {};
+  if (!data) {
+    return rates;
+  }
+  for (const [key, value] of Object.entries(data)) {
+    if (!/^[A-Z]{3}$/.test(key)) {
+      continue;
+    }
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      rates[key] = value;
+    }
+  }
+  return rates;
 }
