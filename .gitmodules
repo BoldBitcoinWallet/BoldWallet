@@ -1,0 +1,3 @@
+[submodule "libtss"]
+	path = libtss
+	url = https://github.com/BoldBitcoinWallet/libtss.git
