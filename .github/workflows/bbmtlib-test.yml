@@ -215,8 +215,17 @@ jobs:
   govulncheck:
     name: Go vuln scan (govulncheck)
     runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: '1'
+      GOTOOLCHAIN: local
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      # dkls imports libtss via a sibling replace. Without this checkout,
+      # govulncheck cannot load the module (and cgo packages report no C metadata).
+      - name: Setup libtss
+        uses: ./.github/actions/setup-libtss
 
       - name: Set up Go
         uses: actions/setup-go@v6
