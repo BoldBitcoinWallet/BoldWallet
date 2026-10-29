@@ -1,6 +1,5 @@
 import React, {useState, useEffect, useCallback, useMemo} from 'react';
 import {
-  Modal,
   View,
   Text,
   StyleSheet,
@@ -10,6 +9,7 @@ import {
   Linking,
   Image,
 } from 'react-native';
+import AppModal from './AppModal';
 import AppPressable from './AppPressable';
 import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
@@ -116,11 +116,39 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
           ? theme.colors.blackOverlay10 // Light mode: subtle dark border
           : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
+    headerTitleRow: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginRight: 8,
+    },
+    headerIconBg: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor:
+        (theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange) + '20',
+    },
+    headerIcon: {
+      width: 22,
+      height: 22,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
     title: {
       fontSize: theme.fontSizes?.xl || 18,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       flex: 1,
+      marginLeft: 12,
+      textAlign: 'left',
+      lineHeight: 24,
     },
     headerActions: {
       flexDirection: 'row',
@@ -211,7 +239,7 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
     },
   });
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent
       animationType="fade"
@@ -219,7 +247,16 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
       <GlassModalOverlay contentPosition="bottom" style={styles.modalContainer}>
         <View style={[styles.modalContent, {maxHeight: height * 0.7}]}>
           <View style={styles.header}>
-            <Text style={styles.title}>{titles[type]}</Text>
+            <View style={styles.headerTitleRow}>
+              <View style={styles.headerIconBg}>
+                <Image
+                  source={require('../assets/legal-icon.png')}
+                  style={styles.headerIcon}
+                  resizeMode="contain"
+                />
+              </View>
+              <Text style={styles.title}>{titles[type]}</Text>
+            </View>
             <View style={styles.headerActions}>
               <AppPressable
                 onPress={handleRefresh}
@@ -283,7 +320,7 @@ const LegalModal: React.FC<LegalModalProps> = ({visible, onClose, type}) => {
           </ScrollView>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 export default LegalModal;

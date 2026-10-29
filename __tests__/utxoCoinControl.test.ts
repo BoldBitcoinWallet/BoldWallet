@@ -11,10 +11,10 @@ import {
   sanitizeUtxoTagDraft,
   selectionFeeKey,
   sortCoinControlUtxos,
+  clampSendAmountSats,
   spendableSats,
   sumSelectedSats,
   UTXO_TAG_MAX_LEN,
-  UTXO_TAG_MIN_LEN,
   type CoinControlUtxo,
 } from '../services/utxoCoinControl';
 
@@ -85,6 +85,17 @@ describe('utxoCoinControl', () => {
   test('spendableSats uses wallet when selection is null', () => {
     expect(spendableSats(100_000, null)).toBe(100_000);
     expect(spendableSats(100_000, 40_000)).toBe(40_000);
+  });
+
+  test('clampSendAmountSats shrinks only when amount plus fee exceeds balance', () => {
+    expect(clampSendAmountSats(1000, 100, 1000)).toBe(900);
+    expect(clampSendAmountSats(900, 100, 1000)).toBeNull();
+    expect(clampSendAmountSats(900, 50, 1000)).toBeNull();
+    expect(clampSendAmountSats(5000, 0, 1000)).toBe(1000);
+    expect(clampSendAmountSats(1000, 1000, 1000)).toBeNull();
+    expect(clampSendAmountSats(1000, 1001, 1000)).toBeNull();
+    expect(clampSendAmountSats(0, 100, 1000)).toBeNull();
+    expect(clampSendAmountSats(Number.NaN, 100, 1000)).toBeNull();
   });
 
   test('sumSelectedSats and filterUtxosByOutpoints', () => {

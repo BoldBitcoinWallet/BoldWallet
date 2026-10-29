@@ -2,7 +2,6 @@ import React, {useState, useCallback, useRef, useEffect} from 'react';
 import {
   View,
   Text,
-  Modal,
   StyleSheet,
   Image,
   ScrollView,
@@ -11,6 +10,7 @@ import {
   DeviceEventEmitter,
   EmitterSubscription,
 } from 'react-native';
+import AppModal from '../components/AppModal';
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
 import GlassModalOverlay from '../components/GlassModalOverlay';
@@ -206,7 +206,7 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   }, []);
   useEffect(() => {
     if (initialPsbtBase64) {
-      void parsePSBT(initialPsbtBase64);
+      parsePSBT(initialPsbtBase64);
     }
   }, [initialPsbtBase64, parsePSBT]);
   // Handle file upload
@@ -839,6 +839,16 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
           {middleButton && (
             <View style={styles.middleButtonContainer}>{middleButton}</View>
           )}
+          {/* F20: this screen is a preview only. The authoritative
+              confirmation is the native sheet shown at sign time —
+              it renders the transaction parsed in the native/Go
+              layer, and only that confirmed transaction can sign. */}
+          {psbtBase64 && (
+            <AppText style={styles.description} tone="muted">
+              Preview only — you will confirm the exact transaction
+              on the secure system screen before signing.
+            </AppText>
+          )}
           <AppPressable
             style={[
               styles.signButton,
@@ -887,17 +897,14 @@ export const PSBTLoader: React.FC<PSBTLoaderProps> = ({
   );
 };
 const PSBTModal: React.FC<PSBTModalProps> = ({visible, onClose, onSign}) => {
-  if (!visible) {
-    return null;
-  }
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}>
-      <PSBTLoader onClose={onClose} onSign={onSign} />
-    </Modal>
+      {visible ? <PSBTLoader onClose={onClose} onSign={onSign} /> : null}
+    </AppModal>
   );
 };
 const createStyles = (theme: any) =>

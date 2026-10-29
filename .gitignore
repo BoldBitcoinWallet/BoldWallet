@@ -130,16 +130,25 @@ BBMTLib/scripts/*.share
 **/test-nostr-keygen-3party-output/
 **/test-nostr-keysign-output/
 **/nostr-keygen-output/
+**/nostr-keygen-trio-output/
 **/nostr-keysign-output/
+**/nostr-test-output/
+**/lan-keygen-output/
+**/test-e2e-output/
 **/test-output/
 **/test-data/
 # Test output JSON files
 **/test-*-output/*.json
 **/nostr-*-output/*.json
+**/KeyShare*.json
+**/KeyShare*.sig.json
 
 #
-android/signed-release.sh
+# Release signing helpers and secrets stay local. Never put passwords in
+# tracked files. The keystore itself stays untracked.
 android/generate-signed-bundle.sh
+android/signed-release.sh
+android/BUILD-SECRETS.md
 android/app/BoldBitcoinWallet.jks
 android/app/release/
 android/app-release.apk.sha256
@@ -328,6 +337,8 @@ android/app/libs/tss.aar
 android/app/libs/tss-sources.jar
 # DKLs23 / bbmtmobile Android (BBMTLib/build-dkls.sh): libbbmtmobile.so, libbbmtmobile.h, dkls_jni.so
 android/app/src/main/jniLibs/**
+# F28: local freshness stamp for the above (written by build-dkls.sh, read by gradle gate)
+android/app/native-srcstamp.txt
 android/app/src/main/cpp/libbbmtmobile.h
 # Legacy pre-bbmtmobile rename (stale headers from old builds)
 android/app/src/main/cpp/libdklsmobile.h

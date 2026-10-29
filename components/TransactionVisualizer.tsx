@@ -8,14 +8,12 @@ import {
   StyleSheet,
 } from 'react-native';
 import Reanimated, {
-  Extrapolation,
-  interpolate,
   useAnimatedStyle,
-  useSharedValue,
   type SharedValue,
 } from 'react-native-reanimated';
 import Svg, {Path, Circle} from 'react-native-svg';
 import {createStyles} from './Styles';
+import {DISSOLVE_FADE} from './DissolveFade';
 import {useTheme} from '../theme';
 import AppPressable from './AppPressable';
 import AppText from './AppText';
@@ -447,51 +445,30 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
   blockHeight: blockHeightProp = null,
   confirmedAtMs = null,
   origin = 'wallet',
-  collapseProgress,
+  // Accepted for API compatibility; collapse is sheet-driven (see below).
+  collapseProgress: _collapseProgress,
 }) => {
-  const fallbackCollapse = useSharedValue(0);
-  const progress = collapseProgress ?? fallbackCollapse;
+  // Collapse is owned by the details sheet: TransactionDetailsModal clips
+  // this whole section's measured height to 0 on scroll. The inside must
+  // stay static — any height/opacity animation here fights that single
+  // motion and flickers.
+  const collapseContainerStyle = useAnimatedStyle(() => ({
+    overflow: 'hidden' as const,
+  }));
 
-  const collapseContainerStyle = useAnimatedStyle(() => {
-    const p = compact ? progress.value : 0;
-    return {
-      minHeight: interpolate(
-        p,
-        [0, 1],
-        [COMPACT_VISUALIZER_EXPANDED_MIN_H, COMPACT_VISUALIZER_COLLAPSED_MIN_H],
-        Extrapolation.CLAMP,
-      ),
-      paddingTop: interpolate(p, [0, 1], [14, 8], Extrapolation.CLAMP),
-      paddingBottom: interpolate(p, [0, 1], [14, 6], Extrapolation.CLAMP),
-      overflow: 'hidden' as const,
-    };
-  });
+  // Static too — see collapseContainerStyle. Only the sheet clips height.
+  const collapseTrackStyle = useAnimatedStyle(() => ({}));
 
-  const collapseTrackStyle = useAnimatedStyle(() => {
-    const p = compact ? progress.value : 0;
-    return {
-      transform: [
-        {
-          translateY: interpolate(p, [0, 1], [0, -8], Extrapolation.CLAMP),
-        },
-      ],
-      paddingTop: interpolate(p, [0, 1], [6, 2], Extrapolation.CLAMP),
-      paddingBottom: interpolate(p, [0, 1], [18, 12], Extrapolation.CLAMP),
-    };
-  });
-
-  const collapseStatusStyle = useAnimatedStyle(() => {
-    const p = compact ? progress.value : 0;
-    return {
-      opacity: interpolate(p, [0, 0.4, 1], [1, 0, 0], Extrapolation.CLAMP),
-      height: interpolate(p, [0, 1], [COMPACT_STATUS_H, 0], Extrapolation.CLAMP),
-      minHeight: interpolate(p, [0, 1], [COMPACT_STATUS_H, 0], Extrapolation.CLAMP),
-      overflow: 'hidden' as const,
-    };
-  });
+  // Status panel stays static inside the collapsing container: the parent
+  // height clip is the only collapse motion (nested animations flickered).
+  const collapseStatusStyle = useAnimatedStyle(() => ({
+    height: COMPACT_STATUS_H,
+    minHeight: COMPACT_STATUS_H,
+    overflow: 'hidden' as const,
+  }));
+  const collapseCoverStyle = useAnimatedStyle(() => ({opacity: 0}));
 
   const [phase, setPhase] = useState<Phase>(initialPhase);
-  const [confirmations, setConfirmations] = useState(0);
   const [confirmedBlockHeight, setConfirmedBlockHeight] = useState<
     number | null
   >(null);
@@ -528,7 +505,7 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
       return fromApi;
     }
     return isTestnetNetworkKey(network)
-      ? 'https://mempool.space/testnet'
+      ? 'https://mempool.space/testnet4'
       : 'https://mempool.space';
   }, [mempoolApiBase, network]);
 
@@ -670,7 +647,6 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
         setConfirmedBlockHeight(
           blockHeight != null && Number.isFinite(blockHeight) ? blockHeight : null,
         );
-        setConfirmations(isConfirmed ? 1 : 0);
 
         // Stay pending while the details sheet says pending — poll must not
         // paint "Confirmed in block …" against a Pending chip.
@@ -797,7 +773,6 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
     setPhase(phaseFromParentConfirmed(initialPhase === 'confirmed', !!txid));
     if (initialPhase !== 'confirmed') {
       setConfirmedBlockHeight(null);
-      setConfirmations(0);
     }
   }, [txid, initialPhase]);
 
@@ -981,7 +956,7 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
                 onPress={openTxOnExplorer}
                 disabled={!txid}
                 haptic={false}
-                android_ripple={{color: 'rgba(0,0,0,0.1)', borderless: true}}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <IsometricCube
                   stroke={txCubeStroke}
                   background={theme.colors.background}
@@ -1006,7 +981,7 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
               onPress={openTxOnExplorer}
               disabled={!txid}
               haptic={false}
-              android_ripple={{color: 'rgba(0,0,0,0.1)', borderless: true}}>
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <IsometricCube
                 stroke={successColor}
                 background={theme.colors.background}
@@ -1039,7 +1014,7 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
                 onPress={() => openBlockOnExplorer(tipHeight)}
                 disabled={tipHeight == null}
                 haptic={false}
-                android_ripple={{color: 'rgba(0,0,0,0.1)', borderless: true}}>
+                android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                 <IsometricCube
                   stroke={tipCubeStroke}
                   background={theme.colors.background}
@@ -1057,6 +1032,7 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
         )}
       </Reanimated.View>
 
+      {!compact && (
       <Reanimated.View
         style={[
           styles.statusPanel,
@@ -1105,7 +1081,19 @@ export const ActiveTxVisualizer: React.FC<Props> = ({
             </AppText>
           </AppPressable>
         )}
+        {DISSOLVE_FADE ? (
+          <Reanimated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFillObject,
+              {backgroundColor: theme.colors.cardBackground},
+              collapseCoverStyle,
+            ]}
+          />
+        ) : null}
       </Reanimated.View>
+      )}
+
     </Reanimated.View>
   );
 };

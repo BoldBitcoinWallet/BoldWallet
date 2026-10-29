@@ -51,19 +51,31 @@ type NativeKeepAlive = {
     camouflaged: boolean;
     title: string;
     status: string;
+    notices: boolean;
   }) => Promise<boolean>;
   update: (options: {percent: number; status: string}) => Promise<boolean>;
   stop: (options: {
     outcome: string;
     title: string;
     body: string;
+    notices: boolean;
   }) => Promise<boolean>;
   warnBackgrounded?: () => Promise<boolean>;
+  sweepExpiredNotices?: () => Promise<boolean>;
   isIgnoringBatteryOptimizations?: () => Promise<boolean>;
   requestIgnoreBatteryOptimizations?: () => Promise<boolean>;
 };
 
 const POST_NOTIFICATIONS = 'android.permission.POST_NOTIFICATIONS';
+
+/** Informational notices. Default on. Does not gate the Android progress notice. */
+export function ceremonyNoticesEnabled(): boolean {
+  const stored = appConfigRepository.get(CONFIG_KEYS.CEREMONY_NOTICES);
+  if (stored == null) {
+    return true;
+  }
+  return stored === 'true' || stored === '1';
+}
 export const MPC_BATTERY_EXEMPT_DONT_ASK_KEY =
   CONFIG_KEYS.MPC_BATTERY_EXEMPT_DONT_ASK;
 
@@ -205,6 +217,9 @@ function attachIosBackgroundWarning(): void {
     if (state !== 'background') {
       return;
     }
+    if (!ceremonyNoticesEnabled()) {
+      return;
+    }
     iosBgWarned = true;
     const native = nativeModule();
     native?.warnBackgrounded?.().catch(() => undefined);
@@ -291,6 +306,7 @@ export async function startMpcKeepAlive(
         camouflaged: branding.camouflaged,
         title,
         status,
+        notices: ceremonyNoticesEnabled(),
       });
     } catch {
       // Keep-alive is best-effort; ceremony still runs in-process.
@@ -344,20 +360,42 @@ export async function stopMpcKeepAlive(
     return;
   }
   try {
-    const copy = getMpcKeepAliveCompleteCopy(
-      activeKind,
-      outcome,
-      activeBranding.camouflaged,
-    );
+    const notices = ceremonyNoticesEnabled();
+    const copy = notices
+      ? getMpcKeepAliveCompleteCopy(
+          activeKind,
+          outcome,
+          activeBranding.camouflaged,
+        )
+      : null;
     await native.stop({
       outcome,
       title: copy?.title ?? '',
       body: copy?.body ?? '',
+      notices,
     });
   } catch {
     // ignore
   }
 }
+
+function sweepIosCeremonyNotices(): void {
+  if (Platform.OS !== 'ios') {
+    return;
+  }
+  nativeModule()
+    ?.sweepExpiredNotices?.()
+    .catch(() => undefined);
+}
+
+if (typeof AppState.addEventListener === 'function') {
+  AppState.addEventListener('change', state => {
+    if (state === 'active') {
+      sweepIosCeremonyNotices();
+    }
+  });
+}
+sweepIosCeremonyNotices();
 
 export async function withMpcKeepAlive<T>(
   opts: MpcKeepAliveStartOpts,

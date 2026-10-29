@@ -258,7 +258,7 @@ describe('resolveBrantaQr gating', () => {
 
     const result = await resolveBrantaQr(
       'bitcoin:tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s?branta_id=1&branta_secret=2',
-      'testnet3',
+      'testnet4',
     );
     expect(result).toEqual({
       address: 'tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s',
@@ -290,7 +290,7 @@ describe('resolveBrantaQr gating', () => {
 
     const result = await resolveBrantaQr(
       'bitcoin:tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s?branta_id=1&branta_secret=2',
-      'testnet3',
+      'testnet4',
     );
     expect(result?.platform).toBe('Test Shop');
     expect(result?.address).toBe(

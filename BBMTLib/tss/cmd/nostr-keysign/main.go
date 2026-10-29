@@ -22,7 +22,6 @@ func main() {
 		partyNsec       = flag.String("nsec", "", "Local party's Nostr secret key (nsec...) [required]")
 		partiesNpubsCSV = flag.String("peers", "", "Comma-separated list of all party npubs (including self) [required]")
 		sessionID       = flag.String("session", "", "Session ID [required]")
-		sessionKey      = flag.String("session-key", "", "Session encryption key in hex [required]")
 		keyshareFile    = flag.String("keyshare", "", "Path to keyshare JSON file [required]")
 		derivePath      = flag.String("path", "m/44'/0'/0'/0/0", "HD derivation path (default: m/44'/0'/0'/0/0)")
 		message         = flag.String("message", "", "Message to sign [required]")
@@ -30,7 +29,7 @@ func main() {
 	)
 	flag.Parse()
 
-	if *relaysCSV == "" || *partyNsec == "" || *partiesNpubsCSV == "" || *sessionID == "" || *sessionKey == "" || *keyshareFile == "" || *message == "" {
+	if *relaysCSV == "" || *partyNsec == "" || *partiesNpubsCSV == "" || *sessionID == "" || *keyshareFile == "" || *message == "" {
 		fmt.Fprintf(os.Stderr, "Error: missing required arguments\n")
 		flag.Usage()
 		os.Exit(1)
@@ -84,13 +83,12 @@ func main() {
 
 	// Create config
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     *sessionID,
-		SessionKeyHex: *sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     *partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    time.Duration(*timeout) * time.Second,
+		Relays:     relays,
+		SessionID:  *sessionID,
+		LocalNpub:  localNpub,
+		LocalNsec:  *partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: time.Duration(*timeout) * time.Second,
 	}
 
 	if err := cfg.Validate(); err != nil {

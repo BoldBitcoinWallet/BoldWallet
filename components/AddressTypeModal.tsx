@@ -1,5 +1,6 @@
 import React from 'react';
-import {Modal, View, Text, Image} from 'react-native';
+import {View, Text, Image} from 'react-native';
+import AppModal from './AppModal';
 import AppPressable from './AppPressable';
 import GlassModalOverlay from './GlassModalOverlay';
 import {shorten} from '../utils';
@@ -29,7 +30,7 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
   const styles = createStyles(theme);
 
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent={true}
       animationType="fade"
@@ -142,7 +143,7 @@ const AddressTypeModal: React.FC<AddressTypeModalProps> = ({
           </AppPressable>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 

@@ -4,9 +4,11 @@
 
 const mockStore: Record<string, string> = {};
 const mockAbortAll = jest.fn();
-const mockPostTx = jest.fn(async () => 'txid');
-const mockFetchData = jest.fn(async () => 'ok');
-const mockSha256 = jest.fn(async () => 'hash');
+const mockPostTx = jest.fn(async (_txHex: string) => 'txid');
+const mockFetchData = jest.fn(
+  async (_url: string, _headers: string, _body: string) => 'ok',
+);
+const mockSha256 = jest.fn(async (_input: string) => 'hash');
 
 jest.mock('../services/repositories/AppConfigRepository', () => ({
   __esModule: true,

@@ -15,11 +15,13 @@
  *      is made.
  *
  *   3. FAILOVER — When enabled provider bases are registered (setPublicBases from
- *      the checkable provider list), mainnet requests are routed through those
- *      hosts only (reliability order). A request URL pointing at a disabled or
- *      unknown host is rewritten onto the enabled pool — disabled providers are
- *      never contacted. We failover on 5xx/429 always; when multiple URLs are in
- *      use we also failover on 4xx. Testnet and an empty pool leave the URL as-is.
+ *      the checkable provider list), requests are routed through the enabled
+ *      hosts of the same chain (reliability order). A mainnet URL is never
+ *      rewritten onto a testnet4 root, and a testnet4 URL is never rewritten
+ *      onto a mainnet host. A request pointing at a disabled or unknown host
+ *      on that chain is rewritten onto the enabled pool. We failover on
+ *      5xx/429 always; when multiple URLs are in use we also failover on 4xx.
+ *      An empty matching pool leaves the URL as-is.
  *
  * TTL defaults:
  *   - /address/…           15 s  (balance, UTXOs, transactions — default)
@@ -42,6 +44,7 @@ import {
   getTransactionDbTtlMs,
 } from './HdOptionsConfig';
 import {rankedHosts, recordMempoolAttempt} from './mempoolHealth';
+import {appendMempoolRequest} from './mempoolRequestLog';
 import {isWalletOnline} from './walletOnlineStore';
 import {
   MULTI_PROVIDER_SYNC_CONCURRENCY,
@@ -113,6 +116,18 @@ function extractHost(url: string): string {
   return m ? m[1] : '';
 }
 
+/**
+ * Host root used for health and failover ranking.
+ * Mainnet: `https://host`. Testnet4: `https://host/testnet4`.
+ * Matches setPublicBases, which strips a trailing `/api` and keeps the chain path.
+ */
+function attemptHostKey(url: string): string {
+  return (url || '')
+    .replace(/\/+$/, '')
+    .replace(/\/api\/.*$/i, '')
+    .replace(/\/api$/i, '');
+}
+
 function isAbortOrTimeout(err: unknown): boolean {
   if (!err || typeof err !== 'object') {
     return false;
@@ -134,7 +149,7 @@ function observeAttempt(
     status: outcome.status,
     durationMs: Date.now() - startedAt,
     at: Date.now(),
-    host: extractHost(tryUrl) || undefined,
+    host: attemptHostKey(tryUrl) || undefined,
   });
 }
 
@@ -149,6 +164,8 @@ export interface MempoolResponse<T = unknown> {
   status: number;
   /** Parsed JSON body. Only meaningful when ok === true. */
   data: T;
+  /** Full URL that produced `data`, including a failover host. */
+  url?: string;
   /** When status === 429, server may send Retry-After; we parse it to seconds (1–120). */
   retryAfterSeconds?: number;
 }
@@ -156,6 +173,8 @@ export interface MempoolResponse<T = unknown> {
 interface CacheEntry {
   data: unknown;
   expiresAt: number; // epoch ms
+  /** URL of the response that filled this entry. */
+  url?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -295,27 +314,45 @@ class MempoolClient {
   }
 
   /**
-   * Mainnet failover candidates: **only** registered enabled hosts.
-   * If the request URL points at a disabled / unknown host, rewrite onto the
-   * enabled pool so disabled providers are never contacted.
-   * Testnet and an empty pool leave the original URL unchanged.
+   * Mainnet failover candidates: **only** registered enabled hosts on the
+   * same chain as the request. Testnet4 requests fail over across enabled
+   * `/testnet4` roots and are never rewritten onto a mainnet host. A mainnet
+   * request is never rewritten onto a testnet4 root. An empty matching pool
+   * leaves the original URL unchanged.
    */
   private _getUrlsToTry(url: string): string[] | null {
     if (this._enabledHosts.length === 0) return null;
-    if (url.includes('/testnet/')) return null;
+    const requestIsTestnet = /\/testnet4(\/|$)/i.test(url);
+    const pool = this._enabledHosts.filter(
+      host => /\/testnet4(\/|$)/i.test(host) === requestIsTestnet,
+    );
+    if (pool.length === 0) return null;
 
-    const host = extractHost(url);
-    const path = host ? url.slice(host.length) : url.startsWith('/') ? url : `/${url}`;
+    const matched = [...pool]
+      .sort((a, b) => b.length - a.length)
+      .find(host => url.startsWith(host));
+    let path: string;
+    if (matched) {
+      path = url.slice(matched.length);
+    } else if (!requestIsTestnet) {
+      const host = extractHost(url);
+      path = host ? url.slice(host.length) : url.startsWith('/') ? url : `/${url}`;
+    } else {
+      const marker = url.toLowerCase().indexOf('/testnet4');
+      path = marker >= 0 ? url.slice(marker + '/testnet4'.length) : '';
+    }
+    if (!path.startsWith('/')) {
+      path = `/${path}`;
+    }
 
-    if (this._enabledHosts.length === 1) {
-      const only = this._enabledHosts[0];
-      // Already targeting the sole enabled host — no rewrite needed.
-      if (host === only) return null;
+    if (pool.length === 1) {
+      const only = pool[0];
+      if (url.startsWith(only)) return null;
       return [only + path];
     }
 
-    const ordered = rankedHosts(this._enabledHosts);
-    return ordered.map(h => h + path);
+    const ordered = rankedHosts(pool);
+    return ordered.map(host => host + path);
   }
 
   // -------------------------------------------------------------------------
@@ -328,13 +365,17 @@ class MempoolClient {
    * @param url     Full URL including query parameters.
    * @param init    Standard RequestInit; pass `signal` for abort support.
    *                Optionally pass `ttl` (ms) to override the default TTL.
+   *                `fresh` skips the memory cache and any in-flight reuse so
+   *                this call performs its own HTTP request.
    * @returns       MempoolResponse<T> — never throws for HTTP-level errors;
    *                rejects only on network-level failures (offline, abort).
    */
   async get<T = unknown>(
     url: string,
-    init?: RequestInit & {ttl?: number; timeoutMs?: number},
+    init?: RequestInit & {ttl?: number; timeoutMs?: number; fresh?: boolean},
   ): Promise<MempoolResponse<T>> {
+    const fresh = init?.fresh === true;
+    const method = (init?.method || 'GET').toUpperCase();
     const bodyStr =
       init?.body != null ? String(init.body) : undefined;
     const key = buildKey(url, bodyStr);
@@ -342,10 +383,26 @@ class MempoolClient {
 
     // 1. Serve from cache if still fresh -----------------------------------
     // (Log "cache hit" = no fetch. "fetched and cached" below = we did a fetch then stored.)
-    const cached = this._cache.get(key);
-    if (cached && cached.expiresAt > now) {
-      dbg('MempoolClient: cache hit', url.slice(-80));
-      return {ok: true, status: 200, data: cached.data as T};
+    // A fresh call never reads this. It still writes the new body below.
+    if (!fresh) {
+      const cached = this._cache.get(key);
+      if (cached && cached.expiresAt > now) {
+        dbg('MempoolClient: cache hit', url.slice(-80));
+        const hitUrl = cached.url ?? url;
+        appendMempoolRequest({
+          url: hitUrl,
+          method,
+          status: 200,
+          source: 'cache',
+          body: cached.data,
+        });
+        return {
+          ok: true,
+          status: 200,
+          data: cached.data as T,
+          url: hitUrl,
+        };
+      }
     }
 
     // Sandbox: never fetch or failover. Fresh cache (above) is still served.
@@ -356,18 +413,41 @@ class MempoolClient {
     }
 
     // 2. Attach to an in-flight request if one exists ----------------------
-    const existing = this._inflight.get(key);
-    if (existing) {
-      dbg('MempoolClient: dedup in-flight', url.slice(-80));
-      return existing as Promise<MempoolResponse<T>>;
+    // A fresh call starts its own request and does not join or replace one.
+    if (!fresh) {
+      const existing = this._inflight.get(key);
+      if (existing) {
+        dbg('MempoolClient: dedup in-flight', url.slice(-80));
+        return (existing as Promise<MempoolResponse<T>>).then(res => {
+          appendMempoolRequest({
+            url: res.url ?? url,
+            method,
+            status: res.status,
+            source: 'joined',
+            body: res.data,
+          });
+          return res;
+        });
+      }
     }
 
     // 3. Issue a new request (with failover among enabled hosts) ----------
-    const ttl = init?.ttl ?? ttlForUrl(url);
-
     // Strip custom fields so they are not forwarded to fetch().
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const {ttl: _ttl, timeoutMs: timeoutOverride, signal: callerSignal, ...restInit} = (init ?? {}) as RequestInit & {ttl?: number; timeoutMs?: number};
+    const {
+      ttl: omittedTtl,
+      timeoutMs: timeoutOverride,
+      fresh: omittedFresh,
+      signal: callerSignal,
+      ...restInit
+    } = (init ?? {}) as RequestInit & {
+      ttl?: number;
+      timeoutMs?: number;
+      fresh?: boolean;
+    };
+    const ttl = omittedTtl ?? ttlForUrl(url);
+    if (omittedFresh === true) {
+      restInit.cache = 'no-store';
+    }
     const fetchTimeoutMs = timeoutOverride ?? getFetchTimeoutMs();
 
     const urls = this._getUrlsToTry(url) ?? [url];
@@ -400,20 +480,40 @@ class MempoolClient {
 
             if (res.ok) {
               const data = (await res.json()) as unknown;
-              this._cache.set(key, {data, expiresAt: Date.now() + ttl});
+              this._cache.set(key, {
+                data,
+                expiresAt: Date.now() + ttl,
+                url: tryUrl,
+              });
               observeAttempt(startedAt, {ok: true, status: res.status}, tryUrl);
+              appendMempoolRequest({
+                url: tryUrl,
+                method,
+                status: res.status,
+                source: 'live',
+                durationMs: Date.now() - startedAt,
+                body: data,
+              });
               dbg(
                 'MempoolClient: fetched and cached',
                 tryUrl.slice(-80),
                 `(ttl ${ttl / 1000}s)`,
               );
-              return {ok: true, status: res.status, data};
+              return {ok: true, status: res.status, data, url: tryUrl};
             }
 
             // Non-2xx: do NOT cache — transient errors must not persist.
             dbg('MempoolClient: non-ok response', res.status, tryUrl.slice(-80));
             observeAttempt(startedAt, {ok: false, status: res.status}, tryUrl);
-            await res.text().catch(() => {}); // consume body before possible failover
+            const errBody = await res.text().catch(() => '');
+            appendMempoolRequest({
+              url: tryUrl,
+              method,
+              status: res.status,
+              source: 'live',
+              durationMs: Date.now() - startedAt,
+              body: errBody || null,
+            });
             const out: MempoolResponse<unknown> = {
               ok: false,
               status: res.status,
@@ -444,15 +544,28 @@ class MempoolClient {
           } catch (err) {
             clearTimeout(timeoutId);
             lastError = err;
+            const timedOut = isAbortOrTimeout(err);
             observeAttempt(
               startedAt,
               {
                 ok: false,
-                timeout: isAbortOrTimeout(err),
+                timeout: timedOut,
                 status: 0,
               },
               tryUrl,
             );
+            appendMempoolRequest({
+              url: tryUrl,
+              method,
+              status: 0,
+              source: timedOut ? 'timeout' : 'live',
+              durationMs: Date.now() - startedAt,
+              body: timedOut
+                ? 'timeout'
+                : err instanceof Error
+                  ? err.message
+                  : String(err),
+            });
             dbg('MempoolClient: fetch error', tryUrl.slice(-80), err);
 
             // Explicit caller or session (abortAll) abort — stop immediately.
@@ -475,11 +588,16 @@ class MempoolClient {
         throw lastError;
       } finally {
         // Always remove the in-flight entry so future callers get a fresh attempt.
-        this._inflight.delete(key);
+        // A forced fetch never occupied this slot.
+        if (!fresh) {
+          this._inflight.delete(key);
+        }
       }
     })();
 
-    this._inflight.set(key, promise);
+    if (!fresh) {
+      this._inflight.set(key, promise);
+    }
     return promise as Promise<MempoolResponse<T>>;
   }
 
@@ -507,6 +625,18 @@ class MempoolClient {
     if (count > 0) {
       dbg('MempoolClient: invalidated', count, 'entries matching', prefix);
     }
+  }
+
+  /**
+   * Removes only the exact cache (and in-flight) entry for `url`.
+   * Use for `/address/{addr}` balance so `/address/{addr}/txs` stays cached.
+   */
+  invalidateExact(url: string): void {
+    const key = stripHost(url);
+    if (this._cache.delete(key)) {
+      dbg('MempoolClient: invalidated exact', key.slice(-80));
+    }
+    this._inflight.delete(key);
   }
 
   /**

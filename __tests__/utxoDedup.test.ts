@@ -5,7 +5,7 @@ const utxo = (txid: string, vout: number, address: string): StoredUtxo => ({
   txid,
   vout,
   address,
-  network: 'testnet3',
+  network: 'testnet4',
   valueSats: 114_932,
   scriptPubkey: null,
   derivationPath: "m/84'/1'/0'/0/0",

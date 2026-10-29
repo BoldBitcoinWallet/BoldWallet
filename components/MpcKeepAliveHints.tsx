@@ -27,6 +27,10 @@ export function MpcKeepAliveHints(): React.ReactElement | null {
   if (!ui.active) {
     return null;
   }
+  const accent =
+    theme.colors.background === '#ffffff'
+      ? theme.colors.primary
+      : theme.colors.bitcoinOrange;
   const battery = getMpcKeepAliveBatteryCopy();
   const showNotifOff = !ui.notificationsGranted;
   const showBattery = ui.showBatteryPrompt;
@@ -64,18 +68,15 @@ export function MpcKeepAliveHints(): React.ReactElement | null {
           <View style={styles.row}>
             <AppPressable
               onPress={() => {
-                void requestMpcBatteryExemption();
+                requestMpcBatteryExemption();
               }}
-              style={[
-                styles.btn,
-                {backgroundColor: theme.colors.primary + '22'},
-              ]}>
+              style={[styles.btn, {backgroundColor: accent + '22'}]}>
               <Text
                 style={[
                   styles.btnText,
                   {
-                    color: theme.colors.primary,
-                    fontFamily: theme.fontFamilies?.semiBold,
+                    color: accent,
+                    fontFamily: theme.fontFamilies?.bold,
                   },
                 ]}>
                 {battery.allow}
@@ -83,7 +84,7 @@ export function MpcKeepAliveHints(): React.ReactElement | null {
             </AppPressable>
             <AppPressable
               onPress={() => {
-                void dismissMpcBatteryPrompt();
+                dismissMpcBatteryPrompt();
               }}
               style={styles.btn}>
               <Text

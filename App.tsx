@@ -7,7 +7,7 @@ import type {NativeStackHeaderProps} from '@react-navigation/native-stack';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {enableScreens} from 'react-native-screens';
-import {Image} from 'react-native';
+import {Image, useWindowDimensions} from 'react-native';
 import ShowcaseScreen from './screens/ShowcaseScreen';
 import WalletHome from './screens/WalletHome';
 import MempoolPlaygroundScreen from './screens/MempoolPlaygroundScreen';
@@ -16,8 +16,6 @@ import AddressesScreen from './screens/AddressesScreen';
 import PSBTScreen from './screens/PSBTScreen';
 import DeviceScreen from './screens/DeviceScreen';
 import LoadingScreen from './screens/LoadingScreen';
-import Zeroconf, {ImplType} from 'react-native-zeroconf';
-import DeviceInfo from 'react-native-device-info';
 import {ThemeProvider, useTheme} from './theme';
 import {WalletProvider} from './context/WalletContext';
 import {UserProvider, useUser} from './context/UserContext';
@@ -26,13 +24,24 @@ import {
   useSafeAreaInsets,
 } from 'react-native-safe-area-context';
 import {initializeHaptics} from './utils';
+import {TabEnterView} from './services/tabFade';
 import database from './services/Database';
 import {runMigrationIfNeeded} from './services/LocalCacheMigration';
 import {migrateEncryptedPrefsIfNeeded} from './services/encryptedPrefsMigration';
 import {runBrantaVerifiedBackfillIfNeeded} from './services/BrantaVerifiedBackfill';
+import {
+  maybePromptPostMigrationBackup,
+  runEnvelopeMigrationIfNeeded,
+} from './services/keyshareEnvelopeMigration';
+import {
+  repairGg18QuotedBigIntsInStorage,
+  repairGg18QuotedBigIntsViaNative,
+} from './services/gg18KeyshareBigIntRepair';
 import ErrorBoundary from './components/ErrorBoundary';
 import {
+  ActivityIndicator,
   Alert,
+  AppState,
   EmitterSubscription,
   NativeEventEmitter,
   Platform,
@@ -45,13 +54,7 @@ import {
 import AppPressable from './components/AppPressable';
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
-import {
-  dbg,
-  pinRemoteIP,
-  getPinnedRemoteIPs,
-  resolveInitialWalletRoute,
-} from './utils';
-import {ensureLanDiscoveryPermission} from './services/lanDiscoveryPermissions';
+import {dbg, resolveInitialWalletRoute} from './utils';
 import MobilesPairing from './screens/MobilesPairing';
 import MobileNostrPairing from './screens/MobileNostrPairing';
 import UserPreferenceScreen from './screens/UserPreferenceScreen';
@@ -61,9 +64,18 @@ import {createToastConfig} from './utils/toastConfig';
 import {promptWalletBiometricAuth} from './services/walletBiometricAuth';
 import IncomingShareHandler from './components/IncomingShareHandler';
 import IncomingUrlHandler from './components/IncomingUrlHandler';
+import AppPromptHost from './components/AppPromptHost';
+import WalletOfflineSandboxHost from './components/WalletOfflineSandboxHost';
 import {installWalletOnlineNetworkGuard} from './services/walletOnlineStore';
+import {installNativeMempoolRequestTrace} from './services/mempoolRequestLog';
 import {useNavMenuStyle} from './services/navMenuStore';
+import {isMpcKeepAliveActive} from './services/mpcKeepAlive';
+import {
+  getWalletAutoLock,
+  shouldAutoLockOnResume,
+} from './services/walletAutoLock';
 import FloatingTabBar, {
+  DOCKED_TAB_BAR_CONTENT_HEIGHT,
   FLOATING_TAB_BAR_CONTENT_HEIGHT,
 } from './components/FloatingTabBar';
 import {
@@ -73,6 +85,7 @@ import {
 // Initialize react-native-screens for Fabric compatibility
 enableScreens(true);
 installWalletOnlineNetworkGuard();
+installNativeMempoolRequestTrace();
 const {BBMTLibNativeModule} = NativeModules;
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -126,8 +139,6 @@ export const setDebugLoggingEnabled = (enabled: boolean) => {
 export const isDebugLoggingEnabled = () => {
   return debugLoggingEnabledRef.current;
 };
-const zeroconf = new Zeroconf();
-const zeroOut = new Zeroconf();
 /** Tab + stack headers both pass props here; CustomHeader is typed for native stack only. */
 type AppNavigationHeaderProps =
   | NativeStackHeaderProps
@@ -328,6 +339,68 @@ const TabBarButton = (props: TabBarButtonProps) => {
   );
 };
 
+const LOCK_BUTTON_SIZE = 48;
+
+function LockWalletButton({bottom}: {bottom: number}) {
+  const {theme} = useTheme();
+  const insets = useSafeAreaInsets();
+  const isLight = theme.colors.background === '#ffffff';
+  const position = {
+    position: 'absolute' as const,
+    right: 16 + insets.right,
+    bottom,
+    zIndex: 1000,
+  };
+  const shape = {
+    width: LOCK_BUTTON_SIZE,
+    height: LOCK_BUTTON_SIZE,
+    borderRadius: LOCK_BUTTON_SIZE / 2,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor: isLight ? theme.colors.primary : theme.colors.bitcoinOrange,
+    borderWidth: 1,
+    borderColor: isLight ? theme.colors.blackOverlay10 : theme.colors.whiteOverlay12,
+  };
+  // Android: elevation on the pressable itself (same view as bg + radius).
+  // Nested wrappers / overflow:hidden / glow rings cast square rims.
+  const style =
+    Platform.OS === 'android'
+      ? {
+          ...position,
+          ...shape,
+          elevation: 10,
+          shadowColor: theme.colors.shadowColor || '#000',
+        }
+      : {
+          ...position,
+          ...shape,
+          shadowColor: theme.colors.shadowColor || '#000',
+          shadowOffset: {width: 0, height: 8},
+          shadowOpacity: 0.32,
+          shadowRadius: 16,
+          elevation: 12,
+        };
+  const iconStyle = {
+    width: 20,
+    height: 20,
+    tintColor: theme.colors.textOnPrimary,
+    resizeMode: 'contain' as const,
+  };
+  return (
+    <AppPressable
+      style={style}
+      onPress={() => {
+        DeviceEventEmitter.emit('app:reload');
+      }}
+      accessible={true}
+      accessibilityRole="button"
+      accessibilityLabel="Lock wallet"
+      accessibilityHint="Locks the wallet">
+      <Image source={require('./assets/locker-icon.png')} style={iconStyle} />
+    </AppPressable>
+  );
+}
+
 const MainTabs = () => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
@@ -345,61 +418,10 @@ const MainTabs = () => {
     backgroundColor: 'transparent',
     pointerEvents: 'box-none' as const,
   };
-  // Docked: sit above the default tab bar. Floating: sit above the pill + gap.
+  // Docked: sit above the labeled bar. Floating: sit just above the icon pill.
   const lockFabBottom = isFloatingMenu
-    ? FLOATING_TAB_BAR_CONTENT_HEIGHT +
-      Math.max(insets.bottom, 0) +
-      8 +
-      8 +
-      12
-    : 80 + insets.bottom;
-  const lockFabPosition = {
-    position: 'absolute' as const,
-    right: 30 + insets.right,
-    bottom: lockFabBottom,
-    zIndex: 1000,
-  };
-  const lockFabSize = 48; // 15% smaller than 56
-  const lockFabShape = {
-    width: lockFabSize,
-    height: lockFabSize,
-    borderRadius: lockFabSize / 2,
-    alignItems: 'center' as const,
-    justifyContent: 'center' as const,
-    backgroundColor: isDarkMode
-      ? theme.colors.cardBackground
-      : theme.colors.primaryOverlay95,
-    borderWidth: 1,
-    borderColor: isDarkMode
-      ? theme.colors.whiteOverlay12
-      : theme.colors.blackOverlay10,
-  };
-  // Android: elevation on the pressable itself (same view as bg + radius).
-  // Nested wrappers / overflow:hidden / glow rings cast square rims.
-  const lockFabStyle =
-    Platform.OS === 'android'
-      ? {
-          ...lockFabPosition,
-          ...lockFabShape,
-          elevation: 10,
-          shadowColor: theme.colors.shadowColor || '#000',
-        }
-      : {
-          ...lockFabPosition,
-          ...lockFabShape,
-          shadowColor: theme.colors.shadowColor || '#000',
-          shadowOffset: {width: 0, height: 8},
-          shadowOpacity: 0.32,
-          shadowRadius: 16,
-          elevation: 12,
-        };
-  const lockFabIconStyle = {
-    width: 20,
-    height: 20,
-    tintColor: theme.colors.textOnPrimary,
-    opacity: 0.9,
-    resizeMode: 'contain' as const,
-  };
+    ? FLOATING_TAB_BAR_CONTENT_HEIGHT + Math.max(insets.bottom, 0) + 28
+    : DOCKED_TAB_BAR_CONTENT_HEIGHT + insets.bottom + 16;
   const renderTabBarButton = useCallback(
     (props: Record<string, unknown>) => (
       <TabBarButton {...props} isDarkMode={isDarkMode} />
@@ -422,11 +444,22 @@ const MainTabs = () => {
   } = useUser();
   const showPlayTab = activeNetwork === 'mainnet' && showMempoolPlayground;
   const initialTab = showWalletTab ? 'Wallet' : showPsbtTab ? 'PSBT' : 'Device';
+  const renderTabScreenLayout = useCallback(
+    ({children}: {children: React.ReactNode}) => (
+      <TabEnterView>{children}</TabEnterView>
+    ),
+    [],
+  );
   return (
-    <View style={tabBarStyles.mainTabsContainer}>
+    <View
+      style={[
+        tabBarStyles.mainTabsContainer,
+        {backgroundColor: theme.colors.background},
+      ]}>
       <Tab.Navigator
         initialRouteName={initialTab}
-        tabBar={isFloatingMenu ? renderFloatingTabBar : undefined}
+        tabBar={renderFloatingTabBar}
+        screenLayout={renderTabScreenLayout}
         screenOptions={{
           headerShown: true,
           headerLeft: () => null,
@@ -443,11 +476,10 @@ const MainTabs = () => {
                 height: 0,
               }
             : {
-                backgroundColor: theme.colors.background,
-                borderTopWidth: 1,
-                borderTopColor: isDarkMode
-                  ? theme.colors.border + 'CC'
-                  : theme.colors.border + '60',
+                backgroundColor: 'transparent',
+                borderTopWidth: 0,
+                elevation: 0,
+                shadowOpacity: 0,
               },
           tabBarActiveTintColor: isDarkMode
             ? theme.colors.text
@@ -459,6 +491,10 @@ const MainTabs = () => {
           tabBarAllowFontScaling: false,
           tabBarButton: renderTabBarButton,
           tabBarLabel: TabBarLabel,
+          // Keep the navigator switch instant so only one native screen is
+          // ever mounted. TabEnterView animates the newly shown screen.
+          animation: 'none',
+          sceneStyle: {backgroundColor: theme.colors.background},
         }}>
         <Tab.Screen
           name="Device"
@@ -534,21 +570,8 @@ const MainTabs = () => {
           }}
         />
       </Tab.Navigator>
-      <View style={lockFabOverlayStyle}>
-        <AppPressable
-          style={lockFabStyle}
-          onPress={() => {
-            DeviceEventEmitter.emit('app:reload');
-          }}
-          accessible={true}
-          accessibilityRole="button"
-          accessibilityLabel="Lock wallet"
-          accessibilityHint="Double tap to lock the wallet">
-          <Image
-            source={require('./assets/locker-icon.png')}
-            style={lockFabIconStyle}
-          />
-        </AppPressable>
+      <View style={lockFabOverlayStyle} pointerEvents="box-none">
+        <LockWalletButton bottom={lockFabBottom} />
       </View>
     </View>
   );
@@ -557,6 +580,10 @@ const MainTabs = () => {
 const App = () => {
   const [initialRoute, setInitialRoute] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  /** F15b-1: blocking envelope-migration status at bootstrap. */
+  const [migrationSecuring, setMigrationSecuring] = useState(false);
+  /** F15b-1: Q2 one-time backup prompt, shown once wallet UI is up. */
+  const [backupPromptPending, setBackupPromptPending] = useState(false);
   /** Remount wallet UI after lock (keeps UserProvider — avoids keychain reads while locked). */
   const [contentResetKey, setContentResetKey] = useState(0);
   /** Full remount including UserProvider (wallet delete / import only). */
@@ -594,6 +621,38 @@ const App = () => {
     );
     return () => sub.remove();
   }, []);
+  // Auto lock: measure time away on background → lock on resume (or instantly).
+  useEffect(() => {
+    if (!isAuthenticated) {
+      return;
+    }
+    let leftAt: number | null = null;
+    const sub = AppState.addEventListener('change', next => {
+      if (next === 'background') {
+        leftAt = Date.now();
+        if (isMpcKeepAliveActive()) {
+          return;
+        }
+        if (getWalletAutoLock() === 'instant') {
+          leftAt = null;
+          DeviceEventEmitter.emit('app:reload');
+        }
+        return;
+      }
+      if (next !== 'active' || leftAt == null) {
+        return;
+      }
+      const awayMs = Date.now() - leftAt;
+      leftAt = null;
+      if (isMpcKeepAliveActive()) {
+        return;
+      }
+      if (shouldAutoLockOnResume(getWalletAutoLock(), awayMs)) {
+        DeviceEventEmitter.emit('app:reload');
+      }
+    });
+    return () => sub.remove();
+  }, [isAuthenticated]);
   useEffect(() => {
     initializeHaptics();
     const checkWallet = async () => {
@@ -608,110 +667,41 @@ const App = () => {
       } catch (dbErr) {
         dbg('App: Database init error (non-fatal):', dbErr);
       }
+      // Detect+repair GG18 *big.Int JSON corruption (quoted strings
+      // fixable; scientific_float logged as unrecoverable).
+      try {
+        await repairGg18QuotedBigIntsInStorage();
+      } catch (healErr) {
+        dbg('App: gg18BigIntRepair plaintext skipped', healErr);
+      }
+      // F15b-1 (§1.5 step 7): idempotent envelope migration with a
+      // blocking status. Non-fatal — reads self-heal inline.
+      let migrated = false;
+      setMigrationSecuring(true);
+      try {
+        migrated = (await runEnvelopeMigrationIfNeeded()).migrated;
+      } finally {
+        setMigrationSecuring(false);
+      }
+      // Native detect+heal covers enveloped blobs (JS cannot inspect).
+      try {
+        await repairGg18QuotedBigIntsViaNative();
+      } catch (nativeHealErr) {
+        dbg('App: gg18BigIntRepair native skipped', nativeHealErr);
+      }
       try {
         const route = await resolveInitialWalletRoute();
         dbg('Setting initial route to:', route);
         setInitialRoute(route);
+        if (migrated) {
+          setBackupPromptPending(true);
+        }
       } catch (error) {
         dbg('Error in initializeApp:', error);
         setInitialRoute('Welcome');
       }
     };
     checkWallet();
-  }, []);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        dbg('publishing service...');
-        const deviceID = DeviceInfo.getUniqueIdSync();
-        if (!deviceID || deviceID.trim() === '') {
-          dbg('Warning: deviceID is empty, skipping service publication');
-          return;
-        }
-        await ensureLanDiscoveryPermission();
-        if (cancelled) {
-          return;
-        }
-        dbg('deviceID:', deviceID);
-        zeroOut.publishService(
-          'http', // Fixed with underscore
-          'tcp',
-          'local.',
-          'bbw_scan',
-          55056,
-          {txt: 'bbw_scan', id: deviceID},
-          ImplType.NSD,
-        );
-        dbg('service bbw_scan published');
-      } catch (e: any) {
-        dbg('error publishing service', e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      try {
-        zeroOut.unpublishService('bbw_scan', ImplType.NSD);
-        zeroOut.stop();
-        dbg('service publish stopped');
-      } catch (e: any) {
-        dbg('error stopping service', e);
-      }
-    };
-  }, []);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        dbg('scanning for mDNS Services');
-        const deviceID = DeviceInfo.getUniqueIdSync();
-        // Validate deviceID before scanning
-        if (!deviceID || deviceID.trim() === '') {
-          dbg('Warning: deviceID is empty, skipping mDNS scan');
-          return;
-        }
-        await ensureLanDiscoveryPermission();
-        if (cancelled) {
-          return;
-        }
-        zeroconf.scan('http', 'tcp', 'local.');
-        zeroconf.on('resolved', service => {
-          dbg('Service Found:', service.fullName);
-          if (
-            service.txt &&
-            service.txt.txt === 'bbw_scan' &&
-            service.txt.id &&
-            service.txt.id !== deviceID
-          ) {
-            let addresses = service.addresses || [];
-            for (const address of addresses) {
-              if (address && address.split('.').length === 4) {
-                pinRemoteIP(address);
-              }
-            }
-            const pinned = getPinnedRemoteIPs();
-            if (pinned.length) {
-              dbg('Pinned remote IPv4 addresses:', pinned.join(', '));
-            }
-          }
-        });
-        zeroconf.on('error', err => {
-          dbg('Zeroconf error:', String(err));
-        });
-      } catch (e: any) {
-        dbg('error scanning mDNS', e);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      try {
-        dbg('service scanning stopped');
-        zeroconf.removeAllListeners();
-        zeroconf.stop();
-      } catch (e: any) {
-        dbg('error stopping mDNS scan', e);
-      }
-    };
   }, []);
   useEffect(() => {
     let subscription: EmitterSubscription | undefined;
@@ -836,10 +826,20 @@ const App = () => {
                 key={`content-${contentResetKey}`}
                 initialRoute={initialRoute}
                 isAuthenticated={isAuthenticated}
+                backupPromptPending={backupPromptPending}
+                onBackupPromptShown={() => setBackupPromptPending(false)}
               />
             )}
           </UserProvider>
         </ThemeProvider>
+        {migrationSecuring && (
+          <View style={styles.migrationOverlay} pointerEvents="auto">
+            <ActivityIndicator size="large" color="#ffffff" />
+            <Text style={styles.migrationOverlayText}>
+              Securing your access…
+            </Text>
+          </View>
+        )}
       </SafeAreaProvider>
     </ErrorBoundary>
   );
@@ -847,12 +847,33 @@ const App = () => {
 const AppContent = ({
   initialRoute,
   isAuthenticated,
+  backupPromptPending,
+  onBackupPromptShown,
 }: {
   initialRoute: string | null;
   isAuthenticated: boolean;
+  backupPromptPending: boolean;
+  onBackupPromptShown: () => void;
 }) => {
   const {theme} = useTheme();
+  const {height: windowHeight} = useWindowDimensions();
+  const toastTopOffset = Math.round(windowHeight * 0.2);
   const navigationRef = useRef<NavigationContainerRef<any>>(null);
+  // F15b-1 (Q2): one-time backup prompt after a migration ran. The
+  // alert fires once wallet UI is up; navigation happens on press,
+  // so no container-readiness race.
+  useEffect(() => {
+    if (!backupPromptPending) {
+      return;
+    }
+    onBackupPromptShown();
+    maybePromptPostMigrationBackup(true, () => {
+      navigationRef.current?.navigate('MainTabs', {
+        screen: 'Settings',
+        params: {expandSection: 'backup'},
+      });
+    });
+  }, [backupPromptPending, onBackupPromptShown]);
   const dynamicStyles = {
     navigationContainer: {
       ...styles.navigationContainer,
@@ -918,8 +939,10 @@ const AppContent = ({
             isAuthenticated={isAuthenticated}
             navigationRef={navigationRef}
           />
+          <AppPromptHost />
+          <WalletOfflineSandboxHost />
           <View style={styles.toastWrapper}>
-            <Toast config={createToastConfig(theme)} />
+            <Toast config={createToastConfig(theme)} topOffset={toastTopOffset} />
           </View>
         </View>
       </WalletProvider>
@@ -936,6 +959,19 @@ const styles = StyleSheet.create({
     zIndex: 99999,
     elevation: 99999,
     pointerEvents: 'box-none',
+  },
+  migrationOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 99998,
+    elevation: 99998,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  migrationOverlayText: {
+    marginTop: 16,
+    color: '#ffffff',
+    fontSize: 16,
   },
 });
 export default App;

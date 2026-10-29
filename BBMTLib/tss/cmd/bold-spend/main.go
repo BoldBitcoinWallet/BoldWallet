@@ -21,7 +21,7 @@ var (
 	toAddress      = flag.String("to-address", "", "Recipient Bitcoin address (required)")
 	amountSats     = flag.String("amount-sats", "", "Amount to send in satoshis (required)")
 	feeSats        = flag.String("fee-sats", "", "Fee in satoshis (required unless --preview)")
-	network        = flag.String("network", "testnet3", "Network: mainnet or testnet3")
+	network        = flag.String("network", "testnet4", "Network: mainnet or testnet4")
 	mempoolURL     = flag.String("mempool-url", "", "Mempool API URL (required)")
 	derivationPath = flag.String("derivation-path", "m/84'/1'/0'/0/0", "BIP32 derivation path")
 	addressType    = flag.String("address-type", "p2wpkh", "Address type: p2pkh, p2wpkh, p2sh-p2wpkh, p2tr")
@@ -39,11 +39,11 @@ func printUsage() {
 Required options (unless --preview):
   --to-address <address>      Recipient Bitcoin address
   --amount-sats <amount>      Amount to send in satoshis
-  --mempool-url <url>         Mempool API URL (e.g., https://mempool.space/testnet/api)
+  --mempool-url <url>         Mempool API URL (e.g., https://mempool.space/testnet4/api)
 
 Optional options:
   --fee-sats <fee>            Fee in satoshis (required unless --preview)
-  --network <mainnet|testnet3> Network to use (default: testnet3)
+  --network <mainnet|testnet4> Network to use (default: testnet4)
   --derivation-path <path>    BIP32 derivation path (default: m/84'/1'/0'/0/0)
   --address-type <type>       Address type: p2pkh, p2wpkh, p2sh-p2wpkh, p2tr (default: p2wpkh)
   --keyshare1 <path>          Path to first keyshare file (default: peer1.ks)
@@ -55,17 +55,17 @@ Optional options:
 
 Examples:
   # Preview fee estimate
-  bold-spend --to-address tb1q... --amount-sats 10000 --network testnet3 \\
-    --mempool-url https://mempool.space/testnet/api --preview
+  bold-spend --to-address tb1q... --amount-sats 10000 --network testnet4 \\
+    --mempool-url https://mempool.space/testnet4/api --preview
 
   # Send transaction
   bold-spend --to-address tb1q... --amount-sats 10000 --fee-sats 226 \\
-    --network testnet3 --mempool-url https://mempool.space/testnet/api \\
+    --network testnet4 --mempool-url https://mempool.space/testnet4/api \\
     --derivation-path "m/84'/1'/0'/0/0" --address-type p2wpkh
 
   # With encrypted keyshares
   bold-spend --to-address tb1q... --amount-sats 10000 --fee-sats 226 \\
-    --network testnet3 --mempool-url https://mempool.space/testnet/api \\
+    --network testnet4 --mempool-url https://mempool.space/testnet4/api \\
     --passphrase1 "secret1" --passphrase2 "secret2"
 
 Notes:
@@ -405,7 +405,7 @@ func runSpendSubcommand() {
 	// 11: destination address (receiver)
 	// 12: amount in satoshis
 	// 13: fee in satoshis
-	// 14: network (mainnet | testnet3)
+	// 14: network (mainnet | testnet4)
 	// 15: mempool URL base
 
 	if len(os.Args) < 16 {

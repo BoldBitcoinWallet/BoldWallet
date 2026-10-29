@@ -1,5 +1,19 @@
 import {BBMTLibNativeModule} from '../native_modules';
 import {
+  completeCeremonyToken,
+  findLiveCeremonyToken,
+  getSessionToken,
+  isCeremonyAuthRejection,
+  newCeremonySessionID,
+  releaseCeremonyToken,
+  requestExportCeremonyToken,
+  requestImportCeremonyToken,
+  requestKeygenCeremonyToken,
+  requestPsbtSignCeremonyToken,
+  requestSendSignCeremonyToken,
+  requestSignTransportCeremonyToken,
+} from './ceremonyAuth';
+import {
   markMpcInProgress,
   resetMpcCancelState,
   safeCancelMpc,
@@ -15,11 +29,143 @@ import {
 } from './tssBackend';
 
 export type {TssBackend};
+
+/**
+ * 3b-2: ceremony-token scope. Owner-provided tokens pass through
+ * untouched (owner owns lifecycle); otherwise mint here (OS
+ * prompt), complete on success, release on throw. Calls without
+ * an MPC session (sends, nostr, keypair generators) get a fresh
+ * single-call ceremony ID; session equality then binds the token
+ * to this call only (opClass + TTL + revocation still enforced).
+ * The mint fn is pinned per call site (sign vs keygen) — there
+ * is no generic minter; the class is chosen by the wrapper, and
+ * enforced natively by the gated method.
+ */
+async function withCeremonyToken<T>(
+  sessionID: string | undefined,
+  ceremonyToken: string | undefined,
+  mint: (sessionID: string) => Promise<string>,
+  purpose: string,
+  // 3b-2e: fn also receives the ceremony session (native strict
+  // verify needs token + session; minted sessions originate here).
+  fn: (token: string, ceremonyID: string) => Promise<T>,
+): Promise<T> {
+  const ceremonyID = sessionID ?? (await newCeremonySessionID(purpose));
+  const token = ceremonyToken ?? (await mint(ceremonyID));
+  const owned = ceremonyToken === undefined;
+  try {
+    const out = await fn(token, ceremonyID);
+    if (owned) {
+      try {
+        await completeCeremonyToken(token);
+      } catch {
+        /* logged in ceremonyAuth; success stands */
+      }
+    }
+    return out;
+  } catch (error) {
+    if (owned) {
+      try {
+        await releaseCeremonyToken(token);
+      } catch {
+        /* logged in ceremonyAuth */
+      }
+    }
+    throw error;
+  }
+}
+
+/**
+ * 3b-4 B19: cancel token scope. Prefer the live session token
+ * (no new prompt on abort); on auth rejection (stale, expired,
+ * or GG18 with no ceremony) mint fresh for the same session —
+ * the B19 stuck-cancel re-auth (OS prompt). Native consumes the
+ * token and atomically revokes its session; JS evicts its entry
+ * afterwards (release is idempotent over the revoked state).
+ * ceremonyClass only selects the stuck-mint (prompt copy must
+ * match the doomed ceremony); live tokens pass through whole.
+ */
+async function withCancelToken<T>(
+  sessionID: string | null,
+  ceremonyClass: 'sign' | 'keygen',
+  invoke: (token: string) => Promise<T>,
+): Promise<T> {
+  const live =
+    sessionID !== null
+      ? getSessionToken(sessionID)?.token
+      : findLiveCeremonyToken()?.token;
+  if (live !== undefined) {
+    try {
+      const out = await invoke(live);
+      try {
+        await releaseCeremonyToken(live);
+      } catch {
+        /* logged in ceremonyAuth; cancel stands */
+      }
+      return out;
+    } catch (error) {
+      if (!isCeremonyAuthRejection(error)) {
+        throw error;
+      }
+      // Stale live entry → fall through to a fresh mint.
+    }
+  }
+  const freshSession = sessionID ?? (await newCeremonySessionID('cancel'));
+  const fresh =
+    ceremonyClass === 'keygen'
+      ? await requestKeygenCeremonyToken(freshSession)
+      : await requestSignTransportCeremonyToken(freshSession);
+  try {
+    return await invoke(fresh);
+  } finally {
+    try {
+      await releaseCeremonyToken(fresh);
+    } catch {
+      /* logged in ceremonyAuth */
+    }
+  }
+}
+
 export {
   detectKeyshareTssBackend,
   resolveTssBackend,
   resolveTssBackendForKeygen,
 } from './tssBackend';
+
+/**
+ * F15b-1: DKG setup result. DKLs setup stages the keyshare in Go and
+ * returns a handle + allowlisted metadata only — share bytes never
+ * cross the bridge. GG18 (F19 legacy branch) still returns full JSON;
+ * that branch stays plaintext by explicit protocol-variant deferral.
+ */
+export type SetupResult =
+  | {kind: 'staged'; handle: string; metadata: Record<string, any>}
+  | {kind: 'legacy-gg18'; json: string};
+
+/**
+ * Parse + validate the staged-setup envelope returned by the native
+ * DKLs keygen methods. Throws on malformed input — callers fail
+ * closed, never treat raw output as a keyshare.
+ */
+export function parseStagedSetupResult(raw: string): SetupResult {
+  let parsed: any = null;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('Invalid staged setup result');
+  }
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    typeof parsed.handle !== 'string' ||
+    parsed.handle.trim() === '' ||
+    !parsed.metadata ||
+    typeof parsed.metadata !== 'object'
+  ) {
+    throw new Error('Invalid staged setup result');
+  }
+  return {kind: 'staged', handle: parsed.handle, metadata: parsed.metadata};
+}
 
 export const TssProvider = {
   resolveTssBackend,
@@ -48,31 +194,51 @@ export const TssProvider = {
     chaincode: string,
     setupMode?: SetupMode,
     backend?: TssBackend | null,
-  ): Promise<string> {
+    ceremonyToken?: string,
+  ): Promise<SetupResult> {
     const resolved = await resolveTssBackendForKeygen(setupMode, backend);
     if (resolved === 'dkls23') {
-      return BBMTLibNativeModule.dklsMpcTssSetup(
-        server,
-        partyID,
-        partiesCSV,
+      const raw = await withCeremonyToken<string>(
         sessionID,
-        sessionKey,
-        encKey,
-        decKey,
-        chaincode,
+        ceremonyToken,
+        requestKeygenCeremonyToken,
+        'keygen',
+        token =>
+          BBMTLibNativeModule.dklsMpcTssSetup(
+            server,
+            partyID,
+            partiesCSV,
+            sessionID,
+            sessionKey,
+            encKey,
+            decKey,
+            chaincode,
+            token,
+          ),
       );
+      return parseStagedSetupResult(raw);
     }
-    return BBMTLibNativeModule.mpcTssSetup(
-      server,
-      partyID,
-      ppmFile,
-      partiesCSV,
+    // 3b-6: GG18 setup takes a keygen token (strict session).
+    const json = await withCeremonyToken<string>(
       sessionID,
-      sessionKey,
-      encKey,
-      decKey,
-      chaincode,
+      ceremonyToken,
+      requestKeygenCeremonyToken,
+      'keygen',
+      token =>
+        BBMTLibNativeModule.mpcTssSetup(
+          server,
+          partyID,
+          ppmFile,
+          partiesCSV,
+          sessionID,
+          sessionKey,
+          encKey,
+          decKey,
+          chaincode,
+          token,
+        ),
     );
+    return {kind: 'legacy-gg18', json};
   },
 
   async nostrMpcTssSetup(
@@ -85,26 +251,266 @@ export const TssProvider = {
     ppmPath: string,
     setupMode?: SetupMode,
     backend?: TssBackend | null,
-  ): Promise<string> {
+    ceremonyToken?: string,
+  ): Promise<SetupResult> {
     const resolved = await resolveTssBackendForKeygen(setupMode, backend);
     if (resolved === 'dkls23') {
-      return BBMTLibNativeModule.dklsNostrMpcTssSetup(
-        relaysCSV,
-        partyNsec,
-        partiesNpubsCSV,
+      const raw = await withCeremonyToken<string>(
         sessionID,
-        sessionKey,
-        chaincode,
+        ceremonyToken,
+        requestKeygenCeremonyToken,
+        'keygen',
+        token =>
+          BBMTLibNativeModule.dklsNostrMpcTssSetup(
+            relaysCSV,
+            partyNsec,
+            partiesNpubsCSV,
+            sessionID,
+            sessionKey,
+            chaincode,
+            token,
+          ),
+      );
+      return parseStagedSetupResult(raw);
+    }
+    // 3b-6: GG18 setup takes a keygen token (strict session).
+    const json = await withCeremonyToken<string>(
+      sessionID,
+      ceremonyToken,
+      requestKeygenCeremonyToken,
+      'keygen',
+      token =>
+        BBMTLibNativeModule.nostrMpcTssSetup(
+          relaysCSV,
+          partyNsec,
+          partiesNpubsCSV,
+          sessionID,
+          sessionKey,
+          chaincode,
+          ppmPath,
+          token,
+        ),
+    );
+    return {kind: 'legacy-gg18', json};
+  },
+
+  /**
+   * 3b-2b B20: pairing-identity keypair. Gated by a single-call
+   * `keygen` ceremony — generation precedes any DKG session (the
+   * pairing phase runs first), so no DKG token can be shared;
+   * each mint carries its own OS-visible prompt.
+   */
+  async nostrKeypair(ceremonyToken?: string): Promise<string> {
+    return withCeremonyToken(
+      undefined,
+      ceremonyToken,
+      requestKeygenCeremonyToken,
+      'keygen',
+      token => BBMTLibNativeModule.nostrKeypair(token),
+    );
+  },
+
+  /**
+   * LAN pairing key. Created when the user taps Pair. Not the
+   * wallet share, so it does not raise its own approval.
+   */
+  async eciesKeypair(): Promise<string> {
+    const out = await BBMTLibNativeModule.eciesKeypair('');
+    if (!out || typeof out !== 'string') {
+      throw new Error('LAN keypair generation failed');
+    }
+    return out;
+  },
+
+  /**
+   * 3b-2c B13: LAN handshake publish. Rides the handshake
+   * ceremony token (sign|keygen) — the token is REQUIRED:
+   * transport never mints (a mint fallback inside poll/retry
+   * loops would prompt-spam). The phase owner (initSession)
+   * mints and passes the token. Spend completes it after the
+   * handshake. Setup keeps it for keygen and save.
+   */
+  async publishData(
+    port: string,
+    timeout: string,
+    encKey: string,
+    raw: string,
+    mode: string,
+    ceremonyToken: string,
+    ceremonySessionID: string,
+  ): Promise<string> {
+    return BBMTLibNativeModule.publishData(
+      port,
+      timeout,
+      encKey,
+      raw,
+      mode,
+      ceremonyToken,
+      ceremonySessionID,
+    );
+  },
+
+  /**
+   * 3b-2d B15: mempool API base. Allowlist-or-token: omit the
+   * token for allowlisted (built-in or previously approved)
+   * URLs; pass a `config` token to approve + persist a new URL.
+   * Prefer ensureMempoolApiApplied (approval UX included).
+   */
+  async setAPI(
+    network: string,
+    baseAPI: string,
+    ceremonyToken?: string,
+    ceremonySessionID?: string,
+  ): Promise<string> {
+    return BBMTLibNativeModule.setAPI(
+      network,
+      baseAPI,
+      ceremonyToken ?? '',
+      ceremonySessionID ?? '',
+    );
+  },
+
+  /**
+   * 3b-2d B16: fee API bases (CSV). Same allowlist-or-token
+   * rule as setAPI. Prefer ensureFeeApisApplied.
+   */
+  async setFeeAPIs(
+    urlsCSV: string,
+    ceremonyToken?: string,
+    ceremonySessionID?: string,
+  ): Promise<string> {
+    return BBMTLibNativeModule.setFeeAPIs(
+      urlsCSV,
+      ceremonyToken ?? '',
+      ceremonySessionID ?? '',
+    );
+  },
+
+  /**
+   * 3b-2e B17: backup stage. Owner token+session pass through
+   * untouched (import flow shares one `import` ceremony across
+   * stage+persist); otherwise mint a single-call import ceremony
+   * here. Half pairs (token xor session) throw — a caller bug,
+   * never silently downgraded to a second mint.
+   */
+  async importBackupToStagedHandle(
+    blob: string,
+    password: string,
+    ceremonyToken?: string,
+    ceremonySessionID?: string,
+  ): Promise<string> {
+    if (
+      (ceremonyToken === undefined) !== (ceremonySessionID === undefined)
+    ) {
+      throw new Error(
+        'importBackupToStagedHandle: ceremonyToken and ceremonySessionID are both-or-neither',
       );
     }
-    return BBMTLibNativeModule.nostrMpcTssSetup(
-      relaysCSV,
-      partyNsec,
-      partiesNpubsCSV,
-      sessionID,
-      sessionKey,
-      chaincode,
-      ppmPath,
+    if (ceremonyToken !== undefined && ceremonySessionID !== undefined) {
+      return BBMTLibNativeModule.importBackupToStagedHandle(
+        blob,
+        password,
+        ceremonyToken,
+        ceremonySessionID,
+      );
+    }
+    return withCeremonyToken(
+      undefined,
+      undefined,
+      requestImportCeremonyToken,
+      'import',
+      (token, ceremonyID) =>
+        BBMTLibNativeModule.importBackupToStagedHandle(
+          blob,
+          password,
+          token,
+          ceremonyID,
+        ),
+    );
+  },
+
+  /**
+   * 3b-2e B18: staged-handle persist. Same owner-or-mint `import`
+   * rule as B17. Setup-commit flows (decoupled from setup by the
+   * backup-check UI) mint their own save ceremony — one prompt
+   * per explicit user action.
+   */
+  async persistStoredKeyshare(
+    handle: string,
+    nsec: string,
+    npub: string,
+    ceremonyToken?: string,
+    ceremonySessionID?: string,
+  ): Promise<string> {
+    if (
+      (ceremonyToken === undefined) !== (ceremonySessionID === undefined)
+    ) {
+      throw new Error(
+        'persistStoredKeyshare: ceremonyToken and ceremonySessionID are both-or-neither',
+      );
+    }
+    if (ceremonyToken !== undefined && ceremonySessionID !== undefined) {
+      return BBMTLibNativeModule.persistStoredKeyshare(
+        handle,
+        nsec,
+        npub,
+        ceremonyToken,
+        ceremonySessionID,
+      );
+    }
+    return withCeremonyToken(
+      undefined,
+      undefined,
+      requestImportCeremonyToken,
+      'import',
+      (token, ceremonyID) =>
+        BBMTLibNativeModule.persistStoredKeyshare(
+          handle,
+          nsec,
+          npub,
+          token,
+          ceremonyID,
+        ),
+    );
+  },
+
+  /**
+   * 3b-3 A12: encrypted backup export. Single-call `export`
+   * ceremony (no MPC session, no sharing): mint-or-receive via
+   * the wrapper, OS prompt on mint. Enforced ceremony auth —
+   * strictly stronger than any JS-layer gate.
+   */
+  async backupEncryptStoredKeyshare(
+    password: string,
+    ceremonyToken?: string,
+  ): Promise<string> {
+    return withCeremonyToken(
+      undefined,
+      ceremonyToken,
+      requestExportCeremonyToken,
+      'export',
+      token =>
+        BBMTLibNativeModule.backupEncryptStoredKeyshare(password, token),
+    );
+  },
+
+  /**
+   * 3b-2c B14: LAN handshake fetch. Same required-token rule
+   * as publishData.
+   */
+  async fetchData(
+    url: string,
+    decKey: string,
+    payload: string,
+    ceremonyToken: string,
+    ceremonySessionID: string,
+  ): Promise<string> {
+    return BBMTLibNativeModule.fetchData(
+      url,
+      decKey,
+      payload,
+      ceremonyToken,
+      ceremonySessionID,
     );
   },
 
@@ -122,10 +528,31 @@ export const TssProvider = {
     encKey: string,
     decKey: string,
     psbtBase64: string,
+    ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
+    // F20: PSBT sign mints via the native confirmation sheet,
+    // binding the token to this exact PSBT artifact.
+    const psbtMint = (sid: string) =>
+      requestPsbtSignCeremonyToken(sid, psbtBase64);
     if (backend === 'dkls23') {
-      return BBMTLibNativeModule.dklsMpcSignPSBT(
+      return withCeremonyToken(sessionID, ceremonyToken, psbtMint, 'sign', token =>
+        BBMTLibNativeModule.dklsMpcSignPSBT(
+          server,
+          partyID,
+          partiesCSV,
+          sessionID,
+          sessionKey,
+          encKey,
+          decKey,
+          psbtBase64,
+          token,
+        ),
+      );
+    }
+    // 3b-6: GG18 sign takes a sign token (strict session).
+    return withCeremonyToken(sessionID, ceremonyToken, psbtMint, 'sign', token =>
+      BBMTLibNativeModule.mpcSignPSBT(
         server,
         partyID,
         partiesCSV,
@@ -134,17 +561,8 @@ export const TssProvider = {
         encKey,
         decKey,
         psbtBase64,
-      );
-    }
-    return BBMTLibNativeModule.mpcSignPSBT(
-      server,
-      partyID,
-      partiesCSV,
-      sessionID,
-      sessionKey,
-      encKey,
-      decKey,
-      psbtBase64,
+        token,
+      ),
     );
   },
 
@@ -162,10 +580,41 @@ export const TssProvider = {
     satoshiFees: string,
     utxosWithPathsJSON: string,
     changeAddress: string,
+    ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
+    // F20-1b: sends mint a token bound to this payment. The
+    // payment sheet and device prompt run on Broadcast.
+    const sendMint = (sid: string) =>
+      requestSendSignCeremonyToken(sid, {
+        toAddress,
+        amountSatoshi: satoshiAmount,
+        feeSatoshi: satoshiFees,
+        changeAddress,
+      });
     if (backend === 'dkls23') {
-      return BBMTLibNativeModule.dklsMpcSendBTCWithUTXOs(
+      return withCeremonyToken(sessionID, ceremonyToken, sendMint, 'sign', token =>
+        BBMTLibNativeModule.dklsMpcSendBTCWithUTXOs(
+          server,
+          partyID,
+          partiesCSV,
+          sessionID,
+          sessionKey,
+          encKey,
+          decKey,
+          btcPub,
+          toAddress,
+          satoshiAmount,
+          satoshiFees,
+          utxosWithPathsJSON,
+          changeAddress,
+          token,
+        ),
+      );
+    }
+    // 3b-6: GG18 send takes a sign token (strict session).
+    return withCeremonyToken(sessionID, ceremonyToken, sendMint, 'sign', token =>
+      BBMTLibNativeModule.mpcSendBTCWithUTXOs(
         server,
         partyID,
         partiesCSV,
@@ -179,22 +628,8 @@ export const TssProvider = {
         satoshiFees,
         utxosWithPathsJSON,
         changeAddress,
-      );
-    }
-    return BBMTLibNativeModule.mpcSendBTCWithUTXOs(
-      server,
-      partyID,
-      partiesCSV,
-      sessionID,
-      sessionKey,
-      encKey,
-      decKey,
-      btcPub,
-      toAddress,
-      satoshiAmount,
-      satoshiFees,
-      utxosWithPathsJSON,
-      changeAddress,
+        token,
+      ),
     );
   },
 
@@ -208,10 +643,37 @@ export const TssProvider = {
     satoshiFees: string,
     utxosWithPathsJSON: string,
     changeAddress: string,
+    ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
+    // F20-1b: sends mint a token bound to this payment. The
+    // payment sheet and device prompt run on Broadcast.
+    const sendMint = (sid: string) =>
+      requestSendSignCeremonyToken(sid, {
+        toAddress,
+        amountSatoshi: satoshiAmount,
+        feeSatoshi: satoshiFees,
+        changeAddress,
+      });
     if (backend === 'dkls23') {
-      return BBMTLibNativeModule.dklsNostrMpcSendBTC(
+      return withCeremonyToken(undefined, ceremonyToken, sendMint, 'sign', token =>
+        BBMTLibNativeModule.dklsNostrMpcSendBTC(
+          relaysCSV,
+          partiesNpubsCSV,
+          npubsSorted,
+          balanceSats,
+          toAddress,
+          satoshiAmount,
+          satoshiFees,
+          utxosWithPathsJSON,
+          changeAddress,
+          token,
+        ),
+      );
+    }
+    // 3b-6: GG18 nostr send takes a sign token (single-call).
+    return withCeremonyToken(undefined, ceremonyToken, sendMint, 'sign', token =>
+      BBMTLibNativeModule.nostrMpcSendBTC(
         relaysCSV,
         partiesNpubsCSV,
         npubsSorted,
@@ -221,18 +683,8 @@ export const TssProvider = {
         satoshiFees,
         utxosWithPathsJSON,
         changeAddress,
-      );
-    }
-    return BBMTLibNativeModule.nostrMpcSendBTC(
-      relaysCSV,
-      partiesNpubsCSV,
-      npubsSorted,
-      balanceSats,
-      toAddress,
-      satoshiAmount,
-      satoshiFees,
-      utxosWithPathsJSON,
-      changeAddress,
+        token,
+      ),
     );
   },
 
@@ -241,43 +693,61 @@ export const TssProvider = {
     partiesNpubsCSV: string,
     npubsSorted: string,
     psbtBase64: string,
+    ceremonyToken?: string,
   ): Promise<string> {
     const backend = await resolveTssBackend();
+    // F20: PSBT sign mints via the native confirmation sheet,
+    // binding the token to this exact PSBT artifact.
+    const psbtMint = (sid: string) =>
+      requestPsbtSignCeremonyToken(sid, psbtBase64);
     if (backend === 'dkls23') {
-      return BBMTLibNativeModule.dklsNostrMpcSignPSBT(
+      return withCeremonyToken(undefined, ceremonyToken, psbtMint, 'sign', token =>
+        BBMTLibNativeModule.dklsNostrMpcSignPSBT(
+          relaysCSV,
+          partiesNpubsCSV,
+          npubsSorted,
+          psbtBase64,
+          token,
+        ),
+      );
+    }
+    // 3b-6: GG18 nostr sign takes a sign token (single-call).
+    return withCeremonyToken(undefined, ceremonyToken, psbtMint, 'sign', token =>
+      BBMTLibNativeModule.nostrMpcSignPSBT(
         relaysCSV,
         partiesNpubsCSV,
         npubsSorted,
         psbtBase64,
-      );
-    }
-    return BBMTLibNativeModule.nostrMpcSignPSBT(
-      relaysCSV,
-      partiesNpubsCSV,
-      npubsSorted,
-      psbtBase64,
+        token,
+      ),
     );
   },
 
-  async cancelMpcSession(sessionID: string): Promise<MpcCancelResult> {
+  async cancelMpcSession(
+    sessionID: string,
+    // Stuck-mint class (live tokens pass through regardless).
+    ceremonyClass: 'sign' | 'keygen' = 'sign',
+  ): Promise<MpcCancelResult> {
     return safeCancelMpc('session', async () => {
       const backend = await resolveTssBackend();
-      if (backend === 'dkls23') {
-        await BBMTLibNativeModule.dklsCancelMpcSession(sessionID);
-        return;
-      }
-      await BBMTLibNativeModule.cancelMpcSession(sessionID);
+      await withCancelToken(sessionID, ceremonyClass, token =>
+        backend === 'dkls23'
+          ? BBMTLibNativeModule.dklsCancelMpcSession(sessionID, token)
+          : BBMTLibNativeModule.cancelMpcSession(sessionID, token),
+      );
     });
   },
 
-  async cancelNostrMpc(): Promise<MpcCancelResult> {
+  async cancelNostrMpc(
+    ceremonyClass: 'sign' | 'keygen' = 'sign',
+  ): Promise<MpcCancelResult> {
     return safeCancelMpc('nostr', async () => {
       const backend = await resolveTssBackend();
-      if (backend === 'dkls23') {
-        await BBMTLibNativeModule.dklsCancelNostrMpc();
-        return;
-      }
-      await BBMTLibNativeModule.cancelNostrMpc();
+      await withCancelToken(null, ceremonyClass, token =>
+        backend === 'dkls23'
+          ? BBMTLibNativeModule.dklsCancelNostrMpc(token)
+          : BBMTLibNativeModule.cancelNostrMpc(token),
+      );
     });
   },
 

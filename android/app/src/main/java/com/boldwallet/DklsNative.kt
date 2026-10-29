@@ -164,7 +164,21 @@ object DklsNative {
 
     fun bbmtGenerateKeyPairNative(): String = loaded { bbmtGenerateKeyPairJni() }
 
-    fun bbmtSha256Native(msg: String): String = loaded { bbmtSha256Jni(msg) }
+    fun bbmtSha256Native(msg: String): String = loaded { unwrap(bbmtSha256Jni(msg)) }
+
+    // F32 (Option A): trio ECDH exchange for LAN keygen.
+    fun bbmtTrioECDHPhase1Native(
+        server: String,
+        session: String,
+        selfParty: String,
+        parties: String,
+    ): String = loaded { unwrap(bbmtTrioECDHPhase1Jni(server, session, selfParty, parties)) }
+
+    fun bbmtTrioECDHConfirmNative(handle: String, session: String): String =
+        loaded { unwrap(bbmtTrioECDHConfirmJni(handle, session)) }
+
+    fun bbmtTrioECDHAbortNative(handle: String): String =
+        loaded { unwrap(bbmtTrioECDHAbortJni(handle)) }
 
     fun bbmtSecureRandomNative(length: Int): String = loaded { bbmtSecureRandomJni(length) }
 
@@ -185,7 +199,7 @@ object DklsNative {
         port: String,
         timeout: String,
         mode: String,
-    ): String = loaded { bbmtListenForPeersJni(id, pubkey, port, timeout, mode) }
+    ): String = loaded { unwrap(bbmtListenForPeersJni(id, pubkey, port, timeout, mode)) }
 
     fun bbmtDiscoverPeersNative(
         id: String,
@@ -196,50 +210,58 @@ object DklsNative {
         timeout: String,
         mode: String,
     ): String = loaded {
-        bbmtDiscoverPeersJni(id, pubkey, localIP, remoteIP, port, timeout, mode)
+        unwrap(bbmtDiscoverPeersJni(id, pubkey, localIP, remoteIP, port, timeout, mode))
     }
 
-    fun bbmtRunRelayNative(port: String): String = loaded { bbmtRunRelayJni(port) }
+    fun bbmtRunRelayNative(port: String): String = loaded { unwrap(bbmtRunRelayJni(port)) }
 
-    fun bbmtStopRelayNative(): String = loaded { bbmtStopRelayJni() }
+    fun bbmtStopRelayNative(): String = loaded { unwrap(bbmtStopRelayJni()) }
 
-    fun bbmtSetNetworkNative(network: String): String = loaded { bbmtSetNetworkJni(network) }
-    fun bbmtGetNetworkNative(): String = loaded { bbmtGetNetworkJni() }
-    fun bbmtUseFeePolicyNative(policy: String): String = loaded { bbmtUseFeePolicyJni(policy) }
+    fun bbmtSetNetworkNative(network: String): String = loaded { unwrap(bbmtSetNetworkJni(network)) }
+    fun bbmtGetNetworkNative(): String = loaded { unwrap(bbmtGetNetworkJni()) }
+    fun bbmtUseFeePolicyNative(policy: String): String = loaded { unwrap(bbmtUseFeePolicyJni(policy)) }
     fun bbmtUseAPINative(network: String, base: String): String = loaded { bbmtUseAPIJni(network, base) }
     fun bbmtUseFeeAPIsNative(urls: String): String = loaded { bbmtUseFeeAPIsJni(urls) }
-    fun bbmtTotalUTXONative(address: String): String = loaded { bbmtTotalUTXOJni(address) }
+    fun bbmtTotalUTXONative(address: String): String = loaded { unwrap(bbmtTotalUTXOJni(address)) }
     fun bbmtSpendingHashNative(sender: String, receiver: String, amount: Long): String =
-        loaded { bbmtSpendingHashJni(sender, receiver, amount) }
+        loaded { unwrap(bbmtSpendingHashJni(sender, receiver, amount)) }
     fun bbmtSpendingHashWithUTXOsNative(utxos: String, receiver: String, amount: String): String =
-        loaded { bbmtSpendingHashWithUTXOsJni(utxos, receiver, amount) }
+        loaded { unwrap(bbmtSpendingHashWithUTXOsJni(utxos, receiver, amount)) }
     fun bbmtEstimateFeesNative(sender: String, receiver: String, amount: Long): String =
-        loaded { bbmtEstimateFeesJni(sender, receiver, amount) }
+        loaded { unwrap(bbmtEstimateFeesJni(sender, receiver, amount)) }
     fun bbmtEstimateFeeWithUTXOsNative(
         utxos: String, receiver: String, amount: String, change: String,
-    ): String = loaded { bbmtEstimateFeeWithUTXOsJni(utxos, receiver, amount, change) }
-    fun bbmtPostTxNative(rawTx: String): String = loaded { bbmtPostTxJni(rawTx) }
-    fun bbmtComputeTxIdNative(rawTx: String): String = loaded { bbmtComputeTxIdJni(rawTx) }
+    ): String = loaded { unwrap(bbmtEstimateFeeWithUTXOsJni(utxos, receiver, amount, change)) }
+    fun bbmtPostTxNative(rawTx: String): String = loaded { unwrap(bbmtPostTxJni(rawTx)) }
+    fun bbmtComputeTxIdNative(rawTx: String): String = loaded { unwrap(bbmtComputeTxIdJni(rawTx)) }
     fun bbmtAesEncryptNative(data: String, key: String): String = loaded { bbmtAesEncryptJni(data, key) }
     fun bbmtAesDecryptNative(data: String, key: String): String = loaded { bbmtAesDecryptJni(data, key) }
+    fun bbmtBackupEncryptNative(plaintext: String, password: String): String = loaded { bbmtBackupEncryptJni(plaintext, password) }
+    fun bbmtImportBackupStagedNative(blob: String, password: String): String = loaded { bbmtImportBackupStagedJni(blob, password) }
+    fun bbmtFinalizeStagedForPersistNative(handle: String, nsec: String, npub: String): String =
+        loaded { bbmtFinalizeStagedForPersistJni(handle, nsec, npub) }
+    fun bbmtDestroyStagedNative(handle: String): String = loaded { bbmtDestroyStagedJni(handle) }
+    fun bbmtDestroyAllStagedNative(): String = loaded { bbmtDestroyAllStagedJni() }
+    fun bbmtProjectMetadataNative(fullJson: String): String = loaded { bbmtProjectMetadataJni(fullJson) }
+    fun bbmtRedactedStructureNative(fullJson: String): String = loaded { bbmtRedactedStructureJni(fullJson) }
     fun bbmtSecP256k1RecoverNative(r: String, s: String, v: String, h: String): String =
-        loaded { bbmtSecP256k1RecoverJni(r, s, v, h) }
+        loaded { unwrap(bbmtSecP256k1RecoverJni(r, s, v, h)) }
     fun bbmtGetDerivedPubKeyNative(hexPub: String, hexChain: String, path: String, isEdDSA: Boolean): String =
-        loaded { bbmtGetDerivedPubKeyJni(hexPub, hexChain, path, if (isEdDSA) 1 else 0) }
+        loaded { unwrap(bbmtGetDerivedPubKeyJni(hexPub, hexChain, path, if (isEdDSA) 1 else 0)) }
     fun bbmtEncodeXpubNative(hexPub: String, hexChain: String, network: String): String =
-        loaded { bbmtEncodeXpubJni(hexPub, hexChain, network) }
+        loaded { unwrap(bbmtEncodeXpubJni(hexPub, hexChain, network)) }
     fun bbmtGetOutputDescriptorNative(
         hexPub: String, hexChain: String, network: String, addressType: String,
-    ): String = loaded { bbmtGetOutputDescriptorJni(hexPub, hexChain, network, addressType) }
+    ): String = loaded { unwrap(bbmtGetOutputDescriptorJni(hexPub, hexChain, network, addressType)) }
     fun bbmtAppendOutputDescriptorChecksumNative(descriptor: String): String =
-        loaded { bbmtAppendOutputDescriptorChecksumJni(descriptor) }
-    fun bbmtPubToP2WPKHNative(pub: String, network: String): String = loaded { bbmtPubToP2WPKHJni(pub, network) }
+        loaded { unwrap(bbmtAppendOutputDescriptorChecksumJni(descriptor)) }
+    fun bbmtPubToP2WPKHNative(pub: String, network: String): String = loaded { unwrap(bbmtPubToP2WPKHJni(pub, network)) }
     fun bbmtPubToP2SHP2WKHNative(pub: String, network: String): String =
-        loaded { bbmtPubToP2SHP2WKHJni(pub, network) }
-    fun bbmtPubToP2TRNative(pub: String, network: String): String = loaded { bbmtPubToP2TRJni(pub, network) }
-    fun bbmtPubToP2KHNative(pub: String, network: String): String = loaded { bbmtPubToP2KHJni(pub, network) }
+        loaded { unwrap(bbmtPubToP2SHP2WKHJni(pub, network)) }
+    fun bbmtPubToP2TRNative(pub: String, network: String): String = loaded { unwrap(bbmtPubToP2TRJni(pub, network)) }
+    fun bbmtPubToP2KHNative(pub: String, network: String): String = loaded { unwrap(bbmtPubToP2KHJni(pub, network)) }
     fun bbmtLocalPreParamsNative(ppmFile: String, timeoutMinutes: Long): String =
-        loaded { bbmtLocalPreParamsJni(ppmFile, timeoutMinutes) }
+        loaded { unwrap(bbmtLocalPreParamsJni(ppmFile, timeoutMinutes)) }
     fun bbmtJoinKeygenNative(
         ppmPath: String, key: String, parties: String, encKey: String, decKey: String,
         session: String, server: String, chaincode: String, sessionKey: String,
@@ -250,24 +272,16 @@ object DklsNative {
             ),
         )
     }
-    fun bbmtNostrKeypairNative(): String = loaded { bbmtNostrKeypairJni() }
-    fun bbmtHexToNpubNative(hexKey: String): String = loaded { bbmtHexToNpubJni(hexKey) }
+    fun bbmtNostrKeypairNative(): String = loaded { unwrap(bbmtNostrKeypairJni()) }
+    fun bbmtHexToNpubNative(hexKey: String): String = loaded { unwrap(bbmtHexToNpubJni(hexKey)) }
     fun bbmtNostrJoinKeygenNative(
         relays: String, nsec: String, peers: String, session: String,
         sessionKey: String, chaincode: String, ppmPath: String,
     ): String = loaded {
         unwrap(bbmtNostrJoinKeygenJni(relays, nsec, peers, session, sessionKey, chaincode, ppmPath))
     }
-    fun bbmtNostrJoinKeysignNative(
-        relays: String, nsec: String, peers: String, session: String, sessionKey: String,
-        keyshare: String, derivePath: String, message: String,
-    ): String = loaded {
-        unwrap(
-            bbmtNostrJoinKeysignJni(
-                relays, nsec, peers, session, sessionKey, keyshare, derivePath, message,
-            ),
-        )
-    }
+    // F18 (3b-3): bbmtNostrJoinKeysignNative REMOVED with its sole
+    // caller (the deleted bridge method).
     fun bbmtMpcSignPSBTNative(
         server: String, key: String, parties: String, session: String, sessionKey: String,
         encKey: String, decKey: String, keyshare: String, psbt: String,
@@ -316,13 +330,23 @@ object DklsNative {
         if (!loaded) return
         bbmtDisableLogsJni()
     }
-    fun bbmtParsePSBTDetailsNative(psbt: String): String = loaded { bbmtParsePSBTDetailsJni(psbt) }
+    fun bbmtParsePSBTDetailsNative(psbt: String): String = loaded { unwrap(bbmtParsePSBTDetailsJni(psbt)) }
 
     fun bbmtPsbtIdentityHashNative(psbt: String): String = loaded { unwrap(bbmtPsbtIdentityHashJni(psbt)) }
+
+    fun bbmtPsbtConfirmationNative(psbt: String): String = loaded { unwrap(bbmtPsbtConfirmationJni(psbt)) }
 
     private external fun helloDkgJni(): String
     private external fun bbmtGenerateKeyPairJni(): String
     private external fun bbmtSha256Jni(msg: String): String
+    private external fun bbmtTrioECDHPhase1Jni(
+        server: String,
+        session: String,
+        selfParty: String,
+        parties: String,
+    ): String
+    private external fun bbmtTrioECDHConfirmJni(handle: String, session: String): String
+    private external fun bbmtTrioECDHAbortJni(handle: String): String
     private external fun bbmtSecureRandomJni(length: Int): String
     private external fun bbmtFetchDataJni(url: String, decKey: String, payload: String): String
     private external fun bbmtPublishDataJni(
@@ -445,6 +469,13 @@ object DklsNative {
     private external fun bbmtComputeTxIdJni(rawTx: String): String
     private external fun bbmtAesEncryptJni(data: String, key: String): String
     private external fun bbmtAesDecryptJni(data: String, key: String): String
+    private external fun bbmtBackupEncryptJni(plaintext: String, password: String): String
+    private external fun bbmtImportBackupStagedJni(blob: String, password: String): String
+    private external fun bbmtFinalizeStagedForPersistJni(handle: String, nsec: String, npub: String): String
+    private external fun bbmtDestroyStagedJni(handle: String): String
+    private external fun bbmtDestroyAllStagedJni(): String
+    private external fun bbmtProjectMetadataJni(fullJson: String): String
+    private external fun bbmtRedactedStructureJni(fullJson: String): String
     private external fun bbmtSecP256k1RecoverJni(r: String, s: String, v: String, h: String): String
     private external fun bbmtGetDerivedPubKeyJni(hexPub: String, hexChain: String, path: String, isEdDSA: Int): String
     private external fun bbmtEncodeXpubJni(hexPub: String, hexChain: String, network: String): String
@@ -467,10 +498,9 @@ object DklsNative {
         relays: String, nsec: String, peers: String, session: String,
         sessionKey: String, chaincode: String, ppmPath: String,
     ): String
-    private external fun bbmtNostrJoinKeysignJni(
-        relays: String, nsec: String, peers: String, session: String, sessionKey: String,
-        keyshare: String, derivePath: String, message: String,
-    ): String
+    // F18 (3b-3): bbmtNostrJoinKeysignJni decl REMOVED with its
+    // sole caller (dkls-side nostrJoinKeysignJni was already dead
+    // with zero Kotlin callers — left untouched, out of scope).
     private external fun bbmtMpcSignPSBTJni(
         server: String, key: String, parties: String, session: String, sessionKey: String,
         encKey: String, decKey: String, keyshare: String, psbt: String,
@@ -492,4 +522,5 @@ object DklsNative {
     private external fun bbmtDisableLogsJni()
     private external fun bbmtParsePSBTDetailsJni(psbt: String): String
     private external fun bbmtPsbtIdentityHashJni(psbt: String): String
+    private external fun bbmtPsbtConfirmationJni(psbt: String): String
 }

@@ -8,13 +8,19 @@ import React, {
 } from 'react';
 import {DeviceEventEmitter} from 'react-native';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
-import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {
+  getStoredNetworkKey,
+  resolveStoredMempoolApiBase,
+} from '../services/mempoolApiBase';
 import {BBMTLibNativeModule} from '../native_modules';
+import {ensureFeeApisApplied, ensureMempoolApiApplied} from '../services/apiConfigApply';
+import mempoolClient from '../services/MempoolClient';
+import {ensureMempoolProvidersSeeded} from '../services/mempoolProvidersStore';
 import {
   getReceivePath,
   resolveUseLegacyDerivationPaths,
   dbg,
-  getKeyshare,
+  getKeyshareSecureMetadata,
   getKeyshareMetadata,
 } from '../utils';
 import {chaincodeHexFromBlob} from '../services/chaincodeReader';
@@ -143,7 +149,9 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
     const syncApi = async () => {
       try {
         if (!network || !apiBase) return;
-        await BBMTLibNativeModule.setAPI(network, apiBase);
+        // Stored selection already on screen. Do not show the
+        // "Allow API endpoint?" alert again when network or provider changes.
+        await ensureMempoolApiApplied(network, apiBase, null);
       } catch {
         // no-op
       }
@@ -181,7 +189,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   useEffect(() => {
     const initializeNetwork = async () => {
       try {
-        const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+        const net = getStoredNetworkKey();
         setNetwork(net);
         const api = resolveStoredMempoolApiBase(net);
         const apiKey = `api_${net}`;
@@ -190,7 +198,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         }
         appConfigRepository.set('api', api);
         setApiBase(api);
-        await BBMTLibNativeModule.setAPI(net, api);
+        await ensureMempoolApiApplied(net, api);
       } catch {
         // no-op
       }
@@ -278,9 +286,9 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
       // Always derive btcPub fresh to ensure it matches the current address type
       // This prevents issues where stored btcPub was derived with a different address type
       let pub = '';
-      // Spec v2: chaincode from encrypted blob only, never SQLite metadata.
+      // F15b-1: chaincode from native-projected secure fields, never SQLite metadata.
       const ksMeta = await getKeyshareMetadata();
-      const ksBlob: any = await getKeyshare().catch(() => null);
+      const ksBlob: any = await getKeyshareSecureMetadata().catch(() => null);
       const ks = ksBlob ?? ksMeta;
       const chaincodeHex = chaincodeHexFromBlob(ksBlob);
       if (ks) {
@@ -330,7 +338,7 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         await deriveAllAddressesForNetwork(pub, actualNet);
         // For the other network, we need to derive a separate btcPub with that network's path
         // because btcPub is network-specific (derivation path includes coin type: 0' for mainnet, 1' for testnet)
-        const otherNet = actualNet === 'mainnet' ? 'testnet3' : 'mainnet';
+        const otherNet = actualNet === 'mainnet' ? 'testnet4' : 'mainnet';
         const useLegacyPathOther = resolveUseLegacyDerivationPaths(ks);
         const otherExternalIndex = await getExternalIndex(otherNet, currentAddressType);
         const otherPath = getReceivePath(
@@ -406,7 +414,13 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         appConfigRepository.set('api', nextApi);
         setNetwork(newNetwork);
         setApiBase(nextApi);
-        await BBMTLibNativeModule.setAPI(newNetwork, nextApi);
+        // Endpoints were already chosen for this network. Skip the
+        // in-app allow alert; a custom host still gets the OS prompt.
+        await ensureMempoolApiApplied(newNetwork, nextApi, null);
+        const providerNet = newNetwork === 'mainnet' ? 'mainnet' : 'testnet4';
+        const enabled = await ensureMempoolProvidersSeeded(providerNet);
+        mempoolClient.setPublicBases(enabled);
+        await ensureFeeApisApplied(enabled, null);
       } catch {
         // no-op
       }
@@ -430,7 +444,8 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
         appConfigRepository.set(`api_${network}`, newApi);
         appConfigRepository.set('api', newApi);
         setApiBase(newApi);
-        await BBMTLibNativeModule.setAPI(network, newApi);
+        // Direct mint: provider switch with the URL on screen in settings.
+        await ensureMempoolApiApplied(network, newApi, null);
       } catch {
         // no-op
       }

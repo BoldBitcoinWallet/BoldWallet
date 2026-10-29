@@ -3,11 +3,11 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   TextInput,
   Image,
   ActivityIndicator,
 } from 'react-native';
+import AppModal from './AppModal';
 import AppPressable from './AppPressable';
 import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
@@ -254,7 +254,7 @@ const KeyshareImportPasswordModal = ({
   });
 
   return (
-    <Modal
+    <AppModal
       transparent
       visible={visible}
       animationType="fade"
@@ -365,7 +365,7 @@ const KeyshareImportPasswordModal = ({
           </View>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 

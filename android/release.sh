@@ -2,7 +2,7 @@
 
 # Script to automate generating a release APK for React Native
 # This script generates a DEV keystore for local development builds.
-# For production releases, use signed-release.sh with production credentials.
+# For production releases, use a local signed release helper with production credentials.
 
 # Dev keystore details (for local development only)
 # Note: Modern Java uses PKCS12 format which requires same password for store and key
@@ -111,7 +111,7 @@ update_property "MYAPP_UPLOAD_KEY_PASSWORD" "$KEY_PASSWORD"
 
 echo -e ""
 echo -e "⚠️  NOTE: This build uses a DEV keystore for local development."
-echo -e "⚠️  For production releases, use signed-release.sh instead."
+echo -e "⚠️  For production releases, use a local signed release helper instead."
 echo -e ""
 
 # Step 3: Build the Release APK

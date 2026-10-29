@@ -310,9 +310,9 @@ describe('urBytesQr binary airgap payload', () => {
     expect(nextAirgapQrSpeed('default')).toBe('medium');
     expect(nextAirgapQrSpeed('medium')).toBe('fast');
     expect(nextAirgapQrSpeed('fast')).toBe('default');
-    expect(UR_AIRGAP_SPEEDS.default.frameIntervalMs).toBe(330);
-    expect(UR_AIRGAP_SPEEDS.medium.frameIntervalMs).toBe(280);
-    expect(UR_AIRGAP_SPEEDS.fast.frameIntervalMs).toBe(200);
+    expect(UR_AIRGAP_SPEEDS.default.frameIntervalMs).toBe(500);
+    expect(UR_AIRGAP_SPEEDS.medium.frameIntervalMs).toBe(330);
+    expect(UR_AIRGAP_SPEEDS.fast.frameIntervalMs).toBe(175);
 
     const parts = urFountainParts(
       ur!,

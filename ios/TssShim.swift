@@ -47,8 +47,50 @@ func TssAesDecrypt(_ data: String, _ key: String, _ error: NSErrorPointer) -> St
   bbmtResolve(BbmtBridge.aesDecrypt(data, key: key), error)
 }
 
+func TssBackupEncrypt(_ plaintext: String, _ password: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.backupEncrypt(plaintext, password: password), error)
+}
+
+
+func TssImportBackupStaged(_ blob: String, _ password: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.importBackupStaged(blob, password: password), error)
+}
+
+func TssFinalizeStagedForPersist(_ handle: String, _ nsec: String, _ npub: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.finalizeStaged(forPersist: handle, nsec: nsec, npub: npub), error)
+}
+
+func TssDestroyStaged(_ handle: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.destroyStaged(handle), error)
+}
+
+func TssDestroyAllStaged(_ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.destroyAllStaged(), error)
+}
+
+func TssProjectMetadata(_ fullJson: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.projectMetadata(fullJson), error)
+}
+
+func TssRedactedStructure(_ fullJson: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.redactedStructure(fullJson), error)
+}
+
 func TssSha256(_ message: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.sha256(message), error)
+}
+
+// F32 (Option A): trio ECDH exchange for LAN keygen.
+func TssTrioECDHPhase1(_ server: String, _ session: String, _ selfParty: String, _ parties: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.trioECDHPhase1(server, session: session, selfParty: selfParty, parties: parties), error)
+}
+
+func TssTrioECDHConfirm(_ handle: String, _ session: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.trioECDHConfirm(handle, session: session), error)
+}
+
+func TssTrioECDHAbort(_ handle: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.trioECDHAbort(handle), error)
 }
 
 func TssSecureRandom(_ length: Int32, _ error: NSErrorPointer) -> String {
@@ -103,6 +145,10 @@ func TssPsbtIdentityHash(_ psbtBase64: String, _ error: NSErrorPointer) -> Strin
   bbmtResolve(BbmtBridge.psbtIdentityHash(psbtBase64), error)
 }
 
+func TssPsbtConfirmation(_ psbtBase64: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.psbtConfirmation(psbtBase64), error)
+}
+
 func TssSpendingHash(_ senderAddress: String, _ receiverAddress: String, _ amountSatoshi: Int64, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.spendingHash(senderAddress, receiver: receiverAddress, amount: amountSatoshi), error)
 }
@@ -136,17 +182,17 @@ func TssGetOutputDescriptor(_ hexPubKey: String, _ hexChainCode: String, _ netwo
 func TssAppendOutputDescriptorChecksum(_ descriptorBody: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.appendOutputDescriptorChecksum(descriptorBody), error)
 }
-func TssPubToP2WPKH(_ pubKeyCompressed: String, _ mainnetORtestnet3: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.pub(toP2WPKH: pubKeyCompressed, network: mainnetORtestnet3), error)
+func TssPubToP2WPKH(_ pubKeyCompressed: String, _ mainnetORtestnet4: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.pub(toP2WPKH: pubKeyCompressed, network: mainnetORtestnet4), error)
 }
-func TssPubToP2SHP2WKH(_ pubKeyCompressed: String, _ mainnetORtestnet3: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.pub(toP2SHP2WKH: pubKeyCompressed, network: mainnetORtestnet3), error)
+func TssPubToP2SHP2WKH(_ pubKeyCompressed: String, _ mainnetORtestnet4: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.pub(toP2SHP2WKH: pubKeyCompressed, network: mainnetORtestnet4), error)
 }
-func TssPubToP2TR(_ pubKeyCompressedHex: String, _ mainnetORtestnet3: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.pub(toP2TR: pubKeyCompressedHex, network: mainnetORtestnet3), error)
+func TssPubToP2TR(_ pubKeyCompressedHex: String, _ mainnetORtestnet4: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.pub(toP2TR: pubKeyCompressedHex, network: mainnetORtestnet4), error)
 }
-func TssPubToP2KH(_ pubKeyCompressed: String, _ mainnetORtestnet3: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.pub(toP2KH: pubKeyCompressed, network: mainnetORtestnet3), error)
+func TssPubToP2KH(_ pubKeyCompressed: String, _ mainnetORtestnet4: String, _ error: NSErrorPointer) -> String {
+  bbmtResolve(BbmtBridge.pub(toP2KH: pubKeyCompressed, network: mainnetORtestnet4), error)
 }
 func TssLocalPreParams(_ ppmFile: String, _ timeoutMinutes: Int, _ result: UnsafeMutablePointer<ObjCBool>, _ error: NSErrorPointer) -> String {
   let out = BbmtBridge.localPreParams(ppmFile, timeoutMinutes: timeoutMinutes)
@@ -164,9 +210,7 @@ func TssJoinKeygen(_ ppmPath: String, _ key: String, _ partiesCSV: String, _ enc
 func TssNostrJoinKeygen(_ relaysCSV: String, _ partyNsec: String, _ partiesNpubsCSV: String, _ sessionID: String, _ sessionKey: String, _ chaincode: String, _ ppmPath: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.nostrJoinKeygen(relaysCSV, nsec: partyNsec, peers: partiesNpubsCSV, session: sessionID, sessionKey: sessionKey, chaincode: chaincode, ppmPath: ppmPath), error)
 }
-func TssNostrJoinKeysign(_ relaysCSV: String, _ partyNsec: String, _ partiesNpubsCSV: String, _ sessionID: String, _ sessionKey: String, _ keyshareJSON: String, _ derivationPath: String, _ message: String, _ error: NSErrorPointer) -> String {
-  bbmtResolve(BbmtBridge.nostrJoinKeysign(relaysCSV, nsec: partyNsec, peers: partiesNpubsCSV, session: sessionID, sessionKey: sessionKey, keyshare: keyshareJSON, derivePath: derivationPath, message: message), error)
-}
+// F18 (3b-3): TssNostrJoinKeysign REMOVED with its sole caller.
 func TssMpcSignPSBT(_ server: String, _ key: String, _ partiesCSV: String, _ session: String, _ sessionKey: String, _ encKey: String, _ decKey: String, _ keyshare: String, _ psbtBase64: String, _ error: NSErrorPointer) -> String {
   bbmtResolve(BbmtBridge.mpcSignPSBT(server, key: key, parties: partiesCSV, session: session, sessionKey: sessionKey, encKey: encKey, decKey: decKey, keyshare: keyshare, psbt: psbtBase64), error)
 }

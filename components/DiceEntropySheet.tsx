@@ -4,12 +4,11 @@
  * Rolls stay on this phone. Air-gap QR is optical only.
  */
 import React, {useEffect, useMemo, useState} from 'react';
+import {confirmAppPrompt} from '../services/appPrompt';
 import {
-  Alert,
   Animated,
   Image,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -17,8 +16,9 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import AppModal from './AppModal';
 import Clipboard from '@react-native-clipboard/clipboard';
-import Toast from 'react-native-toast-message';
+
 import GlassModalOverlay from './GlassModalOverlay';
 import QRScanner from './QRScanner';
 import StaticQRCode from './StaticQRCode';
@@ -115,6 +115,35 @@ const pipStyles = StyleSheet.create({
   dot: {width: 8, height: 8, borderRadius: 4},
 });
 
+const dieFaceStyles = StyleSheet.create({
+  pressable: {overflow: 'visible'},
+  face: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'visible',
+  },
+  faceLabel: {fontWeight: '800'},
+  popLabel: {
+    position: 'absolute',
+    top: -4,
+    fontSize: 18,
+    fontWeight: '800',
+  },
+});
+
+const rollChipStyles = StyleSheet.create({
+  chip: {
+    minWidth: 28,
+    height: 28,
+    paddingHorizontal: 6,
+    borderRadius: 14,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  label: {fontSize: 12, fontWeight: '800'},
+});
+
 function FaceButton({
   label,
   value,
@@ -204,49 +233,41 @@ function FaceButton({
     ],
   };
 
+  const pressableStyle = [dieFaceStyles.pressable, {width: size, height: size}];
+  const faceStyle = [
+    dieFaceStyles.face,
+    {
+      width: size,
+      height: size,
+      borderRadius: radius,
+      borderWidth: hot ? 2 : 1.5,
+      borderColor: hot ? accent : borderColor,
+      backgroundColor: hot ? accent + '33' : fill,
+      transform: [{scale}],
+    },
+  ];
+  const faceLabelStyle = [
+    dieFaceStyles.faceLabel,
+    {
+      color: hot ? accent : textColor,
+      fontSize: size > 70 ? 28 : 16,
+    },
+  ];
+  const popLabelStyle = [dieFaceStyles.popLabel, {color: accent}, popStyle];
+
   return (
     <AppPressable
       variant="none"
       onPress={fire}
       accessibilityLabel={`Face ${label}`}
-      style={{width: size, height: size, overflow: 'visible'}}>
-      <Animated.View
-        style={{
-          width: size,
-          height: size,
-          borderRadius: radius,
-          borderWidth: hot ? 2 : 1.5,
-          borderColor: hot ? accent : borderColor,
-          backgroundColor: hot ? accent + '33' : fill,
-          alignItems: 'center',
-          justifyContent: 'center',
-          transform: [{scale}],
-          overflow: 'visible',
-        }}>
+      style={pressableStyle}>
+      <Animated.View style={faceStyle}>
         {showPips ? (
           <DiePips value={value} color={hot ? accent : textColor} hot={hot} />
         ) : (
-          <Text
-            style={{
-              color: hot ? accent : textColor,
-              fontSize: size > 70 ? 28 : 16,
-              fontWeight: '800',
-            }}>
-            {label}
-          </Text>
+          <Text style={faceLabelStyle}>{label}</Text>
         )}
-        <Animated.Text
-          pointerEvents="none"
-          style={[
-            {
-              position: 'absolute',
-              top: -4,
-              color: accent,
-              fontSize: 18,
-              fontWeight: '800',
-            },
-            popStyle,
-          ]}>
+        <Animated.Text pointerEvents="none" style={popLabelStyle}>
           {label}
         </Animated.Text>
       </Animated.View>
@@ -279,23 +300,21 @@ function RollChip({
       useNativeDriver: true,
     }).start();
   }, [fresh, scale]);
+  const chipStyle = [
+    rollChipStyles.chip,
+    {
+      borderColor: fresh ? accent : borderColor,
+      backgroundColor: fresh ? accent + '33' : fill,
+      transform: [{scale}],
+    },
+  ];
+  const chipLabelStyle = [
+    rollChipStyles.label,
+    {color: fresh ? accent : textColor},
+  ];
   return (
-    <Animated.View
-      style={{
-        minWidth: 28,
-        height: 28,
-        paddingHorizontal: 6,
-        borderRadius: 14,
-        borderWidth: 1,
-        borderColor: fresh ? accent : borderColor,
-        backgroundColor: fresh ? accent + '33' : fill,
-        alignItems: 'center',
-        justifyContent: 'center',
-        transform: [{scale}],
-      }}>
-      <Text style={{color: fresh ? accent : textColor, fontSize: 12, fontWeight: '800'}}>
-        {label}
-      </Text>
+    <Animated.View style={chipStyle}>
+      <Text style={chipLabelStyle}>{label}</Text>
     </Animated.View>
   );
 }
@@ -442,10 +461,18 @@ export default function DiceEntropySheet({
       setShuffleFaces(false);
     };
     if (rolls.length) {
-      Alert.alert('Change dice?', 'This clears the rolls you entered.', [
-        {text: 'Cancel', style: 'cancel'},
-        {text: 'Change', style: 'destructive', onPress: apply},
-      ]);
+      confirmAppPrompt({
+        icon: 'dice',
+        title: 'Switch dice?',
+        hint: 'The rolls you entered are cleared.',
+        cancelLabel: 'Keep',
+        confirmLabel: 'Switch',
+        tone: 'danger',
+      }).then(ok => {
+        if (ok) {
+          apply();
+        }
+      });
       return;
     }
     apply();
@@ -599,15 +626,8 @@ export default function DiceEntropySheet({
     onUseDice({sets});
   };
 
-  const copyQrPayload = () => {
-    if (!qrValue) return;
-    Clipboard.setString(qrValue);
-    Toast.show({
-      type: 'success',
-      text1: 'Copied',
-      text2: 'Dice rolls copied — paste on the other phone.',
-    });
-  };
+  // F10-clipboard: raw dice rolls (chaincode preimage) must not reach
+  // the clipboard. Transfer is optical-only (scan the QR above).
 
   const styles = StyleSheet.create({
     wrap: {
@@ -788,6 +808,18 @@ export default function DiceEntropySheet({
     },
     footerPrimary: {borderColor: tokens.bitcoinOrange, backgroundColor: tokens.bitcoinOrange},
     footerPrimaryOff: {opacity: 0.45},
+    chipActions: {
+      flexDirection: 'row',
+      gap: 16,
+      justifyContent: 'center',
+    },
+    hintSpaced: {marginTop: 10},
+    qrContentPad: {padding: 6},
+    footerSecondaryLabel: {
+      color: tokens.textSecondary,
+      fontWeight: '600',
+    },
+    footerPrimaryLabel: {color: '#FFFFFF', fontWeight: '700'},
   });
 
   const stepDone = (n: Step) => (n === 1 ? true : n === 2 ? rolls.length > 0 : ready);
@@ -795,7 +827,7 @@ export default function DiceEntropySheet({
 
   return (
     <>
-      <Modal
+      <AppModal
         visible={visible && !scanVisible}
         transparent
         animationType="slide"
@@ -974,7 +1006,7 @@ export default function DiceEntropySheet({
                     ) : (
                       <Text style={styles.chips}>No rolls yet.</Text>
                     )}
-                    <View style={{flexDirection: 'row', gap: 16, justifyContent: 'center'}}>
+                    <View style={styles.chipActions}>
                       <AppPressable onPress={undoLast} disabled={!rolls.length}>
                         <Text style={styles.link}>Undo</Text>
                       </AppPressable>
@@ -995,7 +1027,7 @@ export default function DiceEntropySheet({
                 {step === 3 && (
                   <View>
                     <Text style={styles.cardTitle}>{kindTitle(kind)} · {rolls.length} rolls</Text>
-                    <Text style={[styles.hint, {marginTop: 10}]}>Read aloud:</Text>
+                    <Text style={[styles.hint, styles.hintSpaced]}>Read aloud:</Text>
                     <Text style={styles.spoken}>{spoken || '…'}</Text>
                     {!!qrValue && (
                       <View style={styles.qrCard}>
@@ -1005,17 +1037,13 @@ export default function DiceEntropySheet({
                           showLogo
                           ecl="M"
                           copyDisabled
-                          contentStyle={{padding: 6}}
+                          contentStyle={styles.qrContentPad}
                         />
                         <Text style={styles.qrCaption}>Optical only · BOLD-DICE-QR-v1</Text>
-                        <AppPressable style={styles.copyBtn} onPress={copyQrPayload}>
-                          <Image
-                            source={require('../assets/copy-icon.png')}
-                            style={styles.copyIcon}
-                            resizeMode="contain"
-                          />
-                          <Text style={styles.copyLabel}>Copy to clipboard</Text>
-                        </AppPressable>
+                        <Text style={styles.hint}>
+                          Scan this QR on the other phone — copying is
+                          disabled to protect the dice entropy.
+                        </Text>
                       </View>
                     )}
                     <AppPressable onPress={() => setWhyOpen(v => !v)}>
@@ -1035,10 +1063,10 @@ export default function DiceEntropySheet({
                 {step === 1 ? (
                   <>
                     <AppPressable style={styles.footerBtn} onPress={onSkip}>
-                      <Text style={{color: tokens.textSecondary, fontWeight: '600'}}>Skip</Text>
+                      <Text style={styles.footerSecondaryLabel}>Skip</Text>
                     </AppPressable>
                     <AppPressable style={[styles.footerBtn, styles.footerPrimary]} onPress={goEnter}>
-                      <Text style={{color: '#FFFFFF', fontWeight: '700'}}>Continue</Text>
+                      <Text style={styles.footerPrimaryLabel}>Continue</Text>
                     </AppPressable>
                   </>
                 ) : (
@@ -1046,18 +1074,18 @@ export default function DiceEntropySheet({
                     <AppPressable
                       style={styles.footerBtn}
                       onPress={() => { setError(''); setStep((step === 3 ? 2 : 1) as Step); }}>
-                      <Text style={{color: tokens.textSecondary, fontWeight: '600'}}>Back</Text>
+                      <Text style={styles.footerSecondaryLabel}>Back</Text>
                     </AppPressable>
                     {step === 2 ? (
                       <AppPressable
                         style={[styles.footerBtn, styles.footerPrimary, !ready && styles.footerPrimaryOff]}
                         disabled={!ready}
                         onPress={goConfirm}>
-                        <Text style={{color: '#FFFFFF', fontWeight: '700'}}>Continue</Text>
+                        <Text style={styles.footerPrimaryLabel}>Continue</Text>
                       </AppPressable>
                     ) : (
                       <AppPressable style={[styles.footerBtn, styles.footerPrimary]} onPress={confirm}>
-                        <Text style={{color: '#FFFFFF', fontWeight: '700'}}>Use these rolls</Text>
+                        <Text style={styles.footerPrimaryLabel}>Use these rolls</Text>
                       </AppPressable>
                     )}
                   </>
@@ -1066,7 +1094,7 @@ export default function DiceEntropySheet({
             </View>
           </KeyboardAvoidingView>
         </GlassModalOverlay>
-      </Modal>
+      </AppModal>
       <QRScanner
         visible={scanVisible}
         onClose={() => setScanVisible(false)}

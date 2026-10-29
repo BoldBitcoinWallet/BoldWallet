@@ -28,6 +28,8 @@ export interface WalletAddress {
   idx: number;
   address: string;
   isUsed: boolean;
+  /** B2: ms timestamp when the user copied/shared this address; null = unpinned. */
+  pinnedAt?: number | null;
 }
 
 class WalletRepository {
@@ -227,7 +229,9 @@ class WalletRepository {
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(network, address_type, chain, idx) DO UPDATE SET
            address = excluded.address,
-           is_used = excluded.is_used`,
+           is_used = MAX(wallet_addresses.is_used, excluded.is_used),
+           pinned_at = CASE WHEN excluded.is_used = 1 THEN NULL
+                            ELSE wallet_addresses.pinned_at END`,
         [
           addr.network,
           addr.addressType,
@@ -253,7 +257,9 @@ class WalletRepository {
              VALUES (?, ?, ?, ?, ?, ?)
              ON CONFLICT(network, address_type, chain, idx) DO UPDATE SET
                address = excluded.address,
-               is_used = excluded.is_used`,
+               is_used = MAX(wallet_addresses.is_used, excluded.is_used),
+               pinned_at = CASE WHEN excluded.is_used = 1 THEN NULL
+                                ELSE wallet_addresses.pinned_at END`,
             [
               addr.network,
               addr.addressType,
@@ -289,6 +295,7 @@ class WalletRepository {
         idx: r.idx as number,
         address: r.address as string,
         isUsed: (r.is_used as number) === 1,
+        pinnedAt: (r.pinned_at as number) ?? null,
       }));
     } catch (err) {
       dbg('WalletRepository.getAddresses error', err);
@@ -296,14 +303,54 @@ class WalletRepository {
     }
   }
 
-  markAddressUsed(address: string): void {
+  // markAddressUsed was removed: it had no runtime callers. The is_used flip
+  // (and the pin clear that ends a pin's lifetime) lives in the upsert
+  // ON CONFLICT branches above, which discovery actually calls.
+
+  /**
+   * Pin an address the user copied/shared so refreshes keep watching it even
+   * after rotation moves it outside the active window. Idempotent: the first
+   * timestamp wins. No-op when the row is not derived yet.
+   */
+  pinAddress(network: string, addressType: string, address: string): void {
     try {
       database.execute(
-        'UPDATE wallet_addresses SET is_used = 1 WHERE address = ?',
-        [address],
+        `UPDATE wallet_addresses SET pinned_at = ?
+         WHERE network = ? AND address_type = ? AND address = ?
+           AND pinned_at IS NULL`,
+        [Date.now(), network, addressType, address],
       );
     } catch (err) {
-      dbg('WalletRepository.markAddressUsed error', err);
+      dbg('WalletRepository.pinAddress error', err);
+    }
+  }
+
+  /** Clear a pin (does not affect active-set membership via the used path). */
+  unpinAddress(network: string, addressType: string, address: string): void {
+    try {
+      database.execute(
+        `UPDATE wallet_addresses SET pinned_at = NULL
+         WHERE network = ? AND address_type = ? AND address = ?`,
+        [network, addressType, address],
+      );
+    } catch (err) {
+      dbg('WalletRepository.unpinAddress error', err);
+    }
+  }
+
+  /** All currently pinned addresses for a (network, addressType). */
+  getPinnedAddresses(network: string, addressType: string): string[] {
+    try {
+      const {rows} = database.execute(
+        `SELECT address FROM wallet_addresses
+         WHERE network = ? AND address_type = ? AND pinned_at IS NOT NULL
+         ORDER BY idx ASC`,
+        [network, addressType],
+      );
+      return rows.map(r => r.address as string);
+    } catch (err) {
+      dbg('WalletRepository.getPinnedAddresses error', err);
+      return [];
     }
   }
 
@@ -343,11 +390,59 @@ class WalletRepository {
         idx: r.idx as number,
         address: r.address as string,
         isUsed: (r.is_used as number) === 1,
+        pinnedAt: (r.pinned_at as number) ?? null,
       };
     } catch (err) {
       dbg('WalletRepository.getAddressAt error', err);
       return null;
     }
+  }
+
+  /**
+   * Highest change-chain (chain 1) idx whose address is referenced by local
+   * history: a transaction_addresses link or a stored UTXO. -1 when none is
+   * referenced. Only this wallet's (network, addressType) rows count.
+   */
+  getMaxReferencedChangeIdx(network: string, addressType: string): number {
+    try {
+      const {rows} = database.execute(
+        `SELECT COALESCE(MAX(wa.idx), -1) AS m
+         FROM wallet_addresses wa
+         WHERE wa.network = ? AND wa.address_type = ? AND wa.chain = 1
+           AND (
+             EXISTS (SELECT 1 FROM transaction_addresses ta
+                      WHERE ta.address = wa.address AND ta.network = wa.network)
+             OR EXISTS (SELECT 1 FROM utxos u
+                      WHERE u.address = wa.address AND u.network = wa.network)
+           )`,
+        [network, addressType],
+      );
+      return rows.length ? (rows[0].m as number) : -1;
+    } catch (err) {
+      dbg('WalletRepository.getMaxReferencedChangeIdx error', err);
+      return -1;
+    }
+  }
+
+  /**
+   * Restart safety net for a change index that never advanced (e.g. the
+   * process died after broadcast but before incrementChangeIndexAfterSend).
+   * If local history already references change_idx N, advance to N+1 so the
+   * next send never reuses that change address. Idempotent and offline.
+   */
+  reconcileChangeIndex(
+    network: string,
+    addressType: string,
+  ): {bumped: boolean; from: number; to: number} {
+    const from = this.getChangeIndex(network, addressType);
+    const maxReferenced = this.getMaxReferencedChangeIdx(network, addressType);
+    if (maxReferenced < 0 || from > maxReferenced) {
+      return {bumped: false, from, to: from};
+    }
+    const to = maxReferenced + 1;
+    this.setChangeIndex(network, addressType, to);
+    dbg('WalletRepository: reconciled change index', {network, addressType, from, to});
+    return {bumped: true, from, to};
   }
 
   /** Largest idx for chain (0 or 1), or -1 if none. */

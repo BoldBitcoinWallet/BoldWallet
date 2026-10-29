@@ -83,7 +83,7 @@ Both tools provide identical functionality. Choose based on your platform prefer
    - `--passphrase1` for the first keyshare (KeyShare1 or peer1)
    - `--passphrase2` for the second keyshare (KeyShare2 or peer2)
    - Each keyshare can have its own passphrase
-3. **Network information**: Know which network your funds are on (`mainnet` or `testnet3`)
+3. **Network information**: Know which network your funds are on (`mainnet` or `testnet4`)
 4. **Derivation path**: The BIP32 path used for your wallet:
    - **Legacy (P2PKH)**: `m/44'/0'/0'/0/0` (mainnet) or `m/44'/1'/0'/0/0` (testnet)
    - **SegWit Native (P2WPKH)**: `m/84'/0'/0'/0/0` (mainnet) or `m/84'/1'/0'/0/0` (testnet)
@@ -132,8 +132,8 @@ Before sending, always preview the transaction to estimate fees:
 ./bin/bold-spend-darwin-arm64 \
   --to-address <recipient_address> \
   --amount-sats <amount_in_satoshis> \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/44'/0'/0'/0/0" \
   --address-type p2pkh \
   --preview
@@ -144,8 +144,8 @@ Before sending, always preview the transaction to estimate fees:
 bin\bold-spend-windows-amd64.exe ^
   --to-address <recipient_address> ^
   --amount-sats <amount_in_satoshis> ^
-  --network testnet3 ^
-  --mempool-url https://mempool.space/testnet/api ^
+  --network testnet4 ^
+  --mempool-url https://mempool.space/testnet4/api ^
   --derivation-path "m/44'/0'/0'/0/0" ^
   --address-type p2pkh ^
   --preview
@@ -156,8 +156,8 @@ bin\bold-spend-windows-amd64.exe ^
 ./bin/bold-spend-darwin-arm64 \
   --to-address mq3WboPaYTvFygYByGL1xKNiqDwrcDYgxa \
   --amount-sats 200000 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/44'/0'/0'/0/0" \
   --address-type p2pkh \
   --preview
@@ -178,7 +178,7 @@ Once you have the fee estimate, send the transaction (remove `--preview` and use
   --to-address <recipient_address> \
   --amount-sats <amount_in_satoshis> \
   --fee-sats <estimated_fee> \
-  --network <mainnet|testnet3> \
+  --network <mainnet|testnet4> \
   --mempool-url <mempool_api_url> \
   --derivation-path "<bip32_path>" \
   --address-type <p2pkh|p2wpkh|p2sh-p2wpkh|p2tr>
@@ -190,7 +190,7 @@ bin\bold-spend-windows-amd64.exe ^
   --to-address <recipient_address> ^
   --amount-sats <amount_in_satoshis> ^
   --fee-sats <estimated_fee> ^
-  --network <mainnet|testnet3> ^
+  --network <mainnet|testnet4> ^
   --mempool-url <mempool_api_url> ^
   --derivation-path "<bip32_path>" ^
   --address-type <p2pkh|p2wpkh|p2sh-p2wpkh|p2tr>
@@ -202,8 +202,8 @@ bin\bold-spend-windows-amd64.exe ^
   --to-address mq3WboPaYTvFygYByGL1xKNiqDwrcDYgxa \
   --amount-sats 200000 \
   --fee-sats 226 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/44'/0'/0'/0/0" \
   --address-type p2pkh
 ```
@@ -218,8 +218,8 @@ cd BBMTLib
   --to-address <recipient_address> \
   --amount-sats <amount_in_satoshis> \
   --fee-sats 1 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/44'/0'/0'/0/0" \
   --address-type p2pkh \
   --preview
@@ -232,7 +232,7 @@ cd BBMTLib
   --to-address <recipient_address> \
   --amount-sats <amount_in_satoshis> \
   --fee-sats <estimated_fee> \
-  --network <mainnet|testnet3> \
+  --network <mainnet|testnet4> \
   --mempool-url <mempool_api_url> \
   --derivation-path "<bip32_path>" \
   --address-type <p2pkh|p2wpkh|p2sh-p2wpkh|p2tr>
@@ -252,8 +252,8 @@ If your keyshares are stored as plaintext/base64 files:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/44'/1'/0'/0/0" \
   --address-type p2pkh
 ```
@@ -264,8 +264,8 @@ If your keyshares are stored as plaintext/base64 files:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/84'/1'/0'/0/0" \
   --address-type p2wpkh
 ```
@@ -276,8 +276,8 @@ If your keyshares are stored as plaintext/base64 files:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/49'/1'/0'/0/0" \
   --address-type p2sh-p2wpkh
 ```
@@ -290,8 +290,8 @@ If your keyshares are stored as plaintext/base64 files:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/44'/1'/0'/0/0" \
   --address-type p2pkh
 ```
@@ -302,8 +302,8 @@ If your keyshares are stored as plaintext/base64 files:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/84'/1'/0'/0/0" \
   --address-type p2wpkh
 ```
@@ -314,8 +314,8 @@ If your keyshares are stored as plaintext/base64 files:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/49'/1'/0'/0/0" \
   --address-type p2sh-p2wpkh
 ```
@@ -330,8 +330,8 @@ If both keyshares use the same passphrase:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/84'/1'/0'/0/0" \
   --address-type p2wpkh \
   --passphrase1 "your-secret-passphrase" \
@@ -344,8 +344,8 @@ If both keyshares use the same passphrase:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/84'/1'/0'/0/0" \
   --address-type p2wpkh \
   --passphrase1 "your-secret-passphrase" \
@@ -362,8 +362,8 @@ If each keyshare has its own passphrase:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/49'/1'/0'/0/0" \
   --address-type p2sh-p2wpkh \
   --passphrase1 "party1-secret" \
@@ -376,8 +376,8 @@ If each keyshare has its own passphrase:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/49'/1'/0'/0/0" \
   --address-type p2sh-p2wpkh \
   --passphrase1 "party1-secret" \
@@ -394,8 +394,8 @@ If you have backup files from the mobile app (with `.share` extension):
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/84'/1'/0'/0/0" \
   --address-type p2wpkh \
   --keyshare1 "/path/to/KeyShare1.Dec19.2025.1257.share" \
@@ -410,8 +410,8 @@ If you have backup files from the mobile app (with `.share` extension):
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/84'/1'/0'/0/0" \
   --address-type p2wpkh \
   --keyshare1 "/path/to/KeyShare1.Dec19.2025.1257.share" \
@@ -437,8 +437,8 @@ If your keyshares are in different locations or have custom names:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/84'/1'/0'/0/0" \
   --address-type p2wpkh \
   --keyshare1 /path/to/backup1.ks \
@@ -453,8 +453,8 @@ If your keyshares are in different locations or have custom names:
   --to-address <recipient> \
   --amount-sats 100000 \
   --fee-sats 300 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/84'/1'/0'/0/0" \
   --address-type p2wpkh \
   --keyshare1 /path/to/backup1.ks \
@@ -596,7 +596,7 @@ Common derivation paths based on address type and network:
 ## Mempool API URLs
 
 - **Mainnet**: `https://mempool.space/api`
-- **Testnet**: `https://mempool.space/testnet/api`
+- **Testnet**: `https://mempool.space/testnet4/api`
 - **Alternative mainnet**: `https://benpool.space/api`
 
 ## Fee Estimation
@@ -728,8 +728,8 @@ cd BBMTLib
 ./bin/bold-spend-darwin-arm64 \
   --to-address mq3WboPaYTvFygYByGL1xKNiqDwrcDYgxa \
   --amount-sats 200000 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/44'/0'/0'/0/0" \
   --address-type p2pkh \
   --keyshare1 "KeyShare1.Dec19.2025.1257.share" \
@@ -742,8 +742,8 @@ cd BBMTLib
 # ./bin/bold-spend-darwin-arm64 \
 #   --to-address mq3WboPaYTvFygYByGL1xKNiqDwrcDYgxa \
 #   --amount-sats 200000 \
-#   --network testnet3 \
-#   --mempool-url https://mempool.space/testnet/api \
+#   --network testnet4 \
+#   --mempool-url https://mempool.space/testnet4/api \
 #   --derivation-path "m/44'/0'/0'/0/0" \
 #   --address-type p2pkh \
 #   --passphrase1 "my-secret-1" \
@@ -755,8 +755,8 @@ cd BBMTLib
   --to-address mq3WboPaYTvFygYByGL1xKNiqDwrcDYgxa \
   --amount-sats 200000 \
   --fee-sats 226 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/44'/0'/0'/0/0" \
   --address-type p2pkh \
   --keyshare1 "KeyShare1.Dec19.2025.1257.share" \
@@ -784,8 +784,8 @@ cd BBMTLib
   --to-address mq3WboPaYTvFygYByGL1xKNiqDwrcDYgxa \
   --amount-sats 200000 \
   --fee-sats 1 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/44'/0'/0'/0/0" \
   --address-type p2pkh \
   --keyshare1 "KeyShare1.Dec19.2025.1257.share" \
@@ -799,8 +799,8 @@ cd BBMTLib
 #   --to-address mq3WboPaYTvFygYByGL1xKNiqDwrcDYgxa \
 #   --amount-sats 200000 \
 #   --fee-sats 1 \
-#   --network testnet3 \
-#   --mempool-url https://mempool.space/testnet/api \
+#   --network testnet4 \
+#   --mempool-url https://mempool.space/testnet4/api \
 #   --derivation-path "m/44'/0'/0'/0/0" \
 #   --address-type p2pkh \
 #   --passphrase1 "my-secret-1" \
@@ -812,8 +812,8 @@ cd BBMTLib
   --to-address mq3WboPaYTvFygYByGL1xKNiqDwrcDYgxa \
   --amount-sats 200000 \
   --fee-sats 226 \
-  --network testnet3 \
-  --mempool-url https://mempool.space/testnet/api \
+  --network testnet4 \
+  --mempool-url https://mempool.space/testnet4/api \
   --derivation-path "m/44'/0'/0'/0/0" \
   --address-type p2pkh \
   --keyshare1 "KeyShare1.Dec19.2025.1257.share" \
@@ -854,8 +854,8 @@ If you encounter issues:
     --to-address <address> `
     --amount-sats 100000 `
     --fee-sats 300 `
-    --network testnet3 `
-    --mempool-url https://mempool.space/testnet/api `
+    --network testnet4 `
+    --mempool-url https://mempool.space/testnet4/api `
     --derivation-path "m/44'/1'/0'/0/0" `
     --address-type p2pkh
   ```

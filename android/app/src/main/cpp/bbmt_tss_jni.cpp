@@ -10,6 +10,10 @@ extern "C" {
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtSetNetworkJni(JNIEnv *env, jclass, jstring network) {
+  if (!bbmt_jni_check_strings(env, {network})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *n = env->GetStringUTFChars(network, nullptr);
   jstring out = to_jstring(env, BbmtSetNetwork(const_cast<char *>(n)));
   env->ReleaseStringUTFChars(network, n);
@@ -23,6 +27,10 @@ Java_com_boldwallet_DklsNative_bbmtGetNetworkJni(JNIEnv *env, jclass) {
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtUseFeePolicyJni(JNIEnv *env, jclass, jstring policy) {
+  if (!bbmt_jni_check_strings(env, {policy})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *p = env->GetStringUTFChars(policy, nullptr);
   jstring out = to_jstring(env, BbmtUseFeePolicy(const_cast<char *>(p)));
   env->ReleaseStringUTFChars(policy, p);
@@ -31,6 +39,10 @@ Java_com_boldwallet_DklsNative_bbmtUseFeePolicyJni(JNIEnv *env, jclass, jstring 
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtUseAPIJni(JNIEnv *env, jclass, jstring network, jstring base) {
+  if (!bbmt_jni_check_strings(env, {network, base})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *n = env->GetStringUTFChars(network, nullptr);
   const char *b = env->GetStringUTFChars(base, nullptr);
   jstring out = to_jstring(env, BbmtUseAPI(const_cast<char *>(n), const_cast<char *>(b)));
@@ -41,6 +53,10 @@ Java_com_boldwallet_DklsNative_bbmtUseAPIJni(JNIEnv *env, jclass, jstring networ
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtUseFeeAPIsJni(JNIEnv *env, jclass, jstring urls) {
+  if (!bbmt_jni_check_strings(env, {urls})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *u = env->GetStringUTFChars(urls, nullptr);
   jstring out = to_jstring(env, BbmtUseFeeAPIs(const_cast<char *>(u)));
   env->ReleaseStringUTFChars(urls, u);
@@ -49,6 +65,10 @@ Java_com_boldwallet_DklsNative_bbmtUseFeeAPIsJni(JNIEnv *env, jclass, jstring ur
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtTotalUTXOJni(JNIEnv *env, jclass, jstring address) {
+  if (!bbmt_jni_check_strings(env, {address})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *a = env->GetStringUTFChars(address, nullptr);
   jstring out = to_jstring(env, BbmtTotalUTXO(const_cast<char *>(a)));
   env->ReleaseStringUTFChars(address, a);
@@ -58,6 +78,10 @@ Java_com_boldwallet_DklsNative_bbmtTotalUTXOJni(JNIEnv *env, jclass, jstring add
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtSpendingHashJni(
     JNIEnv *env, jclass, jstring sender, jstring receiver, jlong amount) {
+  if (!bbmt_jni_check_strings(env, {sender, receiver})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *s = env->GetStringUTFChars(sender, nullptr);
   const char *r = env->GetStringUTFChars(receiver, nullptr);
   jstring out = to_jstring(env, BbmtSpendingHash(const_cast<char *>(s), const_cast<char *>(r), amount));
@@ -69,6 +93,10 @@ Java_com_boldwallet_DklsNative_bbmtSpendingHashJni(
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtSpendingHashWithUTXOsJni(
     JNIEnv *env, jclass, jstring utxos, jstring receiver, jstring amount) {
+  if (!bbmt_jni_check_strings(env, {utxos, receiver, amount})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *u = env->GetStringUTFChars(utxos, nullptr);
   const char *r = env->GetStringUTFChars(receiver, nullptr);
   const char *a = env->GetStringUTFChars(amount, nullptr);
@@ -83,6 +111,10 @@ Java_com_boldwallet_DklsNative_bbmtSpendingHashWithUTXOsJni(
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtEstimateFeesJni(
     JNIEnv *env, jclass, jstring sender, jstring receiver, jlong amount) {
+  if (!bbmt_jni_check_strings(env, {sender, receiver})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *s = env->GetStringUTFChars(sender, nullptr);
   const char *r = env->GetStringUTFChars(receiver, nullptr);
   jstring out = to_jstring(env, BbmtEstimateFees(const_cast<char *>(s), const_cast<char *>(r), amount));
@@ -94,6 +126,10 @@ Java_com_boldwallet_DklsNative_bbmtEstimateFeesJni(
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtEstimateFeeWithUTXOsJni(
     JNIEnv *env, jclass, jstring utxos, jstring receiver, jstring amount, jstring change) {
+  if (!bbmt_jni_check_strings(env, {utxos, receiver, amount, change})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *u = env->GetStringUTFChars(utxos, nullptr);
   const char *r = env->GetStringUTFChars(receiver, nullptr);
   const char *a = env->GetStringUTFChars(amount, nullptr);
@@ -109,6 +145,10 @@ Java_com_boldwallet_DklsNative_bbmtEstimateFeeWithUTXOsJni(
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtPostTxJni(JNIEnv *env, jclass, jstring rawTx) {
+  if (!bbmt_jni_check_strings(env, {rawTx})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *t = env->GetStringUTFChars(rawTx, nullptr);
   jstring out = to_jstring(env, BbmtPostTx(const_cast<char *>(t)));
   env->ReleaseStringUTFChars(rawTx, t);
@@ -117,6 +157,10 @@ Java_com_boldwallet_DklsNative_bbmtPostTxJni(JNIEnv *env, jclass, jstring rawTx)
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtComputeTxIdJni(JNIEnv *env, jclass, jstring rawTx) {
+  if (!bbmt_jni_check_strings(env, {rawTx})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *t = env->GetStringUTFChars(rawTx, nullptr);
   jstring out = to_jstring(env, BbmtComputeTxId(const_cast<char *>(t)));
   env->ReleaseStringUTFChars(rawTx, t);
@@ -125,6 +169,10 @@ Java_com_boldwallet_DklsNative_bbmtComputeTxIdJni(JNIEnv *env, jclass, jstring r
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtAesEncryptJni(JNIEnv *env, jclass, jstring data, jstring key) {
+  if (!bbmt_jni_check_strings(env, {data, key})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *d = env->GetStringUTFChars(data, nullptr);
   const char *k = env->GetStringUTFChars(key, nullptr);
   jstring out = to_jstring(env, BbmtAesEncrypt(const_cast<char *>(d), const_cast<char *>(k)));
@@ -135,6 +183,10 @@ Java_com_boldwallet_DklsNative_bbmtAesEncryptJni(JNIEnv *env, jclass, jstring da
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtAesDecryptJni(JNIEnv *env, jclass, jstring data, jstring key) {
+  if (!bbmt_jni_check_strings(env, {data, key})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *d = env->GetStringUTFChars(data, nullptr);
   const char *k = env->GetStringUTFChars(key, nullptr);
   jstring out = to_jstring(env, BbmtAesDecrypt(const_cast<char *>(d), const_cast<char *>(k)));
@@ -144,8 +196,99 @@ Java_com_boldwallet_DklsNative_bbmtAesDecryptJni(JNIEnv *env, jclass, jstring da
 }
 
 JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtBackupEncryptJni(JNIEnv *env, jclass, jstring plaintext, jstring password) {
+  if (!bbmt_jni_check_strings(env, {plaintext, password})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
+  const char *p = env->GetStringUTFChars(plaintext, nullptr);
+  const char *w = env->GetStringUTFChars(password, nullptr);
+  jstring out = to_jstring(env, BbmtBackupEncrypt(const_cast<char *>(p), const_cast<char *>(w)));
+  env->ReleaseStringUTFChars(plaintext, p);
+  env->ReleaseStringUTFChars(password, w);
+  return out;
+}
+
+// F15b-1 (A5): bbmtBackupDecryptJni REMOVED (staged import replaces it).
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtImportBackupStagedJni(JNIEnv *env, jclass, jstring blob, jstring password) {
+  if (!bbmt_jni_check_strings(env, {blob, password})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
+  const char *b = env->GetStringUTFChars(blob, nullptr);
+  const char *w = env->GetStringUTFChars(password, nullptr);
+  jstring out = to_jstring(env, BbmtImportBackupStaged(const_cast<char *>(b), const_cast<char *>(w)));
+  env->ReleaseStringUTFChars(blob, b);
+  env->ReleaseStringUTFChars(password, w);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtFinalizeStagedForPersistJni(JNIEnv *env, jclass, jstring handle, jstring nsec, jstring npub) {
+  if (!bbmt_jni_check_strings(env, {handle, nsec, npub})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
+  const char *h = env->GetStringUTFChars(handle, nullptr);
+  const char *n = env->GetStringUTFChars(nsec, nullptr);
+  const char *u = env->GetStringUTFChars(npub, nullptr);
+  jstring out = to_jstring(env, BbmtFinalizeStagedForPersist(const_cast<char *>(h), const_cast<char *>(n), const_cast<char *>(u)));
+  env->ReleaseStringUTFChars(handle, h);
+  env->ReleaseStringUTFChars(nsec, n);
+  env->ReleaseStringUTFChars(npub, u);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtDestroyStagedJni(JNIEnv *env, jclass, jstring handle) {
+  if (!bbmt_jni_check_strings(env, {handle})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
+  const char *h = env->GetStringUTFChars(handle, nullptr);
+  jstring out = to_jstring(env, BbmtDestroyStaged(const_cast<char *>(h)));
+  env->ReleaseStringUTFChars(handle, h);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtDestroyAllStagedJni(JNIEnv *env, jclass) {
+  jstring out = to_jstring(env, BbmtDestroyAllStaged());
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtProjectMetadataJni(JNIEnv *env, jclass, jstring fullJson) {
+  if (!bbmt_jni_check_strings(env, {fullJson})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
+  const char *j = env->GetStringUTFChars(fullJson, nullptr);
+  jstring out = to_jstring(env, BbmtProjectMetadata(const_cast<char *>(j)));
+  env->ReleaseStringUTFChars(fullJson, j);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
+Java_com_boldwallet_DklsNative_bbmtRedactedStructureJni(JNIEnv *env, jclass, jstring fullJson) {
+  if (!bbmt_jni_check_strings(env, {fullJson})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
+  const char *j = env->GetStringUTFChars(fullJson, nullptr);
+  jstring out = to_jstring(env, BbmtRedactedStructure(const_cast<char *>(j)));
+  env->ReleaseStringUTFChars(fullJson, j);
+  return out;
+}
+
+JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtSecP256k1RecoverJni(
     JNIEnv *env, jclass, jstring r, jstring s, jstring v, jstring h) {
+  if (!bbmt_jni_check_strings(env, {r, s, v, h})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *rs = env->GetStringUTFChars(r, nullptr);
   const char *ss = env->GetStringUTFChars(s, nullptr);
   const char *vs = env->GetStringUTFChars(v, nullptr);
@@ -162,6 +305,10 @@ Java_com_boldwallet_DklsNative_bbmtSecP256k1RecoverJni(
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtGetDerivedPubKeyJni(
     JNIEnv *env, jclass, jstring hexPub, jstring hexChain, jstring path, jint isEdDSA) {
+  if (!bbmt_jni_check_strings(env, {hexPub, hexChain, path})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *p = env->GetStringUTFChars(hexPub, nullptr);
   const char *c = env->GetStringUTFChars(hexChain, nullptr);
   const char *pt = env->GetStringUTFChars(path, nullptr);
@@ -176,6 +323,10 @@ Java_com_boldwallet_DklsNative_bbmtGetDerivedPubKeyJni(
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtEncodeXpubJni(
     JNIEnv *env, jclass, jstring hexPub, jstring hexChain, jstring network) {
+  if (!bbmt_jni_check_strings(env, {hexPub, hexChain, network})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *p = env->GetStringUTFChars(hexPub, nullptr);
   const char *c = env->GetStringUTFChars(hexChain, nullptr);
   const char *n = env->GetStringUTFChars(network, nullptr);
@@ -190,6 +341,10 @@ Java_com_boldwallet_DklsNative_bbmtEncodeXpubJni(
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtGetOutputDescriptorJni(
     JNIEnv *env, jclass, jstring hexPub, jstring hexChain, jstring network, jstring addressType) {
+  if (!bbmt_jni_check_strings(env, {hexPub, hexChain, network, addressType})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *p = env->GetStringUTFChars(hexPub, nullptr);
   const char *c = env->GetStringUTFChars(hexChain, nullptr);
   const char *n = env->GetStringUTFChars(network, nullptr);
@@ -205,6 +360,10 @@ Java_com_boldwallet_DklsNative_bbmtGetOutputDescriptorJni(
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtAppendOutputDescriptorChecksumJni(JNIEnv *env, jclass, jstring descriptor) {
+  if (!bbmt_jni_check_strings(env, {descriptor})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *d = env->GetStringUTFChars(descriptor, nullptr);
   jstring out = to_jstring(env, BbmtAppendOutputDescriptorChecksum(const_cast<char *>(d)));
   env->ReleaseStringUTFChars(descriptor, d);
@@ -213,6 +372,10 @@ Java_com_boldwallet_DklsNative_bbmtAppendOutputDescriptorChecksumJni(JNIEnv *env
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtPubToP2WPKHJni(JNIEnv *env, jclass, jstring pub, jstring network) {
+  if (!bbmt_jni_check_strings(env, {pub, network})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *p = env->GetStringUTFChars(pub, nullptr);
   const char *n = env->GetStringUTFChars(network, nullptr);
   jstring out = to_jstring(env, BbmtPubToP2WPKH(const_cast<char *>(p), const_cast<char *>(n)));
@@ -223,6 +386,10 @@ Java_com_boldwallet_DklsNative_bbmtPubToP2WPKHJni(JNIEnv *env, jclass, jstring p
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtPubToP2SHP2WKHJni(JNIEnv *env, jclass, jstring pub, jstring network) {
+  if (!bbmt_jni_check_strings(env, {pub, network})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *p = env->GetStringUTFChars(pub, nullptr);
   const char *n = env->GetStringUTFChars(network, nullptr);
   jstring out = to_jstring(env, BbmtPubToP2SHP2WKH(const_cast<char *>(p), const_cast<char *>(n)));
@@ -233,6 +400,10 @@ Java_com_boldwallet_DklsNative_bbmtPubToP2SHP2WKHJni(JNIEnv *env, jclass, jstrin
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtPubToP2TRJni(JNIEnv *env, jclass, jstring pub, jstring network) {
+  if (!bbmt_jni_check_strings(env, {pub, network})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *p = env->GetStringUTFChars(pub, nullptr);
   const char *n = env->GetStringUTFChars(network, nullptr);
   jstring out = to_jstring(env, BbmtPubToP2TR(const_cast<char *>(p), const_cast<char *>(n)));
@@ -243,6 +414,10 @@ Java_com_boldwallet_DklsNative_bbmtPubToP2TRJni(JNIEnv *env, jclass, jstring pub
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtPubToP2KHJni(JNIEnv *env, jclass, jstring pub, jstring network) {
+  if (!bbmt_jni_check_strings(env, {pub, network})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *p = env->GetStringUTFChars(pub, nullptr);
   const char *n = env->GetStringUTFChars(network, nullptr);
   jstring out = to_jstring(env, BbmtPubToP2KH(const_cast<char *>(p), const_cast<char *>(n)));
@@ -254,6 +429,10 @@ Java_com_boldwallet_DklsNative_bbmtPubToP2KHJni(JNIEnv *env, jclass, jstring pub
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtLocalPreParamsJni(
     JNIEnv *env, jclass, jstring ppmFile, jlong timeoutMinutes) {
+  if (!bbmt_jni_check_strings(env, {ppmFile})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *f = env->GetStringUTFChars(ppmFile, nullptr);
   jstring out = to_jstring(env, BbmtLocalPreParams(const_cast<char *>(f), timeoutMinutes));
   env->ReleaseStringUTFChars(ppmFile, f);
@@ -264,6 +443,10 @@ JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtJoinKeygenJni(
     JNIEnv *env, jclass, jstring ppmPath, jstring key, jstring parties, jstring encKey,
     jstring decKey, jstring session, jstring server, jstring chaincode, jstring sessionKey) {
+  if (!bbmt_jni_check_strings(env, {ppmPath, key, parties, encKey, decKey, session, server, chaincode, sessionKey})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *ppm = env->GetStringUTFChars(ppmPath, nullptr);
   const char *k = env->GetStringUTFChars(key, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
@@ -296,6 +479,10 @@ Java_com_boldwallet_DklsNative_bbmtNostrKeypairJni(JNIEnv *env, jclass) {
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtHexToNpubJni(JNIEnv *env, jclass, jstring hexKey) {
+  if (!bbmt_jni_check_strings(env, {hexKey})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *h = env->GetStringUTFChars(hexKey, nullptr);
   jstring out = to_jstring(env, BbmtHexToNpub(const_cast<char *>(h)));
   env->ReleaseStringUTFChars(hexKey, h);
@@ -306,6 +493,10 @@ JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtNostrJoinKeygenJni(
     JNIEnv *env, jclass, jstring relays, jstring nsec, jstring peers, jstring session,
     jstring sessionKey, jstring chaincode, jstring ppmPath) {
+  if (!bbmt_jni_check_strings(env, {relays, nsec, peers, session, sessionKey, chaincode, ppmPath})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *r = env->GetStringUTFChars(relays, nullptr);
   const char *n = env->GetStringUTFChars(nsec, nullptr);
   const char *p = env->GetStringUTFChars(peers, nullptr);
@@ -326,37 +517,17 @@ Java_com_boldwallet_DklsNative_bbmtNostrJoinKeygenJni(
   return to_jstring(env, out);
 }
 
-JNIEXPORT jstring JNICALL
-Java_com_boldwallet_DklsNative_bbmtNostrJoinKeysignJni(
-    JNIEnv *env, jclass, jstring relays, jstring nsec, jstring peers, jstring session,
-    jstring sessionKey, jstring keyshare, jstring derivePath, jstring message) {
-  const char *r = env->GetStringUTFChars(relays, nullptr);
-  const char *n = env->GetStringUTFChars(nsec, nullptr);
-  const char *p = env->GetStringUTFChars(peers, nullptr);
-  const char *s = env->GetStringUTFChars(session, nullptr);
-  const char *sk = env->GetStringUTFChars(sessionKey, nullptr);
-  const char *ks = env->GetStringUTFChars(keyshare, nullptr);
-  const char *dp = env->GetStringUTFChars(derivePath, nullptr);
-  const char *m = env->GetStringUTFChars(message, nullptr);
-  char *out = BbmtNostrJoinKeysign(
-      const_cast<char *>(r), const_cast<char *>(n), const_cast<char *>(p),
-      const_cast<char *>(s), const_cast<char *>(sk), const_cast<char *>(ks),
-      const_cast<char *>(dp), const_cast<char *>(m));
-  env->ReleaseStringUTFChars(relays, r);
-  env->ReleaseStringUTFChars(nsec, n);
-  env->ReleaseStringUTFChars(peers, p);
-  env->ReleaseStringUTFChars(session, s);
-  env->ReleaseStringUTFChars(sessionKey, sk);
-  env->ReleaseStringUTFChars(keyshare, ks);
-  env->ReleaseStringUTFChars(derivePath, dp);
-  env->ReleaseStringUTFChars(message, m);
-  return to_jstring(env, out);
-}
+// F18 (3b-3): bbmtNostrJoinKeysignJni REMOVED with its sole
+// caller chain (the deleted bridge method).
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtMpcSignPSBTJni(
     JNIEnv *env, jclass, jstring server, jstring key, jstring parties, jstring session,
     jstring sessionKey, jstring encKey, jstring decKey, jstring keyshare, jstring psbt) {
+  if (!bbmt_jni_check_strings(env, {server, key, parties, session, sessionKey, encKey, decKey, keyshare, psbt})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *sv = env->GetStringUTFChars(server, nullptr);
   const char *k = env->GetStringUTFChars(key, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
@@ -387,6 +558,10 @@ Java_com_boldwallet_DklsNative_bbmtMpcSendBTCWithUTXOsJni(
     JNIEnv *env, jclass, jstring server, jstring key, jstring parties, jstring session,
     jstring sessionKey, jstring encKey, jstring decKey, jstring keyshare, jstring btcPub,
     jstring receiver, jstring amount, jstring fees, jstring utxos, jstring change) {
+  if (!bbmt_jni_check_strings(env, {server, key, parties, session, sessionKey, encKey, decKey, keyshare, btcPub, receiver, amount, fees, utxos, change})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *sv = env->GetStringUTFChars(server, nullptr);
   const char *k = env->GetStringUTFChars(key, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
@@ -429,6 +604,10 @@ Java_com_boldwallet_DklsNative_bbmtNostrMpcSendBTCWithUTXOsJni(
     JNIEnv *env, jclass, jstring relays, jstring nsec, jstring parties, jstring npubsSorted,
     jstring balance, jstring keyshare, jstring receiver, jstring amount, jstring fees,
     jstring utxos, jstring change) {
+  if (!bbmt_jni_check_strings(env, {relays, nsec, parties, npubsSorted, balance, keyshare, receiver, amount, fees, utxos, change})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *r = env->GetStringUTFChars(relays, nullptr);
   const char *n = env->GetStringUTFChars(nsec, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
@@ -463,6 +642,10 @@ JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtNostrMpcSignPSBTJni(
     JNIEnv *env, jclass, jstring relays, jstring nsec, jstring parties, jstring npubsSorted,
     jstring keyshare, jstring psbt) {
+  if (!bbmt_jni_check_strings(env, {relays, nsec, parties, npubsSorted, keyshare, psbt})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *r = env->GetStringUTFChars(relays, nullptr);
   const char *n = env->GetStringUTFChars(nsec, nullptr);
   const char *p = env->GetStringUTFChars(parties, nullptr);
@@ -483,6 +666,10 @@ Java_com_boldwallet_DklsNative_bbmtNostrMpcSignPSBTJni(
 
 JNIEXPORT jstring JNICALL
 Java_com_boldwallet_DklsNative_bbmtCancelMpcSessionJni(JNIEnv *env, jclass, jstring sessionID) {
+  if (!bbmt_jni_check_strings(env, {sessionID})) {
+    return env->NewStringUTF("error:f11: null or oversized string argument");
+  }
+
   const char *s = env->GetStringUTFChars(sessionID, nullptr);
   jstring out = to_jstring(env, BbmtCancelMpcSession(const_cast<char *>(s)));
   env->ReleaseStringUTFChars(sessionID, s);

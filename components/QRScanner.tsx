@@ -1,5 +1,6 @@
 import React, {useState, useEffect, useRef} from 'react';
-import {View, Text, StyleSheet, Modal, Platform} from 'react-native';
+import {View, Text, StyleSheet, Platform} from 'react-native';
+import AppModal from './AppModal';
 import AppPressable from './AppPressable';
 import {ScannerHud, useElapsedScanSeconds, useUrScanFrameHud} from './QRScannerHud';
 import {
@@ -145,7 +146,7 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
   });
   if (!device || !codeScanner) {
     return (
-      <Modal
+      <AppModal
         visible={visible}
         transparent={false}
         animationType="fade"
@@ -162,7 +163,7 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
             <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
           </AppPressable>
         </View>
-      </Modal>
+      </AppModal>
     );
   }
   const isAnimatedQR = showProgress && progress && progress.total > 1;
@@ -196,7 +197,7 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
         : `${hudProgress.received} / ${hudProgress.total} (${progressPercent}%)`
       : 'Point camera at the QR code to scan');
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent={false}
       animationType="fade"
@@ -223,7 +224,7 @@ const IOSQRScanner: React.FC<QRScannerProps> = ({
           <Text style={styles.closeScannerButtonText}>{closeButtonText}</Text>
         </AppPressable>
       </View>
-    </Modal>
+    </AppModal>
   );
 };
 // Android QR Scanner Component (uses BarcodeZxingScan)

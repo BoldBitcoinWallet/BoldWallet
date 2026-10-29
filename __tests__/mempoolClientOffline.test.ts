@@ -62,6 +62,22 @@ describe('MempoolClient offline gate', () => {
     expect(second.data).toEqual({height: 1});
     expect(global.fetch).not.toHaveBeenCalled();
   });
+
+  it('fresh skips a warm cache and requests the URL again', async () => {
+    const url = 'https://mempool.space/api/v1/prices?fresh=1';
+    const first = await mempoolClient.get(url);
+    expect(first.ok).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    (global.fetch as jest.Mock).mockClear();
+    const second = await mempoolClient.get(url, {fresh: true});
+    expect(second.ok).toBe(true);
+    expect(second.data).toEqual({height: 1});
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    expect(global.fetch).toHaveBeenCalledWith(
+      url,
+      expect.objectContaining({cache: 'no-store'}),
+    );
+  });
 });
 
 describe('MempoolClient.syncPoolConcurrency', () => {

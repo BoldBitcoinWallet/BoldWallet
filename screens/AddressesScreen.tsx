@@ -14,6 +14,7 @@ import {
 import Toast from 'react-native-toast-message';
 import {useFocusEffect} from '@react-navigation/native';
 import {useTheme, type ThemeColors} from '../theme';
+import {useFloatingScrollPadding} from '../components/FloatingTabBar';
 import {useUser} from '../context/UserContext';
 import {HeaderProvider, HeaderNetwork} from '../components/Header';
 import appConfigRepository, {
@@ -186,6 +187,7 @@ function needsLazyBalanceSync(address: string, network: string): boolean {
 
 const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const {theme} = useTheme();
+  const floatingScrollPadding = useFloatingScrollPadding();
   const {
     activeApiProvider: apiBase,
     activeNetwork: network,
@@ -904,7 +906,10 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
         data={rows}
         keyExtractor={item => item.key}
         renderItem={renderRow}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          {paddingBottom: 32 + floatingScrollPadding},
+        ]}
         ListEmptyComponent={
           empty ? (
             <AppText tone="muted" style={styles.empty}>
@@ -962,21 +967,24 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
           </AppPressable>
         }
       />
-      {receiveModalRow ? (
-        <ReceiveModal
-          address={receiveModalRow.address}
-          addressType={addressType}
-          baseApi={apiBase ?? ''}
-          network={network as 'mainnet' | 'testnet'}
-          pathChain={receiveModalRow.chain}
-          receivePathInfo={{
-            path: receiveModalRow.derivationPath,
-            index: receiveModalRow.idx,
-            address: receiveModalRow.address,
-          }}
-          onClose={() => setReceiveModalRow(null)}
-        />
-      ) : null}
+      <ReceiveModal
+        visible={receiveModalRow != null}
+        address={receiveModalRow?.address ?? ''}
+        addressType={addressType}
+        baseApi={apiBase ?? ''}
+        network={network as 'mainnet' | 'testnet'}
+        pathChain={receiveModalRow?.chain}
+        receivePathInfo={
+          receiveModalRow
+            ? {
+                path: receiveModalRow.derivationPath,
+                index: receiveModalRow.idx,
+                address: receiveModalRow.address,
+              }
+            : null
+        }
+        onClose={() => setReceiveModalRow(null)}
+      />
     </View>
   );
 };

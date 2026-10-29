@@ -1,11 +1,12 @@
 import React, {useCallback, useEffect, useState, useRef} from 'react';
+import {showAppNotice} from '../services/appPrompt';
 import {
   View,
   Text,
   StyleSheet,
   Image,
   ScrollView,
-  Alert,
+
   Animated,
 } from 'react-native';
 import AppPressable from '../components/AppPressable';
@@ -13,10 +14,11 @@ import AppText from '../components/AppText';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {NativeModules} from 'react-native';
 import {useTheme} from '../theme';
+import {useFloatingScrollPadding} from '../components/FloatingTabBar';
 import {useUser} from '../context/UserContext';
 import {PSBTLoader} from './PSBTModal';
 import {canonicalPsbtBase64} from '../services/psbtIdentity';
-import {dbg, generateAllOutputDescriptors, getKeyshare, getKeyshareMetadata} from '../utils';
+import {dbg, generateAllOutputDescriptors, getKeyshareSecureMetadata, getKeyshareMetadata} from '../utils';
 import {CommonActions, useRoute, RouteProp} from '@react-navigation/native';
 import TransportModeSelector from '../components/TransportModeSelector';
 import Clipboard from '@react-native-clipboard/clipboard';
@@ -47,6 +49,7 @@ type RouteParams = {
 const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
   const {theme} = useTheme();
+  const floatingScrollPadding = useFloatingScrollPadding();
   const styles = createStyles(theme);
   const globalStyles = createGlobalStyles(theme);
 
@@ -133,8 +136,8 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
   }, [isPSBTSectionExpanded]);
   const loadKeyshareInfo = useCallback(async () => {
     try {
-      // Spec v2: chaincode from encrypted blob only, never SQLite metadata.
-      const keyshare = await getKeyshare();
+      // F15b-1: chaincode from native-projected secure fields, never SQLite metadata.
+      const keyshare = await getKeyshareSecureMetadata();
       if (!keyshare) {
         setKeyshareInfo(null);
         return;
@@ -200,7 +203,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         await safeUnlink(filePath);
       } catch (error: any) {
         if (error?.message !== 'User did not share') {
-          Alert.alert('Error', 'Failed to share file');
+          showAppNotice('Error', 'Failed to share file');
         }
       }
     },
@@ -364,7 +367,10 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     <SafeAreaView style={styles.screenContainer} edges={['left', 'right']}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {paddingBottom: 24 + floatingScrollPadding},
+        ]}
         removeClippedSubviews
         keyboardShouldPersistTaps="handled"
         overScrollMode="never"
@@ -650,6 +656,13 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         visible={isCurrencySelectorVisible}
         onClose={() => setIsCurrencySelectorVisible(false)}
         onSelect={handleCurrencySelect}
+        onRates={rates => {
+          setPriceData(rates);
+          const rate = rates[selectedCurrency];
+          if (rate > 0) {
+            setBtcPrice(rate.toString());
+          }
+        }}
         currentCurrency={selectedCurrency}
         availableCurrencies={priceData}
       />
@@ -694,16 +707,14 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
         }}
       />
       {/* Signed PSBT Modal */}
-      {signedPsbt && (
-        <SignedPSBTModal
-          visible={isSignedPSBTModalVisible}
-          signedPsbtBase64={signedPsbt}
+      <SignedPSBTModal
+          visible={!!signedPsbt && isSignedPSBTModalVisible}
+          signedPsbtBase64={signedPsbt ?? ''}
           onClose={() => {
             setIsSignedPSBTModalVisible(false);
             setSignedPsbt(null);
           }}
         />
-      )}
     </SafeAreaView>
   );
 };

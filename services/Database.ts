@@ -20,7 +20,7 @@ const SCHEMA_STATEMENTS = [
     updated_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
   )`,
 
-  // ── Network Providers (replaces api, api_mainnet, api_testnet3 keys) ─────────
+  // ── Network Providers (replaces api, api_mainnet, api_testnet3/4 keys) ─────────
   `CREATE TABLE IF NOT EXISTS network_providers (
     network    TEXT NOT NULL,
     api_url    TEXT NOT NULL,
@@ -60,7 +60,12 @@ const SCHEMA_STATEMENTS = [
     PRIMARY KEY (network, address_type, chain, idx)
   )`,
 
-  `CREATE UNIQUE INDEX IF NOT EXISTS idx_wallet_addresses_addr
+  `DROP INDEX IF EXISTS idx_wallet_addresses_addr`,
+
+  `CREATE INDEX IF NOT EXISTS idx_wallet_addresses_net_type_addr
+     ON wallet_addresses (network, address_type, address)`,
+
+  `CREATE INDEX IF NOT EXISTS idx_wallet_addresses_lookup
      ON wallet_addresses (address)`,
 
   // ── Address Balances (replaces wallet_balance_* and aggregate_* keys) ─────────
@@ -125,31 +130,6 @@ const SCHEMA_STATEMENTS = [
 
   `CREATE INDEX IF NOT EXISTS idx_txaddr_address
      ON transaction_addresses (address, network)`,
-
-  // ── Transaction Inputs ────────────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS tx_inputs (
-    txid       TEXT NOT NULL,
-    network    TEXT NOT NULL,
-    vin_idx    INTEGER NOT NULL,
-    prev_txid  TEXT,
-    prev_vout  INTEGER,
-    address    TEXT,
-    value_sats INTEGER,
-    sequence   INTEGER,
-    PRIMARY KEY (txid, network, vin_idx)
-  )`,
-
-  // ── Transaction Outputs ───────────────────────────────────────────────────────
-  `CREATE TABLE IF NOT EXISTS tx_outputs (
-    txid          TEXT NOT NULL,
-    network       TEXT NOT NULL,
-    vout_idx      INTEGER NOT NULL,
-    address       TEXT,
-    value_sats    INTEGER NOT NULL,
-    script_pubkey TEXT,
-    is_spent      INTEGER NOT NULL DEFAULT 0,
-    PRIMARY KEY (txid, network, vout_idx)
-  )`,
 
   // ── Pending (mempool) Transactions ───────────────────────────────────────────
   `CREATE TABLE IF NOT EXISTS pending_transactions (
@@ -263,6 +243,8 @@ class DatabaseService {
           // can display human-readable timestamps for confirmed UTXOs loaded
           // from the DB (without this the row always showed "Unconfirmed").
           'ALTER TABLE utxos ADD COLUMN block_time INTEGER',
+          // B2: pin flag for user-shared receive addresses (nullable ms timestamp).
+          'ALTER TABLE wallet_addresses ADD COLUMN pinned_at INTEGER',
         ];
         for (const stmt of COLUMN_MIGRATIONS) {
           try {
@@ -270,6 +252,15 @@ class DatabaseService {
           } catch {
             // Column already present — safe to ignore.
           }
+        }
+
+        // tx_inputs / tx_outputs were created and never written. Drop them on
+        // existing installs; new databases never create them.
+        for (const stmt of [
+          'DROP TABLE IF EXISTS tx_inputs',
+          'DROP TABLE IF EXISTS tx_outputs',
+        ]) {
+          this._db.executeSync(stmt);
         }
 
         dbg('DatabaseService: schema ready');
@@ -287,6 +278,8 @@ class DatabaseService {
           for (const stmt of SCHEMA_STATEMENTS) {
             this._db.executeSync(stmt);
           }
+          this._db.executeSync('DROP TABLE IF EXISTS tx_inputs');
+          this._db.executeSync('DROP TABLE IF EXISTS tx_outputs');
           dbg('DatabaseService: recovery succeeded');
         } catch (recoveryErr) {
           dbg('DatabaseService: recovery failed', recoveryErr);
@@ -350,13 +343,13 @@ class DatabaseService {
         'utxos',
         'transactions',
         'transaction_addresses',
-        'tx_inputs',
-        'tx_outputs',
         'pending_transactions',
         'sync_metadata',
         'merchant_labels',
         'branta_verified_txs',
         'utxo_tags',
+        'price_rates',
+        'fee_rates',
       ]) {
         tx.execute(`DELETE FROM ${table}`);
       }
@@ -429,8 +422,6 @@ class DatabaseService {
         'utxos',
         'transactions',
         'transaction_addresses',
-        'tx_inputs',
-        'tx_outputs',
         'pending_transactions',
         'sync_metadata',
       ]) {

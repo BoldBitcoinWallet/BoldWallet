@@ -10,11 +10,11 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   Image,
   ScrollView,
   useWindowDimensions,
 } from 'react-native';
+import AppModal from './AppModal';
 import AppPressable from './AppPressable';
 import GlassModalOverlay from './GlassModalOverlay';
 import StaticQRCode from './StaticQRCode';
@@ -122,6 +122,7 @@ interface TransportModeSelectorProps {
     changeAddress?: string | null; // Pre-computed change address (ensures both devices use the same output)
   } | null;
   showQRCode?: boolean; // Whether to show QR code (false when data came from scan)
+  onDismiss?: () => void;
 }
 const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   visible,
@@ -132,6 +133,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
   title = 'Transport Method',
   description = 'Choose how to connect with other devices',
   sendBitcoinData = null,
+  onDismiss,
   showQRCode = true,
 }) => {
   const {theme} = useTheme();
@@ -494,10 +496,11 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
     },
   });
   return (
-    <Modal
+    <AppModal
       transparent={true}
       visible={visible}
       animationType="fade"
+      onDismiss={onDismiss}
       onRequestClose={onClose}>
       <GlassModalOverlay style={styles.modalOverlay}>
         <View style={styles.modalContent}>
@@ -725,7 +728,7 @@ const TransportModeSelector: React.FC<TransportModeSelectorProps> = ({
           </ScrollView>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 export default TransportModeSelector;

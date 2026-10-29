@@ -1,12 +1,14 @@
 import React from 'react';
 import {
-  Modal,
   View,
   Image,
   StyleSheet,
   Linking,
   ScrollView,
+  type LayoutChangeEvent,
+  type TextStyle,
 } from 'react-native';
+import AppModal from './AppModal';
 import Animated, {
   Extrapolation,
   interpolate,
@@ -18,17 +20,18 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import AppPressable from './AppPressable';
 import AppText from './AppText';
 import GlassModalOverlay from './GlassModalOverlay';
-import {useTheme} from '../theme';
+import {COMMON_FONT_CONFIGS, useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import {dbg, explorerWebBaseFromApiUrl, formatBitcoinDisplay} from '../utils';
 import mempoolClient from '../services/MempoolClient';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import {isBrantaEnabled} from '../services/BrantaService';
 import {ActiveTxVisualizer} from './TransactionVisualizer';
+import {isApiTxConfirmed} from '../services/txVisualizerPhase';
 import ErrorBoundary from './ErrorBoundary';
 
-/** Scroll distance (px) over which the compact visualizer fully collapses. */
-const VISUALIZER_COLLAPSE_DISTANCE = 140;
+/** Open-state stand-in until the diagram reports its real height. */
+const VISUALIZER_FALLBACK_H = 260;
 
 interface TransactionDetailsModalProps {
   visible: boolean;
@@ -49,6 +52,14 @@ interface TransactionDetailsModalProps {
     confirmed: boolean;
     text: string;
   } | null;
+  /** Local row said confirmed, but the chain still has the tx in the mempool. */
+  onChainStatus?: (
+    txid: string,
+    status: {
+      confirmed: boolean;
+      blockHeight: number | null;
+    },
+  ) => void;
   amounts: {
     sent: number;
     received: number;
@@ -70,6 +81,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   status,
   amounts,
   isBlurred = false,
+  onChainStatus,
 }) => {
   const {theme} = useTheme();
   const {showSats, balanceFormattingEnabled} = useUser();
@@ -77,34 +89,77 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     number | null
   >(null);
   const [txidCopied, setTxidCopied] = React.useState(false);
-  const collapseProgress = useSharedValue(0);
+  const [breakdownOpen, setBreakdownOpen] = React.useState(false);
+  const [visualizerSlotH, setVisualizerSlotH] = React.useState(
+    VISUALIZER_FALLBACK_H,
+  );
+  const [sheetMinH, setSheetMinH] = React.useState(0);
   const detailsScrollRef = React.useRef<ScrollView>(null);
+  const scrollY = useSharedValue(0);
+  const expandedH = useSharedValue(VISUALIZER_FALLBACK_H);
 
   const onDetailsScroll = useAnimatedScrollHandler({
     onScroll: event => {
-      collapseProgress.value = interpolate(
-        event.contentOffset.y,
-        [0, VISUALIZER_COLLAPSE_DISTANCE],
-        [0, 1],
-        Extrapolation.CLAMP,
-      );
+      scrollY.value = event.contentOffset.y;
     },
   });
 
-  const visualizerSectionAnim = useAnimatedStyle(() => ({
-    paddingTop: interpolate(
-      collapseProgress.value,
-      [0, 1],
-      [12, 4],
+  const visualizerParallaxStyle = useAnimatedStyle(() => {
+    const full = expandedH.value;
+    return {
+      transform: [
+        {
+          scale: interpolate(
+            scrollY.value,
+            [0, full],
+            [1, 0.94],
+            Extrapolation.CLAMP,
+          ),
+        },
+      ],
+    };
+  });
+
+  const detailsSheetStyle = useAnimatedStyle(() => {
+    const full = expandedH.value;
+    const y = scrollY.value;
+    const lift = interpolate(
+      y,
+      [0, full * 0.12, full * 0.88, full],
+      [0.14, 0.24, 0.24, 0],
       Extrapolation.CLAMP,
-    ),
-    paddingBottom: interpolate(
-      collapseProgress.value,
-      [0, 1],
-      [8, 2],
-      Extrapolation.CLAMP,
-    ),
-  }));
+    );
+    return {
+      borderTopLeftRadius: 0,
+      borderTopRightRadius: 0,
+      shadowOpacity: lift,
+      elevation: interpolate(
+        y,
+        [0, full * 0.88, full],
+        [14, 14, 0],
+        Extrapolation.CLAMP,
+      ),
+    };
+  });
+
+  const onVisualizerLayout = React.useCallback(
+    (e: LayoutChangeEvent) => {
+      const h = Math.ceil(e.nativeEvent.layout.height);
+      if (h < 80 || Math.abs(h - expandedH.value) <= 1) {
+        return;
+      }
+      // Lock the slot once scrolling so a clipped layout cannot resize the list.
+      if (scrollY.value > 2) {
+        return;
+      }
+      expandedH.value = h;
+      setVisualizerSlotH(h);
+    },
+    [expandedH, scrollY],
+  );
+
+  const onChainStatusRef = React.useRef(onChainStatus);
+  onChainStatusRef.current = onChainStatus;
 
   const baseUrl =
     explorerWebBaseFromApiUrl(baseApi) ||
@@ -143,16 +198,47 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   }, [visible, transaction?.status?.block_height, baseApi]);
 
   React.useEffect(() => {
-    if (!visible) {
-      setTxidCopied(false);
-      collapseProgress.value = 0;
+    if (!visible || !status?.confirmed || !transaction?.txid) {
       return;
     }
-    collapseProgress.value = 0;
+    const txid = transaction.txid;
+    let cancelled = false;
+    (async () => {
+      try {
+        const apiUrl = baseApi.replace(/\/+$/, '');
+        const response = await mempoolClient.get<{confirmed?: boolean}>(
+          `${apiUrl}/tx/${encodeURIComponent(txid)}/status`,
+          {fresh: true, timeoutMs: 8000},
+        );
+        if (cancelled || !response.ok || isApiTxConfirmed(response.data)) {
+          return;
+        }
+        onChainStatusRef.current?.(txid, {
+          confirmed: false,
+          blockHeight: null,
+        });
+      } catch (error) {
+        dbg('Transaction details: status check failed', error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, status?.confirmed, transaction?.txid, baseApi]);
+
+  React.useEffect(() => {
+    scrollY.value = 0;
+    expandedH.value = VISUALIZER_FALLBACK_H;
+    setVisualizerSlotH(VISUALIZER_FALLBACK_H);
+    if (!visible) {
+      setTxidCopied(false);
+      setBreakdownOpen(false);
+      return;
+    }
     requestAnimationFrame(() => {
       detailsScrollRef.current?.scrollTo({y: 0, animated: false});
     });
-  }, [visible, transaction?.txid, collapseProgress]);
+  }, [visible, transaction?.txid, scrollY, expandedH]);
 
   const confirmations = React.useMemo(() => {
     if (
@@ -166,7 +252,14 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   }, [transaction?.status?.block_height, currentBlockHeight]);
 
   if (!transaction || !status || !amounts) {
-    return null;
+    return (
+      <AppModal
+        visible={visible}
+        transparent
+        animationType="fade"
+        onRequestClose={onClose}
+      />
+    );
   }
 
   const brantaOn = isBrantaEnabled();
@@ -182,22 +275,146 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     isSent ||
     status.text.includes('Consolidat') ||
     status.text.includes('Rebalanc');
-  const amount = isSent ? amounts.sent : amounts.received;
-  const hasValidAmount = typeof amount === 'number' && Number.isFinite(amount);
-  const hasValidSent =
-    typeof amounts.sent === 'number' && Number.isFinite(amounts.sent);
-  const hasValidReceived =
-    typeof amounts.received === 'number' && Number.isFinite(amounts.received);
-
   const confirmedAtMs = transaction.sentAt
     ? transaction.sentAt
     : transaction.status?.block_time
     ? transaction.status.block_time * 1000
     : null;
 
+  const isSelfMove =
+    status.text.includes('Consolidat') || status.text.includes('Rebalanc');
+  const isOurs = (addr: string) => Boolean(addr && addressPathMap?.[addr]);
+  const counterpartyAddrs = (
+    isSent ? transaction.vout ?? [] : transaction.vin ?? []
+  )
+    .map((item: any) =>
+      isSent
+        ? item.scriptpubkey_address || ''
+        : item.prevout?.scriptpubkey_address || '',
+    )
+    .filter((addr: string) => addr && !isOurs(addr));
+  const firstParty = counterpartyAddrs[0] || '';
+  const partyMerchant =
+    firstParty && brantaOn
+      ? merchantLabelRepository.getByAddress(firstParty)
+      : null;
+  const headline = status.text.includes('Consolidat')
+    ? status.confirmed
+      ? 'Consolidated'
+      : 'Consolidating'
+    : status.text.includes('Rebalanc')
+      ? status.confirmed
+        ? 'Rebalanced'
+        : 'Rebalancing'
+      : isSent && partyMerchant
+        ? status.confirmed
+          ? `Sent to ${partyMerchant.platform}`
+          : `Paying ${partyMerchant.platform}`
+        : status.text;
+  const headerIcon = !status.confirmed
+    ? require('../assets/pending-icon.png')
+    : isSelfMove
+      ? require('../assets/consolidate-icon.png')
+      : isSent
+        ? require('../assets/out-icon.png')
+        : require('../assets/in-icon.png');
+  const partyIcon = isSelfMove
+    ? require('../assets/consolidate-icon.png')
+    : isSent
+      ? require('../assets/send-icon.png')
+      : require('../assets/receive-icon.png');
+  const partyLabel = isSelfMove ? 'Moved' : isSent ? 'To' : 'From';
+  const partyIsAddress = !isSelfMove && !!firstParty && !partyMerchant;
+  const partyValue = isSelfMove
+    ? 'Your addresses'
+    : firstParty
+      ? `${
+          partyMerchant?.platform ||
+          `${firstParty.slice(0, 8)}…${firstParty.slice(-4)}`
+        }${counterpartyAddrs.length > 1 ? ` +${counterpartyAddrs.length - 1}` : ''}`
+      : isSent
+        ? 'Your wallet'
+        : 'The network';
+  const whenLabel = confirmedAtMs
+    ? new Date(confirmedAtMs).toLocaleString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+      })
+    : status.confirmed
+      ? ''
+      : 'Waiting for confirmation';
+  const amountSign = isSent && !isSelfMove ? '-' : '+';
+  const amountColor =
+    isSent && !isSelfMove
+      ? theme.colors.bitcoinOrange
+      : theme.colors.received;
+  const heroBtc = isSelfMove
+    ? amounts.received
+    : isSent
+      ? amounts.sent
+      : amounts.received;
+  const hasHeroAmount =
+    typeof heroBtc === 'number' && Number.isFinite(heroBtc);
+  const inputCount = transaction.vin?.length || 0;
+  const outputCount = transaction.vout?.length || 0;
+  const hasFee =
+    typeof transaction.fee === 'number' && Number.isFinite(transaction.fee);
+  const feeLabel = hasFee
+    ? formatBitcoinDisplay(transaction.fee / 1e8, {
+        inSats: showSats,
+        formatted: balanceFormattingEnabled,
+      })
+    : null;
+  const virtualBytes = (() => {
+    if (typeof transaction.vsize === 'number' && transaction.vsize > 0) {
+      return transaction.vsize;
+    }
+    if (typeof transaction.weight === 'number' && transaction.weight > 0) {
+      return Math.ceil(transaction.weight / 4);
+    }
+    return null;
+  })();
+  const byteSize =
+    typeof transaction.size === 'number' && Number.isFinite(transaction.size)
+      ? transaction.size
+      : null;
+  const feeRateLabel =
+    hasFee && virtualBytes
+      ? `${Math.max(1, Math.round(transaction.fee / virtualBytes))} sat/vB`
+      : null;
   const blockHeight = transaction.status?.block_height ?? null;
   const blockExplorerLink =
     blockHeight != null ? `${baseUrl}/block/${blockHeight}` : null;
+  const statusLine = !status.confirmed
+    ? 'Waiting for a block'
+    : confirmations != null
+      ? `Confirmed · ${confirmations} block${confirmations === 1 ? '' : 's'}`
+      : 'Confirmed';
+  const chainFacts = [
+    blockHeight != null ? `Block ${blockHeight}` : 'Not in a block yet',
+    virtualBytes != null
+      ? `${virtualBytes} vB`
+      : byteSize != null
+        ? `${byteSize} bytes`
+        : null,
+    typeof transaction.weight === 'number' && Number.isFinite(transaction.weight)
+      ? `${transaction.weight} WU`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const walletRole = (pathInfo?: {
+    chain: 'receive' | 'change';
+    index: number;
+  }) =>
+    pathInfo
+      ? pathInfo.chain === 'change'
+        ? `Change #${pathInfo.index}`
+        : `Receive #${pathInfo.index}`
+      : '';
 
   const copyTxid = () => {
     if (!transaction.txid) {
@@ -207,15 +424,6 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     setTxidCopied(true);
     setTimeout(() => setTxidCopied(false), 2000);
   };
-
-  const renderDetailRow = (label: string, value: string | React.ReactNode) => (
-    <View style={styles.detailRow}>
-      <AppText variant="caption" tone="muted" style={styles.detailLabel}>
-        {label}
-      </AppText>
-      <View style={styles.detailValueWrap}>{value}</View>
-    </View>
-  );
 
   const styles = StyleSheet.create({
     modalOverlay: {
@@ -227,7 +435,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       backgroundColor: theme.colors.background,
       borderRadius: 16,
       width: '92%',
+      height: '85%',
       maxHeight: '85%',
+      overflow: 'hidden',
       elevation: 5,
       shadowColor: theme.colors.shadowColor,
       shadowOffset: {width: 0, height: 2},
@@ -250,10 +460,33 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
           ? theme.colors.blackOverlay10
           : theme.colors.whiteOverlay20,
     },
+    modalTitleRow: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      marginRight: 8,
+    },
     modalTitle: {
+      flex: 1,
       fontSize: theme.fontSizes?.['2xl'] || 20,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
+    },
+    headerIcon: {
+      width: 22,
+      height: 22,
+      tintColor: theme.colors.text,
+    },
+    inlineIcon: {
+      width: 16,
+      height: 16,
+      tintColor: theme.colors.textSecondary,
+    },
+    titledRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
     },
     closeButton: {
       padding: 8,
@@ -264,8 +497,29 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       color: theme.colors.text,
       opacity: 0.7,
     },
+    scrollBody: {
+      flex: 1,
+      minHeight: 0,
+      overflow: 'hidden',
+    },
+    scrollView: {
+      flex: 1,
+      minHeight: 0,
+      zIndex: 2,
+      backgroundColor: 'transparent',
+    },
     scrollContent: {
-      padding: 16,
+      paddingBottom: 0,
+    },
+    scrollDetails: {
+      paddingHorizontal: 16,
+      paddingTop: 18,
+      paddingBottom: 28,
+      backgroundColor: theme.colors.background,
+      shadowColor: theme.colors.shadowColor || '#000',
+      shadowOffset: {width: 0, height: -8},
+      shadowRadius: 16,
+      zIndex: 2,
     },
     section: {
       marginBottom: 24,
@@ -439,10 +693,12 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     },
     flowItemLabel: {
       fontSize: theme.fontSizes?.xs || 11,
-      fontFamily: theme.fontFamilies?.bold,
+      fontFamily:
+        theme.fontFamilies?.monospaceMedium || theme.fontFamilies?.monospace,
       color: theme.colors.text,
       marginBottom: 2,
-    },
+      fontFeatureSettings: '"liga" 0',
+    } as TextStyle,
     flowItemLabelOurs: {
       color:
         theme.colors.background === '#ffffff'
@@ -469,7 +725,8 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     },
     flowAmountBTC: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.bold,
+      fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+      letterSpacing: COMMON_FONT_CONFIGS.bitcoinAmountMono.letterSpacing,
       color: theme.colors.text,
     },
     flowAmountBTCOurs: {
@@ -480,7 +737,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     },
     flowAmountFiat: {
       fontSize: theme.fontSizes?.xs || 9,
-      fontFamily: theme.fontFamilies?.regular,
+      fontFamily: theme.fontFamilies?.monospace,
       color: theme.colors.textSecondary,
       marginTop: 1,
     },
@@ -521,10 +778,13 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     },
     txIdText: {
       fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.monospace,
+      lineHeight: 20,
+      fontFamily:
+        theme.fontFamilies?.monospaceMedium || theme.fontFamilies?.monospace,
       color: theme.colors.text,
-      textAlign: 'right',
-    },
+      textAlign: 'left',
+      fontFeatureSettings: '"liga" 0',
+    } as TextStyle,
     txIdActions: {
       flexDirection: 'row',
       gap: 6,
@@ -543,30 +803,153 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
           : theme.colors.whiteOverlay08,
     },
     actionBtnText: {
-      fontSize: theme.fontSizes?.xs || 10,
-      fontFamily: theme.fontFamilies?.medium,
-      color: theme.colors.textSecondary,
+      fontSize: theme.fontSizes?.sm || 13,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
     },
     clickableText: {
       color: theme.colors.text,
       textDecorationLine: 'underline',
       textDecorationColor: theme.colors.text,
     },
-    visualizerSection: {
+    heroContext: {
+      marginTop: 8,
+      textAlign: 'center',
+    },
+    receiptCard: {
+      backgroundColor: theme.colors.cardBackground || theme.colors.background,
+      borderRadius: 12,
+      paddingHorizontal: 14,
+      marginBottom: 12,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+    },
+    receiptRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      justifyContent: 'space-between',
+      gap: 12,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: theme.colors.border,
+    },
+    receiptLabel: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      minWidth: 108,
+      paddingTop: 1,
+    },
+    receiptValue: {
+      flex: 1,
+      textAlign: 'right',
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.text,
+      fontSize: theme.fontSizes?.base || 14,
+    },
+    receiptAddress: {
+      flex: 1,
+      textAlign: 'right',
+      fontFamily:
+        theme.fontFamilies?.monospaceMedium || theme.fontFamilies?.monospace,
+      color: theme.colors.text,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFeatureSettings: '"liga" 0',
+    } as TextStyle,
+    receiptAmount: {
+      flex: 1,
+      textAlign: 'right',
+      fontFamily: COMMON_FONT_CONFIGS.bitcoinAmountMono.fontFamily,
+      letterSpacing: COMMON_FONT_CONFIGS.bitcoinAmountMono.letterSpacing,
+      color: theme.colors.text,
+      fontSize: theme.fontSizes?.base || 14,
+    },
+    disclosure: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      minHeight: 56,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      marginBottom: 16,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor: theme.colors.cardBackground || theme.colors.background,
+    },
+    disclosureBody: {
+      flex: 1,
+      gap: 2,
+    },
+    disclosureTitle: {
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
+      fontSize: theme.fontSizes?.md || 15,
+    },
+    disclosureChevron: {
+      marginLeft: 12,
+      fontSize: 22,
+      lineHeight: 24,
+      color: theme.colors.textSecondary,
+    },
+    actionRow: {
+      flexDirection: 'row',
+      gap: 8,
+      marginTop: 12,
+    },
+    actionBtnGrow: {
+      flex: 1,
+      minHeight: 44,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      borderRadius: 10,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay03
+          : theme.colors.whiteOverlay08,
+    },
+    chainFacts: {
+      marginTop: 12,
+      lineHeight: 18,
+    },
+    summaryCard: {
+      backgroundColor: theme.colors.cardBackground || theme.colors.background,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 16,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      gap: 6,
+    },
+    summaryToggle: {
+      fontSize: theme.fontSizes?.sm || 13,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.primary,
+      marginTop: 4,
+    },
+    visualizerOverlay: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      zIndex: 0,
+      elevation: 0,
+      overflow: 'hidden',
+      transformOrigin: 'top center',
+    },
+    visualizerInner: {
       paddingHorizontal: 16,
       paddingTop: 12,
-      paddingBottom: 8,
-      overflow: 'hidden',
-      borderBottomWidth: 1,
-      borderBottomColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.blackOverlay10
-          : theme.colors.whiteOverlay20,
+      paddingBottom: 12,
+      transformOrigin: 'top center',
     },
   });
 
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent
       animationType="fade"
@@ -574,9 +957,16 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       <GlassModalOverlay style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <AppText variant="h2" style={styles.modalTitle}>
-              {status.text}
-            </AppText>
+            <View style={styles.modalTitleRow}>
+              <Image
+                source={headerIcon}
+                style={styles.headerIcon}
+                resizeMode="contain"
+              />
+              <AppText variant="h2" style={styles.modalTitle} numberOfLines={2}>
+                {headline}
+              </AppText>
+            </View>
             <AppPressable
               onPress={onClose}
               style={styles.closeButton}
@@ -585,105 +975,176 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
             </AppPressable>
           </View>
 
-          {transaction.txid && (
-            <Animated.View
-              style={[styles.visualizerSection, visualizerSectionAnim]}>
-              <ErrorBoundary
-                key={transaction.txid}
-                fallback={
-                  <AppText variant="caption" tone="muted">
-                    Transaction preview unavailable
-                  </AppText>
-                }>
-                <ActiveTxVisualizer
-                  txid={transaction.txid}
-                  network={network as 'mainnet' | 'testnet'}
-                  initialPhase={status.confirmed ? 'confirmed' : 'mempool'}
-                  explorerBaseUrl={baseApi}
-                  compact
-                  origin={isWalletOrigin ? 'wallet' : 'external'}
-                  blockHeight={status.confirmed ? blockHeight : null}
-                  confirmedAtMs={status.confirmed ? confirmedAtMs : null}
-                  collapseProgress={collapseProgress}
-                />
-              </ErrorBoundary>
-            </Animated.View>
-          )}
-
-          <Animated.ScrollView
-            ref={detailsScrollRef}
-            style={styles.scrollContent}
-            onScroll={onDetailsScroll}
-            scrollEventThrottle={16}
-            removeClippedSubviews
-            keyboardShouldPersistTaps="handled"
-            overScrollMode="never"
-            showsVerticalScrollIndicator={false}>
+          <View
+            style={styles.scrollBody}
+            onLayout={e => {
+              const h = Math.ceil(e.nativeEvent.layout.height);
+              if (h > 0 && h !== sheetMinH) {
+                setSheetMinH(h);
+              }
+            }}>
+            {transaction.txid ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[styles.visualizerOverlay, visualizerParallaxStyle]}>
+                <View
+                  style={styles.visualizerInner}
+                  onLayout={onVisualizerLayout}
+                  collapsable={false}>
+                  <ErrorBoundary
+                    key={transaction.txid}
+                    fallback={
+                      <AppText variant="caption" tone="muted">
+                        Transaction preview unavailable
+                      </AppText>
+                    }>
+                    <ActiveTxVisualizer
+                      txid={transaction.txid}
+                      network={network as 'mainnet' | 'testnet'}
+                      initialPhase={status.confirmed ? 'confirmed' : 'mempool'}
+                      explorerBaseUrl={baseApi}
+                      compact
+                      origin={isWalletOrigin ? 'wallet' : 'external'}
+                      blockHeight={status.confirmed ? blockHeight : null}
+                      confirmedAtMs={status.confirmed ? confirmedAtMs : null}
+                    />
+                  </ErrorBoundary>
+                </View>
+              </Animated.View>
+            ) : null}
+            <Animated.ScrollView
+              ref={detailsScrollRef}
+              style={styles.scrollView}
+              contentContainerStyle={styles.scrollContent}
+              onScroll={onDetailsScroll}
+              scrollEventThrottle={16}
+              keyboardShouldPersistTaps="handled"
+              overScrollMode="never"
+              showsVerticalScrollIndicator={false}>
+              {transaction.txid ? (
+                <View style={{height: visualizerSlotH}} />
+              ) : null}
+              <Animated.View
+                style={[
+                  styles.scrollDetails,
+                  sheetMinH > 0 ? {minHeight: sheetMinH} : null,
+                  transaction.txid ? detailsSheetStyle : null,
+                ]}>
             {/* Hero amount */}
             <View style={styles.heroSection}>
-              {isSent && hasValidSent && (
-                <AppText style={styles.heroAmount}>
+              {hasHeroAmount && (
+                <AppText style={[styles.heroAmount, {color: amountColor}]}>
                   {isBlurred
                     ? '***'
-                    : formatBitcoinDisplay(amounts.sent, {
+                    : `${amountSign}${formatBitcoinDisplay(heroBtc, {
                         inSats: showSats,
                         formatted: balanceFormattingEnabled,
-                      })}
+                      })}`}
                 </AppText>
               )}
-              {!isSent && hasValidReceived && (
-                <AppText style={styles.heroAmount}>
-                  {isBlurred
-                    ? '***'
-                    : formatBitcoinDisplay(amounts.received, {
-                        inSats: showSats,
-                        formatted: balanceFormattingEnabled,
-                      })}
-                </AppText>
-              )}
-              {hasValidAmount && (
+              {hasHeroAmount && (
                 <AppText style={styles.heroFiat}>
                   {isBlurred
                     ? '***'
-                    : hasFiat && getFiatAmount(amount) != null
-                    ? `${getCurrencySymbol(selectedCurrency)}${getFiatAmount(amount)}`
+                    : hasFiat && getFiatAmount(heroBtc) != null
+                    ? `${getCurrencySymbol(selectedCurrency)}${getFiatAmount(heroBtc)}`
                     : '—'}
                 </AppText>
               )}
-              <View style={styles.heroChips}>
-                {status.confirmed && confirmations != null && (
-                  <View style={[styles.chip, styles.chipConfirmed]}>
-                    <AppText
-                      style={[
-                        styles.chipText,
-                        {color: theme.colors.received},
-                      ]}>
-                      {confirmations} confirmation
-                      {confirmations !== 1 ? 's' : ''}
-                    </AppText>
-                  </View>
-                )}
-                {!status.confirmed && (
-                  <View style={[styles.chip, styles.chipPending]}>
-                    <AppText
-                      style={[
-                        styles.chipText,
-                        {
-                          color:
-                            theme.colors.background === '#ffffff'
-                              ? theme.colors.accent
-                              : theme.colors.bitcoinOrange,
-                        },
-                      ]}>
-                      Pending
-                    </AppText>
-                  </View>
-                )}
-              </View>
+              <AppText variant="caption" tone="muted" style={styles.heroContext}>
+                {statusLine}
+              </AppText>
             </View>
 
+            <View style={styles.receiptCard}>
+              <View style={styles.receiptRow}>
+                <View style={styles.receiptLabel}>
+                  <Image source={partyIcon} style={styles.inlineIcon} resizeMode="contain" />
+                  <AppText variant="caption" tone="muted">
+                    {partyLabel}
+                  </AppText>
+                </View>
+                <AppText
+                  style={
+                    partyIsAddress ? styles.receiptAddress : styles.receiptValue
+                  }
+                  numberOfLines={2}>
+                  {partyValue}
+                </AppText>
+              </View>
+              <View style={styles.receiptRow}>
+                <View style={styles.receiptLabel}>
+                  <Image
+                    source={require('../assets/clock-icon.png')}
+                    style={styles.inlineIcon}
+                    resizeMode="contain"
+                  />
+                  <AppText variant="caption" tone="muted">
+                    When
+                  </AppText>
+                </View>
+                <AppText style={styles.receiptValue}>
+                  {whenLabel || '—'}
+                </AppText>
+              </View>
+              {feeLabel ? (
+                <View style={styles.receiptRow}>
+                  <View style={styles.receiptLabel}>
+                    <Image
+                      source={require('../assets/bitcoin-icon.png')}
+                      style={styles.inlineIcon}
+                      resizeMode="contain"
+                    />
+                    <AppText variant="caption" tone="muted">
+                      Network fee
+                    </AppText>
+                  </View>
+                  <AppText style={styles.receiptAmount}>
+                    {isBlurred
+                      ? '***'
+                      : feeRateLabel
+                        ? `${feeLabel} · ${feeRateLabel}`
+                        : feeLabel}
+                  </AppText>
+                </View>
+              ) : null}
+            </View>
+
+            {(inputCount > 0 || outputCount > 0) && (
+              <AppPressable
+                onPress={() => setBreakdownOpen(open => !open)}
+                style={styles.disclosure}
+                accessibilityRole="button"
+                accessibilityState={{expanded: breakdownOpen}}
+                accessibilityLabel={
+                  breakdownOpen
+                    ? 'Hide inputs and outputs'
+                    : 'Show inputs and outputs'
+                }>
+                <View style={styles.disclosureBody}>
+                  <View style={styles.titledRow}>
+                    <Image
+                      source={require('../assets/utxo-icon.png')}
+                      style={styles.inlineIcon}
+                      resizeMode="contain"
+                    />
+                    <AppText style={styles.disclosureTitle}>
+                      {breakdownOpen ? 'Hide coins moved' : 'Coins moved'}
+                    </AppText>
+                  </View>
+                  <AppText variant="caption" tone="muted">
+                    {`${inputCount} input${inputCount === 1 ? '' : 's'} → ${outputCount} output${outputCount === 1 ? '' : 's'}`}
+                  </AppText>
+                </View>
+                <AppText style={styles.disclosureChevron}>
+                  {breakdownOpen ? '▾' : '›'}
+                </AppText>
+              </AppPressable>
+            )}
+
             {/* Inputs / Outputs flow */}
-            {(transaction.vin?.length > 0 || transaction.vout?.length > 0) && (
+            {breakdownOpen &&
+              (transaction.vin?.length > 0 || transaction.vout?.length > 0) && (
               <View style={styles.section}>
                 <View style={styles.transactionFlow}>
                   {transaction.vin?.length > 0 && (
@@ -757,8 +1218,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                     <AppText
                                       style={styles.flowItemPath}
                                       numberOfLines={1}>
-                                      {pathInfo.derivationPath} ·{' '}
-                                      {pathInfo.chain} #{pathInfo.index}
+                                      {walletRole(pathInfo)}
                                     </AppText>
                                   ) : merchantLabel ? (
                                     <AppText
@@ -884,8 +1344,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                                     <AppText
                                       style={styles.flowItemPath}
                                       numberOfLines={1}>
-                                      {pathInfo.derivationPath} ·{' '}
-                                      {pathInfo.chain} #{pathInfo.index}
+                                      {walletRole(pathInfo)}
                                     </AppText>
                                   ) : merchantLabel ? (
                                     <AppText
@@ -931,104 +1390,64 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
                   )}
                 </View>
 
-                <View style={styles.summaryBar}>
-                  <AppText style={styles.summaryBarText}>
-                    {`${transaction.vin?.length || 0} input${transaction.vin?.length !== 1 ? 's' : ''} → ${transaction.vout?.length || 0} output${transaction.vout?.length !== 1 ? 's' : ''}`}
-                  </AppText>
-                </View>
               </View>
             )}
 
-            {/* On-chain metadata */}
             <View style={styles.section}>
-              <AppText variant="h2" style={styles.sectionTitle}>
-                On-chain
+              <View style={[styles.titledRow, styles.sectionTitle]}>
+                <Image
+                  source={require('../assets/link-icon.png')}
+                  style={styles.headerIcon}
+                  resizeMode="contain"
+                />
+                <AppText variant="h2" style={styles.modalTitle}>
+                  On the chain
+                </AppText>
+              </View>
+              <AppText style={styles.txIdText} selectable>
+                {transaction.txid}
               </AppText>
-
-              {renderDetailRow(
-                'Transaction ID',
-                <View style={styles.txIdBlock}>
-                  <AppPressable
-                    onPress={() => Linking.openURL(explorerLink)}
-                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                    <AppText
-                      style={[styles.txIdText, styles.clickableText]}
-                      selectable>
-                      {transaction.txid}
-                    </AppText>
-                  </AppPressable>
-                  <View style={styles.txIdActions}>
-                    <AppPressable
-                      onPress={copyTxid}
-                      style={styles.actionBtn}
-                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                      <AppText style={styles.actionBtnText}>
-                        {txidCopied ? 'Copied' : 'Copy'}
-                      </AppText>
-                    </AppPressable>
-                    <AppPressable
-                      onPress={() => Linking.openURL(explorerLink)}
-                      style={styles.actionBtn}
-                      android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                      <AppText style={styles.actionBtnText}>Explorer</AppText>
-                    </AppPressable>
-                  </View>
-                </View>,
+              <View style={styles.actionRow}>
+                <AppPressable
+                  onPress={copyTxid}
+                  style={styles.actionBtnGrow}
+                  accessibilityRole="button"
+                  accessibilityLabel="Copy transaction id"
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <AppText style={styles.actionBtnText}>
+                    {txidCopied ? 'Copied' : 'Copy id'}
+                  </AppText>
+                </AppPressable>
+                <AppPressable
+                  onPress={() => Linking.openURL(explorerLink)}
+                  style={styles.actionBtnGrow}
+                  accessibilityRole="button"
+                  accessibilityLabel="View transaction in explorer"
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <AppText style={styles.actionBtnText}>Explorer</AppText>
+                </AppPressable>
+              </View>
+              {blockHeight != null && blockExplorerLink ? (
+                <AppPressable
+                  onPress={() => Linking.openURL(blockExplorerLink)}
+                  accessibilityRole="link"
+                  accessibilityLabel={`Open block ${blockHeight}`}>
+                  <AppText variant="caption" tone="muted" style={styles.chainFacts}>
+                    {chainFacts}
+                  </AppText>
+                </AppPressable>
+              ) : (
+                <AppText variant="caption" tone="muted" style={styles.chainFacts}>
+                  {chainFacts}
+                </AppText>
               )}
-
-              {renderDetailRow(
-                'Block height',
-                blockHeight != null && blockExplorerLink ? (
-                  <AppPressable
-                    onPress={() => Linking.openURL(blockExplorerLink)}
-                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                    <AppText style={[styles.detailValue, styles.clickableText]}>
-                      #{blockHeight}
-                    </AppText>
-                  </AppPressable>
-                ) : (
-                  <AppText style={styles.detailValue}>Pending</AppText>
-                ),
-              )}
-
-              {confirmations !== null &&
-                renderDetailRow(
-                  'Confirmations',
-                  <AppText style={styles.detailValue}>
-                    {confirmations.toString()}
-                  </AppText>,
-                )}
-
-              {typeof transaction.fee === 'number' &&
-                Number.isFinite(transaction.fee) &&
-                renderDetailRow(
-                  'Fee',
-                  <AppText style={styles.detailValue}>
-                    {`${formatBitcoinDisplay(transaction.fee / 1e8, {
-                      inSats: showSats,
-                      formatted: balanceFormattingEnabled,
-                    })} (${
-                      hasFiat && getFiatAmount(transaction.fee / 1e8) != null
-                        ? getCurrencySymbol(selectedCurrency) +
-                          getFiatAmount(transaction.fee / 1e8)
-                        : '—'
-                    })`}
-                  </AppText>,
-                )}
-
-              {typeof transaction.size === 'number' &&
-                Number.isFinite(transaction.size) &&
-                renderDetailRow(
-                  'Size',
-                  <AppText style={styles.detailValue}>
-                    {`${transaction.size} bytes`}
-                  </AppText>,
-                )}
             </View>
-          </Animated.ScrollView>
+              </Animated.View>
+            </Animated.ScrollView>
+          </View>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 

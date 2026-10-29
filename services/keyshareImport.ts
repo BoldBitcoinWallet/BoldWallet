@@ -1,20 +1,24 @@
-import {Alert} from 'react-native';
+import {confirmAppPrompt, showAppNotice} from './appPrompt';
 import {CommonActions} from '@react-navigation/native';
 import RNFS from 'react-native-fs';
 import {safeUnlink} from './rnfsSafe';
-import {persistWalletKeyshare} from './walletSetupOrchestrator';
+import {persistStagedKeyshare} from './walletSetupOrchestrator';
 import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigRepository';
-import LocalCache from './LocalCache';
-import {BBMTLibNativeModule} from '../native_modules';
+import {clearCachesBeforeWalletSession} from './walletSessionReset';
+import {
+  completeCeremonyToken,
+  newCeremonySessionID,
+  releaseCeremonyToken,
+  requestImportCeremonyToken,
+} from './ceremonyAuth';
+import {TssProvider} from './TssProvider';
 import {
   dbg,
   detectKeyshareTssBackend,
   resolveUseLegacyDerivationPaths,
 } from '../utils';
-import {
-  assertNoExistingWallet,
-  WalletAlreadyLoadedError,
-} from './walletGuard';
+import {WalletAlreadyLoadedError} from './walletGuard';
+import {IncomingFileTooLargeError} from './incomingFileClassifier';
 
 export {WalletAlreadyLoadedError, assertNoExistingWallet} from './walletGuard';
 
@@ -26,8 +30,8 @@ export class InvalidKeyshareError extends Error {
 }
 
 export class WrongKeysharePasswordError extends Error {
-  constructor() {
-    super('Wrong password');
+  constructor(message = 'Wrong password') {
+    super(message);
     this.name = 'WrongKeysharePasswordError';
   }
 }
@@ -45,13 +49,31 @@ export type ParsedKeyshare = {
   [key: string]: unknown;
 };
 
-export async function readKeyshareBase64FromUri(uri: string): Promise<string> {
+/**
+ * 3b-6d (F23): read a backup file into the blob string the native
+ * import expects. Fixed v2 files hold the ASCII "BW2$..." envelope
+ * (written utf8) — pass through verbatim. Legacy files hold raw
+ * bytes (written base64-decoded) — re-encode to base64. Empty files
+ * (the B1-era iOS silent-empty bug wrote 0-byte v2 "backups") fail
+ * here with InvalidKeyshareError, never as a wrong-password.
+ */
+export async function readBackupBlobFromUri(uri: string): Promise<string> {
   const normalizedUri = uri.startsWith('file://') || uri.startsWith('content://')
     ? uri
     : `file://${uri}`;
   const localFilePath = `${RNFS.DocumentDirectoryPath}/tempKeyshareImport.share`;
   await safeUnlink(localFilePath);
   await RNFS.copyFile(normalizedUri, localFilePath);
+  try {
+    const text = await RNFS.readFile(localFilePath, 'utf8');
+    const trimmed = String(text ?? '').trim();
+    if (trimmed.startsWith('BW2$')) {
+      await safeUnlink(localFilePath);
+      return trimmed;
+    }
+  } catch {
+    // Binary (legacy raw bytes) — fall through to base64.
+  }
   const content = await RNFS.readFile(localFilePath, 'base64');
   await safeUnlink(localFilePath);
   if (!content || !String(content).trim()) {
@@ -63,25 +85,59 @@ export async function readKeyshareBase64FromUri(uri: string): Promise<string> {
 export async function decryptAndValidateKeyshare(
   base64Content: string,
   password: string,
-): Promise<{decryptedKeyshare: string; parsed: ParsedKeyshare}> {
-  const decryptedKeyshare = await BBMTLibNativeModule.aesDecrypt(
-    base64Content,
-    await BBMTLibNativeModule.sha256(password),
-  );
-  if (decryptedKeyshare.indexOf('pub_key') < 0) {
-    throw new WrongKeysharePasswordError();
-  }
-  let parsed: ParsedKeyshare;
+  // 3b-2e B17: owner import ceremony (both-or-neither); absent =
+  // wrapper mints a single-call ceremony. Error TEXT mapping
+  // preserves B1 semantics (format vs wrong-password).
+  ceremonyToken?: string,
+  ceremonySessionID?: string,
+): Promise<{handle: string; parsed: ParsedKeyshare; legacy: boolean}> {
+  // F15b-1: decrypt (B1) + verify (F2) + stage run natively (A6). JS
+  // passes the password, receives {handle, metadata, legacy} — the
+  // plaintext keyshare never crosses the bridge.
+  let raw: string;
   try {
-    parsed = JSON.parse(decryptedKeyshare);
-    if (!parsed.pub_key) {
+    raw = await TssProvider.importBackupToStagedHandle(
+      base64Content,
+      password,
+      ceremonyToken,
+      ceremonySessionID,
+    );
+  } catch (error) {
+    if (!(error instanceof Error)) {
+      throw new WrongKeysharePasswordError();
+    }
+    if (error.message.indexOf('not a recognized backup format') >= 0) {
       throw new InvalidKeyshareError();
     }
+    if (error.message.indexOf('wrong password or corrupted backup') >= 0) {
+      throw new WrongKeysharePasswordError(
+        'Wrong password or corrupted backup',
+      );
+    }
+    throw new WrongKeysharePasswordError();
+  }
+  let staged: {handle?: unknown; metadata?: unknown; legacy?: unknown};
+  try {
+    staged = JSON.parse(raw);
   } catch (error) {
-    dbg('decryptAndValidateKeyshare: parse error', error);
+    dbg('decryptAndValidateKeyshare: staged parse error', error);
     throw new InvalidKeyshareError();
   }
-  return {decryptedKeyshare, parsed};
+  if (
+    typeof staged !== 'object' ||
+    staged === null ||
+    typeof staged.handle !== 'string' ||
+    !staged.handle ||
+    typeof staged.metadata !== 'object' ||
+    staged.metadata === null
+  ) {
+    throw new InvalidKeyshareError();
+  }
+  const parsed = staged.metadata as ParsedKeyshare;
+  if (!parsed.pub_key) {
+    throw new InvalidKeyshareError();
+  }
+  return {handle: staged.handle, parsed, legacy: staged.legacy === true};
 }
 
 export type FinalizeKeyshareImportOptions = {
@@ -90,12 +146,22 @@ export type FinalizeKeyshareImportOptions = {
 };
 
 export async function finalizeKeyshareImport(
-  decryptedKeyshare: string,
+  handle: string,
   parsed: ParsedKeyshare,
   options: FinalizeKeyshareImportOptions,
+  // 3b-2e B18: owner import ceremony (both-or-neither); absent =
+  // persist mints its own save ceremony.
+  ceremonyToken?: string,
+  ceremonySessionID?: string,
 ): Promise<void> {
-  await persistWalletKeyshare(decryptedKeyshare);
-  await LocalCache.clear();
+  const persistOpts = {
+    ...(ceremonyToken !== undefined && ceremonySessionID !== undefined
+      ? {ceremonyToken, ceremonySessionID}
+      : {}),
+    origin: 'imported' as const,
+  };
+  await persistStagedKeyshare(handle, persistOpts);
+  await clearCachesBeforeWalletSession();
   appConfigRepository.remove(CONFIG_KEYS.CURRENT_ADDRESS);
   const isLegacyPath = resolveUseLegacyDerivationPaths({
     created_at: parsed.created_at ?? null,
@@ -125,26 +191,55 @@ export async function importKeyshareFromBase64(
   password: string,
   options: FinalizeKeyshareImportOptions,
 ): Promise<void> {
-  const {decryptedKeyshare, parsed} = await decryptAndValidateKeyshare(
-    base64Content,
-    password,
-  );
-  await finalizeKeyshareImport(decryptedKeyshare, parsed, options);
+  // 3b-2e B17/B18: one `import` ceremony covers stage+persist
+  // (adjacent, no user action between): mint here, thread the
+  // owner pair through both, complete at the end.
+  const sessionID = await newCeremonySessionID('import');
+  const token = await requestImportCeremonyToken(sessionID);
+  try {
+    const {handle, parsed, legacy} = await decryptAndValidateKeyshare(
+      base64Content,
+      password,
+      token,
+      sessionID,
+    );
+    await finalizeKeyshareImport(handle, parsed, options, token, sessionID);
+    try {
+      await completeCeremonyToken(token);
+    } catch {
+      /* logged in ceremonyAuth; import stands */
+    }
+    if (legacy) {
+      // 3b-6f: silent import — old backups import and realign
+      // internally (envelope persist); new releases always write
+      // the newest format, so no user-facing message is needed.
+      dbg('keyshareImport: legacy backup imported silently');
+    }
+    return;
+  } catch (error) {
+    try {
+      await releaseCeremonyToken(token);
+    } catch {
+      /* logged in ceremonyAuth */
+    }
+    throw error;
+  }
 }
 
 export function showWalletAlreadyLoadedAlert(
   onOpenSettings?: () => void,
 ): void {
-  const buttons: Array<{text: string; onPress?: () => void; style?: 'cancel'}> =
-    [{text: 'OK', style: 'cancel'}];
-  if (onOpenSettings) {
-    buttons.unshift({text: 'Open Settings', onPress: onOpenSettings});
-  }
-  Alert.alert(
-    'Wallet already set up',
-    'A keyshare is already loaded. Delete the wallet keyshare from Settings before importing a new one.',
-    buttons,
-  );
+  confirmAppPrompt({
+    icon: 'wallet',
+    title: 'A wallet is already here',
+    hint: 'Remove it in Settings before importing another.',
+    cancelLabel: onOpenSettings ? 'OK' : undefined,
+    confirmLabel: onOpenSettings ? 'Settings' : 'OK',
+  }).then(ok => {
+    if (ok && onOpenSettings) {
+      onOpenSettings();
+    }
+  });
 }
 
 export function showKeyshareImportError(error: unknown): void {
@@ -153,12 +248,19 @@ export function showKeyshareImportError(error: unknown): void {
     return;
   }
   if (error instanceof WrongKeysharePasswordError) {
-    Alert.alert('Wrong Password', 'Could not import keyshare');
+    showAppNotice('Wrong Password', 'Could not import keyshare');
+    return;
+  }
+  if (error instanceof IncomingFileTooLargeError) {
+    showAppNotice(
+      'File Too Large',
+      'Shared files must be 1 MB or smaller. Keyshare backups and PSBTs are only a few KB.',
+    );
     return;
   }
   if (error instanceof InvalidKeyshareError) {
-    Alert.alert('Error', 'Failed to import the file');
+    showAppNotice('Error', 'Failed to import the file');
     return;
   }
-  Alert.alert('Error', 'Failed to import the file');
+  showAppNotice('Error', 'Failed to import the file');
 }

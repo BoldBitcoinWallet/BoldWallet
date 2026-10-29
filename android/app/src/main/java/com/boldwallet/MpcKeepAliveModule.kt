@@ -76,7 +76,14 @@ class MpcKeepAliveModule(reactContext: ReactApplicationContext) :
             val outcome = options.getString("outcome") ?: "failure"
             val title = options.getString("title") ?: ""
             val body = options.getString("body") ?: ""
-            MpcKeepAliveService.stop(reactApplicationContext, outcome, title, body)
+            val notices = !options.hasKey("notices") || options.getBoolean("notices")
+            MpcKeepAliveService.stop(
+                reactApplicationContext,
+                outcome,
+                title,
+                body,
+                notices,
+            )
             promise.resolve(true)
         } catch (e: Exception) {
             promise.resolve(false)

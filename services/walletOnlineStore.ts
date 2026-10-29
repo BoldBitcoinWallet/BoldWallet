@@ -63,7 +63,6 @@ function notify(online: boolean): void {
 function abortInflightMempool(): void {
   try {
     // Lazy require avoids a cycle: MempoolClient → this module.
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const {mempoolClient} = require('./MempoolClient');
     mempoolClient.abortAll();
   } catch (err) {
@@ -104,28 +103,25 @@ export function useWalletOnline(): boolean {
   return online;
 }
 
-/** User-initiated action: toast and return false when sandboxed. */
+/** User-initiated action: open offline sandbox sheet and return false when sandboxed. */
 export function guardOnlineAction(message?: string): boolean {
   if (isWalletOnline()) {
     return true;
   }
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const Toast = require('react-native-toast-message').default;
-    Toast.show({
-      type: 'info',
-      text1: message ?? WALLET_OFFLINE_TOAST,
-      position: 'top',
+    // Lazy require avoids cycles with the prompt host.
+    const {openWalletOfflineSandbox} = require('./walletOfflineSandboxPrompt');
+    openWalletOfflineSandbox({
+      message: message ?? WALLET_OFFLINE_TOAST,
     });
   } catch (err) {
-    dbg('walletOnlineStore: toast failed', err);
+    dbg('walletOnlineStore: offline sandbox prompt failed', err);
   }
   return false;
 }
 
 export function notifyWalletOnlineToggle(online: boolean): void {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
     const Toast = require('react-native-toast-message').default;
     Toast.show({
       type: online ? 'success' : 'info',

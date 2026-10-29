@@ -8,9 +8,9 @@ import {
   ActivityIndicator,
   Platform,
   KeyboardAvoidingView,
-  Modal,
   FlatList,
 } from 'react-native';
+import AppModal from '../components/AppModal';
 import Animated, {
   useSharedValue,
   withTiming,
@@ -20,6 +20,7 @@ import Animated, {
 import AppPressable from '../components/AppPressable';
 import GlassModalOverlay from '../components/GlassModalOverlay';
 import {useTheme} from '../theme';
+import {useFloatingScrollPadding} from '../components/FloatingTabBar';
 import {useUser} from '../context/UserContext';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
@@ -32,6 +33,7 @@ import {
 import Clipboard from '@react-native-clipboard/clipboard';
 import Toast from 'react-native-toast-message';
 import {guardOnlineAction} from '../services/walletOnlineStore';
+import {tracedMempoolFetch} from '../services/tracedMempoolFetch';
 import {
   MEMPOOL_PLAYGROUND_SECTIONS,
   type PlaygroundEndpoint,
@@ -76,7 +78,6 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   }));
   const contentStyle = useMemo(
     () => ({
-      opacity: isExpanded ? 1 : 0,
       maxHeight: isExpanded ? 9999 : 0,
       paddingTop: isExpanded ? 16 : 0,
       paddingBottom: isExpanded ? 16 : 0,
@@ -183,6 +184,7 @@ function buildQuery(
 
 const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const {theme} = useTheme();
+  const floatingScrollPadding = useFloatingScrollPadding();
   const {
     activeApiProvider: apiBase,
     activeNetwork: network,
@@ -225,7 +227,7 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
   }, []);
   useEffect(() => {
     const url = `${baseUrl}/api/v1/prices`;
-    fetch(url)
+    tracedMempoolFetch(url)
       .then(r => r.json())
       .then((data: Record<string, number>) => {
         const currency = selectedCurrency || 'USD';
@@ -317,7 +319,9 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
 
       try {
         if (endpoint.method === 'GET') {
-          const res = await fetch(url, {signal: controller.signal});
+          const res = await tracedMempoolFetch(url, {
+            signal: controller.signal,
+          });
           const text = await res.text();
           let body = text;
           try {
@@ -330,7 +334,7 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
           setResponses(prev => ({...prev, [sid]: line}));
         } else {
           const rawBody = (postBodies[sid] || '').trim();
-          const res = await fetch(url, {
+          const res = await tracedMempoolFetch(url, {
             method: 'POST',
             signal: controller.signal,
             headers: endpoint.bodyIsRawHex
@@ -556,7 +560,10 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
       keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
       <ScrollView
         style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {paddingBottom: 32 + floatingScrollPadding},
+        ]}
         keyboardShouldPersistTaps="handled">
         <Text style={[styles.topDescription, {color: theme.colors.textSecondary}]}>
           This is a mempool playground for some utility APIs.
@@ -608,7 +615,7 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
                     ▼
                   </Text>
                 </AppPressable>
-                <Modal
+                <AppModal
                   visible={endpointPickerSectionId === section.id}
                   transparent
                   animationType="fade"
@@ -671,7 +678,7 @@ const MempoolPlaygroundScreen: React.FC<{navigation: any}> = ({navigation}) => {
                       </AppPressable>
                     </View>
                   </GlassModalOverlay>
-                </Modal>
+                </AppModal>
               </View>
               {endpoint && (
                 <>

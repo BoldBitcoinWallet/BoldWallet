@@ -1,11 +1,12 @@
 import React, {useCallback, useRef, useState, useMemo, useEffect} from 'react';
+import {showAppNotice} from '../services/appPrompt';
 import {
   View,
-  Modal,
   StyleSheet,
-  Alert,
+
   Image,
 } from 'react-native';
+import AppModal from '../components/AppModal';
 import AppPressable from '../components/AppPressable';
 import GlassModalOverlay from '../components/GlassModalOverlay';
 import StaticQRCode from '../components/StaticQRCode';
@@ -22,7 +23,11 @@ import {UR_FRAME_INTERVAL_MS, urFragmentCount, urPartAt} from '../utils/urBytesQ
 import {dbg} from '../utils';
 import {useTheme} from '../theme';
 import Toast from 'react-native-toast-message';
-import {createToastConfig} from '../utils/toastConfig';
+import {
+  CeremonyAuthRequiredError,
+  CeremonyNoLockError,
+  confirmPsbtExport,
+} from '../services/ceremonyAuth';
 interface SignedPSBTModalProps {
   visible: boolean;
   signedPsbtBase64: string;
@@ -72,23 +77,48 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     () => (urObject ? urFragmentCount(urObject) : 1),
     [urObject],
   );
+  const confirmExport = useCallback(async (): Promise<boolean> => {
+    try {
+      await confirmPsbtExport(signedPsbtBase64);
+      return true;
+    } catch (e: any) {
+      if (
+        e instanceof CeremonyAuthRequiredError ||
+        e instanceof CeremonyNoLockError
+      ) {
+        if (e instanceof CeremonyNoLockError) {
+          showAppNotice('Screen lock required', e.message);
+        }
+        return false;
+      }
+      showAppNotice('Error', e?.message || 'Could not confirm export');
+      return false;
+    }
+  }, [signedPsbtBase64]);
+
   // Copy base64 to clipboard
-  const handleCopy = useCallback(() => {
+  const handleCopy = useCallback(async () => {
+    if (!(await confirmExport())) {
+      return;
+    }
     Clipboard.setString(signedPsbtBase64);
     setIsCopied(true);
     Toast.show({
       type: 'success',
       text1: 'Copied',
       text2: 'PSBT copied to clipboard',
-      position: 'bottom',
+      position: 'top',
     });
     setTimeout(() => {
       setIsCopied(false);
     }, 2000);
-  }, [signedPsbtBase64]);
+  }, [confirmExport, signedPsbtBase64]);
   // Share PSBT as file
   const handleShareFile = useCallback(async () => {
     try {
+      if (!(await confirmExport())) {
+        return;
+      }
       // Create .psbt file
       const now = new Date();
       const month = now.toLocaleDateString('en-US', {month: 'short'});
@@ -116,17 +146,20 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     } catch (error: any) {
       dbg('Error sharing PSBT file:', error);
       if (error?.message !== 'User did not share') {
-        Alert.alert('Error', 'Failed to share PSBT file');
+        showAppNotice('Error', 'Failed to share PSBT file');
       }
     }
-  }, [signedPsbtBase64]);
+  }, [confirmExport, signedPsbtBase64]);
   // Share PSBT as animated QR (UR format)
   const handleShareQR = useCallback(async () => {
     if (!qrRef.current) {
-      Alert.alert('Error', 'QR Code is not ready yet');
+      showAppNotice('Error', 'QR Code is not ready yet');
       return;
     }
     try {
+      if (!(await confirmExport())) {
+        return;
+      }
       // Generate base64 from QR component
       const base64Data: string = await new Promise((resolve, reject) => {
         qrRef.current.toDataURL((data: string) => {
@@ -152,10 +185,10 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     } catch (error: any) {
       dbg('Error sharing QR code:', error);
       if (error?.message !== 'User did not share') {
-        Alert.alert('Error', 'Failed to share QR code');
+        showAppNotice('Error', 'Failed to share QR code');
       }
     }
-  }, []);
+  }, [confirmExport]);
   // Track frame index for animated QR
   const [qrFrameIndex, setQrFrameIndex] = useState(0);
   // Get current QR data (single or animated)
@@ -238,18 +271,45 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
           ? theme.colors.blackOverlay10 // Light mode: subtle dark border
           : theme.colors.whiteOverlay20, // Dark mode: subtle light border
     },
+    headerRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginBottom: 10,
+    },
+    headerIconBg: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor:
+        (theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange) + '20',
+    },
+    headerIcon: {
+      width: 22,
+      height: 22,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
     title: {
-      fontSize: theme.fontSizes?.['3xl'] || 24,
+      flex: 1,
+      marginLeft: 12,
+      fontSize: theme.fontSizes?.xl || 18,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
-      marginBottom: 8,
-      textAlign: 'center',
+      textAlign: 'left',
+      lineHeight: 24,
     },
     subtitle: {
       fontSize: theme.fontSizes?.base || 14,
       color: theme.colors.textSecondary,
       marginBottom: 12,
-      textAlign: 'center',
+      textAlign: 'left',
+      lineHeight: 20,
     },
     qrContainer: {
       alignItems: 'center',
@@ -314,16 +374,6 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
       fontSize: theme.fontSizes?.lg || 16,
       fontFamily: theme.fontFamilies?.bold,
     },
-    toastContainer: {
-      position: 'absolute',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      zIndex: 10000,
-      elevation: 10000,
-      pointerEvents: 'box-none',
-    },
     modeToggle: {
       flexDirection: 'row',
       backgroundColor: theme.colors.cardBackground,
@@ -351,13 +401,23 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
     },
   });
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent={true}
       animationType="fade"
       onRequestClose={onClose}>
       <GlassModalOverlay style={styles.modalOverlay} onPress={onClose}>
           <View style={styles.modalContent}>
+          <View style={styles.headerRow}>
+            <View style={styles.headerIconBg}>
+              <Image
+                source={require('../assets/cosign-icon.png')}
+                style={styles.headerIcon}
+                resizeMode="contain"
+              />
+            </View>
+            <AppText style={styles.title}>Signed PSBT</AppText>
+          </View>
           <AppText style={styles.subtitle}>
             Share back the signed PSBT
           </AppText>
@@ -476,10 +536,7 @@ const SignedPSBTModal: React.FC<SignedPSBTModalProps> = ({
           </AppPressable>
           </View>
       </GlassModalOverlay>
-      <View style={styles.toastContainer}>
-        <Toast config={createToastConfig(theme)} />
-      </View>
-    </Modal>
+    </AppModal>
   );
 };
 export default SignedPSBTModal;

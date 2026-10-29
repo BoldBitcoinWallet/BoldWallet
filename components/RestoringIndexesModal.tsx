@@ -1,5 +1,6 @@
 import React from 'react';
-import {Modal, View, StyleSheet, ActivityIndicator} from 'react-native';
+import {View, StyleSheet, ActivityIndicator, Image} from 'react-native';
+import AppModal from './AppModal';
 import AppText from './AppText';
 import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
@@ -19,49 +20,30 @@ const RestoringIndexesModal: React.FC<{
   index?: number;
   gapIndex?: number;
   phase?: string;
-  progress?: { current: number; total: number };
+  progress?: {current: number; total: number};
 }> = ({visible, chain, index = 0, gapIndex = 0, phase, progress}) => {
   const {theme} = useTheme();
-  const chainLabel = chain === 'external' ? 'Receive' : chain === 'internal' ? 'Change' : null;
+  const accent =
+    theme.colors.background === '#ffffff'
+      ? theme.colors.primary
+      : theme.colors.bitcoinOrange;
+  const chainLabel =
+    chain === 'external' ? 'Receive' : chain === 'internal' ? 'Change' : null;
   const progressLabel = formatSyncFillProgress(progress);
-  const styles = StyleSheet.create({
-    overlay: {
-      flex: 1,
-      justifyContent: 'center',
-      alignItems: 'center',
-    },
-    content: {
-      backgroundColor: theme.colors.cardBackground,
-      padding: 24,
-      borderRadius: 12,
-      alignItems: 'center',
-      minWidth: 240,
-      borderWidth: 1,
-      borderColor:
-        theme.colors.background === '#ffffff'
-          ? theme.colors.blackOverlay10
-          : theme.colors.whiteOverlay20,
-    },
-    spinner: {
-      marginBottom: 16,
-    },
-    title: {
-      fontSize: theme.fontSizes?.lg || 16,
-      fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.text,
-      textAlign: 'center',
-      marginBottom: 4,
-    },
-    subtitle: {
-      fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.regular,
-      color: theme.colors.textSecondary,
-      textAlign: 'center',
-    },
-  });
+  const title = phase ? 'Syncing wallet' : 'Restoring indexes';
+  const hint = phase
+    ? 'Addresses and balances are updating. Keep Bold open.'
+    : 'Scanning the chain for your addresses. Keep Bold open.';
+  const statusLine = phase
+    ? progressLabel
+      ? `${phase} ${progressLabel}`
+      : phase
+    : chainLabel
+      ? `Scanning ${chainLabel} chain… index ${index}, gap ${gapIndex}/${getGapLimit()}`
+      : 'Scanning chain for addresses…';
 
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent
       animationType="fade"
@@ -70,28 +52,121 @@ const RestoringIndexesModal: React.FC<{
       }}
       statusBarTranslucent>
       <GlassModalOverlay style={styles.overlay}>
-        <View style={styles.content}>
+        <View
+          style={[
+            styles.content,
+            {
+              backgroundColor: theme.colors.cardBackground,
+              borderColor:
+                theme.colors.background === '#ffffff'
+                  ? theme.colors.blackOverlay10
+                  : theme.colors.whiteOverlay20,
+            },
+          ]}>
+          <View style={styles.headerRow}>
+            <View style={[styles.iconBg, {backgroundColor: accent + '20'}]}>
+              <Image
+                source={require('../assets/refresh-icon.png')}
+                style={[styles.icon, {tintColor: accent}]}
+                resizeMode="contain"
+              />
+            </View>
+            <AppText
+              style={[
+                styles.title,
+                {
+                  color: theme.colors.text,
+                  fontFamily: theme.fontFamilies?.bold,
+                },
+              ]}>
+              {title}
+            </AppText>
+          </View>
+          <AppText
+            style={[
+              styles.hint,
+              {
+                color: theme.colors.textSecondary,
+                fontFamily: theme.fontFamilies?.regular,
+              },
+            ]}
+            tone="muted">
+            {hint}
+          </AppText>
           <ActivityIndicator
             size="large"
-            color={theme.colors.primary}
+            color={accent}
             style={styles.spinner}
           />
-          <AppText style={styles.title}>
-            {phase ? 'Syncing wallet' : 'Restoring indexes'}
-          </AppText>
-          <AppText style={styles.subtitle} tone="muted">
-            {phase
-              ? progressLabel
-                ? `${phase} ${progressLabel}`
-                : phase
-              : chainLabel
-              ? `Scanning ${chainLabel} chain… index ${index}, gap ${gapIndex}/${getGapLimit()}`
-              : 'Scanning chain for addresses…'}
+          <AppText
+            style={[
+              styles.subtitle,
+              {
+                color: theme.colors.textSecondary,
+                fontFamily: theme.fontFamilies?.regular,
+              },
+            ]}
+            tone="muted">
+            {statusLine}
           </AppText>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  content: {
+    padding: 20,
+    borderRadius: 16,
+    width: '86%',
+    maxWidth: 360,
+    borderWidth: 1,
+    alignItems: 'stretch',
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  iconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  icon: {
+    width: 22,
+    height: 22,
+  },
+  title: {
+    flex: 1,
+    marginLeft: 12,
+    fontSize: 18,
+    textAlign: 'left',
+    lineHeight: 24,
+  },
+  hint: {
+    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 20,
+    textAlign: 'left',
+  },
+  spinner: {
+    marginTop: 18,
+    marginBottom: 12,
+    alignSelf: 'center',
+  },
+  subtitle: {
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+  },
+});
 
 export default RestoringIndexesModal;

@@ -5,13 +5,17 @@ import {
   getReceivePath,
   resolveUseLegacyDerivationPaths,
   clearKeyshareMetadata,
-  getKeyshare,
+  getKeyshareSecureMetadata,
   getKeyshareMetadata,
   hasWalletKeyshareInSecureStorage,
 } from '../utils';
 import {chaincodeHexFromBlob} from '../services/chaincodeReader';
 import appConfigRepository, {CONFIG_KEYS} from '../services/repositories/AppConfigRepository';
-import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {
+  getStoredNetworkKey,
+  resolveStoredMempoolApiBase,
+} from '../services/mempoolApiBase';
+import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {getExternalIndex} from '../services/HdIndexService';
 const {BBMTLibNativeModule} = NativeModules;
 interface WalletContextType {
@@ -44,15 +48,15 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
   const refreshWallet = async () => {
     try {
       dbg('WalletContext: Starting wallet refresh');
-      // Spec v2: chaincode from encrypted blob only, never SQLite metadata.
+      // F15b-1: chaincode from native-projected secure fields, never SQLite metadata.
       const ksMeta = await getKeyshareMetadata();
-      const ksBlob: any = await getKeyshare().catch(() => null);
+      const ksBlob: any = await getKeyshareSecureMetadata().catch(() => null);
       const ks = ksBlob ?? ksMeta;
       if (!ks) {
         dbg('WalletContext: No keyshare found, skipping wallet refresh');
         return;
       }
-      let net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
+      let net = getStoredNetworkKey();
       if (!appConfigRepository.get(CONFIG_KEYS.NETWORK)) {
         appConfigRepository.set(CONFIG_KEYS.NETWORK, net);
       }
@@ -97,7 +101,7 @@ export const WalletProvider: React.FC<{children: React.ReactNode}> = ({
       dbg('WalletContext: Resolved Mempool API URL:', api);
       appConfigRepository.set(`api_${net}`, api);
       appConfigRepository.set('api', api);
-      await BBMTLibNativeModule.setAPI(net, api);
+      await ensureMempoolApiApplied(net, api);
       setBaseApi(api);
       dbg('WalletContext: Wallet refresh completed');
     } catch (error) {

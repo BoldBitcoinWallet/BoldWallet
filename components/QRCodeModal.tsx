@@ -1,4 +1,5 @@
 import React, {useCallback, useRef, useMemo} from 'react';
+import {showAppNotice} from '../services/appPrompt';
 // iOS CoreText-safe line break helper for crypto descriptors
 const IOS_WORD_JOINER = '\u2060';
 
@@ -11,16 +12,16 @@ const formatForIOSLineBreaks = (value: string) =>
     .replace(/\)/g, `)${IOS_WORD_JOINER}`);
 
 import {
-  Modal,
   View,
   Text,
   Image,
-  Alert,
+
   ScrollView,
   Platform,
   Dimensions,
   StyleSheet,
 } from 'react-native';
+import AppModal from './AppModal';
 import AppPressable from './AppPressable';
 import StaticQRCode from './StaticQRCode';
 import GlassModalOverlay from './GlassModalOverlay';
@@ -60,6 +61,10 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
 }) => {
   const {theme} = useTheme();
   const styles = createStyles(theme);
+  const accent =
+    theme.colors.background === '#ffffff'
+      ? theme.colors.primary
+      : theme.colors.bitcoinOrange;
   const qrRef = useRef<any>(null);
   const screenWidth = Dimensions.get('window').width;
   const defaultModalMaxWidth = 320;
@@ -86,7 +91,7 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
     async (filename: string, shareTitle: string) => {
       try {
         if (!qrRef.current) {
-          Alert.alert('Error', 'QR Code is not ready yet');
+          showAppNotice('Error', 'QR Code is not ready yet');
           return;
         }
         const base64Data: string = await new Promise((resolve, reject) => {
@@ -112,7 +117,7 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
         await safeUnlink(filePath);
       } catch (error: any) {
         if (error?.message !== 'User did not share') {
-          Alert.alert('Error', 'Failed to share QR code');
+          showAppNotice('Error', 'Failed to share QR code');
         }
       }
     },
@@ -142,7 +147,7 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
     onClose();
   }, [onClose]);
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent={true}
       animationType="fade"
@@ -160,16 +165,44 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
           ]}>
             {topRightClose ? (
               <View style={styles.qrModalHeader}>
-                <Text style={styles.qrModalHeaderTitle}>{title}</Text>
+                <View style={localStyles.headerTitleRow}>
+                  <View
+                    style={[
+                      localStyles.headerIconBg,
+                      {backgroundColor: accent + '20'},
+                    ]}>
+                    <Image
+                      source={require('../assets/qr-icon.png')}
+                      style={[localStyles.headerIcon, {tintColor: accent}]}
+                      resizeMode="contain"
+                    />
+                  </View>
+                  <Text style={styles.qrModalHeaderTitle}>{title}</Text>
+                </View>
                 <AppPressable
                   onPress={handleClose}
                   style={styles.qrModalTopRightCloseButton}
-                  android_ripple={{ color: 'rgba(0,0,0,0.1)' }}>
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                   <Text style={styles.qrModalTopRightCloseText}>✕</Text>
                 </AppPressable>
               </View>
             ) : (
-              <Text style={styles.qrModalTitle}>{title}</Text>
+              <View style={localStyles.headerTitleRowPlain}>
+                <View
+                  style={[
+                    localStyles.headerIconBg,
+                    {backgroundColor: accent + '20'},
+                  ]}>
+                  <Image
+                    source={require('../assets/qr-icon.png')}
+                    style={[localStyles.headerIcon, {tintColor: accent}]}
+                    resizeMode="contain"
+                  />
+                </View>
+                <Text style={[styles.qrModalTitle, localStyles.plainTitle]}>
+                  {title}
+                </Text>
+              </View>
             )}
             {value && (
               <StaticQRCode
@@ -260,7 +293,41 @@ const QRCodeModal: React.FC<QRCodeModalProps> = ({
             )}
           </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
+
+const localStyles = StyleSheet.create({
+  headerTitleRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  headerTitleRowPlain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    marginBottom: 4,
+  },
+  headerIconBg: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerIcon: {
+    width: 22,
+    height: 22,
+  },
+  plainTitle: {
+    flex: 1,
+    marginLeft: 12,
+    marginBottom: 0,
+    textAlign: 'left',
+    lineHeight: 24,
+  },
+});
+
 export default QRCodeModal;

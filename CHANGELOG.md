@@ -1,5 +1,115 @@
 # Changelog
 
+## [Unreleased]
+
+## [4.1.1] - 2026-10-27
+
+> **Security + wallet release (delta from v4.1.0):** audit remediations (native keyshare crypto, ceremony tokens, LAN/Nostr transport), Testnet4 with the same provider checklist as mainnet, smarter sync, provider Calls card, send fee chips+slider, steadier transaction details, and bounded broadcast. GG18 keyshares keep working — no forced migration.
+
+### Security
+
+**Cryptographic storage**
+- Backup files are encrypted with AES-256-GCM + Argon2id (per-file random salt) in a versioned format; legacy CBC backups import once and re-export in the new format.
+- Keyshares are held natively and stored in a device-bound encrypted envelope; plaintext share material no longer crosses the JS bridge on persist, import-decrypt, or read.
+- iOS keyshare items use `WhenPasscodeSetThisDeviceOnly`; ceremonies require an OS biometric/device-credential prompt via the per-ceremony token mint (per-read Keychain biometry is not used — it would break background reads).
+- Backup import verifies the file's `pub_key` against the share's group key and ciphersuite before accepting it.
+
+**Bridge authorization**
+- All 25 sensitive bridge methods require a per-ceremony token (≤10 min, start-bound, operation-class bound, minted via OS prompt, revoked on cancel).
+- PSBT signing and BTC sends display a fused native confirmation sheet (parsed natively in Go for PSBTs, canonicalized for sends) and mint a content-bound sign token (`CEREMONY_PSBT_MISMATCH` / `CEREMONY_SEND_MISMATCH` + session revocation on any swap or unbound token).
+- GG18 signing and setup are token-gated like DKLs23; pre-existing GG18 keyshares continue to route and sign.
+- Backup export requires the full 5-rule password policy.
+- Copying a full keyshare to the clipboard is removed; only metadata (npub / pub_key / suite) can be copied.
+- The pairing `nsec` is cleared from JS state after setup finalize.
+- Client-side device-integrity signals (root/jailbreak/Frida/emulator) warn and require confirmation before extractive actions (backup export, airgap export, wallet delete, keyshare inspect) while failing open when unknown.
+- Quotes marquee WebView is locked to `originWhitelist: ['about:blank']` with file access disabled.
+
+**Transport & protocol**
+- LAN padding oracle closed (uniform reject outcome on all failure classes).
+- Trio LAN keygen replaces the public `sha256(sessionID + "," + masterHost)` derivation with SAS-authenticated P-256 ECDH + a Burmester-Desmedt ring round (`XOR` invariant check) and a 6-digit compare code across all 3 devices (`TRIO_PEER_OUTDATED` fail-closed on pre-ECDH peers; trio signing already uses ECIES).
+- Post-DKG group-key unanimity check across DKLs23 and GG18 (LAN + Nostr) aborts setup (`DKG_GROUP_KEY_MISMATCH`) before persisting if peers derive divergent group keys, while allowing mixed-version ceremonies with older peers.
+- Relay HTTP calls have bounded timeouts (5 s poll / 10 s unary).
+- ECIES library bumped to v2.0.8 — fixes invalid-curve key recovery GO-2023-2380.
+- DKLs LAN messages now carry a verified payload tag.
+
+**Input validation & fee bounds**
+- Every bridge method validates nil/length/encoding; Go panics surface as typed errors, never crashes.
+- `fetchData` fails closed on error instead of resolving empty.
+- Shared files arriving via SEND/VIEW are size-capped at 1 MiB with a typed reject.
+- Mempool fee rates are capped at `10,000 sat/vB` (`MaxFeeRateSatVB`, skipping absurd endpoint tiers) and total fee is bounded against the payment amount.
+- Dynamic mempool host and Nostr relay lists are pinned to reviewed commit `90a154c7` (2026-10-26, signed; was `b94706d4`) with 64 KiB / 32-entry bounds and strict `https:`/`wss:` hostname validation. `MAINNET.md` is mempool.space, ninja, emzy, strategy, benpool, guide, and metaplanet (orangefren removed). `TESTNET4.md` is those hosts except emzy. `NOSTR.md` stays on `b94706d4`. Fallbacks remain `https://mempool.space/api` and `https://mempool.space/testnet4/api`.
+
+**Build and supply chain**
+- Native library rebuilt with Go 1.26.10 — fixes the forged-certificate CVE in the shipped binary; the shipped v4.1.0 Android and iOS builds both contained Go 1.26.0.
+- Node toolchain moved from EOL 20.x to 22.23.4.
+- `.sha256` / `.asc` for release artifacts are produced manually on the GitHub release page (no automation).
+- `verify-native-artifacts.sh` fails verification if any native artifact is below Go 1.26.10, gradle fails fast on a stale prebuilt `libdkls_jni.so`, and CI runs a `govulncheck` gate on `BBMTLib`.
+- Unused `axios` dependency removed (35 advisories against an unreachable package eliminated).
+- Android production signing helpers (`generate-signed-bundle.sh`, `signed-release.sh`) and `BUILD-SECRETS.md` are untracked; release passwords stay in the environment only.
+
+### Added
+- **Testnet4 provider checklist** — testnet uses the same enable/disable/custom host editor as mainnet. Mainnet and testnet stay in separate stores and never share a failover pool. A testnet URL must already contain `/testnet4` (`https://host/testnet4` → `…/testnet4/api`; bare host or mainnet `/api` rejected). Setup and Settings both use the editor; at least one endpoint stays on.
+- **Provider Calls card** — the header provider pill opens Status / Providers / Calls. Calls shows method, source, status, duration, full host+path, and a longer body preview. Status explains that offline sandbox makes no internet calls.
+
+### Changed
+- `SessionKeyHex` removed — the field was cryptographically inert.
+- Cancel is exact-session only (no prefix matching, no 15-minute poison window).
+- Fresh random session IDs per ceremony; no stale-state reuse after process death (freshness-by-construction; no persisted epoch).
+- **Testnet3 → Testnet4** — chain params, address prefixes, and default port 48333; canonical endpoint `https://mempool.space/testnet4/api`. Legacy `testnet` / `testnet3` keys and stored provider URLs normalize to `testnet4` on read; v2 address/UTXO cache rows keyed under `testnet3` are purged on first launch. Regtest and mainnet unchanged.
+- **Undocked bottom menu** — floating pill overlays full-height screens, width hugs icons, centered. Tab scrolls add clearance (pill height, home-indicator inset, 20px). Selected/pressed use a circle when floating and a rounded rectangle when docked. Docked bar stays full width.
+- **Wallet Settings** — App, Wallet, Features, and Info in a browser-style strip; only the selected group’s sections show. Menu (docked or floating) under App. Features holds Wallet, UTXOs, Addresses, PSBT, and Mempool.
+- **Smarter address sync** — refresh covers used receive/change, current receive and next change slot, UTXO holders, pending-tx addresses, and a forward probe of 2 unused indexes. Discovery gap is restore-only. Per-address transaction TTL skips fresh history; starts are paced even with multiple hosts.
+- **Honest HD Options** — labels and one-line hints match real behavior (discovery gap, price timeout, empty-coin skip, provider timeout, other response cache, transaction sync TTL). Dead Min scan index removed. Unset provider timeout defaults to 12s.
+- **Send fee controls** — fee only via Eco / 1hr / 30m / Priority chips and the fee-rate slider (no Custom pill, no sat/vB text field). When amount + fee exceeds spendable balance, send amount shrinks carefully and never jumps back up when fee drops.
+- **Transaction details** — receipt layout; compact diagram stays under the title; scrolling lifts a straight details sheet over it (no mid-scroll resize flicker). Compact status captions under the track removed. On the chain shows the full transaction id. Addresses, paths, ids, and row amounts use JetBrains Mono; hero amount stays Inter. UTXO details **Explorer** button matches the same secondary style.
+- **Shared receive pin** — a shared receive address stays in the active refresh set until first use.
+
+### Fixed
+- Log redaction markers print a literal `<redacted>` instead of HTML-escaped text.
+- Android Keystore AES-GCM envelope uses the provider-generated IV (caller-supplied IVs are rejected by Keystore).
+- Legacy GG18 keyshares route and sign under the token model.
+- **Airgap QR import spinner** — ceremony starts only after the welcome screen is active again (Android camera activity resumed, or iOS scanner modal closed). If the prompt never returns, the spinner clears after 90 seconds. Decrypt still runs only after authentication succeeds.
+- **Shared file and open-in import** — keyshare/PSBT from Telegram, WhatsApp, Files, etc. follows the same path on iOS and Android. Android copies the sender `content://` grant only after resume; iOS uses the sender name or sniffs bytes when the temp path has no `.share` / `.psbt`. Photos, video, PDF, and zip ignored. Password sheet opens before the file is read. `boldwallet://import-keyshare` still wakes a share-extension copy.
+- **Broadcast hang** — Signed Transaction Broadcast no longer spins forever. Go mempool HTTP has a 15s timeout; JS races a max wait with a countdown and Cancel (a late success still lands).
+- **Change index on restart** — next change slot reconciles so a broadcast never reuses a change address that already went out.
+- **Mempool deposit looking confirmed** — tip-height poll no longer paints a pending deposit as confirmed when the parent chip is still pending.
+
+### Technical Details
+- **Testnet providers / host pin**: `services/mempoolProvidersStore.ts`, `mempoolApiBase.ts`, `MempoolClient.ts`, `screens/UserPreferenceScreen.tsx`, `screens/WalletSettings.tsx`, `components/MempoolProvidersEditor.tsx`, `utils.js` (`MEMPOOL_HOSTS_COMMIT` → `90a154c7`).
+- **Import resume / share staging**: `utils/airgapHostResume.ts`, `IncomingShareHandler.tsx`, `BBMTLibNativeModule.kt` (`runWhenHostResumed`), `IncomingShareResolver.kt`, `MainActivity.kt`, share extension storage. See `docs/deep-links/README.md`.
+- **Floating clearance / settings tabs**: `useFloatingScrollPadding` in `FloatingTabBar.tsx`; `screens/WalletSettings.tsx`.
+- **Active sync / HD Options**: `WalletService.getActiveAddressesWithPaths`, syncer pacing, `HdOptionsConfig.ts`.
+- **Provider Calls / send fee**: `HeaderProviderCard.tsx`, `mempoolRequestLog.ts`, `SendBitcoinModal.tsx`, `FeeRateSlider.tsx`, `utxoCoinControl.ts` (`clampSendAmountSats`).
+- **Transaction details sheet**: `TransactionDetailsModal.tsx`, `TransactionVisualizer.tsx`, `Styles.tsx`, `UtxoDetailsModal.tsx`.
+- **Broadcast bound wait**: `BBMTLib/tss/mempool_http_trace.go`, `BBMTLib/tss/btc.go`, `SignedTxBroadcastModal.tsx`.
+- **Change / receive pin**: wallet repositories / `WalletService`; `__tests__/changeIndexReconcile.test.ts`, `__tests__/pinnedActiveAddresses.test.ts`.
+- **Trio ECDH / group-key check**: `BBMTLib/tss/trio_ecdh.go`, `BBMTLib/tss/nostrtransport/groupkey_check.go`, related DKLs checks.
+- **Lint**: root `tsconfig.json` excludes `libtss`; app TypeScript/ESLint clean without intentional runtime changes.
+
+## [4.1.0] - 2026-09-28
+
+> **Feature release:** wallet setup can derive its master chaincode from physical dice rolls instead of any phone's random generator. Roll real dice, enter the same sequence on every ceremony phone, and the sequence — not a device RNG — becomes the master chaincode. Full story: `docs/DICE_USER_GUIDE.md`; byte-level format: `docs/DICE_CHAINCODE_SPEC.md`.
+
+### Added
+- **Dice-rolls setup entropy** — on each phone, open **Use dice rolls** before setup starts. Choose D6 (100 rolls: 5 dice × 20 throws), D20 (60 rolls), or a coin (256 flips), then enter that sequence on every phone in the same order (type, paste, or scan the other phone's QR in the same room — the QR never goes over Wi-Fi or Nostr). Read the short code aloud: it must match on all phones, and the app's `dice_` check stops setup if any phone's sequence differs. A different sequence, or dice on only some phones, aborts the ceremony. Skipping dice leaves setup exactly as before.
+- **Dice setup UI** — `DiceEntropySheet` (roll entry + receipt via `DiceReceipt`), `DeviceEntropyPill` on ceremony screens, `EntropyInfoCard`, and `KeygenFinalizePanel` for the finalize step. Setup flows on Showcase, LAN pairing (`MobilesPairing`), and Nostr pairing (`MobileNostrPairing`) carry the dice session through to the MPC ceremony.
+- **Dice chaincode derivation** — phones exchange dice commitments and `dice_` checksum tags (`services/diceSession.ts`); any mismatch aborts before MPC starts, then the agreed sequence becomes the master chaincode (Go: `BBMTLib/tss/dice_chaincode.go`). Covered by `diceCrosscheck`, `diceEntropy`, and `diceHardening` test suites (commit parsing, checksum matching, bias/format validation, derivation).
+- **Ceremony docs** — `docs/DICE_USER_GUIDE.md` (rules: film the ceremony if you want an audit trail, no cloud keyboard, write rolls on paper, never share the raw rolls), `docs/DICE_CHAINCODE_SPEC.md`, and `docs/SECURITY_AUDIT.md` §7. Note: account descriptors (e.g. Sparrow) contain the account chaincode, not the master chaincode.
+
+### Changed
+- **Pairing screens reworked for dice setup** — `ShowcaseScreen`, `MobilesPairing`, and `MobileNostrPairing` thread the dice session (and its short-code check) through wallet creation; `walletSetupOrchestrator` finalizes with the dice-derived chaincode when dice were used.
+- **Log redaction helper** — `services/logRedact.ts` scrubs secret-shaped values before they reach console output during ceremonies.
+
+## [4.0.7] - 2026-08-28
+
+> **Patch release:** LAN signing party-resolution fix plus pairing transport polish. A duo joiner whose stored committee order differed could resolve the wrong signer ID; the committee is now always persisted as `KeyShare1,KeyShare2`, and `KeyShareN` maps to DKG id N regardless of stored order.
+
+### Fixed
+- **LAN keysign party IDs** — `KeyShareN` resolves to DKG id N (the number in the moniker), not to its position in the persisted committee array; LAN setup persists the committee as `KeyShare1,KeyShare2` on both devices so stored order can no longer skew signer resolution. Regression coverage: `party_test`, `signing_resolve_test`, `lanMpcSetup` tests.
+
+### Changed
+- **Pairing transport selector** — QR transport (static/animated) fails soft: an unrenderable or oversized QR shows "Continue with Local or Nostr" instead of a dead end. Retry copy shortened to "Open Bold to retry." (the force-close warning is removed).
+
 ## [4.0.6] - 2026-08-25
 
 > **Patch release:** Explorer traffic is now observable as a slow/fail hint instead of silent hangs; Send no longer treats a timeout as a zero balance. Mempool REST hosts are a checkable list (like Nostr relays) with ranked failover over enabled URLs only; the header shows `host +N` when a pool is active. A keyshare can move airgap via encrypted animated QR (Settings two-step PIN-then-QR export, Welcome restore) locked with a CSPRNG 6-digit PIN. Dimmed modals use a shared frosted glass blur backdrop. Android Play packaging is camera/GPS-optional, LAN pairing uses Nearby Wi-Fi on Android 13+, and sharing a keyshare from WhatsApp/Telegram actually opens Bold. Branta merchant verify is **opt-in (default off)** with SDK **3.2.1** address-mismatch / tamper detection; history shows the merchant name (not “Paying undefined”). MPC on LAN/Nostr queues round payloads so a fast peer cannot poison the current round, and pairing shows a live connection-quality chip. Home-screen camouflage uses bundled launcher identities (QuickCalc, Notes, Weather, Files) without duplicating the Bold tile; settings show the real launcher artwork, and when camouflage is on the lock screen hides Bold branding.

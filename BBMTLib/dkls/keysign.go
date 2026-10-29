@@ -69,6 +69,9 @@ func NostrJoinKeysignWithSighash(
 		return "", err
 	}
 	defer share.Free()
+	if err := VerifyKeyshareBinding(share, ks); err != nil {
+		return "", err
+	}
 	if ks.NostrNpub != "" && ks.NostrNpub != localNpub {
 		return "", fmt.Errorf("keyshare npub mismatch")
 	}
@@ -86,13 +89,12 @@ func NostrJoinKeysignWithSighash(
 
 	relays := splitCSV(relaysCSV)
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionID,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     signSess.NostrPeers,
-		MaxTimeout:    90 * time.Second,
+		Relays:     relays,
+		SessionID:  sessionID,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  signSess.NostrPeers,
+		MaxTimeout: 90 * time.Second,
 	}
 	cfg.ApplyDefaults()
 	if err := cfg.Validate(); err != nil {
@@ -197,6 +199,9 @@ func JoinKeysignWithSighash(
 		return "", err
 	}
 	defer share.Free()
+	if err := VerifyKeyshareBinding(share, ks); err != nil {
+		return "", err
+	}
 
 	signSess, err := ResolveSigningSessionLAN(share, ks, partiesCSV)
 	if err != nil {

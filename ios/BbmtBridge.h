@@ -89,7 +89,18 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)generateKeyPair;
 + (NSString *)aesEncrypt:(NSString *)data key:(NSString *)key;
 + (NSString *)aesDecrypt:(NSString *)data key:(NSString *)key;
++ (NSString *)backupEncrypt:(NSString *)plaintext password:(NSString *)password;
++ (NSString *)importBackupStaged:(NSString *)blob password:(NSString *)password;
++ (NSString *)finalizeStagedForPersist:(NSString *)handle nsec:(NSString *)nsec npub:(NSString *)npub;
++ (NSString *)destroyStaged:(NSString *)handle;
++ (NSString *)destroyAllStaged;
++ (NSString *)projectMetadata:(NSString *)fullJson;
++ (NSString *)redactedStructure:(NSString *)fullJson;
 + (NSString *)sha256:(NSString *)message;
+// F32 (Option A): trio ECDH exchange for LAN keygen.
++ (NSString *)trioECDHPhase1:(NSString *)server session:(NSString *)session selfParty:(NSString *)selfParty parties:(NSString *)parties;
++ (NSString *)trioECDHConfirm:(NSString *)handle session:(NSString *)session;
++ (NSString *)trioECDHAbort:(NSString *)handle;
 + (NSString *)secureRandom:(int)length;
 + (NSString *)secP256k1RecoverR:(NSString *)r s:(NSString *)s v:(NSString *)v h:(NSString *)h;
 + (NSString *)getDerivedPubKey:(NSString *)hexPub hexChain:(NSString *)hexChain path:(NSString *)path isEdDSA:(BOOL)isEdDSA;
@@ -109,12 +120,13 @@ NS_ASSUME_NONNULL_BEGIN
 + (NSString *)nostrKeypair;
 + (NSString *)hexToNpub:(NSString *)hexKey;
 + (NSString *)nostrJoinKeygen:(NSString *)relays nsec:(NSString *)nsec peers:(NSString *)peers session:(NSString *)session sessionKey:(NSString *)sessionKey chaincode:(NSString *)chaincode ppmPath:(NSString *)ppmPath;
-+ (NSString *)nostrJoinKeysign:(NSString *)relays nsec:(NSString *)nsec peers:(NSString *)peers session:(NSString *)session sessionKey:(NSString *)sessionKey keyshare:(NSString *)keyshare derivePath:(NSString *)derivePath message:(NSString *)message;
+// F18 (3b-3): nostrJoinKeysign REMOVED with its sole caller.
 + (NSString *)postTx:(NSString *)rawTx;
 + (NSString *)computeTxId:(NSString *)rawTx;
 + (void)disableLogs;
 + (NSString *)parsePSBTDetails:(NSString *)psbt;
 + (NSString *)psbtIdentityHash:(NSString *)psbt;
++ (NSString *)psbtConfirmation:(NSString *)psbt;
 + (NSString *)mpcSignPSBT:(NSString *)server key:(NSString *)key parties:(NSString *)parties session:(NSString *)session sessionKey:(NSString *)sessionKey encKey:(NSString *)encKey decKey:(NSString *)decKey keyshare:(NSString *)keyshare psbt:(NSString *)psbt;
 + (NSString *)mpcSendBTCWithUTXOs:(NSString *)server key:(NSString *)key parties:(NSString *)parties session:(NSString *)session sessionKey:(NSString *)sessionKey encKey:(NSString *)encKey decKey:(NSString *)decKey keyshare:(NSString *)keyshare btcPub:(NSString *)btcPub receiver:(NSString *)receiver amount:(NSString *)amount fees:(NSString *)fees utxos:(NSString *)utxos change:(NSString *)change;
 + (NSString *)nostrMpcSendBTCWithUTXOs:(NSString *)relays nsec:(NSString *)nsec parties:(NSString *)parties npubsSorted:(NSString *)npubsSorted balance:(NSString *)balance keyshare:(NSString *)keyshare receiver:(NSString *)receiver amount:(NSString *)amount fees:(NSString *)fees utxos:(NSString *)utxos change:(NSString *)change;

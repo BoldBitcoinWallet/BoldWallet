@@ -1,0 +1,317 @@
+diff --git a/node_modules/react-native-encrypted-storage/android/src/main/java/com/emeraldsanto/encryptedstorage/RNEncryptedStorageModule.java b/node_modules/react-native-encrypted-storage/android/src/main/java/com/emeraldsanto/encryptedstorage/RNEncryptedStorageModule.java
+index 68a6c9b..77d3624 100644
+--- a/node_modules/react-native-encrypted-storage/android/src/main/java/com/emeraldsanto/encryptedstorage/RNEncryptedStorageModule.java
++++ b/node_modules/react-native-encrypted-storage/android/src/main/java/com/emeraldsanto/encryptedstorage/RNEncryptedStorageModule.java
+@@ -1,10 +1,15 @@
+ package com.emeraldsanto.encryptedstorage;
+ 
+-import android.content.Context;
+ import android.content.SharedPreferences;
++import android.os.Build;
++import android.security.keystore.KeyPermanentlyInvalidatedException;
++import android.security.keystore.StrongBoxUnavailableException;
++import android.security.keystore.UserNotAuthenticatedException;
+ import android.util.Log;
+ import androidx.security.crypto.EncryptedSharedPreferences;
+ import androidx.security.crypto.MasterKey;
++import java.security.KeyStoreException;
++import java.security.UnrecoverableKeyException;
+ import com.facebook.react.bridge.Promise;
+ import com.facebook.react.bridge.ReactApplicationContext;
+ import com.facebook.react.bridge.ReactContextBaseJavaModule;
+@@ -19,25 +24,75 @@ public class RNEncryptedStorageModule extends ReactContextBaseJavaModule {
+ 
+     public RNEncryptedStorageModule(ReactApplicationContext context) {
+         super(context);
++        // F3 (patch-package): no eager init. Preferences open lazily per call
++        // so transient failures (locked device) can succeed on retry, and so
++        // no constructor path can fall back to plaintext SharedPreferences.
++    }
+ 
++    /**
++     * F3: StrongBox-first (API 28+), TEE fallback, fail-closed. Throws a
++     * mapped Exception carrying a stable `[SECURE_STORAGE_<KIND>]` token;
++     * there is intentionally no plaintext fallback.
++     */
++    private synchronized SharedPreferences getSharedPreferences() throws Exception {
++        if (this.sharedPreferences != null) {
++            return this.sharedPreferences;
++        }
++        if (Build.VERSION.SDK_INT >= 28) {
++            try {
++                this.sharedPreferences = openEncrypted(true);
++                return this.sharedPreferences;
++            } catch (Exception e) {
++                if (!isStrongBoxUnavailable(e)) {
++                    throw mapStorageError(e);
++                }
++                Log.w(NATIVE_MODULE_NAME, "StrongBox unavailable, using TEE", e);
++            }
++        }
+         try {
+-            MasterKey key = new MasterKey.Builder(context)
+-                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+-                    .build();
++            this.sharedPreferences = openEncrypted(false);
++        } catch (Exception e) {
++            throw mapStorageError(e);
++        }
++        return this.sharedPreferences;
++    }
++
++    private SharedPreferences openEncrypted(boolean strongBox) throws Exception {
++        MasterKey.Builder builder = new MasterKey.Builder(getReactApplicationContext())
++                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM);
++        if (strongBox) {
++            builder.setRequestStrongBoxBacked(true);
++        }
++        return EncryptedSharedPreferences.create(
++            getReactApplicationContext(),
++            RNEncryptedStorageModule.SHARED_PREFERENCES_FILENAME,
++            builder.build(),
++            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
++            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
++        );
++    }
+ 
+-            this.sharedPreferences = EncryptedSharedPreferences.create(
+-                context,
+-                RNEncryptedStorageModule.SHARED_PREFERENCES_FILENAME,
+-                key,
+-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+-            );
++    private static Exception mapStorageError(Exception e) {
++        if (e instanceof KeyPermanentlyInvalidatedException) {
++            return new Exception("[SECURE_STORAGE_INVALIDATED] Device lock changed; secure storage must be re-created. Your keyshare was not saved/read.", e);
++        }
++        if (e instanceof UserNotAuthenticatedException) {
++            return new Exception("[SECURE_STORAGE_LOCKED] Device must be unlocked. Your keyshare was not saved/read.", e);
+         }
++        if (e instanceof UnrecoverableKeyException || e instanceof KeyStoreException) {
++            return new Exception("[SECURE_STORAGE_CORRUPTED] Secure storage is corrupted. Your keyshare was not saved/read.", e);
++        }
++        return new Exception("[SECURE_STORAGE_UNAVAILABLE] Secure storage unavailable. Your keyshare was not saved/read.", e);
++    }
+ 
+-        catch (Exception ex) {
+-            Log.e(NATIVE_MODULE_NAME, "Failed to create encrypted shared preferences! Failing back to standard SharedPreferences", ex);
+-            this.sharedPreferences = context.getSharedPreferences(RNEncryptedStorageModule.SHARED_PREFERENCES_FILENAME, Context.MODE_PRIVATE);
++    private static boolean isStrongBoxUnavailable(Throwable e) {
++        while (e != null) {
++            if (e instanceof StrongBoxUnavailableException) {
++                return true;
++            }
++            e = e.getCause();
+         }
++        return false;
+     }
+ 
+     @Override
+@@ -47,14 +102,23 @@ public class RNEncryptedStorageModule extends ReactContextBaseJavaModule {
+ 
+     @ReactMethod
+     public void setItem(String key, String value, Promise promise) {
+-        if (this.sharedPreferences == null) {
+-            promise.reject(new NullPointerException("Could not initialize SharedPreferences"));
++        final SharedPreferences prefs;
++        try {
++            prefs = getSharedPreferences();
++        } catch (Exception e) {
++            promise.reject(e);
+             return;
+         }
+ 
+-        SharedPreferences.Editor editor = this.sharedPreferences.edit();
+-        editor.putString(key, value);
+-        boolean saved = editor.commit();
++        final boolean saved;
++        try {
++            SharedPreferences.Editor editor = prefs.edit();
++            editor.putString(key, value);
++            saved = editor.commit();
++        } catch (Exception e) {
++            promise.reject(mapStorageError(e));
++            return;
++        }
+ 
+         if (saved) {
+             promise.resolve(value);
+@@ -67,26 +131,44 @@ public class RNEncryptedStorageModule extends ReactContextBaseJavaModule {
+ 
+     @ReactMethod
+     public void getItem(String key, Promise promise) {
+-        if (this.sharedPreferences == null) {
+-            promise.reject(new NullPointerException("Could not initialize SharedPreferences"));
++        final SharedPreferences prefs;
++        try {
++            prefs = getSharedPreferences();
++        } catch (Exception e) {
++            promise.reject(e);
+             return;
+         }
+ 
+-        String value = this.sharedPreferences.getString(key, null);
++        final String value;
++        try {
++            value = prefs.getString(key, null);
++        } catch (Exception e) {
++            promise.reject(mapStorageError(e));
++            return;
++        }
+ 
+         promise.resolve(value);
+     }
+ 
+     @ReactMethod
+     public void removeItem(String key, Promise promise) {
+-        if (this.sharedPreferences == null) {
+-            promise.reject(new NullPointerException("Could not initialize SharedPreferences"));
++        final SharedPreferences prefs;
++        try {
++            prefs = getSharedPreferences();
++        } catch (Exception e) {
++            promise.reject(e);
+             return;
+         }
+ 
+-        SharedPreferences.Editor editor = this.sharedPreferences.edit();
+-        editor.remove(key);
+-        boolean saved = editor.commit();
++        final boolean saved;
++        try {
++            SharedPreferences.Editor editor = prefs.edit();
++            editor.remove(key);
++            saved = editor.commit();
++        } catch (Exception e) {
++            promise.reject(mapStorageError(e));
++            return;
++        }
+ 
+         if (saved) {
+             promise.resolve(key);
+@@ -99,14 +181,23 @@ public class RNEncryptedStorageModule extends ReactContextBaseJavaModule {
+ 
+     @ReactMethod
+     public void clear(Promise promise) {
+-        if (this.sharedPreferences == null) {
+-            promise.reject(new NullPointerException("Could not initialize SharedPreferences"));
++        final SharedPreferences prefs;
++        try {
++            prefs = getSharedPreferences();
++        } catch (Exception e) {
++            promise.reject(e);
+             return;
+         }
+ 
+-        SharedPreferences.Editor editor = this.sharedPreferences.edit();
+-        editor.clear();
+-        boolean saved = editor.commit();
++        final boolean saved;
++        try {
++            SharedPreferences.Editor editor = prefs.edit();
++            editor.clear();
++            saved = editor.commit();
++        } catch (Exception e) {
++            promise.reject(mapStorageError(e));
++            return;
++        }
+ 
+         if (saved) {
+             promise.resolve(null);
+diff --git a/node_modules/react-native-encrypted-storage/ios/RNEncryptedStorage.m b/node_modules/react-native-encrypted-storage/ios/RNEncryptedStorage.m
+index 9ad4b23..abdbb57 100644
+--- a/node_modules/react-native-encrypted-storage/ios/RNEncryptedStorage.m
++++ b/node_modules/react-native-encrypted-storage/ios/RNEncryptedStorage.m
+@@ -18,6 +18,23 @@ void rejectPromise(NSString *message, NSError *error, RCTPromiseRejectBlock reje
+     rejecter(errorCode, errorMessage, error);
+ }
+ 
++// F4 (patch-package): account name carrying the MPC keyshare blob. Only this
++// entry gets the hardened protection class; other keys keep library behavior.
++static NSString *const kBoldKeyshareAccount = @"keyshare";
++
++// F4: Keychain failures mapped to the stable [SECURE_STORAGE_<KIND>] token
++// the JS layer matches on (see services/secureStorageErrors.ts).
++static void rejectStorage(OSStatus status, NSString *op, RCTPromiseRejectBlock rejecter)
++{
++    NSString *token = @"UNAVAILABLE";
++    if (status == errSecInteractionNotAllowed || status == errSecAuthFailed) {
++        token = @"LOCKED";
++    }
++    NSError* error = [NSError errorWithDomain:[[NSBundle mainBundle] bundleIdentifier] code:status userInfo:nil];
++    NSString* message = [NSString stringWithFormat:@"[SECURE_STORAGE_%@] Keychain %@ failed (OSStatus %d). Your keyshare was not saved/read.", token, op, (int)status];
++    rejectPromise(message, error, rejecter);
++}
++
+ @implementation RNEncryptedStorage
+ 
+ + (BOOL)requiresMainQueueSetup
+@@ -27,6 +44,28 @@ + (BOOL)requiresMainQueueSetup
+ 
+ RCT_EXPORT_MODULE();
+ 
++// F4: single construction point for the Keychain add-query, so the
++// protection-class policy is unit-testable (see F4 evidence harness).
+++ (NSDictionary *)storeQueryForKey:(NSString *)key data:(NSData *)data
++{
++    NSMutableDictionary* storeQuery = [@{
++        (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
++        (__bridge id)kSecAttrAccount : key,
++        (__bridge id)kSecValueData : data
++    } mutableCopy];
++    // The keyshare entry is bound to device-unlock
++    // (WhenPasscodeSetThisDeviceOnly): unreadable while locked, excluded
++    // from backups. Other keys keep library behavior. Per-read biometry is
++    // deliberately NOT used: the keyshare is read on JS-polled/background
++    // paths where prompts cannot work; biometric unlock belongs with
++    // native-held shares (F15b).
++    if ([key isEqualToString:kBoldKeyshareAccount]) {
++        storeQuery[(__bridge id)kSecAttrAccessible] =
++            (__bridge id)kSecAttrAccessibleWhenPasscodeSetThisDeviceOnly;
++    }
++    return storeQuery;
++}
++
+ RCT_EXPORT_METHOD(setItem:(NSString *)key withValue:(NSString *)value resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+ {
+     NSData* dataFromValue = [value dataUsingEncoding:NSUTF8StringEncoding];
+@@ -37,14 +76,11 @@ + (BOOL)requiresMainQueueSetup
+         return;
+     }
+     
+-    // Prepares the insert query structure
+-    NSDictionary* storeQuery = @{
+-        (__bridge id)kSecClass : (__bridge id)kSecClassGenericPassword,
+-        (__bridge id)kSecAttrAccount : key,
+-        (__bridge id)kSecValueData : dataFromValue
+-    };
++    // Prepares the insert query structure (see storeQueryForKey:data:).
++    NSDictionary* storeQuery = [RNEncryptedStorage storeQueryForKey:key data:dataFromValue];
+     
+-    // Deletes the existing item prior to inserting the new one
++    // Deletes the existing item prior to inserting the new one. This also
++    // migrates pre-F4 keyshare items (no protection class) on next write.
+     SecItemDelete((__bridge CFDictionaryRef)storeQuery);
+     
+     OSStatus insertStatus = SecItemAdd((__bridge CFDictionaryRef)storeQuery, nil);
+@@ -54,8 +90,7 @@ + (BOOL)requiresMainQueueSetup
+     }
+     
+     else {
+-        NSError* error = [NSError errorWithDomain:[[NSBundle mainBundle] bundleIdentifier] code:insertStatus userInfo: nil];
+-        rejectPromise(@"An error occured while saving value", error, reject);   
++        rejectStorage(insertStatus, @"save", reject);
+     }
+ }
+ 
+@@ -81,8 +116,7 @@ + (BOOL)requiresMainQueueSetup
+     }
+     
+     else {
+-        NSError* error = [NSError errorWithDomain: [[NSBundle mainBundle] bundleIdentifier] code:getStatus userInfo:nil];
+-        rejectPromise(@"An error occured while retrieving value", error, reject);
++        rejectStorage(getStatus, @"read", reject);
+     }
+ }
+ 

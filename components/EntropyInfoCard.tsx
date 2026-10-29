@@ -6,17 +6,16 @@ import {
   ActivityIndicator,
   ScrollView,
   Image,
-  Modal,
   Animated,
   PanResponder,
   Dimensions,
 } from 'react-native';
+import AppModal from './AppModal';
 import {useTheme} from '../theme';
 import {
   getDeviceEntropyMetadata,
   type DeviceEntropyMetadata,
 } from '../native_modules';
-import AppPressable from './AppPressable';
 import GlassModalOverlay from './GlassModalOverlay';
 
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -116,7 +115,7 @@ export default function EntropyInfoCard({visible, onClose}: EntropyInfoCardProps
   const styles = makeStyles(colors, spacing, borderRadius, fontSizes, fontFamilies);
 
   return (
-    <Modal
+    <AppModal
       visible={visible}
       animationType="slide"
       transparent={true}
@@ -260,7 +259,7 @@ export default function EntropyInfoCard({visible, onClose}: EntropyInfoCardProps
           </ScrollView>
         </Animated.View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 }
 

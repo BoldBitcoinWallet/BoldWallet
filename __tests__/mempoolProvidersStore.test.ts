@@ -4,13 +4,20 @@
 
 jest.mock('../services/repositories/AppConfigRepository', () => ({
   __esModule: true,
-  CONFIG_KEYS: {MEMPOOL_PROVIDERS_ENTRIES: 'mempool_providers_entries'},
+  CONFIG_KEYS: {
+    MEMPOOL_PROVIDERS_ENTRIES: 'mempool_providers_entries',
+    MEMPOOL_PROVIDERS_ENTRIES_TESTNET: 'mempool_providers_entries_testnet',
+  },
   default: {set: jest.fn(), get: jest.fn()},
 }));
 jest.mock('../utils', () => ({
   getMainnetAPIList: jest.fn(async () => [
     'https://mempool.space/api',
     'https://mempool.emzy.de/api',
+  ]),
+  getTestnetAPIList: jest.fn(async () => [
+    'https://mempool.space/testnet4/api',
+    'https://mempool.ninja/testnet4/api',
   ]),
 }));
 
@@ -21,14 +28,26 @@ import {
   exclusiveEnable,
   getHeaderProviderDisplay,
   hostnameFromMempoolApiBase,
+  isTestnetMempoolApiBase,
   parseProviderUrls,
   parseStoredProviderEntries,
   primaryProviderUrl,
   providerListSummary,
   urlsToProviderEntries,
+  withPublicEndpointsSelected,
 } from '../services/mempoolProvidersStore';
 
 describe('mempoolProvidersStore', () => {
+  it('treats testnet4 API bases as testnet', () => {
+    expect(isTestnetMempoolApiBase('https://mempool.space/testnet4/api')).toBe(
+      true,
+    );
+    expect(isTestnetMempoolApiBase('https://mempool.space/testnet/api')).toBe(
+      true,
+    );
+    expect(isTestnetMempoolApiBase('https://mempool.space/api')).toBe(false);
+  });
+
   beforeEach(() => {
     (appConfigRepository.get as jest.Mock).mockReset();
     (appConfigRepository.set as jest.Mock).mockReset();
@@ -156,11 +175,11 @@ describe('mempoolProvidersStore', () => {
       'mempool.space',
     );
     expect(
-      hostnameFromMempoolApiBase('https://mempool.space/testnet/api'),
-    ).toBe('mempool.space/testnet');
+      hostnameFromMempoolApiBase('https://mempool.space/testnet4/api'),
+    ).toBe('mempool.space/testnet4');
   });
 
-  it('header label on testnet ignores mainnet enabled pool', () => {
+  it('header label on testnet4 reads the testnet list, not mainnet', () => {
     (appConfigRepository.get as jest.Mock).mockImplementation((key: string) => {
       if (key === 'mempool_providers_entries') {
         return JSON.stringify([
@@ -169,14 +188,40 @@ describe('mempoolProvidersStore', () => {
           {url: 'https://mempool.bisq.services/api', enabled: true},
         ]);
       }
+      if (key === 'mempool_providers_entries_testnet') {
+        return JSON.stringify([
+          {url: 'https://mempool.space/testnet4/api', enabled: true},
+          {url: 'https://mempool.ninja/testnet4/api', enabled: true},
+          {url: 'https://mine.example/testnet4/api', enabled: false},
+        ]);
+      }
       return null;
     });
     expect(
-      getHeaderProviderDisplay('https://mempool.space/testnet/api'),
+      getHeaderProviderDisplay('https://mempool.space/testnet4/api'),
     ).toEqual({
-      host: 'mempool.space/testnet',
-      extraCount: 0,
-      label: 'mempool.space/testnet',
+      host: 'mempool.space/testnet4',
+      extraCount: 1,
+      label: 'mempool.space/testnet4 +1',
     });
+  });
+
+  it('keeps a custom row when selecting public endpoints', () => {
+    const curated = urlsToProviderEntries([
+      'https://mempool.space/testnet4/api',
+      'https://mempool.ninja/testnet4/api',
+    ]);
+    const entries = [
+      ...curated.map((entry, index) => ({...entry, enabled: index === 0})),
+      {url: 'https://mine.example/testnet4/api', enabled: true},
+    ];
+    const next = withPublicEndpointsSelected(entries, curated);
+    expect(activeProviderUrls(next)).toEqual([
+      'https://mempool.space/testnet4/api',
+      'https://mempool.ninja/testnet4/api',
+    ]);
+    expect(
+      next.find(entry => entry.url.includes('mine.example'))?.enabled,
+    ).toBe(false);
   });
 });

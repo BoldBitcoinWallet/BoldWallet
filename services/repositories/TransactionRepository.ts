@@ -84,9 +84,11 @@ class TransactionRepository {
 
         for (const mapping of addresses) {
           svc.execute(
-            `INSERT OR IGNORE INTO transaction_addresses
+            `INSERT INTO transaction_addresses
                (txid, network, address, net_sats)
-             VALUES (?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(txid, network, address) DO UPDATE SET
+               net_sats = COALESCE(excluded.net_sats, transaction_addresses.net_sats)`,
             [mapping.txid, mapping.network, mapping.address, mapping.netSats ?? null],
           );
         }
@@ -135,9 +137,11 @@ class TransactionRepository {
 
           for (const m of addresses) {
             svc.execute(
-              `INSERT OR IGNORE INTO transaction_addresses
+              `INSERT INTO transaction_addresses
                  (txid, network, address, net_sats)
-               VALUES (?, ?, ?, ?)`,
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(txid, network, address) DO UPDATE SET
+                 net_sats = COALESCE(excluded.net_sats, transaction_addresses.net_sats)`,
               [m.txid, m.network, m.address, m.netSats ?? null],
             );
           }
@@ -158,9 +162,11 @@ class TransactionRepository {
       database.transaction(svc => {
         for (const m of links) {
           svc.execute(
-            `INSERT OR IGNORE INTO transaction_addresses
+            `INSERT INTO transaction_addresses
                (txid, network, address, net_sats)
-             VALUES (?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?)
+             ON CONFLICT(txid, network, address) DO UPDATE SET
+               net_sats = COALESCE(excluded.net_sats, transaction_addresses.net_sats)`,
             [m.txid, m.network, m.address, m.netSats ?? null],
           );
         }
@@ -284,6 +290,12 @@ class TransactionRepository {
    * Insert a transaction immediately after successful broadcast so it appears
    * in the UI without waiting for API sync. Call from pairing screens (send_btc multi-path)
    * with full apiTxShape (vin/vout) built from the payload.
+   *
+   * NOTE: MobileNostrPairing fallback (empty p.inputs/p.outputs) yields a recipient-only
+   * transaction_addresses row here; the change reference lands via
+   * refreshSpendStateAfterBroadcast's UTXO sync in the same session. If that sync fails and
+   * the app restarts before the next send, reconcileChangeIndex has no change reference to
+   * find — see B1 known limitation.
    */
   insertBroadcastTransaction(
     txid: string,
@@ -345,6 +357,64 @@ class TransactionRepository {
       address,
       netSats,
     }));
+  }
+
+  /**
+   * Write the chain's current status. A reorg can clear a block height that
+   * this phone already stored.
+   */
+  applyChainStatus(
+    txid: string,
+    network: string,
+    status: {
+      confirmed: boolean;
+      blockHeight?: number | null;
+      blockTime?: number | null;
+      blockHash?: string | null;
+    },
+  ): void {
+    try {
+      const {rows} = database.execute(
+        'SELECT raw_json FROM transactions WHERE txid = ? AND network = ? LIMIT 1',
+        [txid, network],
+      );
+      if (!rows.length) {
+        return;
+      }
+      let rawJson = rows[0].raw_json as string;
+      try {
+        const parsed = JSON.parse(rawJson);
+        const prev = parsed.status ?? {};
+        parsed.status = {
+          ...prev,
+          confirmed: status.confirmed,
+          block_height: status.confirmed ? status.blockHeight ?? null : null,
+          block_time: status.confirmed ? status.blockTime ?? prev.block_time ?? null : null,
+          block_hash: status.confirmed ? status.blockHash ?? prev.block_hash ?? null : null,
+        };
+        rawJson = JSON.stringify(parsed);
+      } catch {
+        // Keep the previous payload if it is not JSON.
+      }
+      database.execute(
+        `UPDATE transactions
+         SET is_confirmed = ?, block_height = ?, block_time = ?, block_hash = ?,
+             raw_json = ?, fetched_at = ?
+         WHERE txid = ? AND network = ?`,
+        [
+          status.confirmed ? 1 : 0,
+          status.confirmed ? status.blockHeight ?? null : null,
+          status.confirmed ? status.blockTime ?? null : null,
+          status.confirmed ? status.blockHash ?? null : null,
+          rawJson,
+          Date.now(),
+          txid,
+          network,
+        ],
+      );
+    } catch (err) {
+      dbg('TransactionRepository.applyChainStatus error', err);
+    }
   }
 
   /** Mark a previously-unconfirmed transaction as confirmed. */

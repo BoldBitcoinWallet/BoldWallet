@@ -1,25 +1,28 @@
 import React, {useCallback, useState, useEffect, useRef} from 'react';
+import {confirmAppPrompt, showAppNotice} from '../services/appPrompt';
 import {useFocusEffect} from '@react-navigation/native';
 import {
   View,
   Text,
   Image,
   ScrollView,
-  Alert,
   StyleSheet,
   Linking,
   ActivityIndicator,
 } from 'react-native';
-import EncryptedStorage from 'react-native-encrypted-storage';
+import {BBMTLibNativeModule} from '../native_modules';
 import AppPressable from './AppPressable';
 import AppText from './AppText';
 import {SafeAreaView} from 'react-native-safe-area-context';
+import {useFloatingScrollPadding} from './FloatingTabBar';
 import Animated, {
   useSharedValue,
   withTiming,
   useAnimatedStyle,
+  useDerivedValue,
   interpolate,
 } from 'react-native-reanimated';
+import {DissolveFade} from './DissolveFade';
 import Clipboard from '@react-native-clipboard/clipboard';
 import Share from 'react-native-share';
 import * as RNFS from 'react-native-fs';
@@ -33,6 +36,7 @@ import {
 import {
   parseKeyshareJsonForDevView,
   prettyPrintKeyshareJson,
+  formatKeyshareMetadataForCopy,
 } from '../utils/keyshareDevView';
 import {colorsFromWalletFingerprint} from '../utils/fingerprintPillColors';
 import {isDevDebugEnabled} from '../services/devDebug';
@@ -40,6 +44,7 @@ import {
   promptWalletBiometricAuth,
   WALLET_SENSITIVE_ACTION_AUTH,
 } from '../services/walletBiometricAuth';
+import {confirmDeviceIntegrityForSensitiveAction} from '../services/deviceIntegrity';
 import {useTheme} from '../theme';
 import {getFontStyle} from '../theme/utils';
 import {createStyles} from './Styles';
@@ -159,6 +164,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   network,
 }) => {
   const {theme} = useTheme();
+  const floatingScrollPadding = useFloatingScrollPadding();
   const styles = createStyles(theme);
   const isLightTheme = theme.colors.background === '#ffffff';
   const screenStyles = React.useMemo(
@@ -496,7 +502,18 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   const loadDevKeyshareStructure = useCallback(async () => {
     setDevKeyshareLoading(true);
     try {
-      const raw = await EncryptedStorage.getItem('keyshare');
+      // F15b-1 (A9): redacted structure — secret leaves replaced natively,
+      // shape preserved. The raw blob never enters JS.
+      let raw: string | null;
+      try {
+        raw = await BBMTLibNativeModule.getKeyshareStructureRedacted();
+      } catch (e: any) {
+        if ((e?.code ?? '') === 'NO_KEYSHARE') {
+          raw = null;
+        } else {
+          throw e;
+        }
+      }
       const parsed = parseKeyshareJsonForDevView(raw);
       if ('error' in parsed) {
         setDevKeyshareData(null);
@@ -577,6 +594,14 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     }
     setDevKeyshareAuthPending(true);
     try {
+      // F36: warn-and-confirm on compromised devices before key material shows.
+      const integrityOk = await confirmDeviceIntegrityForSensitiveAction(
+        WALLET_SENSITIVE_ACTION_AUTH.viewKeyshareStructure
+          .integrityActionLabel ?? 'Viewing your keyshare structure',
+      );
+      if (!integrityOk) {
+        return;
+      }
       const ok = await promptWalletBiometricAuth({
         ...WALLET_SENSITIVE_ACTION_AUTH.viewKeyshareStructure,
         showFailureAlert: true,
@@ -590,28 +615,27 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     }
   }, [devKeyshareAuthPending, isDevKeyshareExpanded]);
 
-  const handleCopyDevKeyshareJson = useCallback(() => {
+  const handleCopyDevKeyshareMetadata = useCallback(() => {
     if (!devKeyshareData) {
       return;
     }
-    Alert.alert(
-      'Copy full keyshare JSON?',
-      'This includes secrets (MPC share, Nostr nsec). Only copy on a trusted device.',
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {
-          text: 'Copy',
-          onPress: () => {
-            Clipboard.setString(prettyPrintKeyshareJson(devKeyshareData));
-            Toast.show({
-              type: 'success',
-              text1: 'Copied',
-              text2: 'Full keyshare JSON copied to clipboard',
-            });
-          },
-        },
-      ],
-    );
+    confirmAppPrompt({
+      icon: 'copy',
+      title: 'Copy public info?',
+      hint: 'No secrets. Public key and npub only.',
+      cancelLabel: 'Cancel',
+      confirmLabel: 'Copy',
+    }).then(ok => {
+      if (!ok) {
+        return;
+      }
+      Clipboard.setString(formatKeyshareMetadataForCopy(devKeyshareData));
+      Toast.show({
+        type: 'success',
+        text1: 'Copied',
+        text2: 'Keyshare metadata copied to clipboard',
+      });
+    });
   }, [devKeyshareData]);
 
   const devKeyshareRotateStyle = useAnimatedStyle(() => ({
@@ -626,9 +650,9 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     ],
   }));
 
-  const devKeyshareContentOpacityStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(devKeyshareRotationAnim.value, [0, 1], [0.6, 1]),
-  }));
+  const devKeyshareShown = useDerivedValue(() =>
+    interpolate(devKeyshareRotationAnim.value, [0, 1], [0.6, 1]),
+  );
 
   // Share text as file
   const shareTextAsFile = useCallback(
@@ -650,7 +674,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
         await safeUnlink(filePath);
       } catch (error: any) {
         if (error?.message !== 'User did not share') {
-          Alert.alert('Error', 'Failed to share file');
+          showAppNotice('Error', 'Failed to share file');
         }
       }
     },
@@ -809,7 +833,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
       if (extensionBindHandledRef.current) return;
       const pairingCode = parsePairingCodeFromScannedData(rawData);
       if (!pairingCode) {
-        Alert.alert(
+        showAppNotice(
           'Invalid QR',
           'This QR code does not contain a pairing_code. Please scan the QR shown by the Bold extension.',
         );
@@ -817,7 +841,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
       }
       const pubKey = keyshareInfo?.pubKey;
       if (!pubKey) {
-        Alert.alert('Error', 'Keyshare info is not available.');
+        showAppNotice('Error', 'Keyshare info is not available.');
         setIsExtensionBindScannerVisible(false);
         return;
       }
@@ -834,7 +858,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
       } catch (e) {
         dbg('Extension bind qrData computation failed:', e);
         extensionBindHandledRef.current = false;
-        Alert.alert('Error', 'Failed to generate response QR.');
+        showAppNotice('Error', 'Failed to generate response QR.');
       }
     },
     [keyshareInfo?.pubKey],
@@ -934,8 +958,6 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     isBoldExtensionExpanded ? 1 : 0,
   );
   const watchWalletContentAnim = useSharedValue(isWatchWalletExpanded ? 1 : 0);
-
-  // Sync content animations with state
   useEffect(() => {
     walletInfoContentAnim.value = withTiming(isWalletInfoExpanded ? 1 : 0, {
       duration: 200,
@@ -961,30 +983,16 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
     });
   }, [isWatchWalletExpanded, watchWalletContentAnim]);
 
-  // Animated styles for content opacity
-  const walletInfoContentOpacityStyle = useAnimatedStyle(() => ({
-    opacity: walletInfoContentAnim.value,
-  }));
-
-  const capabilitiesContentOpacityStyle = useAnimatedStyle(() => ({
-    opacity: capabilitiesContentAnim.value,
-  }));
-
-  const boldExtensionContentOpacityStyle = useAnimatedStyle(() => ({
-    opacity: boldExtensionContentAnim.value,
-  }));
-
-  const watchWalletContentOpacityStyle = useAnimatedStyle(() => ({
-    opacity: watchWalletContentAnim.value,
-  }));
-
   return (
     <SafeAreaView
       style={screenStyles.safeArea}
       edges={['left', 'right', 'bottom']}>
       <ScrollView
         style={screenStyles.scrollView}
-        contentContainerStyle={screenStyles.scrollContent}
+        contentContainerStyle={[
+          screenStyles.scrollContent,
+          {paddingBottom: 24 + floatingScrollPadding},
+        ]}
         removeClippedSubviews
         keyboardShouldPersistTaps="handled"
         overScrollMode="never"
@@ -1025,11 +1033,10 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                 </Animated.Text>
               </AppPressable>
               {isWalletInfoExpanded && (
-                <Animated.View
-                  style={[
-                    styles.collapsibleContent,
-                    walletInfoContentOpacityStyle,
-                  ]}>
+                <DissolveFade
+                  shown={walletInfoContentAnim}
+                  coverColor={theme.colors.cardBackground}
+                  style={styles.collapsibleContent}>
                   <View style={styles.walletInfoContent}>
                     <View
                       style={[
@@ -1222,7 +1229,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                       </View>
                     )}
                   </View>
-                </Animated.View>
+                </DissolveFade>
               )}
             </View>
             {/* Capabilities / connectivity summary */}
@@ -1253,11 +1260,10 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                 </Animated.Text>
               </AppPressable>
               {isCapabilitiesExpanded && (
-                <Animated.View
-                  style={[
-                    styles.collapsibleContent,
-                    capabilitiesContentOpacityStyle,
-                  ]}>
+                <DissolveFade
+                  shown={capabilitiesContentAnim}
+                  coverColor={theme.colors.cardBackground}
+                  style={styles.collapsibleContent}>
                   <View style={styles.keyshareDetailRow}>
                     <Text style={styles.keyshareDetailLabel}>
                       LAN / Hotspot
@@ -1347,7 +1353,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                       </View>
                     </View>
                   )}
-                </Animated.View>
+                </DissolveFade>
               )}
             </View>
             {/* Bold Extension Section */}
@@ -1378,11 +1384,10 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                 </Animated.Text>
               </AppPressable>
               {isBoldExtensionExpanded && (
-                <Animated.View
-                  style={[
-                    styles.collapsibleContent,
-                    boldExtensionContentOpacityStyle,
-                  ]}>
+                <DissolveFade
+                  shown={boldExtensionContentAnim}
+                  coverColor={theme.colors.cardBackground}
+                  style={styles.collapsibleContent}>
                   <Text style={styles.watchWalletDescription}>
                     This public key binds the Bold browser extension. Share it
                     only with that extension.
@@ -1443,7 +1448,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                       </AppPressable>
                     </View>
                   )}
-                </Animated.View>
+                </DissolveFade>
               )}
             </View>
             {/* Watch Wallet Header Section */}
@@ -1474,11 +1479,10 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                 </Animated.Text>
               </AppPressable>
               {isWatchWalletExpanded && (
-                <Animated.View
-                  style={[
-                    styles.collapsibleContent,
-                    watchWalletContentOpacityStyle,
-                  ]}>
+                <DissolveFade
+                  shown={watchWalletContentAnim}
+                  coverColor={theme.colors.cardBackground}
+                  style={styles.collapsibleContent}>
                   <Text style={styles.watchWalletDescription}>
                     Import the output descriptor into Sparrow or another
                     PSBT-capable wallet to create a watch-only wallet.
@@ -1647,7 +1651,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                       </View>
                     )}
                   </View>
-                </Animated.View>
+                </DissolveFade>
               )}
             </View>
             {devDebugEnabled ? (
@@ -1691,11 +1695,10 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                   )}
                 </AppPressable>
                 {isDevKeyshareExpanded ? (
-                  <Animated.View
-                    style={[
-                      styles.collapsibleContent,
-                      devKeyshareContentOpacityStyle,
-                    ]}>
+                  <DissolveFade
+                    shown={devKeyshareShown}
+                    coverColor={theme.colors.cardBackground}
+                    style={styles.collapsibleContent}>
                     <Text style={screenStyles.devKeyshareWarning}>
                       Developer mode only. Contains sensitive secrets — make
                       sure you know what you are doing!
@@ -1730,10 +1733,10 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                       {devKeyshareData ? (
                         <AppPressable
                           style={screenStyles.devKeyshareActionChip}
-                          onPress={handleCopyDevKeyshareJson}
+                          onPress={handleCopyDevKeyshareMetadata}
                           android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
                           <Text style={screenStyles.devKeyshareActionText}>
-                            Copy JSON
+                            Copy metadata
                           </Text>
                         </AppPressable>
                       ) : null}
@@ -1775,7 +1778,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                         No keyshare loaded
                       </Text>
                     )}
-                  </Animated.View>
+                  </DissolveFade>
                 ) : null}
               </View>
             ) : null}

@@ -29,6 +29,7 @@ import {
   publicKeepAliveStatus,
   resetMpcKeepAliveForTests,
   resolveMpcKeepAliveBranding,
+  ceremonyNoticesEnabled,
   startMpcKeepAlive,
   stopMpcKeepAlive,
   updateMpcKeepAlive,
@@ -49,6 +50,7 @@ jest.mock('../services/repositories/AppConfigRepository', () => {
     CONFIG_KEYS: {
       APP_ICON_PREFERENCE: 'app_icon_preference',
       MPC_BATTERY_EXEMPT_DONT_ASK: 'mpc_battery_exempt_dont_ask',
+      CEREMONY_NOTICES: 'ceremony_notices',
     },
   };
 });
@@ -222,6 +224,25 @@ describe('mpcKeepAlive', () => {
       expect.objectContaining({
         outcome: 'success',
         title: 'Wallet ready',
+        notices: true,
+      }),
+    );
+  });
+
+  it('skips informational copy when ceremony notices are off', async () => {
+    appConfigRepository.set(CONFIG_KEYS.CEREMONY_NOTICES, '0');
+    expect(ceremonyNoticesEnabled()).toBe(false);
+    await startMpcKeepAlive({kind: 'keygen', transport: 'nostr'});
+    expect(mockStart).toHaveBeenCalledWith(
+      expect.objectContaining({notices: false}),
+    );
+    await stopMpcKeepAlive('success');
+    expect(mockStop).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: 'success',
+        title: '',
+        body: '',
+        notices: false,
       }),
     );
   });

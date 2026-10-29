@@ -1,15 +1,16 @@
 import React, {useEffect, useMemo, useRef, useState} from 'react';
+import {showAppNotice} from '../services/appPrompt';
 import {
-  Alert,
+  Image,
   KeyboardAvoidingView,
   Linking,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
   TextInput,
   View,
 } from 'react-native';
+import AppModal from './AppModal';
 import moment from 'moment';
 import Toast from 'react-native-toast-message';
 import AppPressable from './AppPressable';
@@ -118,7 +119,7 @@ const UtxoDetailsModal: React.FC<UtxoDetailsModalProps> = ({
       return;
     }
     Linking.openURL(explorerUrl).catch(() => {
-      Alert.alert('Error', 'Could not open explorer');
+      showAppNotice('Error', 'Could not open explorer');
     });
   };
 
@@ -162,10 +163,39 @@ const UtxoDetailsModal: React.FC<UtxoDetailsModalProps> = ({
           ? theme.colors.blackOverlay10
           : theme.colors.whiteOverlay20,
     },
+    headerTitleRow: {
+      flex: 1,
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginRight: 8,
+    },
+    headerIconBg: {
+      width: 40,
+      height: 40,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor:
+        (theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange) + '20',
+    },
+    headerIcon: {
+      width: 22,
+      height: 22,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
+    },
     modalTitle: {
-      fontSize: theme.fontSizes?.['2xl'] || 20,
+      flex: 1,
+      marginLeft: 12,
+      fontSize: theme.fontSizes?.xl || 18,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
+      textAlign: 'left',
+      lineHeight: 24,
     },
     closeButton: {
       padding: 8,
@@ -310,18 +340,23 @@ const UtxoDetailsModal: React.FC<UtxoDetailsModalProps> = ({
     },
     explorerBtn: {
       flex: 1,
-      paddingVertical: 12,
+      minHeight: 44,
+      paddingVertical: 10,
       paddingHorizontal: 12,
       borderRadius: 10,
-      borderWidth: 1.5,
-      borderColor: theme.colors.primary,
+      borderWidth: 1,
+      borderColor: theme.colors.border,
+      backgroundColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.blackOverlay03
+          : theme.colors.whiteOverlay08,
       alignItems: 'center',
       justifyContent: 'center',
     },
     explorerBtnText: {
-      fontSize: theme.fontSizes?.base || 14,
+      fontSize: theme.fontSizes?.sm || 13,
       fontFamily: theme.fontFamilies?.bold,
-      color: theme.colors.primary,
+      color: theme.colors.text,
     },
     saveBtn: {
       flex: 1,
@@ -372,7 +407,7 @@ const UtxoDetailsModal: React.FC<UtxoDetailsModalProps> = ({
   );
 
   return (
-    <Modal
+    <AppModal
       animationType="fade"
       transparent
       visible={visible}
@@ -383,7 +418,16 @@ const UtxoDetailsModal: React.FC<UtxoDetailsModalProps> = ({
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
-            <AppText style={styles.modalTitle}>UTXO</AppText>
+            <View style={styles.headerTitleRow}>
+              <View style={styles.headerIconBg}>
+                <Image
+                  source={require('../assets/utxo-icon.png')}
+                  style={styles.headerIcon}
+                  resizeMode="contain"
+                />
+              </View>
+              <AppText style={styles.modalTitle}>UTXO</AppText>
+            </View>
             <AppPressable
               onPress={handleClose}
               style={styles.closeButton}
@@ -533,10 +577,8 @@ const UtxoDetailsModal: React.FC<UtxoDetailsModalProps> = ({
                     onPress={openExplorer}
                     style={styles.explorerBtn}
                     accessibilityRole="button"
-                    accessibilityLabel="Open in explorer">
-                    <AppText style={styles.explorerBtnText}>
-                      Open in explorer
-                    </AppText>
+                    accessibilityLabel="Explorer">
+                    <AppText style={styles.explorerBtnText}>Explorer</AppText>
                   </AppPressable>
                 ) : null}
                 <AppPressable
@@ -554,7 +596,7 @@ const UtxoDetailsModal: React.FC<UtxoDetailsModalProps> = ({
         </View>
       </KeyboardAvoidingView>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 

@@ -225,6 +225,18 @@ func JoinKeygen(key, partiesCSV, session, server, chaincode, sessionKey, encKey,
 		}
 		dklsLogf("LAN DKG: session=%s await completions: %v", dkgSessionLogPrefix(session), waitErr)
 	}
+	// F39: post-DKG group-key cross-check. A mismatch fails closed
+	// here — the share is freed by the deferred cleanup and never
+	// returned or persisted.
+	groupKey, gkErr := share.GroupKey()
+	if gkErr != nil {
+		return "", fmt.Errorf("F39 group-key read failed: %w", gkErr)
+	}
+	gkHashHex := hex.EncodeToString(groupKey)
+	tss.ReportKeygenProgress(session, 99, "verifying group key with peers", false)
+	if gkErr := tss.LANKExchangeGroupKey(server, session, key, parties, gkHashHex); gkErr != nil {
+		return "", gkErr
+	}
 	tss.ReportKeygenProgress(session, 99, "keygen ok", true)
 	return ksJSON, nil
 }
@@ -668,6 +680,9 @@ func JoinKeysign(server, key, partiesCSV, session, sessionKey, encKey, decKey, k
 		return "", err
 	}
 	defer share.Free()
+	if err := VerifyKeyshareBinding(share, ks); err != nil {
+		return "", err
+	}
 
 	parties := splitCSV(partiesCSV)
 	signSess, err := ResolveSigningSessionLAN(share, ks, partiesCSV)

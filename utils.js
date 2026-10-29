@@ -5,6 +5,7 @@ import LocalCache from './services/LocalCache';
 import {isDebugLoggingEnabled} from './App';
 import {detectKeyshareTssBackend} from './services/tssBackend';
 import {BBMTLibNativeModule} from './native_modules';
+import {alertSecureStorageError} from './services/secureStorageErrors';
 
 /** EncryptedStorage / RNES account for the full MPC keyshare blob. */
 export const KEYSHARE_STORAGE_KEY = 'keyshare';
@@ -34,6 +35,10 @@ export const pinRemoteIP = addr => {
 export const getPinnedRemoteIP = () => (ips.length ? ips[ips.length - 1] : '');
 
 export const getPinnedRemoteIPs = () => [...ips];
+
+export const clearPinnedRemoteIPs = () => {
+  ips = [];
+};
 
 /**
  * Reset navigation config to MainTabs with Wallet tab selected (or Device when Wallet hidden).
@@ -148,7 +153,7 @@ export const shortenAddress = addr =>
  * @param {Object} nativeModule - The BBMTLibNativeModule instance
  * @param {string} pubKey - Compressed master public key in hex
  * @param {string} chainCode - Master chain code in hex
- * @param {string} network - Network: 'mainnet' or 'testnet3'
+ * @param {string} network - Network: 'mainnet' or 'testnet4' ('testnet'/'testnet3' accepted as aliases)
  * @param {import('./types/keyshare').KeyshareMetadata|number|null|undefined} keyshareMeta - Metadata (preferred) or legacy created_at only
  * @param {string} addressType - Optional: current address type for primary descriptor selection
  * @returns {Promise<{legacy: string, segwitNative: string, segwitCompatible: string, primary: string}>}
@@ -171,7 +176,7 @@ export const generateAllOutputDescriptors = async (
     .toLowerCase();
   // Native GetOutputDescriptor returns the text "empty chain code" as a
   // resolved string when chaincode is blank. Metadata always blanks it;
-  // callers must pass the encrypted blob's 64-hex chain code.
+  // callers must pass the secure-fields 64-hex chain code.
   if (!/^[0-9a-f]{64}$/.test(chain)) {
     return {
       legacy: '',
@@ -348,7 +353,7 @@ export const formatKeyshareCreatedAtLong = createdAt => {
 
 /**
  * Get the default derivation path for a given network and address type
- * @param {string} network - Network: 'mainnet' or 'testnet3'
+ * @param {string} network - Network: 'mainnet' or 'testnet4' ('testnet'/'testnet3' accepted as aliases)
  * @param {string} addressType - Address type: 'legacy', 'segwit-native', or 'segwit-compatible' (defaults to 'legacy' for backward compatibility)
  * @param {boolean} useLegacyPath - If true, always use BIP44 regardless of address type (for backward compatibility)
  * @param {number} account - Account index (default: 0)
@@ -395,7 +400,7 @@ export const getDerivePathForNetwork = (
 
 /**
  * Derivation path for receive (external) address at given index.
- * @param {string} network - 'mainnet' or 'testnet3'
+ * @param {string} network - 'mainnet' or 'testnet4' ('testnet'/'testnet3' accepted as aliases)
  * @param {string} addressType - 'legacy' | 'segwit-native' | 'segwit-compatible'
  * @param {boolean} useLegacyPath - legacy wallet path
  * @param {number} index - address index (default 0)
@@ -409,7 +414,7 @@ export const getReceivePath = (
 
 /**
  * Derivation path for change (internal) address at given index.
- * @param {string} network - 'mainnet' or 'testnet3'
+ * @param {string} network - 'mainnet' or 'testnet4' ('testnet'/'testnet3' accepted as aliases)
  * @param {string} addressType - 'legacy' | 'segwit-native' | 'segwit-compatible'
  * @param {boolean} useLegacyPath - legacy wallet path
  * @param {number} index - change address index (default 0)
@@ -835,6 +840,9 @@ export const explorerWebBaseFromApiUrl = apiUrl => {
   if (/\/signet\/api\/?$/i.test(s)) {
     return s.replace(/\/signet\/api\/?$/i, '/signet');
   }
+  if (/\/testnet4\/api\/?$/i.test(s)) {
+    return s.replace(/\/testnet4\/api\/?$/i, '/testnet4');
+  }
   if (/\/testnet\/api\/?$/i.test(s)) {
     return s.replace(/\/testnet\/api\/?$/i, '/testnet');
   }
@@ -844,40 +852,167 @@ export const explorerWebBaseFromApiUrl = apiUrl => {
   return s;
 };
 
-// API Endpoints Configuration
-const MAINNET_APIS = ['https://mempool.space/api'];
-const TESTNET_APIS = ['https://mempool.space/testnet/api'];
+// Built-in copy of the reviewed pin (90a154c7). Used only when that
+// fetch fails or returns nothing. Mainnet is /api; testnet4 is the
+// same hosts except emzy, on /testnet4/api.
+export const MAINNET_APIS = [
+  'https://mempool.space/api',
+  'https://mempool.ninja/api',
+  'https://mempool.emzy.de/api',
+  'https://strategy.mempool.space/api',
+  'https://benpool.mempool.space/api',
+  'https://mempool.guide/api',
+  'https://metaplanet.mempool.space/api',
+];
+export const TESTNET_APIS = [
+  'https://mempool.space/testnet4/api',
+  'https://mempool.ninja/testnet4/api',
+  'https://mempool.guide/testnet4/api',
+  'https://strategy.mempool.space/testnet4/api',
+  'https://benpool.mempool.space/testnet4/api',
+  'https://metaplanet.mempool.space/testnet4/api',
+];
 
-// Function to fetch dynamic API endpoints from GitHub
-export const fetchDynamicAPIEndpoints = async () => {
+// F35: the dynamic mempool/relay lists live in a GitHub repo whose
+// main branch moves. Fetch from a REVIEWED, PINNED commit — a repo
+// compromise pushing a malicious list to main cannot redirect
+// traffic until a pinned update ships in an app release (which is
+// a reviewed change). To update: verify the new list content,
+// bump MEMPOOL_HOSTS_COMMIT, and name the review in the commit.
+//
+// 90a154c7 (2026-10-26, signed): MAINNET.md is space, ninja, emzy,
+// strategy, benpool, guide, metaplanet (orangefren removed).
+// TESTNET4.md is those hosts except emzy, as host roots mapped here
+// to /testnet4/api. NOSTR.md matches the previous pin b94706d4.
+const MEMPOOL_HOSTS_COMMIT = '90a154c7af314e79dfa9337a4679f2d052b9375c';
+const MEMPOOL_HOSTS_BASE = `https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/${MEMPOOL_HOSTS_COMMIT}`;
+// F35: parsing bounds (a compromised-or-corrupt fetch must not
+// yield an unbounded list or a multi-MB regex scan).
+const MAX_LIST_BODY_CHARS = 64 * 1024;
+const MAX_LIST_ENTRIES = 32;
+const LIST_FETCH_TIMEOUT_MS = 8000;
+
+// F35: strict https mempool-host validation (hostname, not
+// substring — a URL like https://evil.com/?x=mempool must fail).
+const isValidMempoolApiUrl = url => {
   try {
-    const response = await fetch(
-      'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main/README.md',
-    );
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'https:') {
+      return false;
+    }
+    return parsed.hostname.toLowerCase().includes('mempool');
+  } catch {
+    return false;
+  }
+};
+
+const isValidRelayUrl = url => {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'wss:' && parsed.hostname.length > 0;
+  } catch {
+    return false;
+  }
+};
+
+const fetchPinnedMarkdown = async fileName => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), LIST_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${MEMPOOL_HOSTS_BASE}/${fileName}`, {
+      signal: controller.signal,
+    });
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
-
     const markdownText = await response.text();
+    if (markdownText.length > MAX_LIST_BODY_CHARS) {
+      throw new Error('dynamic API list exceeds size bound');
+    }
+    return markdownText;
+  } finally {
+    clearTimeout(timer);
+  }
+};
 
-    // Parse markdown to extract URLs
-    const urlRegex = /https:\/\/[^\s\]]+/g;
-    const urls = markdownText.match(urlRegex) || [];
+const extractHttpsUrls = markdownText => {
+  const urlRegex = /https:\/\/[^\s\]]+/g;
+  return markdownText.match(urlRegex) || [];
+};
 
-    // Filter and format URLs to ensure they have /api suffix
-    const apiEndpoints = urls
-      .filter(url => url.includes('mempool'))
-      .map(url => {
-        // Remove trailing slash if present
-        const cleanUrl = url.replace(/\/$/, '');
-        // Add /api suffix if not already present
-        return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
-      })
-      .filter((url, index, self) => self.indexOf(url) === index); // Remove duplicates
+const dedupeUrls = urls =>
+  urls.filter((url, index, self) => self.indexOf(url) === index);
 
-    return apiEndpoints;
+/** Host root or explicit /api, never a testnet or signet path. */
+const toMainnetCatalogApi = url => {
+  const cleanUrl = url.replace(/\/$/, '');
+  if (/\/testnet|\/signet/i.test(cleanUrl)) {
+    return null;
+  }
+  return cleanUrl.endsWith('/api') ? cleanUrl : `${cleanUrl}/api`;
+};
+
+/**
+ * TESTNET4.md lists public host roots (https://mempool.space). Map those
+ * to /testnet4/api. Keep an explicit /testnet4 or /testnet4/api URL.
+ * Drop mainnet /api, legacy /testnet, and /signet so the file cannot
+ * point testnet traffic at another chain.
+ */
+const toTestnet4CatalogApi = url => {
+  const clean = url.replace(/\/$/, '');
+  if (/\/signet(\/|$)/i.test(clean)) {
+    return null;
+  }
+  if (/\/testnet(?!4)(\/|$)/i.test(clean)) {
+    return null;
+  }
+  if (/\/testnet4\/api$/i.test(clean)) {
+    return clean;
+  }
+  if (/\/testnet4$/i.test(clean)) {
+    return `${clean}/api`;
+  }
+  try {
+    const parsed = new URL(clean);
+    if (parsed.pathname === '/' || parsed.pathname === '') {
+      return `${parsed.origin}/testnet4/api`;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+// Pinned MAINNET.md (reviewed commit). Empty on failure — caller falls back.
+export const fetchDynamicAPIEndpoints = async () => {
+  try {
+    const markdownText = await fetchPinnedMarkdown('MAINNET.md');
+    return dedupeUrls(
+      extractHttpsUrls(markdownText)
+        .filter(isValidMempoolApiUrl)
+        .slice(0, MAX_LIST_ENTRIES)
+        .map(toMainnetCatalogApi)
+        .filter(Boolean),
+    );
   } catch (error) {
     dbg('Failed to fetch dynamic API endpoints:', error);
+    return [];
+  }
+};
+
+// Pinned TESTNET4.md. Host roots become /testnet4/api. Empty on failure.
+export const fetchDynamicTestnetAPIEndpoints = async () => {
+  try {
+    const markdownText = await fetchPinnedMarkdown('TESTNET4.md');
+    return dedupeUrls(
+      extractHttpsUrls(markdownText)
+        .filter(isValidMempoolApiUrl)
+        .slice(0, MAX_LIST_ENTRIES)
+        .map(toTestnet4CatalogApi)
+        .filter(Boolean),
+    );
+  } catch (error) {
+    dbg('Failed to fetch dynamic testnet API endpoints:', error);
     return [];
   }
 };
@@ -888,9 +1023,10 @@ export const getMainnetAPIList = async () => {
   return dynamicEndpoints.length > 0 ? dynamicEndpoints : MAINNET_APIS;
 };
 
-// Helper function to get testnet API endpoints (only hardcoded endpoint)
+// Helper function to get testnet4 API endpoints (dynamic + fallback)
 export const getTestnetAPIList = async () => {
-  return TESTNET_APIS;
+  const dynamicEndpoints = await fetchDynamicTestnetAPIEndpoints();
+  return dynamicEndpoints.length > 0 ? dynamicEndpoints : TESTNET_APIS;
 };
 
 // Default Nostr relays
@@ -906,17 +1042,18 @@ export const NOSTR_RELAY_DENYLIST = ['wss://nostr.oxtr.dev'];
 const filterUnreliableNostrRelays = relays =>
   relays.filter(url => !NOSTR_RELAY_DENYLIST.includes(url.trim()));
 
-// Function to fetch dynamic Nostr relays from GitHub
+// Function to fetch dynamic Nostr relays from GitHub (pinned commit)
 export const fetchDynamicNostrRelays = async () => {
   try {
-    const response = await fetch(
-      'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main/NOSTR.md',
-    );
+    const response = await fetch(`${MEMPOOL_HOSTS_BASE}/NOSTR.md`);
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const markdownText = await response.text();
+    if (markdownText.length > MAX_LIST_BODY_CHARS) {
+      throw new Error('dynamic relay list exceeds size bound');
+    }
 
     // Parse markdown to extract relay URLs (lines starting with "- wss://")
     const relayRegex = /^-\s*(wss:\/\/[^\s]+)/gm;
@@ -929,10 +1066,8 @@ export const fetchDynamicNostrRelays = async () => {
         const urlMatch = match.match(/wss:\/\/[^\s]+/);
         return urlMatch ? urlMatch[0].trim() : null;
       })
-      .filter(
-        url =>
-          url !== null && typeof url === 'string' && url.startsWith('wss://'),
-      )
+      .filter(url => url !== null && isValidRelayUrl(url))
+      .slice(0, MAX_LIST_ENTRIES)
       .map(url => String(url)); // Ensure all are strings
 
     if (relays.length > 0) {
@@ -956,10 +1091,14 @@ export const getNostrRelays = async (forceFetch = false) => {
     try {
       const cachedRelays = await LocalCache.getItem('nostr_relays');
       if (cachedRelays) {
+        // F35: validate cached entries — a cache written by an
+        // older fetch (or tampered store) must not smuggle in
+        // non-wss endpoints.
         const relaysArray = cachedRelays
           .split(',')
           .map(r => r.trim())
-          .filter(Boolean);
+          .filter(isValidRelayUrl)
+          .slice(0, MAX_LIST_ENTRIES);
         if (relaysArray.length > 0) {
           const filtered = filterUnreliableNostrRelays(relaysArray);
           dbg('Using cached Nostr relays:', filtered);
@@ -1098,7 +1237,7 @@ export const getKeyshareDisplayLabel = keyshare => {
  * @param {string} spendingHash - Spending hash (can be empty)
  * @param {string} addressType - Address type (e.g., 'segwit-native', 'legacy', 'segwit-compatible')
  * @param {string} derivationPath - Derivation path (e.g., "m/84'/0'/0'/0/0")
- * @param {string} network - Network identifier (e.g., 'mainnet', 'testnet3')
+ * @param {string} network - Network identifier (e.g., 'mainnet', 'testnet4')
  * @param {string} utxosJson - Optional JSON string of utxosWithPaths used for spending/fee (may be large)
  * @param {string} changeAddress - Optional pre-computed change address (ensures both devices use the same change output)
  * @returns {string} - Encoded QR data string
@@ -1284,28 +1423,28 @@ async function persistNormalizedKeyshareMeta(meta, repo, CONFIG_KEYS) {
 }
 
 /**
- * Metadata cache omits MPC secrets; re-infer tss_backend from full keyshare when missing
- * so DKLs wallets are not treated as GG18 for path policy.
+ * Metadata cache omits MPC secrets; re-infer tss_backend from secure
+ * metadata (A8) when missing so DKLs wallets are not treated as GG18
+ * for path policy. F15b-1: never reads the blob.
  * @param {import('./types/keyshare').KeyshareMetadata} meta
  * @returns {Promise<import('./types/keyshare').KeyshareMetadata>}
  */
-async function enrichMetaTssBackendFromFullKeyshare(meta) {
+async function enrichMetaTssBackendFromSecureMetadata(meta) {
   if (meta.tss_backend === 'dkls23' || meta.tss_backend === 'gg18') {
     return meta;
   }
   try {
-    const full = await EncryptedStorage.getItem('keyshare');
-    if (!full || String(full).trim() === '') {
+    const secure = await getKeyshareSecureMetadata();
+    if (!secure) {
       return meta;
     }
-    const parsed = JSON.parse(full);
-    const backend = detectKeyshareTssBackend(parsed);
+    const backend = detectKeyshareTssBackend(secure);
     if (backend === meta.tss_backend) {
       return meta;
     }
     return {...meta, tss_backend: backend};
   } catch (e) {
-    dbg('enrichMetaTssBackendFromFullKeyshare: failed', e);
+    dbg('enrichMetaTssBackendFromSecureMetadata: failed', e);
     return meta;
   }
 }
@@ -1321,19 +1460,20 @@ function metaNeedsPersistAfterEnrich(before, after) {
 }
 
 /**
- * Extract and persist only the non-secret metadata fields from a keyshare JSON string.
- * Call this whenever EncryptedStorage.setItem('keyshare', …) is called.
- * Metadata lives in SQLite `app_config` (`keyshare_meta_json`).
- * @param {string} keyshareJson - Raw keyshare JSON string
- */
-/**
- * @param {string} keyshareJson
+ * Persist the non-secret keyshare metadata mirror (SQLite `app_config`).
+ * F15b-1: takes the allowlisted metadata object (preferred) or its JSON.
+ * The normalizer is a projection — secret fields can never land in SQLite.
+ * @param {object|string} metaInput - allowlisted metadata, never the blob
  * @param {{ throwOnError?: boolean }} [opts]
  */
-export const saveKeyshareMetadata = async (keyshareJson, opts = {}) => {
+export const saveKeyshareMetadata = async (metaInput, opts = {}) => {
   const throwOnError = opts.throwOnError === true;
   try {
-    const parsed = JSON.parse(keyshareJson);
+    let parsed = metaInput;
+    if (typeof metaInput === 'string') {
+      const {quoteOversizedJsonIntegers} = require('./utils/keyshareDevView');
+      parsed = JSON.parse(quoteOversizedJsonIntegers(metaInput));
+    }
     const meta = normalizeKeyshareMetaObject(parsed);
     const json = JSON.stringify(meta);
     const {repo, CONFIG_KEYS} = loadAppConfigRepository();
@@ -1373,16 +1513,13 @@ export async function hasWalletKeyshareInSecureStorage() {
       return result === true || result === 'true' || result === 1;
     } catch (e) {
       dbg('hasWalletKeyshareInSecureStorage: native check failed', e);
+      alertSecureStorageError(e);
       return false;
     }
   }
-  try {
-    const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
-    return !!(raw && String(raw).trim());
-  } catch (e) {
-    dbg('hasWalletKeyshareInSecureStorage: fallback failed', e);
-    return false;
-  }
+  // F15b-1: no RNES-direct fallback (it would transit the blob
+  // value to JS). Native presence check or fail closed.
+  return false;
 }
 
 /**
@@ -1435,15 +1572,6 @@ export async function hasUsableWalletKeyshare() {
 export const getKeyshareMetadata = async () => {
   const {repo, CONFIG_KEYS} = loadAppConfigRepository();
 
-  const legacyInMemoryFallback = legacyJson => {
-    try {
-      const parsed = JSON.parse(legacyJson);
-      return normalizeKeyshareMetaObject(parsed);
-    } catch {
-      return null;
-    }
-  };
-
   const readDbMeta = () => {
     const dbRaw =
       repo && CONFIG_KEYS ? repo.get(CONFIG_KEYS.KEYSHARE_META_JSON) : null;
@@ -1481,7 +1609,7 @@ export const getKeyshareMetadata = async () => {
 
     if (dbMeta) {
       let out = dbMeta.norm;
-      const enriched = await enrichMetaTssBackendFromFullKeyshare(dbMeta.norm);
+      const enriched = await enrichMetaTssBackendFromSecureMetadata(dbMeta.norm);
       if (metaNeedsPersistAfterEnrich(dbMeta.norm, enriched)) {
         out = enriched;
       }
@@ -1498,16 +1626,17 @@ export const getKeyshareMetadata = async () => {
       return out;
     }
 
-    const legacy = await EncryptedStorage.getItem('keyshare');
-    if (!legacy || String(legacy).trim() === '') {
+    // F15b-1: backfill from secure metadata (A8), never the blob.
+    const secure = await getKeyshareSecureMetadata();
+    if (!secure) {
       return null;
     }
-    await saveKeyshareMetadata(legacy);
+    await saveKeyshareMetadata(secure);
     const after = readDbMeta();
     if (after) {
       return after.norm;
     }
-    const mem = legacyInMemoryFallback(legacy);
+    const mem = normalizeKeyshareMetaObject(secure);
     if (mem && keyshareMetaLooksComplete(mem)) {
       return mem;
     }
@@ -1519,20 +1648,29 @@ export const getKeyshareMetadata = async () => {
 };
 
 /**
- * Full MPC keyshare blob from secure storage.
- * Includes chain_code_hex. Plaintext metadata (getKeyshareMetadata) blanks it.
+ * F15b-1 secure metadata from native storage (A8): the §3 superset
+ * INCLUDING chain_code_hex (unlike the SQLite mirror, which blanks
+ * it). Replaces getKeyshare (removed): no caller receives share
+ * bytes anymore. Returns null when no wallet exists; storage
+ * errors alert (F3 UX) and return null.
  * @returns {Promise<Record<string, any>|null>}
  */
-export async function getKeyshare() {
+export async function getKeyshareSecureMetadata() {
   try {
-    const raw = await EncryptedStorage.getItem(KEYSHARE_STORAGE_KEY);
+    const raw = await BBMTLibNativeModule.getKeyshareMetadataJSON();
     if (!raw || String(raw).trim() === '') {
       return null;
     }
     const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : null;
   } catch (e) {
-    dbg('getKeyshare: failed', e);
+    const code = e?.code ?? '';
+    const msg = String(e?.message ?? e ?? '');
+    if (code === 'NO_KEYSHARE' || /no keyshare/i.test(msg)) {
+      return null;
+    }
+    dbg('getKeyshareSecureMetadata: failed', e);
+    alertSecureStorageError(e);
     return null;
   }
 }

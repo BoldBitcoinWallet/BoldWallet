@@ -1,5 +1,6 @@
 import React, {useCallback, useEffect, useRef, useState} from 'react';
-import {Alert, AppState} from 'react-native';
+import {showAppNotice} from '../services/appPrompt';
+import {AppState} from 'react-native';
 import {CommonActions} from '@react-navigation/native';
 import type {NavigationContainerRef} from '@react-navigation/native';
 import KeyshareImportPasswordModal from './KeyshareImportPasswordModal';
@@ -8,7 +9,7 @@ import {dbg} from '../utils';
 import {hasLoadedWallet} from '../services/walletGuard';
 import {
   importKeyshareFromBase64,
-  readKeyshareBase64FromUri,
+  readBackupBlobFromUri,
   showKeyshareImportError,
   showWalletAlreadyLoadedAlert,
   WalletAlreadyLoadedError,
@@ -34,26 +35,59 @@ type Props = {
 };
 
 function showUnsupportedFileAlert(): void {
-  Alert.alert('Unsupported file', 'This file type is not supported by BoldWallet.');
+  showAppNotice('Unsupported file', 'This file type is not supported by BoldWallet.');
 }
 
 function showWalletRequiredForPsbtAlert(): void {
-  Alert.alert(
+  showAppNotice(
     'Wallet required',
     'Set up or restore a wallet before importing a PSBT file.',
   );
 }
 
+function isIncomingFileTooLarge(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as {name?: string}).name === 'IncomingFileTooLargeError'
+  );
+}
+
+function uriLooksLikePsbt(uri: string): boolean {
+  return uri.toLowerCase().includes('.psbt');
+}
+
+/** Import (and its biometric) must not start before the host is active. */
+function waitUntilShareHostActive(
+  isActive: () => boolean,
+): Promise<void> {
+  if (isActive() || AppState.currentState === 'active') {
+    return Promise.resolve();
+  }
+  return new Promise(resolve => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'active') {
+        sub.remove();
+        resolve();
+      }
+    });
+  });
+}
+
 const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
   const {setActiveNetwork} = useUser();
   const [modalVisible, setModalVisible] = useState(false);
-  const [fileContent, setFileContent] = useState('');
+  const [_fileContent, setFileContent] = useState('');
   const [isImporting, setIsImporting] = useState(false);
   const [isAppActive, setIsAppActive] = useState(
     () => AppState.currentState === 'active',
   );
   const processingUriRef = useRef<string | null>(null);
   const queuedUriRef = useRef<string | null>(null);
+  const pendingImportUriRef = useRef<string | null>(null);
+  const importingRef = useRef(false);
+  const isAppActiveRef = useRef(isAppActive);
+  isAppActiveRef.current = isAppActive;
 
   const navigateToSettings = useCallback(() => {
     navigationRef.current?.dispatch(
@@ -87,9 +121,12 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
     [finishPendingShare, navigationRef],
   );
 
-  const openKeyshareImport = useCallback(async (uri: string) => {
-    const content = await readKeyshareBase64FromUri(uri);
-    setFileContent(content);
+  const openKeyshareImport = useCallback((uri: string) => {
+    // Password sheet first. Decrypt, ceremony, and the blob read all wait
+    // until submit — a content:// read before the activity is resumed used
+    // to throw and surface "Failed to import the file" on open.
+    pendingImportUriRef.current = uri;
+    setFileContent('');
     setModalVisible(true);
   }, []);
 
@@ -128,20 +165,33 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
       }
       processingUriRef.current = uri;
 
+      let kind: IncomingFileKind | null = null;
       try {
-        const kind = await classifyIncomingFile(uri);
+        kind = await classifyIncomingFile(uri);
         await routeSharedFile(uri, kind);
       } catch (error) {
         if (error instanceof WalletAlreadyLoadedError) {
           showWalletAlreadyLoadedAlert(navigateToSettings);
-        } else {
+          await finishPendingShare();
+          return;
+        }
+        if (
+          kind === 'psbt' ||
+          isIncomingFileTooLarge(error) ||
+          uriLooksLikePsbt(uri)
+        ) {
           dbg('IncomingShareHandler: failed to process shared file', error);
           showKeyshareImportError(error);
+          await finishPendingShare();
+          return;
         }
-        await finishPendingShare();
+        // Peek/copy can fail while the sender's read grant is not usable yet.
+        // That is not a failed import — ask for the password and read on submit.
+        dbg('IncomingShareHandler: opening password sheet before blob read', error);
+        openKeyshareImport(uri);
       }
     },
-    [finishPendingShare, navigateToSettings, routeSharedFile],
+    [finishPendingShare, navigateToSettings, openKeyshareImport, routeSharedFile],
   );
 
   const enqueueSharedUri = useCallback(
@@ -152,7 +202,7 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
       }
       queuedUriRef.current = normalized;
       if (isAuthenticated && isAppActive) {
-        void processSharedUri(normalized);
+        processSharedUri(normalized);
       }
     },
     [isAppActive, isAuthenticated, processSharedUri],
@@ -180,7 +230,7 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
     if (!queuedUri) {
       return;
     }
-    void processSharedUri(queuedUri);
+    processSharedUri(queuedUri);
   }, [isAppActive, isAuthenticated, processSharedUri]);
 
   useEffect(() => {
@@ -195,7 +245,7 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
       }
       enqueueSharedUri(initialUri);
     };
-    void consumeInitialShare();
+    consumeInitialShare();
     return () => {
       cancelled = true;
     };
@@ -204,22 +254,33 @@ const IncomingShareHandler = ({isAuthenticated, navigationRef}: Props) => {
   const handleCloseModal = () => {
     setModalVisible(false);
     setFileContent('');
-    void finishPendingShare();
+    pendingImportUriRef.current = null;
+    finishPendingShare();
   };
 
   const handlePasswordSubmit = async (password: string) => {
+    const uri = pendingImportUriRef.current;
+    if (!uri || importingRef.current) {
+      return;
+    }
+    importingRef.current = true;
     try {
       setIsImporting(true);
-      await importKeyshareFromBase64(fileContent, password, {
+      await waitUntilShareHostActive(() => isAppActiveRef.current);
+      const content = await readBackupBlobFromUri(uri);
+      setFileContent(content);
+      await importKeyshareFromBase64(content, password, {
         setActiveNetwork,
         navigate: action => navigationRef.current?.dispatch(action),
       });
       setModalVisible(false);
       setFileContent('');
+      pendingImportUriRef.current = null;
       await finishPendingShare();
     } catch (error) {
       showKeyshareImportError(error);
     } finally {
+      importingRef.current = false;
       setIsImporting(false);
     }
   };

@@ -1,5 +1,13 @@
 import React, {useMemo} from 'react';
-import {Dimensions, FlatList, StyleSheet, View} from 'react-native';
+import {
+  Dimensions,
+  FlatList,
+  StyleSheet,
+  View,
+  type StyleProp,
+  type TextStyle,
+  type ViewStyle,
+} from 'react-native';
 import AppPressable from './AppPressable';
 import AppText from './AppText';
 import {useTheme} from '../theme';
@@ -33,6 +41,27 @@ function listViewportHeight(itemCount: number): number {
   const maxBody = Math.min(320, Math.max(168, Math.round(winH * 0.36)));
   const body = itemCount * ROW_HEIGHT;
   return Math.min(maxBody, Math.max(ROW_HEIGHT, body));
+}
+
+type CheckStyles = {
+  checkbox: StyleProp<ViewStyle>;
+  checkboxChecked: StyleProp<ViewStyle>;
+  checkmark: StyleProp<TextStyle>;
+};
+
+function Check({
+  checked,
+  styles: checkStyles,
+}: {
+  checked: boolean;
+  styles: CheckStyles;
+}) {
+  return (
+    <View
+      style={[checkStyles.checkbox, checked && checkStyles.checkboxChecked]}>
+      {checked ? <AppText style={checkStyles.checkmark}>✓</AppText> : null}
+    </View>
+  );
 }
 
 const UtxoCoinControlList: React.FC<UtxoCoinControlListProps> = ({
@@ -94,7 +123,7 @@ const UtxoCoinControlList: React.FC<UtxoCoinControlListProps> = ({
           backgroundColor: accent,
         },
         checkmark: {
-          color: isLight ? '#fff' : theme.colors.background,
+          color: '#fff',
           fontSize: 13,
           fontFamily: theme.fontFamilies?.bold,
           lineHeight: 16,
@@ -200,12 +229,6 @@ const UtxoCoinControlList: React.FC<UtxoCoinControlListProps> = ({
     [theme, accent, hairline, isLight, bodyHeight],
   );
 
-  const Check = ({checked}: {checked: boolean}) => (
-    <View style={[styles.checkbox, checked && styles.checkboxChecked]}>
-      {checked ? <AppText style={styles.checkmark}>✓</AppText> : null}
-    </View>
-  );
-
   const renderItem = ({item: u}: {item: CoinControlUtxo}) => {
     const key = outpointKey(u.txid, u.vout);
     const checked = !allSelected && !!selectedKeys?.has(key);
@@ -224,7 +247,7 @@ const UtxoCoinControlList: React.FC<UtxoCoinControlListProps> = ({
           vout: u.vout,
           address: u.address,
         })}>
-        <Check checked={checked} />
+        <Check checked={checked} styles={styles} />
         <View style={styles.body}>
           {tag ? (
             <View style={styles.tag}>
@@ -261,7 +284,7 @@ const UtxoCoinControlList: React.FC<UtxoCoinControlListProps> = ({
         accessibilityRole="checkbox"
         accessibilityState={{checked: allSelected}}
         accessibilityLabel="All coins">
-        <Check checked={allSelected} />
+        <Check checked={allSelected} styles={styles} />
         <View style={styles.allBody}>
           <AppText style={styles.allLabel}>All coins</AppText>
           <AppText style={styles.allMeta} numberOfLines={1}>

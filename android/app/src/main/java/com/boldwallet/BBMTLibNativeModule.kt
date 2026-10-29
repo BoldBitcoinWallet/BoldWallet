@@ -1,10 +1,19 @@
 package com.boldwallet
 
+import android.app.AlertDialog
+import android.app.KeyguardManager
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.pm.PackageManager
+import android.os.Build
 import android.util.Log
-import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
@@ -32,6 +41,11 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
         /** If full [JSONObject] parse fails (huge MPC blob), still read `nsec` for Nostr. */
         private val NSEC_FIELD_REGEX = Pattern.compile("\"nsec\"\\s*:\\s*\"([^\"]*)\"")
+
+        /** Secret keys whose values are the dev-view redaction marker. */
+        private val REDACTED_STRUCTURE_MARKER = Pattern.compile(
+            "\"(share_b64|nsec|ecdsa_local_data)\"\\s*:\\s*\"(?:<redacted|\\\\u003credacted)[^\"]*\"",
+        )
     }
 
     private fun extractNsecStringViaRegex(raw: String): String? {
@@ -116,7 +130,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun addListener(eventName: String) {
+    fun addListener(eventName: String?) {
         if (bbmtLibraryPresentInApk()) {
             ensureBbmtRuntime()
         }
@@ -153,48 +167,102 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * RN always delivers the keyshare as a Java [String] from JS (unavoidable bridge copy).
-     * This does not remove that; it adds a native staging path we control: UTF-8 [ByteArray],
-     * ephemeral [String] for native MPC, then [Arrays.fill] zero on the buffer.
+     * Same file + key as `react-native-encrypted-storage` Android implementation.
+     * F3: fail-closed via [openSecurePrefs] — throws [SecureStorageException]
+     * on every failure. The old plaintext-SharedPreferences fallback is gone.
      */
-    private inline fun <T> withZeroedKeyshareUtf8(keyshareFromBridge: String, block: (String) -> T): T {
-        val bytes = keyshareFromBridge.toByteArray(Charsets.UTF_8)
-        return try {
-            block(String(bytes, Charsets.UTF_8))
-        } finally {
-            Arrays.fill(bytes, 0)
-        }
-    }
-
-    /** Same file + key as `react-native-encrypted-storage` Android implementation. */
-    private fun rnesEncryptedPrefs(): SharedPreferences? {
-        return try {
-            val ctx = reactApplicationContext
-            val masterKey = MasterKey.Builder(ctx)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            EncryptedSharedPreferences.create(
-                ctx,
-                RNES_SHARED_PREF_FILENAME,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        } catch (e: Exception) {
-            Log.e("BBMTLibNativeModule", "rnesEncryptedPrefs", e)
-            reactApplicationContext.getSharedPreferences(RNES_SHARED_PREF_FILENAME, Context.MODE_PRIVATE)
-        }
-    }
+    private fun rnesEncryptedPrefs(): SharedPreferences =
+        openSecurePrefs(reactApplicationContext, RNES_SHARED_PREF_FILENAME)
 
     /** True when RNES has a `keyshare` entry without reading/decrypting the blob value. */
     private fun keyshareExistsInRNES(): Boolean {
-        val prefs = rnesEncryptedPrefs() ?: return false
-        return prefs.contains(KEY_KEYSHARE)
+        return rnesEncryptedPrefs().contains(KEY_KEYSHARE)
     }
 
+    /**
+     * Null means "no entry", never "storage broken": storage failures throw
+     * [SecureStorageException] (stable `[SECURE_STORAGE_<KIND>]` message
+     * prefix) and propagate to the caller's promise rejection.
+     *
+     * F15b-1: de-envelopes the RNES value. Pre-migration plaintext
+     * self-heals inline (migration is idempotent; steady-state
+     * reads pay only the isEnvelope check).
+     */
     private fun loadKeyshareJSONFromRNES(): String? {
-        val prefs = rnesEncryptedPrefs() ?: return null
-        return prefs.getString(KEY_KEYSHARE, null)
+        val prefs = rnesEncryptedPrefs()
+        val raw = prefs.getString(KEY_KEYSHARE, null) ?: return null
+        val plain = if (!KeyshareEnvelope.isEnvelope(raw)) {
+            KeyshareEnvelope.ensureEnveloped(prefs, KEY_KEYSHARE)
+            val migrated = prefs.getString(KEY_KEYSHARE, null) ?: return null
+            if (!KeyshareEnvelope.isEnvelope(migrated)) return null
+            KeyshareEnvelope.decryptKeyshareJson(migrated)
+        } else {
+            KeyshareEnvelope.decryptKeyshareJson(raw)
+        }
+        return healGg18QuotedBigInts(prefs, plain)
+    }
+
+    /**
+     * Detect + heal GG18 shares corrupted by JS stringifying oversized
+     * ints as JSON strings. Persists bare-number form when fixable.
+     */
+    private fun healGg18QuotedBigInts(
+        prefs: android.content.SharedPreferences,
+        plain: String,
+    ): String {
+        val issue = Gg18KeyshareBigIntRepair.detectIssue(plain)
+        if (issue == Gg18KeyshareBigIntRepair.ISSUE_SCI) {
+            ld("gg18BigIntRepair", "issue=scientific_float action=unrecoverable")
+            return plain
+        }
+        if (issue != Gg18KeyshareBigIntRepair.ISSUE_QUOTED) {
+            return plain
+        }
+        ld("gg18BigIntRepair", "issue=quoted_oversized_ints action=repair")
+        val repaired = Gg18KeyshareBigIntRepair.emitBareOversizedIntegers(plain)
+        if (repaired == plain) {
+            return plain
+        }
+        try {
+            val envelope = KeyshareEnvelope.encryptKeyshareJson(repaired)
+            prefs.edit().putString(KEY_KEYSHARE, envelope).commit()
+            ld("gg18BigIntRepair", "issue=quoted_oversized_ints action=persist_ok")
+        } catch (e: Exception) {
+            ld("gg18BigIntRepair", "persist failed: ${e.message}")
+        }
+        return repaired
+    }
+
+    /**
+     * F15b-1 resolve guard: throws when a value about to resolve to
+     * JS contains share-material labels. Called inside the
+     * surrounding try/catch so violations become rejections, never
+     * resolutions.
+     */
+    private fun guardJsSafeResolve(value: String, method: String) {
+        if (AesGcmEnvelope.containsShareSecrets(value)) {
+            ld(method, "REFUSED to resolve share bytes to JS")
+            throw IllegalStateException("Refusing to expose keyshare secrets to JS")
+        }
+    }
+
+    /**
+     * Dev tree view keeps secret keys so the shape is visible, but only
+     * when each value is a `<redacted …>` marker. Any other occurrence
+     * of those labels is still refused.
+     */
+    private fun guardRedactedStructureResolve(value: String, method: String) {
+        val stripped = REDACTED_STRUCTURE_MARKER.matcher(value).replaceAll("")
+        guardJsSafeResolve(stripped, method)
+    }
+
+    /** F15b-1: staged DKG/import results must carry a handle ID. */
+    private fun guardStagedShape(value: String, method: String) {
+        guardJsSafeResolve(value, method)
+        if (!value.contains("\"handle\"")) {
+            ld(method, "REFUSED malformed staged result (no handle)")
+            throw IllegalStateException("Keyshare staging failed")
+        }
     }
 
     /**
@@ -209,6 +277,130 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.reject("KEYSHARE_EXISTS_ERROR", e.message, e)
             }
         }.start()
+    }
+
+    /**
+     * F36: device-integrity signals (root artifacts, emulator build).
+     * Defense-in-depth with no backend: heuristics only, always resolves a
+     * JSON string `{"compromised":bool,"signals":[...]}`. Fail-open on
+     * internal error (JS treats error/unknown as proceed) — detection must
+     * never brick the app. A hooked device can lie to this check; it raises
+     * the bar for casual rooted use, it is not attestation.
+     */
+    @ReactMethod
+    fun getDeviceIntegritySignals(promise: Promise) {
+        Thread {
+            try {
+                val signals = detectDeviceIntegritySignals()
+                val obj = JSONObject()
+                obj.put("compromised", signals.isNotEmpty())
+                val arr = org.json.JSONArray()
+                for (s in signals) arr.put(s)
+                obj.put("signals", arr)
+                promise.resolve(obj.toString())
+            } catch (e: Exception) {
+                try {
+                    val fallback = JSONObject()
+                    fallback.put("compromised", false)
+                    fallback.put("signals", org.json.JSONArray())
+                    fallback.put("error", e.message ?: "detect-failed")
+                    promise.resolve(fallback.toString())
+                } catch (_: Exception) {
+                    promise.resolve("{\"compromised\":false,\"signals\":[]}")
+                }
+            }
+        }.start()
+    }
+
+    private fun detectDeviceIntegritySignals(): List<String> {
+        val signals = mutableListOf<String>()
+        try {
+            val tags = Build.TAGS
+            if (tags != null && tags.contains("test-keys")) {
+                signals.add("android-test-keys-build")
+            }
+        } catch (_: Exception) {
+        }
+        try {
+            val suPaths =
+                arrayOf(
+                    "/system/bin/su",
+                    "/system/xbin/su",
+                    "/sbin/su",
+                    "/system/sd/xbin/su",
+                    "/system/bin/.ext/.su",
+                    "/data/local/xbin/su",
+                    "/data/local/bin/su",
+                    "/data/local/su",
+                    "/su/bin/su",
+                )
+            if (suPaths.any { File(it).exists() }) {
+                signals.add("android-su-binary-present")
+            }
+        } catch (_: Exception) {
+        }
+        try {
+            val rootPackages =
+                arrayOf(
+                    "com.noshufou.android.su",
+                    "com.noshufou.android.su.elite",
+                    "eu.chainfire.supersu",
+                    "com.koushikdutta.superuser",
+                    "com.thirdparty.superuser",
+                    "com.yellowes.su",
+                    "com.topjohnwu.magisk",
+                    "com.kingroot.kinguser",
+                    "com.kingo.root",
+                    "com.smedialink.oneclickroot",
+                    "com.zhiqupk.root.global",
+                    "com.alephzain.framaroot",
+                )
+            val pm = reactApplicationContext.packageManager
+            for (pkg in rootPackages) {
+                try {
+                    @Suppress("DEPRECATION")
+                    pm.getPackageInfo(pkg, PackageManager.GET_ACTIVITIES)
+                    signals.add("android-root-manager-app")
+                    break
+                } catch (_: PackageManager.NameNotFoundException) {
+                }
+            }
+        } catch (_: Exception) {
+        }
+        try {
+            val fingerprint = Build.FINGERPRINT ?: ""
+            val model = Build.MODEL ?: ""
+            val manufacturer = Build.MANUFACTURER ?: ""
+            val brand = Build.BRAND ?: ""
+            val device = Build.DEVICE ?: ""
+            val product = Build.PRODUCT ?: ""
+            val hardware = Build.HARDWARE ?: ""
+            val emulator =
+                fingerprint.startsWith("generic") ||
+                    fingerprint.contains("vbox") ||
+                    model.contains("google_sdk") ||
+                    model.contains("Emulator") ||
+                    model.contains("Android SDK built for x86") ||
+                    manufacturer.contains("Genymotion") ||
+                    (brand.startsWith("generic") && device.startsWith("generic")) ||
+                    product in
+                    arrayOf(
+                        "google_sdk",
+                        "sdk",
+                        "sdk_x86",
+                        "vbox86p",
+                        "emulator",
+                        "simulator",
+                    ) ||
+                    hardware.contains("goldfish") ||
+                    hardware.contains("ranchu") ||
+                    hardware.contains("vbox86")
+            if (emulator) {
+                signals.add("android-emulator-build")
+            }
+        } catch (_: Exception) {
+        }
+        return signals
     }
 
     /** Summary line only; never logs keyshare contents. */
@@ -239,7 +431,10 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     /**
-     * One RNES read: party nsec + same raw keyshare JSON for [withZeroedKeyshareUtf8].
+     * One RNES read: party nsec + same raw keyshare JSON for native MPC calls.
+     * NOTE (F15): the strings returned here are the irreducible bridge copies
+     * (RN String -> JNI chars -> Go string). Do not add staging copies; full
+     * elimination needs native-held shares (F15b).
      * Aligned with iOS [nsecAndKeyshareJSONFromRNES].
      */
     private fun nsecAndKeyshareJSONFromRNES(): Pair<String, String> {
@@ -253,7 +448,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         var obj: JSONObject? = null
         var parseEx: JSONException? = null
         try {
-            obj = JSONObject(raw)
+            obj = JSONObject(Gg18KeyshareBigIntRepair.quoteOversizedIntegersForJsonObject(raw))
         } catch (e: JSONException) {
             parseEx = e
         }
@@ -325,7 +520,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun disableLogging(tag: String, promise: Promise) {
+    fun disableLogging(tag: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (tag == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         useLog = false
         if (ensureBbmtRuntime()) {
             DklsNative.bbmtDisableLogsNative()
@@ -334,7 +536,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun setBtcNetwork(network: String, promise: Promise) {
+    fun setBtcNetwork(network: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (network == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "setBtcNetwork")) return
             DklsNative.bbmtSetNetworkNative(network)
@@ -348,7 +557,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun setFeePolicy(policy: String, promise: Promise) {
+    fun setFeePolicy(policy: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (policy == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "setFeePolicy")) return
             val result = DklsNative.bbmtUseFeePolicyNative(policy)
@@ -361,7 +577,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun totalUTXO(address: String, promise: Promise) {
+    fun totalUTXO(address: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (address == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "totalUTXO")) return
             val result = DklsNative.bbmtTotalUTXONative(address)
@@ -374,11 +597,91 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
 
+    /**
+     * 3b-2d B15/B16: native-held API allowlist store. Private
+     * prefs file with NO other writer (grep-verified) — JS can
+     * add hosts only through the gated methods with a token.
+     */
+    private val apiAllowlistStore = object : CeremonyApiAllowlist.Store {
+        override fun load(): Set<String> {
+            val prefs = reactApplicationContext.getSharedPreferences(
+                "ceremony_api_allowlist",
+                Context.MODE_PRIVATE,
+            )
+            return prefs.getStringSet("urls", emptySet())?.toSet() ?: emptySet()
+        }
+
+        override fun save(urls: Set<String>) {
+            reactApplicationContext.getSharedPreferences(
+                "ceremony_api_allowlist",
+                Context.MODE_PRIVATE,
+            ).edit().putStringSet("urls", urls.toSet()).apply()
+        }
+    }
+
+    /**
+     * 3b-2d: allowlist-or-token gate. Returns true when the call
+     * may proceed (persisting newly approved URLs best-effort —
+     * a persist failure still applies this use since the user
+     * approved it; the next launch simply prompts again).
+     */
+    private fun gateApiUrls(
+        urls: List<String>,
+        ceremonyToken: String,
+        ceremonySessionID: String,
+        promise: Promise,
+        method: String,
+    ): Boolean {
+        // F11: shape before auth — malformed URLs never prompt nor persist.
+        for (url in urls) {
+            if (!CeremonyApiAllowlist.isAllowedApiUrlShape(url)) {
+                ld(method, "rejecting malformed API URL")
+                promise.reject("INVALID_URL", "Malformed API URL", null)
+                return false
+            }
+        }
+        return when (
+            CeremonyApiAllowlist.decide(urls, ceremonyToken, ceremonySessionID, apiAllowlistStore)
+        ) {
+            CeremonyApiAllowlist.Decision.REJECT -> {
+                rejectCeremonyUnauthorized(promise)
+                false
+            }
+            CeremonyApiAllowlist.Decision.APPLY_AND_PERSIST -> {
+                try {
+                    CeremonyApiAllowlist.persist(urls, apiAllowlistStore)
+                } catch (e: Exception) {
+                    ld(method, "allowlist persist failed, applying anyway: ${e.message}")
+                }
+                true
+            }
+            CeremonyApiAllowlist.Decision.APPLY -> true
+        }
+    }
+
     @ReactMethod
-    fun setAPI(network: String, baseAPI: String, promise: Promise) {
+    fun setAPI(
+        network: String?,
+        baseAPI: String?,
+        ceremonyToken: String?,
+        ceremonySessionID: String?,
+        promise: Promise,
+    ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (network == null || baseAPI == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
+            if (!gateApiUrls(listOf(baseAPI), ceremonyToken, ceremonySessionID, promise, "setAPI")) return
             if (rejectBbmtUnavailable(promise, "setAPI")) return
             val result = DklsNative.bbmtUseAPINative(network, baseAPI)
+            if (result.startsWith("error:")) {
+                promise.reject("SET_API_ERROR", result.removePrefix("error:"), null)
+                return
+            }
             ld("setAPI", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -386,12 +689,30 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             promise.reject(e)
         }
     }
-    
+
     @ReactMethod
-    fun setFeeAPIs(urls: String, promise: Promise) {
+    fun setFeeAPIs(
+        urls: String?,
+        ceremonyToken: String?,
+        ceremonySessionID: String?,
+        promise: Promise,
+    ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (urls == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
+            val parsed = CeremonyApiAllowlist.parseCsv(urls)
+            if (!gateApiUrls(parsed, ceremonyToken, ceremonySessionID, promise, "setFeeAPIs")) return
             if (rejectBbmtUnavailable(promise, "setFeeAPIs")) return
             val result = DklsNative.bbmtUseFeeAPIsNative(urls)
+            if (result.startsWith("error:")) {
+                promise.reject("SET_FEE_APIS_ERROR", result.removePrefix("error:"), null)
+                return
+            }
             ld("setFeeAPIs", result)
             promise.resolve(result)
         } catch (e: Exception) {
@@ -401,7 +722,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun spendingHash(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+    fun spendingHash(senderAddress: String?, receiverAddress: String?, amountSatoshi: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (senderAddress == null || receiverAddress == null || amountSatoshi == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "spendingHash")) return@Thread
@@ -417,7 +745,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun spendingHashWithUTXOs(utxosWithPathsJSON: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+    fun spendingHashWithUTXOs(utxosWithPathsJSON: String?, receiverAddress: String?, amountSatoshi: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (utxosWithPathsJSON == null || receiverAddress == null || amountSatoshi == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "spendingHashWithUTXOs")) return@Thread
@@ -434,7 +769,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun estimateFees(senderAddress: String, receiverAddress: String, amountSatoshi: String, promise: Promise) {
+    fun estimateFees(senderAddress: String?, receiverAddress: String?, amountSatoshi: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (senderAddress == null || receiverAddress == null || amountSatoshi == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "estimateFees")) return@Thread
@@ -451,12 +793,19 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun estimateFeeWithUTXOs(
-        utxosWithPathsJSON: String,
-        receiverAddress: String,
-        amountSatoshi: String,
-        changeAddress: String,
+        utxosWithPathsJSON: String?,
+        receiverAddress: String?,
+        amountSatoshi: String?,
+        changeAddress: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (utxosWithPathsJSON == null || receiverAddress == null || amountSatoshi == null || changeAddress == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "estimateFeeWithUTXOs")) return@Thread
@@ -476,7 +825,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun postTx(rawTxHex: String, promise: Promise) {
+    fun postTx(rawTxHex: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (rawTxHex == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "postTx")) return@Thread
@@ -491,7 +847,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun computeTxId(rawTxHex: String, promise: Promise) {
+    fun computeTxId(rawTxHex: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (rawTxHex == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "computeTxId")) return
             val txid = DklsNative.bbmtComputeTxIdNative(rawTxHex)
@@ -502,8 +865,21 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun cancelMpcSession(sessionID: String, promise: Promise) {
+    fun cancelMpcSession(sessionID: String?, ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
+            // 3b-4 B19: cancel consumes the ceremony token (same
+            // op+session) and atomically revokes the session.
+            if (!CeremonyTokens.cancelConsume(ceremonyToken, sessionID)) {
+                rejectCeremonyUnauthorized(promise)
+                return
+            }
             if (rejectBbmtUnavailable(promise, "cancelMpcSession")) return
             val out = DklsNative.bbmtCancelMpcSessionNative(sessionID)
             promise.resolve(out)
@@ -513,8 +889,21 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun cancelNostrMpc(promise: Promise) {
+    fun cancelNostrMpc(ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
+            // 3b-4 B19: global cancel consumes a live ceremony
+            // token; the token's own session scopes revocation.
+            if (!CeremonyTokens.cancelConsume(ceremonyToken, null)) {
+                rejectCeremonyUnauthorized(promise)
+                return
+            }
             if (rejectBbmtUnavailable(promise, "cancelNostrMpc")) return
             val out = DklsNative.bbmtCancelNostrMpcNative()
             promise.resolve(out)
@@ -524,7 +913,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun runRelay(port: String, promise: Promise) {
+    fun runRelay(port: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (port == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "runRelay")) return
             val result = DklsNative.bbmtRunRelayNative(port)
@@ -537,7 +933,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun stopRelay(tag: String, promise: Promise) {
+    fun stopRelay(tag: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (tag == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "stopRelay")) return
             val result = DklsNative.bbmtStopRelayNative()
@@ -550,38 +953,84 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun publishData(port: String, timeout: String, encKey: String, raw: String, mode: String,
+    fun publishData(port: String?, timeout: String?, encKey: String?, raw: String?, mode: String?,
+                    ceremonyToken: String?, ceremonySessionID: String?,
                     promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (port == null || timeout == null || encKey == null || raw == null || mode == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                // 3b-2c B13: rides the handshake ceremony token (sign|keygen).
+                if (!CeremonyTokens.verifyTransport(ceremonyToken, ceremonySessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "publishData")) return@Thread
                 val output = DklsNative.bbmtPublishDataNative(port, timeout, encKey, raw, mode)
+                if (output.startsWith("error:")) {
+                    promise.reject("PUBLISH_DATA_ERROR", output.removePrefix("error:"), null)
+                    return@Thread
+                }
                 ld("publishData", output)
                 promise.resolve(output)
             } catch (e: Throwable) {
                 ld("publishData", "error: ${e.message}")
-                promise.resolve("")
+                promise.reject("PUBLISH_DATA_ERROR", e.message, e)
             }
         }.start()
     }
 
     @ReactMethod
-    fun fetchData(url: String, decKey: String, payload: String, promise: Promise) {
+    fun fetchData(url: String?, decKey: String?, payload: String?,
+                  ceremonyToken: String?, ceremonySessionID: String?,
+                  promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (url == null || decKey == null || payload == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                // 3b-2c B14: rides the handshake ceremony token (sign|keygen).
+                if (!CeremonyTokens.verifyTransport(ceremonyToken, ceremonySessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "fetchData")) return@Thread
                 val raw = DklsNative.bbmtFetchDataNative(url, decKey, payload)
+                // F11 fail-closed: Go errors surface as rejects. No false
+                // positive: legit payloads are hex/base64/JSON, and an
+                // "error:"-prefixed plaintext would fail the handshake
+                // loudly either way — reject is the safe direction.
+                if (raw.startsWith("error:")) {
+                    promise.reject("FETCH_DATA_ERROR", raw.removePrefix("error:"), null)
+                    return@Thread
+                }
                 ld("fetchData", raw)
                 promise.resolve(raw)
             } catch (e: Throwable) {
                 ld("fetchData", "error: ${e.message}")
-                promise.resolve("")
+                promise.reject("FETCH_DATA_ERROR", e.message, e)
             }
         }.start()
     }
 
     @ReactMethod
-    fun listenForPeers(id: String, pubkey: String, port: String, timeout: String, mode: String, promise: Promise) {
+    fun listenForPeers(id: String?, pubkey: String?, port: String?, timeout: String?, mode: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (id == null || pubkey == null || port == null || timeout == null || mode == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "listenForPeers")) return@Thread
@@ -590,13 +1039,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(peer)
             } catch (e: Throwable) {
                 ld("listenForPeers", "error: ${e.message}")
-                promise.resolve("")
+                promise.reject("LISTEN_PEERS_ERROR", e.message, e)
             }
         }.start()
     }
 
     @ReactMethod
-    fun discoverPeers(id: String, pubkey: String, localIP: String, remoteIP: String, port: String, timeout: String, mode: String, promise: Promise) {
+    fun discoverPeers(id: String?, pubkey: String?, localIP: String?, remoteIP: String?, port: String?, timeout: String?, mode: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (id == null || pubkey == null || localIP == null || remoteIP == null || port == null || timeout == null || mode == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "discoverPeers")) return@Thread
@@ -607,13 +1063,20 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(peer)
             } catch (e: Throwable) {
                 ld("discoverPeers", "error: ${e.message}")
-                promise.resolve("")
+                promise.reject("DISCOVER_PEERS_ERROR", e.message, e)
             }
         }.start()
     }
 
     @ReactMethod
-    fun getLanIp(peerIP: String, promise: Promise) {
+    fun getLanIp(peerIP: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (peerIP == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         var resolved = false
         try {
             val interfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
@@ -701,20 +1164,40 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
     
     @ReactMethod
-    fun nostrKeypair(promise: Promise) {
+    fun nostrKeypair(ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
+            // 3b-2b B20: single-call keygen ceremony (no MPC session yet).
+            if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.KEYGEN)) {
+                rejectCeremonyUnauthorized(promise)
+                return
+            }
             if (rejectBbmtUnavailable(promise, "nostrKeypair")) return
             val result = DklsNative.bbmtNostrKeypairNative()
             ld("nostrKeypair", result)
             promise.resolve(result)
         } catch (e: Exception) {
             ld("nostrKeypair", "error: ${e.stackTraceToString()}")
-            promise.resolve(e.message)
+            // F27: reject; resolving e.message is error-text-as-value.
+            promise.reject("NOSTR_KEYPAIR_ERROR", "Failed to generate keypair: ${e.message}", e)
         }
     }
 
     @ReactMethod
-    fun hexToNpub(hexKey: String, promise: Promise) {
+    fun hexToNpub(hexKey: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (hexKey == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "hexToNpub")) return@Thread
@@ -723,24 +1206,40 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                 promise.resolve(result)
             } catch (e: Exception) {
                 ld("hexToNpub", "error: ${e.stackTraceToString()}")
-                promise.resolve(e.message)
+                // F27: reject; resolving e.message is error-text-as-value.
+                promise.reject("HEX_TO_NPUB_ERROR", "Failed to convert hex: ${e.message}", e)
             }
         }.start()
     }
 
+    // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
+    // variant decision deferred). DKLs twins stage natively.
     @ReactMethod
     fun nostrMpcTssSetup(
-        relaysCSV: String,
-        partyNsec: String,
-        partiesNpubsCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        chaincode: String,
-        ppmFile: String,
+        relaysCSV: String?,
+        partyNsec: String?,
+        partiesNpubsCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        chaincode: String?,
+        ppmFile: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partyNsec == null || partiesNpubsCSV == null || sessionID == null || sessionKey == null || chaincode == null || ppmFile == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                // 3b-6: GG18 setup takes a keygen token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "nostrMpcTssSetup")) return@Thread
                 val result = DklsNative.bbmtNostrJoinKeygenNative(
                     relaysCSV,
@@ -760,57 +1259,40 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
-    @ReactMethod
-    fun nostrJoinKeysign(
-        relaysCSV: String,
-        partyNsec: String,
-        partiesNpubsCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        keyshareJSON: String,
-        derivationPath: String,
-        message: String,
-        promise: Promise
-    ) {
-        Thread {
-            try {
-                if (rejectBbmtUnavailable(promise, "nostrJoinKeysign")) return@Thread
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    DklsNative.bbmtNostrJoinKeysignNative(
-                        relaysCSV,
-                        partyNsec,
-                        partiesNpubsCSV,
-                        sessionID,
-                        sessionKey,
-                        ks,
-                        derivationPath,
-                        message,
-                    )
-                }
-                ld("nostrJoinKeysign", result)
-                promise.resolve(result)
-            } catch (e: Throwable) {
-                ld("nostrJoinKeysign", "error: ${e.stackTraceToString()}")
-                promise.reject("NOSTR_JOIN_KEYSIGN_ERROR", "Failed to join keysign via Nostr: ${e.message}", e)
-            }
-        }.start()
-    }
+    // F18 (3b-3): nostrJoinKeysign REMOVED (dead from JS — zero
+    // static/dynamic/WebView/reflection callers; took keyshareJSON
+    // plaintext from JS). Go BbmtNostrJoinKeysign stays (native-only).
 
+    // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
+    // variant decision deferred). DKLs twins stage natively.
     @ReactMethod
     fun mpcTssSetup(
-        server: String,
-        partyID: String,
-        ppmFile: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        chaincode: String,
+        server: String?,
+        partyID: String?,
+        ppmFile: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        chaincode: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || ppmFile == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || chaincode == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                // 3b-6: GG18 setup takes a keygen token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "mpcTssSetup")) return@Thread
                 val result = DklsNative.bbmtJoinKeygenNative(
                     ppmFile,
@@ -833,7 +1315,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun preparams(partyID: String, timeout: String, promise: Promise) {
+    fun preparams(partyID: String?, timeout: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (partyID == null || timeout == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "preparams")) return@Thread
@@ -848,7 +1337,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun recoverPubkey(r: String, s: String, v: String, h: String, promise: Promise) {
+    fun recoverPubkey(r: String?, s: String?, v: String?, h: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (r == null || s == null || v == null || h == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "recoverPubkey")) return
             val result = DklsNative.bbmtSecP256k1RecoverNative(r, s, v, h)
@@ -861,7 +1357,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun derivePubkey(hexPubkey: String, hexChaincode: String, path: String, promise: Promise) {
+    fun derivePubkey(hexPubkey: String?, hexChaincode: String?, path: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (hexPubkey == null || hexChaincode == null || path == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "derivePubkey")) return
             val result = DklsNative.bbmtGetDerivedPubKeyNative(hexPubkey, hexChaincode, path, false)
@@ -874,7 +1377,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun encodeXpub(hexPubkey: String, hexChaincode: String, network: String, promise: Promise) {
+    fun encodeXpub(hexPubkey: String?, hexChaincode: String?, network: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (hexPubkey == null || hexChaincode == null || network == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "encodeXpub")) return
             val result = DklsNative.bbmtEncodeXpubNative(hexPubkey, hexChaincode, network)
@@ -887,7 +1397,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun getOutputDescriptor(hexPubkey: String, hexChaincode: String, network: String, addressType: String, promise: Promise) {
+    fun getOutputDescriptor(hexPubkey: String?, hexChaincode: String?, network: String?, addressType: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (hexPubkey == null || hexChaincode == null || network == null || addressType == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "getOutputDescriptor")) return
             val result = DklsNative.bbmtGetOutputDescriptorNative(hexPubkey, hexChaincode, network, addressType)
@@ -900,7 +1417,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun appendOutputDescriptorChecksum(descriptorBody: String, promise: Promise) {
+    fun appendOutputDescriptorChecksum(descriptorBody: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (descriptorBody == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "appendOutputDescriptorChecksum")) return
             val result = DklsNative.bbmtAppendOutputDescriptorChecksumNative(descriptorBody)
@@ -917,7 +1441,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun btcAddress(compressedPubkey: String, network: String, addressType: String,  promise: Promise) {
+    fun btcAddress(compressedPubkey: String?, network: String?, addressType: String?,  promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (compressedPubkey == null || network == null || addressType == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         var resolved = false
         try {
             if (rejectBbmtUnavailable(promise, "btcAddress")) return
@@ -946,9 +1477,18 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun eciesKeypair(promise: Promise) {
+    fun eciesKeypair(ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                // Pairing device key only. The Pair tap is the intent.
+                // The wallet share still requires the setup ceremony prompt.
                 if (rejectBbmtUnavailable(promise, "eciesKeypair")) return@Thread
                 val result = DklsNative.bbmtGenerateKeyPairNative()
                 if (result.startsWith("error:")) {
@@ -968,56 +1508,1013 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
         }.start()
     }
 
-    @ReactMethod
-    fun aesEncrypt(data: String, key: String, promise: Promise) {
-        try {
-            if (rejectBbmtUnavailable(promise, "aesEncrypt")) return
-            val result = DklsNative.bbmtAesEncryptNative(data, key)
-            ld("aesEncrypt", result)
-            promise.resolve(result)
-        } catch (e: Exception) {
-            ld("aesEncrypt", "error: ${e.stackTraceToString()}")
-            promise.resolve(e.message)
-        }
-    }
+    // F10 (3a): dead oracle methods aesEncrypt / aesDecrypt /
+    // aesEncryptStoredKeyshare REMOVED (zero callers repo-wide, no
+    // WebView/eval/reflection path; Go BbmtAes* stays for native use).
 
+    /**
+     * F1: versioned backup export. KDF (Argon2id) + AEAD (AES-GCM) run in Go;
+     * JS passes the password, never a derived key. Emits v2 format only.
+     */
     @ReactMethod
-    fun aesDecrypt(data: String, key: String, promise: Promise) {
-        try {
-            if (rejectBbmtUnavailable(promise, "aesDecrypt")) return
-            val result = DklsNative.bbmtAesDecryptNative(data, key)
-            ld("aesDecrypt", result)
-            promise.resolve(result)
-        } catch (e: Exception) {
-            ld("aesDecrypt", "error: ${e.stackTraceToString()}")
-            promise.resolve(e.message)
+    fun backupEncryptStoredKeyshare(password: String?, ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (password == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
         }
-    }
 
-    @ReactMethod
-    fun aesEncryptStoredKeyshare(key: String, promise: Promise) {
         Thread {
             try {
+                // 3b-3 A12: single-call export ceremony (no MPC session).
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.EXPORT)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 val data = loadKeyshareJSONFromRNES()
                 if (data == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                     return@Thread
                 }
-                if (rejectBbmtUnavailable(promise, "aesEncryptStoredKeyshare")) return@Thread
-                val result = withZeroedKeyshareUtf8(data) { ks ->
-                    DklsNative.bbmtAesEncryptNative(ks, key)
+                if (rejectBbmtUnavailable(promise, "backupEncryptStoredKeyshare")) return@Thread
+                val result = DklsNative.bbmtBackupEncryptNative(data, password)
+                if (result.startsWith("error:")) {
+                    promise.reject("BACKUP_ENCRYPT_ERROR", result.removePrefix("error:"), null)
+                    return@Thread
                 }
-                ld("aesEncryptStoredKeyshare", result)
                 promise.resolve(result)
             } catch (e: Exception) {
-                ld("aesEncryptStoredKeyshare", "error: ${e.stackTraceToString()}")
-                promise.resolve(e.message)
+                promise.reject("BACKUP_ENCRYPT_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F1: versioned backup import. Returns {"format":"v2"|"legacy","plaintext":"..."}.
+     * Legacy (CBC, no MAC) is import-only; callers must warn and prompt re-export.
+     */
+    // F15b-1 (A5): backupDecrypt REMOVED — plaintext-to-JS import
+    // replaced by importBackupToStagedHandle (A6).
+    /**
+     * F15b-1 (A6): versioned backup import that stages natively.
+     * Resolves {handle, metadata, legacy} — never plaintext. Error
+     * TEXT preserves B1 semantics for the JS mapping (format vs
+     * wrong-password). Replaces backupDecrypt (removed with its
+     * caller rewrite).
+     */
+    @ReactMethod
+    fun importBackupToStagedHandle(
+        blob: String?,
+        password: String?,
+        ceremonyToken: String?,
+        ceremonySessionID: String?,
+        promise: Promise,
+    ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (blob == null || password == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
+        Thread {
+            try {
+                // 3b-2e B17: strict import ceremony (owner-shared stage+persist).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.IMPORT, ceremonySessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                if (rejectBbmtUnavailable(promise, "importBackupToStagedHandle")) return@Thread
+                val result = DklsNative.bbmtImportBackupStagedNative(blob, password)
+                if (result.startsWith("error:")) {
+                    promise.reject("BACKUP_IMPORT_ERROR", result.removePrefix("error:"), null)
+                    return@Thread
+                }
+                guardStagedShape(result, "importBackupToStagedHandle")
+                promise.resolve(result)
+            } catch (e: Exception) {
+                promise.reject("BACKUP_IMPORT_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F15b-1 (A7): persist a staged handle to enveloped RNES.
+     * Resolves post-finalize metadata for the JS SQLite mirror.
+     * Staged entry is destroyed only after a VERIFIED write, so
+     * failed persists are retryable with the same handle.
+     */
+    @ReactMethod
+    fun persistStoredKeyshare(
+        handle: String?,
+        nsec: String?,
+        npub: String?,
+        ceremonyToken: String?,
+        ceremonySessionID: String?,
+        promise: Promise,
+    ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (handle == null || nsec == null || npub == null || ceremonyToken == null || ceremonySessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
+        Thread {
+            try {
+                // Backup import uses an import token. A wallet just created
+                // on this phone reuses its setup (keygen) token.
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.IMPORT, ceremonySessionID) &&
+                    !CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, ceremonySessionID)
+                ) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                if (rejectBbmtUnavailable(promise, "persistStoredKeyshare")) return@Thread
+                val json = DklsNative.bbmtFinalizeStagedForPersistNative(handle, nsec, npub)
+                if (json.startsWith("error:")) {
+                    promise.reject("PERSIST_ERROR", json.removePrefix("error:"), null)
+                    return@Thread
+                }
+                val prefs = rnesEncryptedPrefs()
+                val envelope = KeyshareEnvelope.encryptKeyshareJson(json)
+                prefs.edit().putString(KEY_KEYSHARE, envelope).commit()
+                val check = prefs.getString(KEY_KEYSHARE, null)
+                if (check == null || KeyshareEnvelope.decryptKeyshareJson(check) != json) {
+                    promise.reject("PERSIST_ERROR", "Secure write verification failed. Retry setup without force-closing the app.", null)
+                    return@Thread
+                }
+                val metadata = DklsNative.bbmtProjectMetadataNative(json)
+                if (metadata.startsWith("error:")) {
+                    promise.reject("PERSIST_ERROR", metadata.removePrefix("error:"), null)
+                    return@Thread
+                }
+                val destroyed = DklsNative.bbmtDestroyStagedNative(handle)
+                if (destroyed.startsWith("error:")) {
+                    ld("persistStoredKeyshare", "staged destroy failed (non-fatal): $destroyed")
+                }
+                guardJsSafeResolve(metadata, "persistStoredKeyshare")
+                promise.resolve(metadata)
+            } catch (e: SecureStorageException) {
+                promise.reject("PERSIST_ERROR", e.message, e)
+            } catch (e: Exception) {
+                promise.reject("PERSIST_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F15b-1 (A8): §3 superset metadata for descriptors, chaincode,
+     * labels, legacy detection. Never share bytes (tripwire).
+     */
+    @ReactMethod
+    fun getKeyshareMetadataJSON(promise: Promise) {
+        Thread {
+            try {
+                val raw = loadKeyshareJSONFromRNES()
+                if (raw == null) {
+                    promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
+                    return@Thread
+                }
+                if (rejectBbmtUnavailable(promise, "getKeyshareMetadataJSON")) return@Thread
+                val metadata = DklsNative.bbmtProjectMetadataNative(raw)
+                if (metadata.startsWith("error:")) {
+                    promise.reject("KEYSHARE_META_ERROR", metadata.removePrefix("error:"), null)
+                    return@Thread
+                }
+                guardJsSafeResolve(metadata, "getKeyshareMetadataJSON")
+                promise.resolve(metadata)
+            } catch (e: SecureStorageException) {
+                promise.reject("KEYSHARE_META_ERROR", e.message, e)
+            } catch (e: Exception) {
+                promise.reject("KEYSHARE_META_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F15b-1 (A9): redacted structure for the dev tree view
+     * (secret leaves replaced, shape preserved).
+     */
+    @ReactMethod
+    fun getKeyshareStructureRedacted(promise: Promise) {
+        Thread {
+            try {
+                val raw = loadKeyshareJSONFromRNES()
+                if (raw == null) {
+                    promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
+                    return@Thread
+                }
+                if (rejectBbmtUnavailable(promise, "getKeyshareStructureRedacted")) return@Thread
+                val redacted = DklsNative.bbmtRedactedStructureNative(raw)
+                if (redacted.startsWith("error:")) {
+                    promise.reject("KEYSHARE_STRUCT_ERROR", redacted.removePrefix("error:"), null)
+                    return@Thread
+                }
+                guardRedactedStructureResolve(redacted, "getKeyshareStructureRedacted")
+                promise.resolve(redacted)
+            } catch (e: SecureStorageException) {
+                promise.reject("KEYSHARE_STRUCT_ERROR", e.message, e)
+            } catch (e: Exception) {
+                promise.reject("KEYSHARE_STRUCT_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F15b-1 (A10): wipe staged Go entries. No RNES touch (delete
+     * flows clear RNES separately). Always safe to call.
+     */
+    @ReactMethod
+    fun destroyKeyshareHandles(promise: Promise) {
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "destroyKeyshareHandles")) return@Thread
+                val result = DklsNative.bbmtDestroyAllStagedNative()
+                if (result.startsWith("error:")) {
+                    promise.reject("DESTROY_HANDLES_ERROR", result.removePrefix("error:"), null)
+                    return@Thread
+                }
+                promise.resolve(true)
+            } catch (e: Exception) {
+                promise.reject("DESTROY_HANDLES_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * 3b-1 ceremony mint, per-ceremony methods ONLY. There is
+     * deliberately NO generic "request token for class X" bridge
+     * method: each entry point below hardcodes its op class and
+     * its prompt copy, so JS can neither choose the class nor
+     * spoof the action label. Transport rides the parent
+     * ceremony token (sign|keygen) — no transport mint exists.
+     */
+    /**
+     * 3b-2a: shared gate rejection. Every gated method verifies its
+     * token FIRST (before runtime checks or storage reads) so an
+     * unauthorized caller learns nothing except auth-required.
+     */
+    private fun rejectCeremonyUnauthorized(promise: Promise) {
+        promise.reject(
+            "CEREMONY_AUTH_REQUIRED",
+            "Ceremony authorization required for this call",
+            null,
+        )
+    }
+
+    @ReactMethod
+    fun requestSignCeremonyToken(sessionID: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
+        promptAndMint(
+            CeremonyTokens.OpClass.SIGN, sessionID,
+            "Authenticate to sign", "Approve the signing ceremony", promise,
+        )
+    }
+
+    /**
+     * Silent SIGN mint for LAN handshake transport and cancel paths.
+     * No OS prompt — co-sign approval waits until broadcast or export.
+     */
+    @ReactMethod
+    fun requestSignTransportCeremonyToken(sessionID: String?, promise: Promise) {
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        if (sessionID.isEmpty()) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        try {
+            promise.resolve(
+                CeremonyTokens.mint(CeremonyTokens.OpClass.SIGN, sessionID),
+            )
+        } catch (e: Exception) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Ceremony authorization required for this call",
+                e,
+            )
+        }
+    }
+
+    /**
+     * F20: silent digest-bound SIGN mint for PSBT keysign. Parses the
+     * PSBT in Go; the user approves later when exporting the signed PSBT.
+     */
+    @ReactMethod
+    fun requestPsbtSignCeremonyToken(
+        sessionID: String?,
+        psbtBase64: String?,
+        promise: Promise,
+    ) {
+        if (sessionID == null || psbtBase64 == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        if (sessionID.isEmpty()) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "requestPsbtSignCeremonyToken")) {
+                    return@Thread
+                }
+                val confirmation = DklsNative.bbmtPsbtConfirmationNative(psbtBase64)
+                val json = try {
+                    JSONObject(confirmation)
+                } catch (e: JSONException) {
+                    promise.reject(
+                        "CEREMONY_PSBT_INVALID",
+                        "Could not read this transaction. It was not signed.",
+                        e,
+                    )
+                    return@Thread
+                }
+                val digest = json.optString("digest")
+                if (digest.length != 64) {
+                    promise.reject(
+                        "CEREMONY_PSBT_INVALID",
+                        "Could not read this transaction. It was not signed.",
+                        null,
+                    )
+                    return@Thread
+                }
+                promise.resolve(
+                    CeremonyTokens.mint(
+                        CeremonyTokens.OpClass.SIGN, sessionID, digest,
+                    ),
+                )
+            } catch (e: Throwable) {
+                promise.reject(
+                    "CEREMONY_PSBT_INVALID",
+                    "Could not read this transaction. It was not signed.",
+                    e,
+                )
+            }
+        }.start()
+    }
+
+    /**
+     * Approve exporting a signed PSBT (copy / share / QR). Shows the
+     * Go-parsed summary, then the device credential. Does not mint.
+     */
+    @ReactMethod
+    fun confirmPsbtExport(psbtBase64: String?, promise: Promise) {
+        if (psbtBase64 == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "confirmPsbtExport")) {
+                    return@Thread
+                }
+                val confirmation = DklsNative.bbmtPsbtConfirmationNative(psbtBase64)
+                val json = try {
+                    JSONObject(confirmation)
+                } catch (e: JSONException) {
+                    promise.reject(
+                        "CEREMONY_PSBT_INVALID",
+                        "Could not read this transaction.",
+                        e,
+                    )
+                    return@Thread
+                }
+                val summary = buildPsbtConfirmationSummary(json)
+                showPsbtExportConfirmation(summary, promise)
+            } catch (e: Throwable) {
+                promise.reject(
+                    "CEREMONY_PSBT_INVALID",
+                    "Could not read this transaction.",
+                    e,
+                )
+            }
+        }.start()
+    }
+
+    private fun showPsbtExportConfirmation(summary: String, promise: Promise) {
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        var settled = false
+        activity.runOnUiThread {
+            try {
+                val dialog = AlertDialog.Builder(activity)
+                    .setTitle("Confirm export")
+                    .setMessage(summary)
+                    .setPositiveButton("Confirm") { _, _ ->
+                        settled = true
+                        promptAndMint(
+                            CeremonyTokens.OpClass.SIGN, "psbt-export",
+                            "Authenticate to export", "Approve sharing this signed PSBT",
+                            promise, skipMint = true,
+                        )
+                    }
+                    .setNegativeButton("Cancel") { _, _ ->
+                        if (!settled) {
+                            settled = true
+                            rejectCeremonyUnauthorized(promise)
+                        }
+                    }
+                    .create()
+                dialog.setOnCancelListener {
+                    if (!settled) {
+                        settled = true
+                        rejectCeremonyUnauthorized(promise)
+                    }
+                }
+                dialog.show()
+            } catch (e: Exception) {
+                if (!settled) {
+                    settled = true
+                    rejectCeremonyUnauthorized(promise)
+                }
+            }
+        }
+    }
+
+    /** Renders the Go-parsed summary. Amounts stay in sats — exact. */
+    private fun buildPsbtConfirmationSummary(json: JSONObject): String {
+        val sb = StringBuilder()
+        val network = json.optString("network", "testnet4")
+        if (network == "testnet4") {
+            sb.append("TESTNET4 — no real value\n\n")
+        } else {
+            sb.append("MAINNET — real funds\n\n")
+        }
+        val outputs = json.optJSONArray("outputs")
+        var totalOut = 0L
+        if (outputs != null) {
+            for (i in 0 until outputs.length()) {
+                val o = outputs.optJSONObject(i) ?: continue
+                val amount = psbtAmountOf(o)
+                totalOut += amount
+                val change = if (o.optBoolean("isChange")) " (change)" else ""
+                sb.append("→ ").append(o.optString("address"))
+                    .append("  ").append(amount).append(" sat")
+                    .append(change).append('\n')
+            }
+        }
+        sb.append("\nTotal out: ").append(totalOut).append(" sat")
+        sb.append("\nFee: ").append(json.optString("fee", "0")).append(" sat")
+        return sb.toString()
+    }
+
+    private fun psbtAmountOf(o: JSONObject): Long {
+        val s = o.optString("amount")
+        return s.toLongOrNull() ?: o.optLong("amount", 0L)
+    }
+
+    /**
+     * F20 Phase 1b: mint a sign token bound to this payment without
+     * a prompt. The user approves later, on Broadcast, because a
+     * signature alone does not publish the transaction.
+     */
+    @ReactMethod
+    fun requestSendSignCeremonyToken(
+        sessionID: String?,
+        toAddress: String?,
+        amountSatoshi: String?,
+        feeSatoshi: String?,
+        changeAddress: String?,
+        promise: Promise,
+    ) {
+        if (sessionID == null || toAddress == null || amountSatoshi == null ||
+            feeSatoshi == null || changeAddress == null
+        ) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        if (sessionID.isEmpty()) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        val digest = SendBinding.digest(
+            toAddress, amountSatoshi, feeSatoshi, changeAddress,
+        )
+        // Signing does not publish. The payment sheet and biometric
+        // run later, when the user taps Broadcast.
+        try {
+            promise.resolve(
+                CeremonyTokens.mint(
+                    CeremonyTokens.OpClass.SIGN, sessionID, digest,
+                ),
+            )
+        } catch (e: Exception) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Ceremony authorization required for this call",
+                e,
+            )
+        }
+    }
+
+    /**
+     * Spend approval for an already-signed transaction. Shows the
+     * payment, then the device credential, and resolves only if both
+     * succeed. Does not mint a ceremony token.
+     */
+    @ReactMethod
+    fun confirmSpendBroadcast(
+        toAddress: String?,
+        amountSatoshi: String?,
+        feeSatoshi: String?,
+        changeAddress: String?,
+        promise: Promise,
+    ) {
+        if (toAddress == null || amountSatoshi == null ||
+            feeSatoshi == null || changeAddress == null
+        ) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        val banner = if (SendBinding.isTestnetAddress(toAddress)) {
+            "TESTNET4 — no real value"
+        } else {
+            "MAINNET — real funds"
+        }
+        val sb = StringBuilder()
+        sb.append(banner).append("\n\n")
+        sb.append("Send ").append(amountSatoshi.trim()).append(" sat\n")
+        sb.append("To: ").append(toAddress.trim()).append('\n')
+        sb.append("Fee: ").append(feeSatoshi.trim()).append(" sat")
+        if (changeAddress.isNotBlank()) {
+            sb.append("\nChange: ").append(changeAddress.trim())
+        }
+        val activity = reactApplicationContext.currentActivity
+        if (activity == null) {
+            rejectCeremonyUnauthorized(promise)
+            return
+        }
+        var settled = false
+        activity.runOnUiThread {
+            try {
+                val dialog = AlertDialog.Builder(activity)
+                    .setTitle("Confirm payment")
+                    .setMessage(sb.toString())
+                    .setPositiveButton("Confirm") { _, _ ->
+                        settled = true
+                        promptAndMint(
+                            CeremonyTokens.OpClass.SIGN, "broadcast",
+                            "Authenticate to broadcast", "Approve sending this payment",
+                            promise, skipMint = true,
+                        )
+                    }
+                    .setNegativeButton("Cancel") { _, _ ->
+                        if (!settled) {
+                            settled = true
+                            rejectCeremonyUnauthorized(promise)
+                        }
+                    }
+                    .create()
+                dialog.setOnCancelListener {
+                    if (!settled) {
+                        settled = true
+                        rejectCeremonyUnauthorized(promise)
+                    }
+                }
+                dialog.show()
+            } catch (e: Exception) {
+                if (!settled) {
+                    settled = true
+                    rejectCeremonyUnauthorized(promise)
+                }
+            }
+        }
+    }
+
+    /** F20-1b: bound-token send check shared by the send methods. */
+    private fun rejectIfSendBindingMismatch(
+        ceremonyToken: String,
+        toAddress: String,
+        amountSatoshi: String,
+        feeSatoshi: String,
+        changeAddress: String,
+        promise: Promise,
+    ): Boolean {
+        val actual = SendBinding.digest(
+            toAddress, amountSatoshi, feeSatoshi, changeAddress,
+        )
+        if (CeremonyTokens.contentBindingOk(ceremonyToken, actual)) {
+            return false
+        }
+        promise.reject(
+            "CEREMONY_SEND_MISMATCH",
+            "Payment details changed since confirmation — review and confirm again.",
+            null,
+        )
+        return true
+    }
+
+    /** F20: bound-token PSBT check shared by the four sign methods. */
+    private fun rejectIfPsbtBindingMismatch(
+        ceremonyToken: String,
+        psbtBase64: String,
+        promise: Promise,
+    ): Boolean {
+        if (CeremonyTokens.contentBindingOk(ceremonyToken, PsbtDigest.compute(psbtBase64))) {
+            return false
+        }
+        promise.reject(
+            "CEREMONY_PSBT_MISMATCH",
+            "Transaction changed since confirmation — review and confirm again.",
+            null,
+        )
+        return true
+    }
+
+    @ReactMethod
+    fun requestKeygenCeremonyToken(sessionID: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
+        promptAndMint(
+            CeremonyTokens.OpClass.KEYGEN, sessionID,
+            "Authenticate to generate keys", "Approve the wallet setup ceremony", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestWalletSetupCeremonyToken(sessionID: String?, promise: Promise) {
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
+        promptAndMint(
+            CeremonyTokens.OpClass.KEYGEN, sessionID,
+            "Create this wallet with these phones", "Approve wallet setup", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestExportCeremonyToken(sessionID: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
+        promptAndMint(
+            CeremonyTokens.OpClass.EXPORT, sessionID,
+            "Authenticate to export backup", "Approve the backup export", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestImportCeremonyToken(sessionID: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
+        promptAndMint(
+            CeremonyTokens.OpClass.IMPORT, sessionID,
+            "Authenticate to import backup", "Approve the backup import", promise,
+        )
+    }
+
+    @ReactMethod
+    fun requestConfigCeremonyToken(sessionID: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
+        promptAndMint(
+            CeremonyTokens.OpClass.CONFIG, sessionID,
+            "Authenticate to change settings", "Approve the network settings change", promise,
+        )
+    }
+
+    /**
+     * Shared mint worker. PRIVATE — not a bridge method, not
+     * JS-reachable. OS-visible auth FIRST (BiometricPrompt,
+     * biometric-or-device-credential), mint ONLY on success. No
+     * screen lock → CEREMONY_AUTH_NO_LOCK refuse (Q3). Every
+     * other failure → CEREMONY_AUTH_REQUIRED (no reason oracle).
+     * Mint itself enforces single-live-session.
+     */
+    private fun promptAndMint(
+        opClass: CeremonyTokens.OpClass,
+        sessionID: String,
+        title: String,
+        subtitle: String,
+        promise: Promise,
+        boundDigest: String? = null,
+        skipMint: Boolean = false,
+    ) {
+        if (sessionID.isEmpty()) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Confirm to continue — authenticate in the prompt.",
+                null,
+            )
+            return
+        }
+        val ctx = reactApplicationContext
+        val km = ctx.getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        if (km == null || !km.isDeviceSecure) {
+            promise.reject(
+                "CEREMONY_AUTH_NO_LOCK",
+                "Set a device screen lock to continue.",
+                null,
+            )
+            return
+        }
+        val activity = ctx.currentActivity as? FragmentActivity
+        if (activity == null) {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Confirm to continue — authenticate in the prompt.",
+                null,
+            )
+            return
+        }
+        // BiometricPrompt posted before the host activity is RESUMED never
+        // calls back (airgap scanner finish, and a share intent that has
+        // not reached onResume). Wait; do not mint and do not reject early.
+        runWhenHostResumed(
+            activity,
+            Runnable {
+            try {
+                val executor = ContextCompat.getMainExecutor(activity)
+                val callback = object : BiometricPrompt.AuthenticationCallback() {
+                    override fun onAuthenticationSucceeded(
+                        result: BiometricPrompt.AuthenticationResult,
+                    ) {
+                        try {
+                            if (skipMint) {
+                                promise.resolve(true)
+                            } else {
+                                promise.resolve(
+                                    CeremonyTokens.mint(opClass, sessionID, boundDigest),
+                                )
+                            }
+                        } catch (e: Exception) {
+                            promise.reject(
+                                "CEREMONY_AUTH_REQUIRED",
+                                "Confirm to continue — authenticate in the prompt.",
+                                e,
+                            )
+                        }
+                    }
+
+                    override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                        // User cancel, lockout, HW failure: never mint.
+                        promise.reject(
+                            "CEREMONY_AUTH_REQUIRED",
+                            "Confirm to continue — authenticate in the prompt.",
+                            null,
+                        )
+                    }
+
+                    override fun onAuthenticationFailed() {
+                        // Single bad biometric — retryable, do not settle.
+                    }
+                }
+                val infoBuilder = BiometricPrompt.PromptInfo.Builder()
+                    .setTitle(title)
+                    .setSubtitle(subtitle)
+                    .setAllowedAuthenticators(
+                        BiometricManager.Authenticators.BIOMETRIC_STRONG or
+                            BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+                    )
+                // NOTE: no negative button — forbidden with DEVICE_CREDENTIAL.
+                BiometricPrompt(activity, executor, callback).authenticate(infoBuilder.build())
+            } catch (e: Exception) {
+                promise.reject(
+                    "CEREMONY_AUTH_REQUIRED",
+                    "Confirm to continue — authenticate in the prompt.",
+                    e,
+                )
+            }
+            },
+            Runnable {
+                promise.reject(
+                    "CEREMONY_AUTH_REQUIRED",
+                    "Confirm to continue — authenticate in the prompt.",
+                    null,
+                )
+            },
+        )
+    }
+
+    /**
+     * Run [block] on the main thread once [activity] is RESUMED.
+     * [onAbandoned] runs if the activity is destroyed first.
+     */
+    private fun runWhenHostResumed(
+        activity: FragmentActivity,
+        block: Runnable,
+        onAbandoned: Runnable,
+    ) {
+        activity.runOnUiThread {
+            if (activity.isFinishing || activity.isDestroyed) {
+                onAbandoned.run()
+                return@runOnUiThread
+            }
+            if (activity.lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                block.run()
+                return@runOnUiThread
+            }
+            activity.lifecycle.addObserver(object : DefaultLifecycleObserver {
+                private var settled = false
+
+                private fun settle(run: Runnable) {
+                    if (settled) {
+                        return
+                    }
+                    settled = true
+                    activity.lifecycle.removeObserver(this)
+                    run.run()
+                }
+
+                override fun onResume(owner: LifecycleOwner) {
+                    if (activity.isFinishing || activity.isDestroyed) {
+                        settle(onAbandoned)
+                    } else {
+                        settle(block)
+                    }
+                }
+
+                override fun onDestroy(owner: LifecycleOwner) {
+                    settle(onAbandoned)
+                }
+            })
+        }
+    }
+
+    /** 3b-1: retire a token after ceremony success (-> USED). */
+    @ReactMethod
+    fun completeCeremonyToken(token: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (token == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
+        try {
+            CeremonyTokens.complete(token)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("CEREMONY_TOKEN_ERROR", e.message, e)
+        }
+    }
+
+    /** 3b-1: revoke a token on teardown (-> REVOKED). Idempotent. */
+    @ReactMethod
+    fun releaseCeremonyToken(token: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (token == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
+        try {
+            CeremonyTokens.release(token)
+            promise.resolve(true)
+        } catch (e: Exception) {
+            promise.reject("CEREMONY_TOKEN_ERROR", e.message, e)
+        }
+    }
+
+    /** Point the setup approval at the session derived after connect. */
+    @ReactMethod
+    fun rebindCeremonySession(token: String?, sessionID: String?, promise: Promise) {
+        if (token == null || sessionID == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        if (CeremonyTokens.rebindSession(token, sessionID)) {
+            promise.resolve(true)
+        } else {
+            promise.reject(
+                "CEREMONY_AUTH_REQUIRED",
+                "Ceremony authorization required for this call",
+                null,
+            )
+        }
+    }
+
+    // NOTE: NO debug test mint here. The prompt-bypassing mint
+    // lives in src/debug (CeremonyTestModule) + Swift #if DEBUG —
+    // absent from release binaries. Guardrailed in jest.
+
+    /**
+     * Detect + repair GG18 quoted *big.Int JSON in the stored keyshare.
+     * Resolves {detected, repaired, issue} — never share bytes.
+     * Safe to call every launch (idempotent).
+     */
+    @ReactMethod
+    fun repairGg18KeyshareBigInts(promise: Promise) {
+        Thread {
+            try {
+                val prefs = rnesEncryptedPrefs()
+                val raw = prefs.getString(KEY_KEYSHARE, null)
+                val out = Arguments.createMap()
+                if (raw == null || raw.isBlank()) {
+                    out.putBoolean("detected", false)
+                    out.putBoolean("repaired", false)
+                    out.putString("issue", Gg18KeyshareBigIntRepair.ISSUE_EMPTY)
+                    promise.resolve(out)
+                    return@Thread
+                }
+                val plain = if (!KeyshareEnvelope.isEnvelope(raw)) {
+                    if (!raw.contains("ecdsa_local_data")) {
+                        out.putBoolean("detected", false)
+                        out.putBoolean("repaired", false)
+                        out.putString("issue", Gg18KeyshareBigIntRepair.ISSUE_NOT_GG18)
+                        promise.resolve(out)
+                        return@Thread
+                    }
+                    raw
+                } else {
+                    KeyshareEnvelope.decryptKeyshareJson(raw)
+                }
+                val issue = Gg18KeyshareBigIntRepair.detectIssue(plain)
+                val detected = issue == Gg18KeyshareBigIntRepair.ISSUE_QUOTED ||
+                    issue == Gg18KeyshareBigIntRepair.ISSUE_SCI
+                out.putBoolean("detected", detected)
+                out.putString("issue", issue)
+                if (issue != Gg18KeyshareBigIntRepair.ISSUE_QUOTED) {
+                    if (issue == Gg18KeyshareBigIntRepair.ISSUE_SCI) {
+                        ld(
+                            "gg18BigIntRepair",
+                            "issue=scientific_float action=unrecoverable",
+                        )
+                    }
+                    out.putBoolean("repaired", false)
+                    promise.resolve(out)
+                    return@Thread
+                }
+                val repaired = healGg18QuotedBigInts(prefs, plain)
+                val fixed = Gg18KeyshareBigIntRepair.detectIssue(repaired) ==
+                    Gg18KeyshareBigIntRepair.ISSUE_NONE
+                out.putBoolean("repaired", fixed)
+                promise.resolve(out)
+            } catch (e: SecureStorageException) {
+                promise.reject("GG18_BIGINT_REPAIR_ERROR", e.message, e)
+            } catch (e: Exception) {
+                promise.reject("GG18_BIGINT_REPAIR_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    /**
+     * F15b-1 migration bootstrap (§1.5 step 7): idempotent
+     * plaintext → envelope migration. Resolves {migrated:bool}.
+     * Storage failures reject with [SECURE_STORAGE_*] copy.
+     */
+    @ReactMethod
+    fun ensureKeyshareEnveloped(promise: Promise) {
+        Thread {
+            try {
+                val prefs = rnesEncryptedPrefs()
+                val migrated = KeyshareEnvelope.ensureEnveloped(prefs, KEY_KEYSHARE)
+                val out = Arguments.createMap()
+                out.putBoolean("migrated", migrated)
+                promise.resolve(out)
+            } catch (e: SecureStorageException) {
+                promise.reject("MIGRATION_ERROR", e.message, e)
+            } catch (e: Exception) {
+                promise.reject("MIGRATION_ERROR", mapSecureStorageError(e).message, e)
             }
         }.start()
     }
 
     @ReactMethod
-    fun sha256(msg: String, promise: Promise) {
+    fun sha256(msg: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (msg == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         try {
             if (rejectBbmtUnavailable(promise, "sha256")) return
             val result = DklsNative.bbmtSha256Native(msg)
@@ -1027,6 +2524,60 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
             ld("sha256", "error: ${e.stackTraceToString()}")
             promise.reject("SHA256_ERROR", "Failed to compute SHA256: ${e.message}", e)
         }
+    }
+
+    // F32 (Option A): trio ECDH exchange for LAN keygen. Phase 1 blocks
+    // polling for peers (bounded server-side), so all three run off the
+    // bridge thread. Typed TRIO_* errors reject to JS for handling.
+    @ReactMethod
+    fun trioECDHPhase1(server: String?, session: String?, selfParty: String?, parties: String?, promise: Promise) {
+        if (server == null || session == null || selfParty == null || parties == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "trioECDHPhase1")) return@Thread
+                val result = DklsNative.bbmtTrioECDHPhase1Native(server, session, selfParty, parties)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("TRIO_ECDH_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun trioECDHConfirm(handle: String?, session: String?, promise: Promise) {
+        if (handle == null || session == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "trioECDHConfirm")) return@Thread
+                val result = DklsNative.bbmtTrioECDHConfirmNative(handle, session)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("TRIO_ECDH_ERROR", e.message, e)
+            }
+        }.start()
+    }
+
+    @ReactMethod
+    fun trioECDHAbort(handle: String?, promise: Promise) {
+        if (handle == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+        Thread {
+            try {
+                if (rejectBbmtUnavailable(promise, "trioECDHAbort")) return@Thread
+                val result = DklsNative.bbmtTrioECDHAbortNative(handle)
+                promise.resolve(result)
+            } catch (e: Throwable) {
+                promise.reject("TRIO_ECDH_ERROR", e.message, e)
+            }
+        }.start()
     }
 
     @ReactMethod
@@ -1056,37 +2607,52 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun mpcSignPSBT(
-        server: String,
-        partyID: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        psbtBase64: String,
+        server: String?,
+        partyID: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        psbtBase64: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || psbtBase64 == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                // 3b-6: GG18 sign takes a sign token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                // F20: sign only the confirmed artifact.
+                if (rejectIfPsbtBindingMismatch(ceremonyToken, psbtBase64, promise)) {
+                    return@Thread
+                }
                 val keyshare = loadKeyshareJSONFromRNES()
                 if (keyshare == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                     return@Thread
                 }
                 if (rejectBbmtUnavailable(promise, "mpcSignPSBT")) return@Thread
-                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
-                    DklsNative.bbmtMpcSignPSBTNative(
-                        server,
-                        partyID,
-                        partiesCSV,
-                        sessionID,
-                        sessionKey,
-                        encKey,
-                        decKey,
-                        ks,
-                        psbtBase64,
-                    )
-                }
+                val result = DklsNative.bbmtMpcSignPSBTNative(
+                    server,
+                    partyID,
+                    partiesCSV,
+                    sessionID,
+                    sessionKey,
+                    encKey,
+                    decKey,
+                    keyshare,
+                    psbtBase64,
+                )
                 ld("mpcSignPSBT", result)
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -1098,47 +2664,62 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun mpcSendBTCWithUTXOs(
-        server: String,
-        partyID: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        publicKey: String,
-        receiverAddress: String,
-        amountSatoshi: String,
-        feeSatoshi: String,
-        utxosWithPathsJSON: String,
-        changeAddress: String,
+        server: String?,
+        partyID: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        publicKey: String?,
+        receiverAddress: String?,
+        amountSatoshi: String?,
+        feeSatoshi: String?,
+        utxosWithPathsJSON: String?,
+        changeAddress: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || publicKey == null || receiverAddress == null || amountSatoshi == null || feeSatoshi == null || utxosWithPathsJSON == null || changeAddress == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                // 3b-6: GG18 send takes a sign token (strict session).
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, receiverAddress, amountSatoshi, feeSatoshi, changeAddress, promise)) {
+                    return@Thread
+                }
                 val keyshare = loadKeyshareJSONFromRNES()
                 if (keyshare == null) {
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                     return@Thread
                 }
                 if (rejectBbmtUnavailable(promise, "mpcSendBTCWithUTXOs")) return@Thread
-                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
-                    DklsNative.bbmtMpcSendBTCWithUTXOsNative(
-                        server,
-                        partyID,
-                        partiesCSV,
-                        sessionID,
-                        sessionKey,
-                        encKey,
-                        decKey,
-                        ks,
-                        publicKey,
-                        receiverAddress,
-                        amountSatoshi,
-                        feeSatoshi,
-                        utxosWithPathsJSON,
-                        changeAddress,
-                    )
-                }
+                val result = DklsNative.bbmtMpcSendBTCWithUTXOsNative(
+                    server,
+                    partyID,
+                    partiesCSV,
+                    sessionID,
+                    sessionKey,
+                    encKey,
+                    decKey,
+                    keyshare,
+                    publicKey,
+                    receiverAddress,
+                    amountSatoshi,
+                    feeSatoshi,
+                    utxosWithPathsJSON,
+                    changeAddress,
+                )
                 ld("mpcSendBTCWithUTXOs", result)
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -1150,36 +2731,51 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun nostrMpcSendBTC(
-        relaysCSV: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        balanceSats: String,
-        receiverAddress: String,
-        amountSatoshi: String,
-        estimatedFee: String,
-        utxosWithPathsJSON: String,
-        changeAddress: String,
+        relaysCSV: String?,
+        partiesNpubsCSV: String?,
+        npubsSorted: String?,
+        balanceSats: String?,
+        receiverAddress: String?,
+        amountSatoshi: String?,
+        estimatedFee: String?,
+        utxosWithPathsJSON: String?,
+        changeAddress: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partiesNpubsCSV == null || npubsSorted == null || balanceSats == null || receiverAddress == null || amountSatoshi == null || estimatedFee == null || utxosWithPathsJSON == null || changeAddress == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                // 3b-6: GG18 nostr send takes a sign token (single-call).
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, receiverAddress, amountSatoshi, estimatedFee, changeAddress, promise)) {
+                    return@Thread
+                }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 if (rejectBbmtUnavailable(promise, "nostrMpcSendBTC")) return@Thread
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    DklsNative.bbmtNostrMpcSendBTCWithUTXOsNative(
-                        relaysCSV,
-                        partyNsec,
-                        partiesNpubsCSV,
-                        npubsSorted,
-                        balanceSats,
-                        ks,
-                        receiverAddress,
-                        amountSatoshi,
-                        estimatedFee,
-                        utxosWithPathsJSON,
-                        changeAddress ?: "",
-                    )
-                }
+                val result = DklsNative.bbmtNostrMpcSendBTCWithUTXOsNative(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    npubsSorted,
+                    balanceSats,
+                    keyshareJSON,
+                    receiverAddress,
+                    amountSatoshi,
+                    estimatedFee,
+                    utxosWithPathsJSON,
+                    changeAddress ?: "",
+                )
                 ld("nostrMpcSendBTC", result)
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -1191,26 +2787,41 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun nostrMpcSignPSBT(
-        relaysCSV: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        psbtBase64: String,
+        relaysCSV: String?,
+        partiesNpubsCSV: String?,
+        npubsSorted: String?,
+        psbtBase64: String?,
+        ceremonyToken: String?,
         promise: Promise
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partiesNpubsCSV == null || npubsSorted == null || psbtBase64 == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                // 3b-6: GG18 nostr sign takes a sign token (single-call).
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                // F20: sign only the confirmed artifact.
+                if (rejectIfPsbtBindingMismatch(ceremonyToken, psbtBase64, promise)) {
+                    return@Thread
+                }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
                 if (rejectBbmtUnavailable(promise, "nostrMpcSignPSBT")) return@Thread
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    DklsNative.bbmtNostrMpcSignPSBTNative(
-                        relaysCSV,
-                        partyNsec,
-                        partiesNpubsCSV,
-                        npubsSorted,
-                        ks,
-                        psbtBase64,
-                    )
-                }
+                val result = DklsNative.bbmtNostrMpcSignPSBTNative(
+                    relaysCSV,
+                    partyNsec,
+                    partiesNpubsCSV,
+                    npubsSorted,
+                    keyshareJSON,
+                    psbtBase64,
+                )
                 ld("nostrMpcSignPSBT", result)
                 promise.resolve(result)
             } catch (e: Throwable) {
@@ -1233,7 +2844,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                     return@Thread
                 }
-                val obj = JSONObject(raw)
+                val obj = JSONObject(Gg18KeyshareBigIntRepair.quoteOversizedIntegersForJsonObject(raw))
                 val out = JSONObject()
                 val keys = arrayOf(
                     "pub_key",
@@ -1273,18 +2884,30 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsMpcTssSetup(
-        server: String,
-        partyID: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        chaincode: String,
+        server: String?,
+        partyID: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        chaincode: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || chaincode == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject(
                         "DKLS_NATIVE_REQUIRED",
@@ -1303,6 +2926,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     encKey,
                     decKey,
                 )
+                guardStagedShape(result, "dklsMpcTssSetup")
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_MPC_SETUP_ERROR", e.message, e)
@@ -1312,16 +2936,28 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsNostrMpcTssSetup(
-        relaysCSV: String,
-        partyNsec: String,
-        partiesNpubsCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        chaincode: String,
+        relaysCSV: String?,
+        partyNsec: String?,
+        partiesNpubsCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        chaincode: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partyNsec == null || partiesNpubsCSV == null || sessionID == null || sessionKey == null || chaincode == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.KEYGEN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject(
                         "DKLS_NATIVE_REQUIRED",
@@ -1338,6 +2974,7 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                     sessionKey,
                     chaincode,
                 )
+                guardStagedShape(result, "dklsNostrMpcTssSetup")
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_NOSTR_KEYGEN_ERROR", e.message, e)
@@ -1346,9 +2983,22 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun dklsCancelMpcSession(sessionID: String, promise: Promise) {
+    fun dklsCancelMpcSession(sessionID: String?, ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (sessionID == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                // 3b-4 B19: cancel consumes the ceremony token (same
+                // op+session) and atomically revokes the session.
+                if (!CeremonyTokens.cancelConsume(ceremonyToken, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "dklsCancelMpcSession")) return@Thread
                 DklsNative.cancelMpcSessionNative(sessionID)
                 promise.resolve(null)
@@ -1359,9 +3009,22 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun dklsCancelNostrMpc(promise: Promise) {
+    fun dklsCancelNostrMpc(ceremonyToken: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                // 3b-4 B19: global cancel consumes a live ceremony
+                // token; the token's own session scopes revocation.
+                if (!CeremonyTokens.cancelConsume(ceremonyToken, null)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (rejectBbmtUnavailable(promise, "dklsCancelNostrMpc")) return@Thread
                 DklsNative.cancelNostrMpcNative()
                 promise.resolve(null)
@@ -1373,18 +3036,30 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsMpcSignPSBT(
-        server: String,
-        partyID: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        psbtBase64: String,
+        server: String?,
+        partyID: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        psbtBase64: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || psbtBase64 == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread
@@ -1394,12 +3069,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                         return@Thread
                     }
-                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
-                    DklsNative.mpcSignPsbtNative(
-                        server, partyID, partiesCSV, sessionID, sessionKey,
-                        encKey, decKey, ks, psbtBase64,
-                    )
+                // F20: sign only the confirmed artifact.
+                if (rejectIfPsbtBindingMismatch(ceremonyToken, psbtBase64, promise)) {
+                    return@Thread
                 }
+                val result = DklsNative.mpcSignPsbtNative(
+                    server, partyID, partiesCSV, sessionID, sessionKey,
+                    encKey, decKey, keyshare, psbtBase64,
+                )
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_PSBT_LAN", e.message, e)
@@ -1409,23 +3086,35 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsMpcSendBTCWithUTXOs(
-        server: String,
-        partyID: String,
-        partiesCSV: String,
-        sessionID: String,
-        sessionKey: String,
-        encKey: String,
-        decKey: String,
-        btcPub: String,
-        toAddress: String,
-        satoshiAmount: String,
-        satoshiFees: String,
-        utxosWithPathsJSON: String,
-        changeAddress: String,
+        server: String?,
+        partyID: String?,
+        partiesCSV: String?,
+        sessionID: String?,
+        sessionKey: String?,
+        encKey: String?,
+        decKey: String?,
+        btcPub: String?,
+        toAddress: String?,
+        satoshiAmount: String?,
+        satoshiFees: String?,
+        utxosWithPathsJSON: String?,
+        changeAddress: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (server == null || partyID == null || partiesCSV == null || sessionID == null || sessionKey == null || encKey == null || decKey == null || btcPub == null || toAddress == null || satoshiAmount == null || satoshiFees == null || utxosWithPathsJSON == null || changeAddress == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                if (!CeremonyTokens.verify(ceremonyToken, CeremonyTokens.OpClass.SIGN, sessionID)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread
@@ -1435,13 +3124,15 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
                         promise.reject("NO_KEYSHARE", "No keyshare found in secure storage", null)
                         return@Thread
                     }
-                val result = withZeroedKeyshareUtf8(keyshare) { ks ->
-                    DklsNative.mpcSendBtcWithUtxosNative(
-                        server, partyID, partiesCSV, sessionID, sessionKey,
-                        encKey, decKey, ks, btcPub, toAddress,
-                        satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
-                    )
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, toAddress, satoshiAmount, satoshiFees, changeAddress, promise)) {
+                    return@Thread
                 }
+                val result = DklsNative.mpcSendBtcWithUtxosNative(
+                    server, partyID, partiesCSV, sessionID, sessionKey,
+                    encKey, decKey, keyshare, btcPub, toAddress,
+                    satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
+                )
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_SEND_LAN", e.message, e)
@@ -1451,30 +3142,44 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsNostrMpcSendBTC(
-        relaysCSV: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        balanceSats: String,
-        toAddress: String,
-        satoshiAmount: String,
-        satoshiFees: String,
-        utxosWithPathsJSON: String,
-        changeAddress: String,
+        relaysCSV: String?,
+        partiesNpubsCSV: String?,
+        npubsSorted: String?,
+        balanceSats: String?,
+        toAddress: String?,
+        satoshiAmount: String?,
+        satoshiFees: String?,
+        utxosWithPathsJSON: String?,
+        changeAddress: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partiesNpubsCSV == null || npubsSorted == null || balanceSats == null || toAddress == null || satoshiAmount == null || satoshiFees == null || utxosWithPathsJSON == null || changeAddress == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                // F20-1b: pay only the confirmed payment.
+                if (rejectIfSendBindingMismatch(ceremonyToken, toAddress, satoshiAmount, satoshiFees, changeAddress, promise)) {
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread
                 }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    DklsNative.nostrMpcSendBtcWithUtxosNative(
-                        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, ks,
-                        toAddress, satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
-                    )
-                }
+                val result = DklsNative.nostrMpcSendBtcWithUtxosNative(
+                    relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, balanceSats, keyshareJSON,
+                    toAddress, satoshiAmount, satoshiFees, utxosWithPathsJSON, changeAddress,
+                )
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_SEND_NOSTR", e.message, e)
@@ -1484,24 +3189,38 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
 
     @ReactMethod
     fun dklsNostrMpcSignPSBT(
-        relaysCSV: String,
-        partiesNpubsCSV: String,
-        npubsSorted: String,
-        psbtBase64: String,
+        relaysCSV: String?,
+        partiesNpubsCSV: String?,
+        npubsSorted: String?,
+        psbtBase64: String?,
+        ceremonyToken: String?,
         promise: Promise,
     ) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (relaysCSV == null || partiesNpubsCSV == null || npubsSorted == null || psbtBase64 == null || ceremonyToken == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
+                if (!CeremonyTokens.verifySingleCall(ceremonyToken, CeremonyTokens.OpClass.SIGN)) {
+                    rejectCeremonyUnauthorized(promise)
+                    return@Thread
+                }
+                // F20: sign only the confirmed artifact.
+                if (rejectIfPsbtBindingMismatch(ceremonyToken, psbtBase64, promise)) {
+                    return@Thread
+                }
                 if (!ensureBbmtRuntime()) {
                     promise.reject("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh android", null)
                     return@Thread
                 }
                 val (partyNsec, keyshareJSON) = nsecAndKeyshareJSONFromRNES()
-                val result = withZeroedKeyshareUtf8(keyshareJSON) { ks ->
-                    DklsNative.nostrMpcSignPsbtNative(
-                        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, ks, psbtBase64,
-                    )
-                }
+                val result = DklsNative.nostrMpcSignPsbtNative(
+                    relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64,
+                )
                 promise.resolve(result)
             } catch (e: Throwable) {
                 promise.reject("DKLS_PSBT_NOSTR", e.message, e)
@@ -1577,7 +3296,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun parsePSBTDetails(psbtBase64: String, promise: Promise) {
+    fun parsePSBTDetails(psbtBase64: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (psbtBase64 == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "parsePSBTDetails")) return@Thread
@@ -1592,7 +3318,14 @@ class BBMTLibNativeModule(reactContext: ReactApplicationContext) :
     }
 
     @ReactMethod
-    fun psbtIdentityHash(psbtBase64: String, promise: Promise) {
+    fun psbtIdentityHash(psbtBase64: String?, promise: Promise) {
+        // F11: JS null reaches Kotlin as null; non-null params would
+        // crash the bridge (intrinsic check -> RuntimeException).
+        if (psbtBase64 == null) {
+            promise.reject("INVALID_ARGS", "null string argument", null)
+            return
+        }
+
         Thread {
             try {
                 if (rejectBbmtUnavailable(promise, "psbtIdentityHash")) return@Thread

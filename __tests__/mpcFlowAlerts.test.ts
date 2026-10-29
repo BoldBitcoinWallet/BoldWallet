@@ -1,71 +1,39 @@
-/**
- * @format
- */
+jest.mock('react-native-toast-message', () => ({
+  __esModule: true,
+  default: {show: jest.fn()},
+}));
 
 import {
-  isMpcAbortedOrCanceledError,
-  isPeerAbortedSessionError,
-  peerAbortUserMessage,
+  beginMpcFlowAttempt,
+  clearMpcFlowAttempt,
+  resetMpcFlowAttemptForTests,
   shouldShowMpcFlowAlert,
 } from '../services/mpcFlowAlerts';
 
-describe('mpcFlowAlerts', () => {
-  it('blocks alerts when aborted', () => {
-    expect(shouldShowMpcFlowAlert({aborted: true, focused: true})).toBe(false);
+describe('mpcFlowAlerts attempt gating', () => {
+  afterEach(() => {
+    resetMpcFlowAttemptForTests();
   });
 
-  it('blocks alerts when unfocused', () => {
-    expect(shouldShowMpcFlowAlert({focused: false, flowActive: true})).toBe(
-      false,
-    );
-  });
-
-  it('blocks alerts when flow inactive', () => {
-    expect(shouldShowMpcFlowAlert({flowActive: false, focused: true})).toBe(
-      false,
-    );
-  });
-
-  it('allows alerts when flow is active and focused', () => {
+  it('suppresses alerts from a previous attempt after a new one starts', () => {
+    const first = beginMpcFlowAttempt();
     expect(
-      shouldShowMpcFlowAlert({aborted: false, focused: true, flowActive: true}),
+      shouldShowMpcFlowAlert({flowActive: true, attemptId: first}),
     ).toBe(true);
-  });
-
-  it('detects canceled native errors', () => {
+    const second = beginMpcFlowAttempt();
     expect(
-      isMpcAbortedOrCanceledError(
-        new Error('nostr mpc aborted during pre-agreement'),
-      ),
-    ).toBe(true);
-    expect(isMpcAbortedOrCanceledError(new Error('keysign timed out'))).toBe(
-      false,
-    );
-  });
-
-  it('still surfaces await-joiners timeouts (not treated as user abort)', () => {
-    expect(
-      isMpcAbortedOrCanceledError(
-        new Error(
-          'await joiners: timeout waiting for all parties after 30s (have [KeyShare1], need [KeyShare1 KeyShare2])',
-        ),
-      ),
+      shouldShowMpcFlowAlert({flowActive: true, attemptId: first}),
     ).toBe(false);
+    expect(
+      shouldShowMpcFlowAlert({flowActive: true, attemptId: second}),
+    ).toBe(true);
   });
 
-  it('detects peer-abort separately from local user abort', () => {
-    const err = new Error(
-      'peer aborted the session: deserialize failed: invalid scalar fragment length',
-    );
-    expect(isPeerAbortedSessionError(err)).toBe(true);
-    expect(isPeerAbortedSessionError(new Error('context canceled'))).toBe(
+  it('suppresses after the live attempt is cleared', () => {
+    const id = beginMpcFlowAttempt();
+    clearMpcFlowAttempt(id);
+    expect(shouldShowMpcFlowAlert({flowActive: true, attemptId: id})).toBe(
       false,
-    );
-    expect(peerAbortUserMessage(err, 'keygen')).toContain(
-      'Another device stopped key generation',
-    );
-    expect(peerAbortUserMessage(err, 'keygen')).toContain(
-      'invalid scalar fragment length',
     );
   });
 });

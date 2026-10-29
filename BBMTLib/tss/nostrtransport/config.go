@@ -4,9 +4,9 @@ import "time"
 
 // Config defines the runtime parameters required to run a Nostr-backed MPC session.
 type Config struct {
-	Relays                []string
-	SessionID             string
-	SessionKeyHex         string
+	Relays    []string
+	SessionID string
+	// F14: SessionKeyHex removed — required-but-never-read theater.
 	LocalNpub             string
 	LocalNsec             string
 	PeersNpub             []string
@@ -45,9 +45,6 @@ func (c *Config) Validate() error {
 	}
 	if c.SessionID == "" {
 		return ErrInvalidConfig("session id is required")
-	}
-	if c.SessionKeyHex == "" {
-		return ErrInvalidConfig("session key is required")
 	}
 	if c.LocalNpub == "" || c.LocalNsec == "" {
 		return ErrInvalidConfig("local npub/nsec are required")

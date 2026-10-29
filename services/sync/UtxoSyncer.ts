@@ -9,6 +9,7 @@ import mempoolClient from '../MempoolClient';
 import utxoRepository from '../repositories/UtxoRepository';
 import syncRepository from '../repositories/SyncRepository';
 import {INTER_ADDRESS_DELAY_MS, mapPool, sleep, with429Retry} from './rateLimitRetry';
+import {scriptPubKeyFromAddress} from '../../utils/scriptPubKeyFromAddress';
 import {dbg} from '../../utils';
 import type {StoredUtxo} from '../repositories/UtxoRepository';
 
@@ -50,13 +51,22 @@ class UtxoSyncer {
     addresses: AddressEntry[],
     apiBase: string,
     onProgress?: (current: number, total: number) => void,
+    options?: {force?: boolean},
   ): Promise<void> {
     if (!addresses.length) return;
     const cleanApi = apiBase.replace(/\/+$/, '');
-    const total = addresses.length;
     const concurrency = mempoolClient.syncPoolConcurrency(cleanApi);
     let skipped = 0;
-    let fetchedCount = 0;
+    let nextStartAt = 0;
+    const paceAddressStart = async () => {
+      const now = Date.now();
+      const scheduled = Math.max(now, nextStartAt);
+      nextStartAt = scheduled + INTER_ADDRESS_DELAY_MS;
+      const wait = scheduled - now;
+      if (wait > 0) {
+        await sleep(wait);
+      }
+    };
 
     const perAddress = await mapPool(
       addresses,
@@ -64,17 +74,20 @@ class UtxoSyncer {
       async entry => {
         const {address, network, derivationPath} = entry;
         const entityKey = `${address}_${network}`;
-        if (syncRepository.isFresh('utxos', entityKey, UTXO_DB_TTL_MS)) {
+        if (
+          !options?.force &&
+          syncRepository.isFresh('utxos', entityKey, UTXO_DB_TTL_MS)
+        ) {
           skipped++;
           return null;
         }
 
-        if (concurrency === 1 && fetchedCount > 0) {
-          await sleep(INTER_ADDRESS_DELAY_MS);
-        }
-        fetchedCount++;
+        await paceAddressStart();
         try {
           const url = `${cleanApi}/address/${encodeURIComponent(address)}/utxo`;
+          if (options?.force) {
+            mempoolClient.invalidateExact(url);
+          }
           const res = await with429Retry<ApiUtxo[]>(
             'UtxoSyncer',
             () => mempoolClient.get<ApiUtxo[]>(url),
@@ -87,15 +100,16 @@ class UtxoSyncer {
           }
 
           const now = Date.now();
+          const derivedScriptPubkey = scriptPubKeyFromAddress(address);
           const utxos: StoredUtxo[] = res.data.map(u => ({
             txid: u.txid,
             vout: u.vout,
             address,
             network,
             valueSats: u.value,
-            scriptPubkey: null,
+            scriptPubkey: derivedScriptPubkey,
             derivationPath: derivationPath ?? null,
-            isConfirmed: u.status?.confirmed ?? true,
+            isConfirmed: u.status?.confirmed === true,
             blockHeight: u.status?.block_height ?? null,
             blockTime: u.status?.block_time ?? null,
             fetchedAt: now,

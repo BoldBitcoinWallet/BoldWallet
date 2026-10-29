@@ -103,7 +103,7 @@ const TransactionFlowDiagram: React.FC<TransactionFlowDiagramProps> = props => {
     return (
       explorerWebBaseFromApiUrl(resolveStoredMempoolApiBase(sendNetForApi)) ||
       (isTestnet
-        ? 'https://mempool.space/testnet'
+        ? 'https://mempool.space/testnet4'
         : 'https://mempool.space')
     );
   }, [props.variant, sendNet, sendNetForApi]);

@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {Text, View as RNView, StyleSheet, Platform} from 'react-native';
 import AppPressable from './AppPressable';
 import {Image} from 'react-native';
@@ -17,12 +17,9 @@ import {
   subscribeMempoolHealth,
   type MempoolHealthQuality,
 } from '../services/mempoolHealth';
-import {
-  notifyWalletOnlineToggle,
-  setWalletOnline,
-  useWalletOnline,
-} from '../services/walletOnlineStore';
+import {useWalletOnline} from '../services/walletOnlineStore';
 import {getHeaderProviderDisplay, subscribeMempoolProviders} from '../services/mempoolProvidersStore';
+import HeaderProviderCard from './HeaderProviderCard';
 interface HeaderPriceButtonProps {
   btcPrice?: string;
   selectedCurrency?: string;
@@ -53,6 +50,8 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
   );
   const display = useMemo(
     () => getHeaderProviderDisplay(apiBase),
+    // providersRev intentionally invalidates when the provider list changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- providersRev bump
     [apiBase, providersRev],
   );
   const providerHost = display.host || 'Loading...';
@@ -270,10 +269,23 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
 
 interface HeaderProviderProps {
   apiBase?: string;
+  /** Wallet home: online/offline icon plus Connected (+N) or Disconnected. */
+  connectionStatus?: boolean;
 }
-export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
+export const HeaderProvider: React.FC<HeaderProviderProps> = ({
+  apiBase,
+  connectionStatus = false,
+}) => {
   const {theme} = useTheme();
   const online = useWalletOnline();
+  const pillRef = useRef<View>(null);
+  const [cardOpen, setCardOpen] = useState(false);
+  const [anchor, setAnchor] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null>(null);
   const [quality, setQuality] = useState<MempoolHealthQuality | null>(
     () => getMempoolHealth()?.quality ?? null,
   );
@@ -285,6 +297,8 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
   );
   const display = useMemo(
     () => getHeaderProviderDisplay(apiBase),
+    // providersRev intentionally invalidates when the provider list changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- providersRev bump
     [apiBase, providersRev],
   );
   useEffect(() => {
@@ -294,6 +308,7 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
   }, []);
   const providerHost = display.host;
   const providerLabel = display.label || providerHost;
+  const activeCount = providerHost ? display.extraCount + 1 : 0;
   const hasProvider = Boolean(providerHost && providerHost !== 'Loading...');
   if (!hasProvider) {
     return null;
@@ -331,7 +346,7 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
     borderColor: containerBorderColor,
     backgroundColor: containerBg,
     overflow: 'hidden',
-    opacity: online ? 1 : 0.7,
+    opacity: connectionStatus || online ? 1 : 0.7,
   };
   const innerRowStyle: any = {
     flexDirection: 'row',
@@ -372,35 +387,79 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({apiBase}) => {
     borderWidth: dot.hollow ? 1.5 : 0,
     borderColor: dot.color,
   };
-  const onToggleOnline = () => {
-    const next = !online;
-    setWalletOnline(next);
-    notifyWalletOnlineToggle(next);
+  const statusIconStyle = {
+    width: 16,
+    height: 16,
+    marginRight: 6,
+    opacity: online ? dot.opacity : 0.7,
+    tintColor: online ? dot.color : theme.colors.textSecondary,
+  };
+  const statusText = online
+    ? `Connected (+${activeCount})`
+    : 'Disconnected';
+  const openCard = () => {
+    pillRef.current?.measureInWindow((x, y, width, height) => {
+      setAnchor({x, y, width, height});
+      setCardOpen(true);
+    });
   };
   return (
-    <View style={wrapperStyle}>
+    <View style={wrapperStyle} ref={pillRef} collapsable={false}>
       <AppPressable
         style={containerStyle}
-        onPress={onToggleOnline}
-        accessibilityRole="switch"
-        accessibilityState={{checked: online}}
-        accessibilityLabel={`${providerHost}${backupHint}, ${
-          online ? 'online' : 'offline'
-        }, ${healthLabel}. Double tap to go ${online ? 'offline' : 'online'}.`}>
+        onPress={openCard}
+        accessibilityRole="button"
+        accessibilityLabel={
+          connectionStatus
+            ? online
+              ? `Connected, ${activeCount} active provider${
+                  activeCount === 1 ? '' : 's'
+                }. Double tap to open network status.`
+              : 'Disconnected. Double tap to open network status.'
+            : `${providerHost}${backupHint}, ${
+                online ? 'online' : 'offline'
+              }, ${healthLabel}. Double tap to open network status.`
+        }>
         <View style={innerRowStyle}>
-          <View style={healthDotStyle} />
-          <View style={providerTextWrapStyle}>
+          {connectionStatus ? (
+            <Image
+              source={require('../assets/wifi-icon.png')}
+              style={statusIconStyle}
+              resizeMode="contain"
+            />
+          ) : (
+            <View style={healthDotStyle} />
+          )}
+          <View
+            style={
+              connectionStatus
+                ? {flexShrink: 1, minWidth: 0, justifyContent: 'center'}
+                : providerTextWrapStyle
+            }>
             <Text
-              style={providerTextStyle}
+              style={
+                connectionStatus
+                  ? {
+                      ...providerTextStyle,
+                      fontSize: theme.fontSizes?.sm || 12,
+                    }
+                  : providerTextStyle
+              }
               numberOfLines={1}
               adjustsFontSizeToFit
               minimumFontScale={0.3}
               ellipsizeMode="tail">
-              {providerLabel}
+              {connectionStatus ? statusText : providerLabel}
             </Text>
           </View>
         </View>
       </AppPressable>
+      <HeaderProviderCard
+        visible={cardOpen}
+        onClose={() => setCardOpen(false)}
+        apiBase={apiBase}
+        anchor={anchor}
+      />
     </View>
   );
 };
@@ -521,11 +580,10 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
     borderColor: isDarkMode
       ? theme.colors.border + '80'
       : theme.colors.blackOverlay10, // Light mode border
-    paddingHorizontal: 14,
+    paddingHorizontal: 10,
     paddingVertical: 0,
     borderRadius: 10,
     height: 36,
-    minWidth: 90,
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.05,
     shadowRadius: 3,
@@ -540,14 +598,15 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
     fontSize: theme.fontSizes?.sm || 12,
     fontFamily: theme.fontFamilies?.bold,
     color: theme.colors.text,
-    lineHeight: 14,
+    lineHeight: 16,
   };
   if (btcPrice === undefined || !onCurrencyPress) {
     return null;
   }
   const containerStyle: any = {
-    width: SIDE_BUTTON_WIDTH,
-    paddingLeft: 16,
+    alignSelf: 'flex-start',
+    paddingLeft: 12,
+    paddingRight: 4,
     paddingTop: 12,
     paddingBottom: 12,
     justifyContent: 'center',
@@ -570,7 +629,7 @@ export const HeaderPriceButton: React.FC<HeaderPriceButtonProps> = ({
           source={require('../assets/bitcoin-logo.png')}
           style={headerBtcLogoStyle}
         />
-        <Text style={headerBtcPriceStyle}>
+        <Text style={headerBtcPriceStyle} numberOfLines={1}>
           {btcPrice ? presentFiat(btcPrice) : '-'}{' '}
           {getCurrencySymbol(selectedCurrency) || ''}
         </Text>
@@ -604,7 +663,8 @@ export const HeaderPriceProviderNetwork: React.FC<
     paddingHorizontal: 8,
   };
   const leftSlotStyle: any = {
-    width: SIDE_BUTTON_WIDTH,
+    flexShrink: 1,
+    maxWidth: '58%',
     alignItems: 'flex-start',
     justifyContent: 'flex-start',
   };

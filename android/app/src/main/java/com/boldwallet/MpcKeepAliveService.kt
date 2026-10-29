@@ -55,7 +55,8 @@ class MpcKeepAliveService : Service() {
                 val outcome = intent.getStringExtra(EXTRA_OUTCOME) ?: "failure"
                 val title = intent.getStringExtra(EXTRA_DONE_TITLE).orEmpty()
                 val body = intent.getStringExtra(EXTRA_DONE_BODY).orEmpty()
-                teardown(outcome, title, body)
+                val notices = intent.getBooleanExtra(EXTRA_NOTICES, true)
+                teardown(outcome, title, body, notices)
             }
             else -> {
                 if (running) {
@@ -126,7 +127,7 @@ class MpcKeepAliveService : Service() {
             .build()
     }
 
-    private fun teardown(outcome: String, title: String, body: String) {
+    private fun teardown(outcome: String, title: String, body: String, notices: Boolean) {
         running = false
         releaseLocks()
         setKeepScreenOn(false)
@@ -136,12 +137,13 @@ class MpcKeepAliveService : Service() {
             // ignore
         }
         notificationManager().cancel(ONGOING_ID)
-        if (outcome != "abort" && title.isNotBlank()) {
+        if (notices && outcome != "abort" && title.isNotBlank()) {
             val done = NotificationCompat.Builder(this, CHANNEL_DONE)
                 .setSmallIcon(R.drawable.ic_mpc_keep_alive)
                 .setContentTitle(title)
                 .setContentText(body)
                 .setAutoCancel(true)
+                .setTimeoutAfter(DONE_TIMEOUT_MS)
                 .setContentIntent(tapIntent())
                 .setPriority(NotificationCompat.PRIORITY_DEFAULT)
                 .build()
@@ -253,6 +255,8 @@ class MpcKeepAliveService : Service() {
         const val EXTRA_OUTCOME = "outcome"
         const val EXTRA_DONE_TITLE = "doneTitle"
         const val EXTRA_DONE_BODY = "doneBody"
+        const val EXTRA_NOTICES = "notices"
+        private const val DONE_TIMEOUT_MS = 120_000L
         private const val CHANNEL_ONGOING = "mpc_keep_alive"
         private const val CHANNEL_DONE = "mpc_keep_alive_done"
         private const val ONGOING_ID = 7101
@@ -292,7 +296,13 @@ class MpcKeepAliveService : Service() {
             context.startService(intent)
         }
 
-        fun stop(context: Context, outcome: String, title: String, body: String) {
+        fun stop(
+            context: Context,
+            outcome: String,
+            title: String,
+            body: String,
+            notices: Boolean = true,
+        ) {
             if (!running) {
                 return
             }
@@ -301,6 +311,7 @@ class MpcKeepAliveService : Service() {
                 putExtra(EXTRA_OUTCOME, outcome)
                 putExtra(EXTRA_DONE_TITLE, title)
                 putExtra(EXTRA_DONE_BODY, body)
+                putExtra(EXTRA_NOTICES, notices)
             }
             context.startService(intent)
         }

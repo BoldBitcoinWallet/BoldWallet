@@ -1,12 +1,11 @@
 /* eslint-disable react-native/no-inline-styles */
 import React, {useState, useEffect, useCallback, useRef} from 'react';
+import {confirmAppPrompt, showAppNotice} from '../services/appPrompt';
 import {
   View,
   Text,
   StyleSheet,
-  Alert,
   Image,
-  Modal,
   ScrollView,
   Platform,
   KeyboardAvoidingView,
@@ -14,7 +13,9 @@ import {
   NativeEventEmitter,
   EmitterSubscription,
   BackHandler,
+  AppState,
 } from 'react-native';
+import AppModal from '../components/AppModal';
 import AppPressable from '../components/AppPressable';
 import GlassModalOverlay from '../components/GlassModalOverlay';
 import Animated, {
@@ -55,9 +56,15 @@ import {
   detectKeyshareTssBackend,
   shortenAddress,
 } from '../utils';
+import {quoteOversizedJsonIntegers} from '../utils/keyshareDevView';
 import {resolveStoredMempoolApiBase} from '../services/mempoolApiBase';
+import {ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {prepareSendBtcMultiPathInputs} from '../services/sendBtcPrepare';
 import {guardOnlineAction} from '../services/walletOnlineStore';
+import {
+  startLanDiscovery,
+  stopLanDiscovery,
+} from '../services/lanDiscovery';
 import {useTheme} from '../theme';
 import {useUser} from '../context/UserContext';
 import EncryptedStorage from 'react-native-encrypted-storage';
@@ -70,13 +77,22 @@ import {
 } from '../services/tssBackend';
 import {TssProvider} from '../services/TssProvider';
 import {
+  CeremonyAuthRequiredError,
+  CeremonyNoLockError,
+  completeCeremonyToken,
+  newCeremonySessionID,
+  rebindCeremonySession,
+  releaseCeremonyToken,
+  requestSignCeremonyToken,
+  requestWalletSetupCeremonyToken,
+} from '../services/ceremonyAuth';
+import {
   parseEciesKeypairJson,
   resolveLanKeysignTransportKeys,
 } from '../services/lanMpcTransport';
 import {
   LAN_KEYGEN_STATUS,
   getMpcKeepAliveCheckboxLabel,
-  getMpcKeepAlivePrepareModalSubtitle,
   getMpcKeepAliveSetupHint,
 } from '../services/walletSetupUi';
 import {
@@ -103,13 +119,17 @@ import {
   resolveGg18LanSigningPartiesFromKeyshare,
 } from '../services/lanMpcSetup';
 import {
+  discardPendingKeyshares,
+  finishTrioECDHAfterUserCompare,
   invokeLanWalletKeygen,
   KEYGEN_FINALIZING_STORAGE_STATUS,
   persistLanRolesFromContext,
+  persistStagedKeyshare,
   persistWalletKeyshare,
   resolveWalletSetupBackend,
   runLanWalletKeygen,
   runWalletSetupPrepare,
+  type SetupResult,
   type WalletSetupRouteParams,
 } from '../services/walletSetupOrchestrator';
 import {resolveChaincodeHex} from '../services/chaincodeReader';
@@ -170,7 +190,7 @@ import TssBackendBadge from '../components/TssBackendBadge';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
-import database from '../services/Database';
+import {clearCachesBeforeWalletSession} from '../services/walletSessionReset';
 import transactionRepository from '../services/repositories/TransactionRepository';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import BackupKeyshareModal from '../components/BackupKeyshareModal';
@@ -196,9 +216,12 @@ import {
 import {generateMpcAttemptId} from '../services/mpcAttemptId';
 import {secureRandomHex} from '../services/secureRandom';
 import {
+  beginMpcFlowAttempt,
+  clearMpcFlowAttempt,
   isMpcAbortedOrCanceledError,
   shouldShowMpcFlowAlert,
   showMpcFlowAlert,
+  showMpcSignFailure,
 } from '../services/mpcFlowAlerts';
 import {psbtIdentityHash} from '../services/psbtIdentity';
 
@@ -445,12 +468,19 @@ const MobilesPairing = ({navigation}: any) => {
   } = useSendTxPreview(isSendBitcoin, route.params);
   const [signedTxRawHex, setSignedTxRawHex] = useState<string | null>(null);
   const mpcAbortRef = useRef(false);
+  const mpcAttemptIdRef = useRef<string | null>(null);
   /** Reject stale LAN co-sign payloads from prior attempts (same tx intent). */
   const seenLanAttemptIdsRef = useRef<Set<string>>(new Set());
   const activeMpcSessionIdRef = useRef<string | null>(null);
   const doingMpcRef = useRef(false);
   const keysharePersistedRef = useRef(false);
-  const pendingKeyshareRef = useRef<string | null>(null);
+  /** One setup approval, reused for connect, keygen, and save. */
+  const setupCeremonyRef = useRef<{token: string; sessionID: string} | null>(
+    null,
+  );
+  // F15b-1: pending DKG output — staged handle+metadata (DKLs) or
+  // full JSON (F19 GG18 legacy branch).
+  const pendingKeyshareRef = useRef<SetupResult | null>(null);
   const keepAliveOutcomeRef = useRef<MpcKeepAliveOutcome>('failure');
   const setMpcModalActive = useCallback(
     (active: boolean) => {
@@ -501,23 +531,26 @@ const MobilesPairing = ({navigation}: any) => {
     aborted: mpcAbortRef.current,
     focused: isFocusedRef.current,
     flowActive: doingMpcRef.current,
+    attemptId: mpcAttemptIdRef.current ?? undefined,
   });
 
   const allChecked = Object.values(checks).every(Boolean);
 
   const abortActiveMpc = (opts?: {keygen?: boolean}) => {
     const isKeygen = !!opts?.keygen;
-    Alert.alert(
-      isKeygen ? 'Abort wallet setup?' : 'Abort signing?',
-      isKeygen
-        ? 'This will stop key generation on this device. Other devices will stop shortly. You can retry setup.'
-        : 'This will stop the current MPC signing flow. You can retry anytime.',
-      [
-        {text: isKeygen ? 'Keep going' : 'Keep signing', style: 'cancel'},
-        {
-          text: 'Abort',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAppPrompt({
+      icon: 'warning',
+      title: isKeygen ? 'Stop setup?' : 'Stop signing?',
+      hint: isKeygen
+        ? 'The other phones stop too. You can start again.'
+        : 'You can start the payment again.',
+      cancelLabel: isKeygen ? 'Keep going' : 'Keep signing',
+      confirmLabel: 'Stop',
+      tone: 'danger',
+    }).then(async ok => {
+      if (!ok) {
+        return;
+      }
             mpcAbortRef.current = true;
             const aborted = progressStateAfterAbort(mpcHookProgressRef.current);
             setCircleTarget(aborted.percent);
@@ -530,7 +563,11 @@ const MobilesPairing = ({navigation}: any) => {
             const sid = activeMpcSessionIdRef.current;
             if (sid) {
               try {
-                const cancelResult = await TssProvider.cancelMpcSession(sid);
+                // 3b-4 B19: class selects the stuck-cancel mint only.
+          const cancelResult = await TssProvider.cancelMpcSession(
+            sid,
+            isKeygen ? 'keygen' : 'sign',
+          );
                 dbg('MobilesPairing: cancelMpcSession', cancelResult.outcome);
               } catch (e) {
                 dbg('MobilesPairing: cancelMpcSession failed', e);
@@ -541,10 +578,9 @@ const MobilesPairing = ({navigation}: any) => {
             } catch {
               // ignore
             }
-          },
-        },
-      ],
-    );
+            // F15b-1: wipe staged keyshares (covers DKG-return/abort races).
+            await discardPendingKeyshares();
+    });
   };
   const allBackupChecked = isTrio
     ? backupChecks.deviceOne &&
@@ -564,9 +600,10 @@ const MobilesPairing = ({navigation}: any) => {
   const toggleKeygenReady = () => {
     setIsKeygenReady(!isKeygenReady);
   };
-  const rememberLegacyWalletFlag = (keyshareJson: string) => {
+  // F15b-1: takes parsed keyshare fields (staged metadata or parsed
+  // legacy JSON) — never parses a JSON blob itself.
+  const rememberLegacyWalletFlag = (ksParsed: Record<string, any>) => {
     try {
-      const ksParsed = JSON.parse(keyshareJson);
       const useLegacyPath = resolveUseLegacyDerivationPaths({
         created_at: ksParsed.created_at,
         tss_backend: detectKeyshareTssBackend(ksParsed),
@@ -584,23 +621,55 @@ const MobilesPairing = ({navigation}: any) => {
       appConfigRepository.set(CONFIG_KEYS.LEGACY_WALLET_DO_NOT_REMIND, 'yes');
     }
   };
+  const releaseSetupCeremony = async () => {
+    const live = setupCeremonyRef.current;
+    setupCeremonyRef.current = null;
+    if (!live) {
+      return;
+    }
+    try {
+      await releaseCeremonyToken(live.token);
+    } catch {
+      /* logged in ceremonyAuth */
+    }
+  };
   const ensureLanKeyshareStored = async (): Promise<boolean> => {
     if (keysharePersistedRef.current) {
       return true;
     }
-    const raw = pendingKeyshareRef.current;
-    if (!raw) {
-      Alert.alert('Nothing to save', 'Run wallet setup again.');
+    const pending = pendingKeyshareRef.current;
+    if (!pending) {
+      showAppNotice('Nothing to save', 'Run wallet setup again.');
       return false;
     }
     try {
-      const persisted = await persistWalletKeyshare(raw);
-      pendingKeyshareRef.current = persisted;
+      const live = setupCeremonyRef.current;
+      if (pending.kind === 'staged') {
+        const meta = await persistStagedKeyshare(pending.handle, {
+          ceremonyToken: live?.token,
+          ceremonySessionID: live?.sessionID,
+        });
+        rememberLegacyWalletFlag(meta);
+      } else {
+        // F19: GG18 legacy branch — full JSON through JS.
+        const persisted = await persistWalletKeyshare(pending.json);
+        pendingKeyshareRef.current = {kind: 'legacy-gg18', json: persisted};
+        rememberLegacyWalletFlag(
+          JSON.parse(quoteOversizedJsonIntegers(persisted)),
+        );
+      }
       keysharePersistedRef.current = true;
-      rememberLegacyWalletFlag(persisted);
+      if (live) {
+        try {
+          await completeCeremonyToken(live.token);
+        } catch {
+          /* wallet is already saved */
+        }
+        setupCeremonyRef.current = null;
+      }
       return true;
     } catch (error: unknown) {
-      Alert.alert('Could not save wallet', formatMpcError(error));
+      showAppNotice('Could not save wallet', formatMpcError(error));
       return false;
     }
   };
@@ -617,15 +686,18 @@ const MobilesPairing = ({navigation}: any) => {
     );
   };
   const abortFinishedLanSetup = () => {
-    Alert.alert(
-      'Abort wallet setup?',
-      'The new keyshare on this phone will be deleted. You can run setup again.',
-      [
-        {text: 'Keep going', style: 'cancel'},
-        {
-          text: 'Abort',
-          style: 'destructive',
-          onPress: async () => {
+    confirmAppPrompt({
+      icon: 'delete',
+      title: 'Discard this wallet?',
+      hint: 'The new share on this phone is deleted.',
+      cancelLabel: 'Keep it',
+      confirmLabel: 'Discard',
+      tone: 'danger',
+    }).then(async ok => {
+      if (!ok) {
+        return;
+      }
+            await releaseSetupCeremony();
             try {
               await EncryptedStorage.removeItem(KEYSHARE_STORAGE_KEY);
             } catch {
@@ -634,6 +706,8 @@ const MobilesPairing = ({navigation}: any) => {
             await clearKeyshareMetadata();
             keysharePersistedRef.current = false;
             pendingKeyshareRef.current = null;
+            // F15b-1: wipe the staged keyshare behind the dropped handle.
+            await discardPendingKeyshares();
             setKeyshare('');
             setMpcDone(false);
             setBackupChecks({
@@ -641,10 +715,7 @@ const MobilesPairing = ({navigation}: any) => {
               deviceTwo: false,
               deviceThree: false,
             });
-          },
-        },
-      ],
-    );
+    });
   };
   // Clear all cache when entering wallet setup mode (not signing mode)
   useEffect(() => {
@@ -666,17 +737,7 @@ const MobilesPairing = ({navigation}: any) => {
           ]) {
             appConfigRepository.remove(key);
           }
-          // Clear SQLite wallet data
-          database.clearWalletData();
-          dbg('SQLite wallet data cleared');
-          // btcPub is derived in memory; keep the keyshare blob for signing.
-          // Clear WalletService cache
-          try {
-            // stale key removed;
-            dbg('WalletService cache cleared');
-          } catch (error) {
-            dbg('Error clearing WalletService cache:', error);
-          }
+          await clearCachesBeforeWalletSession();
           dbg('=== MobilesPairing: Cache clearing completed');
         } catch (error) {
           dbg('Error clearing cache in MobilesPairing:', error);
@@ -764,7 +825,7 @@ const MobilesPairing = ({navigation}: any) => {
       setIsPreParamsReady(true);
     } catch (error: any) {
       setIsPreParamsReady(false);
-      Alert.alert('Error', error?.toString() || 'Unknown error occurred');
+      showAppNotice('Error', error?.toString() || 'Unknown error occurred');
     } finally {
       setIsPreparing(false);
       setPrepCounter(0);
@@ -793,6 +854,9 @@ const MobilesPairing = ({navigation}: any) => {
 
   async function initSession() {
     const keygenFlow = !isSendBitcoin && !isSignPSBT;
+    // 3b-2c: set once the handshake mint succeeds; the catch
+    // releases it (returns complete before returning).
+    let hsTokenForCleanup: string | null = null;
     try {
       const keypairJson =
         (keypair || '').trim() ||
@@ -828,6 +892,20 @@ const MobilesPairing = ({navigation}: any) => {
           kp.publicKey.length > 16 ? kp.publicKey.slice(0, 16) + '…' : '…',
       });
       setStatus(sessionWaitMessage(isMaster, keygenFlow));
+      // 3b-2c B13/B14: the handshake IS the ceremony. Mint after
+      // validation (no prompt on a broken setup). Spend completes
+      // its token here. Setup keeps the same approval for keygen
+      // and save, and releases it on any throw (see catch). Class
+      // matches the upcoming ceremony (keygen for setup, sign
+      // for send/sign); native verifyTransport accepts either.
+      const hsSession = await newCeremonySessionID('lan-handshake');
+      // Spend/PSBT: Face ID on Start/Join before the handshake runs.
+      // Keygen keeps the setup prompt. Cancel mid-sign uses a silent
+      // transport mint if this token was already completed.
+      const hsToken = keygenFlow
+        ? await requestWalletSetupCeremonyToken(hsSession)
+        : await requestSignCeremonyToken(hsSession);
+      hsTokenForCleanup = hsToken;
       if (isMaster) {
         dbg('initSession: Running as master device');
         const attemptId = await generateMpcAttemptId();
@@ -835,10 +913,10 @@ const MobilesPairing = ({navigation}: any) => {
         let _data = `${attemptId}:${sessionSeed}`;
         // Dice check is a 6-hex tag. The session seed stays the legacy binder.
         // The dice-derived master chaincode is never written into this payload.
-        const localDiceTag =
+        const sessionDiceTag =
           keygenFlow && diceOn ? await diceChecksumTag(diceSets) : '';
-        if (localDiceTag) {
-          _data += `:${localDiceTag}`;
+        if (sessionDiceTag) {
+          _data += `:${sessionDiceTag}`;
         }
         dbg('initSession: Generated attempt id and session seed');
         if (isSendBitcoin) {
@@ -873,12 +951,14 @@ const MobilesPairing = ({navigation}: any) => {
           ? [peerEnc, peerPubkey2].filter(Boolean).join(',')
           : peerEnc;
         const publishHandshake = () =>
-          BBMTLibNativeModule.publishData(
+          TssProvider.publishData(
             String(discoveryPort),
             String(timeout),
             enckeyCSV,
             _data,
             isTrio ? 'trio' : 'duo',
+            hsToken,
+            hsSession,
           );
         const publishStartedAt = Date.now();
         await ensureLanHandshakePortFree();
@@ -932,11 +1012,22 @@ const MobilesPairing = ({navigation}: any) => {
           if (keygenFlow) {
             const expectedPeers = isTrio ? 2 : 1;
             assertMatchingDiceChecksums(
-              localDiceTag,
+              sessionDiceTag,
               diceTagsFromLanPublishResult(published, expectedPeers),
             );
           }
           dbg('initSession: Session initialization completed successfully');
+          if (keygenFlow) {
+            setupCeremonyRef.current = {token: hsToken, sessionID: hsSession};
+            hsTokenForCleanup = null;
+          } else {
+            try {
+              await completeCeremonyToken(hsToken);
+            } catch {
+              /* logged in ceremonyAuth; handshake stands */
+            }
+            hsTokenForCleanup = null;
+          }
           return (_data || '').trim();
         } else {
           const elapsedMs = Date.now() - publishStartedAt;
@@ -967,9 +1058,11 @@ const MobilesPairing = ({navigation}: any) => {
           ? `${peerEnc}/${route.params?.satoshiAmount}`
           : `${masterPubForFetch || peerEnc}/${kp.publicKey}`;
         const checksum = await BBMTLibNativeModule.sha256(payload);
-        const localDiceTag =
+        const sessionDiceTag =
           keygenFlow && diceOn ? await diceChecksumTag(diceSets) : '';
-        const fetchStamp = localDiceTag ? `${checksum}:${localDiceTag}` : checksum;
+        const fetchStamp = sessionDiceTag
+          ? `${checksum}:${sessionDiceTag}`
+          : checksum;
         const peerURL = `${buildLanRelayServerUrl(
           normalizeLanHost(masterHost) || masterHost || '',
           discoveryPort,
@@ -1020,12 +1113,14 @@ const MobilesPairing = ({navigation}: any) => {
           peerURL,
           kp.privateKey,
           fetchStamp,
+          hsToken,
+          hsSession,
           acceptSessionPayload,
           keygenFlow ? 90 : timeout,
         );
         if (keygenFlow) {
           const announced = parseDiceChecksumTags(rawFetched || '')[0] || '';
-          assertMatchingDiceChecksums(localDiceTag, [announced]);
+          assertMatchingDiceChecksums(sessionDiceTag, [announced]);
         }
         if (isSignPSBT || isSendBitcoin) {
           try {
@@ -1040,10 +1135,37 @@ const MobilesPairing = ({navigation}: any) => {
         dbg('initSession: Data fetched successfully', {
           len: rawFetched?.length ?? 0,
         });
+        if (keygenFlow) {
+          setupCeremonyRef.current = {token: hsToken, sessionID: hsSession};
+          hsTokenForCleanup = null;
+        } else {
+          try {
+            await completeCeremonyToken(hsToken);
+          } catch {
+            /* logged in ceremonyAuth; handshake stands */
+          }
+          hsTokenForCleanup = null;
+        }
         return (rawFetched || '').trim();
       }
     } catch (error: any) {
       dbg('initSession: Error occurred', {error});
+      // 3b-2c: release the handshake token on any failure.
+      if (hsTokenForCleanup !== null) {
+        try {
+          await releaseCeremonyToken(hsTokenForCleanup);
+        } catch {
+          /* logged in ceremonyAuth */
+        }
+        hsTokenForCleanup = null;
+      }
+      // User-facing ceremony errors pass through unprefixed.
+      if (error instanceof CeremonyAuthRequiredError) {
+        throw 'Authentication was cancelled — tap Start again to retry.';
+      }
+      if (error instanceof CeremonyNoLockError) {
+        throw error.message;
+      }
       const detail =
         error?.message ?? (typeof error === 'string' ? error : String(error));
       throw `Error initializing session:\n${detail}`;
@@ -1077,6 +1199,8 @@ const MobilesPairing = ({navigation}: any) => {
       setMpcDone(false);
       keysharePersistedRef.current = false;
       pendingKeyshareRef.current = null;
+      // F15b-1: wipe any staged keyshare from an abandoned prior run.
+      discardPendingKeyshares();
       setPrepCounter(0);
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
       setMpcSessionShort(null);
@@ -1134,6 +1258,18 @@ const MobilesPairing = ({navigation}: any) => {
           : undefined,
       });
       setKeygenBackend(orch.backend);
+      // F32 trio: SAS compare before any key material derives. Throws a
+      // user-facing message on decline/mismatch (surfaced by the catch
+      // below); no-op for duo.
+      await finishTrioECDHAfterUserCompare(orch);
+      const setupAuth = setupCeremonyRef.current;
+      if (setupAuth) {
+        await rebindCeremonySession(setupAuth.token, orch.sessionID);
+        setupCeremonyRef.current = {
+          token: setupAuth.token,
+          sessionID: orch.sessionID,
+        };
+      }
       setShareName(orch.partyID);
       activeMpcSessionIdRef.current = orch.sessionID;
       setMpcSessionShort(mpcSessionShortLabel(orch.sessionID));
@@ -1153,40 +1289,68 @@ const MobilesPairing = ({navigation}: any) => {
         dataLen: orch.chaincode.length,
       });
       try {
-        const result = await invokeLanWalletKeygen(
+        const setupResult = await invokeLanWalletKeygen(
           orch,
           ppmFile,
           keygenSetupMode,
+          setupCeremonyRef.current?.token,
         );
-        dbg('keygen result', result.substring(0, 40).concat('...'));
-        setKeyshare(result);
-        try {
-          const ks = JSON.parse(result);
-          if (!ks.pub_key) {
-            throw 'Error: pub_key or chain_code_hex not found in keyshare';
+        if (setupResult.kind === 'legacy-gg18') {
+          // F19: GG18 legacy branch — full JSON through JS by deferral.
+          const result = setupResult.json;
+          dbg('keygen result', result.substring(0, 40).concat('...'));
+          setKeyshare(result);
+          try {
+            const ks = JSON.parse(result);
+            if (!ks.pub_key) {
+              throw 'Error: pub_key or chain_code_hex not found in keyshare';
+            }
+            dbg('Party loaded', ks.local_party_key);
+          } catch (error) {
+            dbg('Error parsing keyshare:', error);
+            throw 'Error: Invalid keyshare';
           }
-          dbg('Party loaded', ks.local_party_key);
-        } catch (error) {
-          dbg('Error parsing keyshare:', error);
-          throw 'Error: Invalid keyshare';
-        }
-        pendingKeyshareRef.current = result;
-        keysharePersistedRef.current = false;
-        keepAliveOutcomeRef.current = 'success';
-        try {
-          const ksParsed = JSON.parse(result);
-          const display = getKeyshareDisplayLabel(ksParsed);
-          if (display) {
-            setShareName(display);
+          pendingKeyshareRef.current = setupResult;
+          keysharePersistedRef.current = false;
+          keepAliveOutcomeRef.current = 'success';
+          try {
+            const ksParsed = JSON.parse(result);
+            const display = getKeyshareDisplayLabel(ksParsed);
+            if (display) {
+              setShareName(display);
+            }
+          } catch {
+            /* keep protocol party id in shareName */
           }
-        } catch {
-          /* keep protocol party id in shareName */
+          setKeyshare(result);
+          setMpcDone(true);
+          deletePreparams();
+        } else {
+          // F15b-1: staged handle + metadata only — no share bytes in JS.
+          const {metadata} = setupResult;
+          dbg('keygen result staged');
+          if (!metadata || !metadata.pub_key) {
+            throw 'Error: Invalid keyshare';
+          }
+          dbg('Party loaded', metadata.local_party_key);
+          setKeyshare(JSON.stringify(metadata));
+          pendingKeyshareRef.current = setupResult;
+          keysharePersistedRef.current = false;
+          keepAliveOutcomeRef.current = 'success';
+          try {
+            const display = getKeyshareDisplayLabel(metadata);
+            if (display) {
+              setShareName(display);
+            }
+          } catch {
+            /* keep protocol party id in shareName */
+          }
+          setMpcDone(true);
+          deletePreparams();
         }
-        setKeyshare(result);
-        setMpcDone(true);
-        deletePreparams();
       } catch (error: unknown) {
         dbg('keygen error', error);
+        await releaseSetupCeremony();
         setMpcDone(false);
         resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
         resetCircle();
@@ -1210,6 +1374,7 @@ const MobilesPairing = ({navigation}: any) => {
         setMpcModalActive(false);
       }
     } catch (error: unknown) {
+      await releaseSetupCeremony();
       setMpcDone(false);
       resetMpcHookSession(mpcHookProgressRef, mpcUtxoRef);
       resetCircle();
@@ -1251,6 +1416,7 @@ const MobilesPairing = ({navigation}: any) => {
     resetCircle();
     setCircleTarget(0);
     setStatus('Starting co-signing…');
+    mpcAttemptIdRef.current = beginMpcFlowAttempt();
     setMpcModalActive(true);
     setConnectionQuality(emptyConnectionQuality('lan'));
     lastQualityPublishAtRef.current = 0;
@@ -1264,7 +1430,7 @@ const MobilesPairing = ({navigation}: any) => {
         const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) || 'mainnet';
         const apiUrl = resolveStoredMempoolApiBase(net);
         await BBMTLibNativeModule.setBtcNetwork(net);
-        await BBMTLibNativeModule.setAPI(net, apiUrl);
+        await ensureMempoolApiApplied(net, apiUrl);
       }
       dbg('session init...');
       await ensureLanHandshakePortFree();
@@ -1299,7 +1465,7 @@ const MobilesPairing = ({navigation}: any) => {
         // Set network and API in BBMTLib for this transaction
         const apiUrl = resolveStoredMempoolApiBase(net);
         await BBMTLibNativeModule.setBtcNetwork(net);
-        await BBMTLibNativeModule.setAPI(net, apiUrl);
+        await ensureMempoolApiApplied(net, apiUrl);
         dbg('MobilesPairing: Set network and API in BBMTLib:', net, apiUrl);
       } else {
         // For send BTC, read ALL parameters from route params ONLY (no fallbacks)
@@ -1334,9 +1500,12 @@ const MobilesPairing = ({navigation}: any) => {
           throw new Error('Fees are required in route params');
         }
         // Extract all params from route
-        // CRITICAL: Normalize network to native format ('testnet3' not 'testnet') for BBMTLib
+        // CRITICAL: Normalize network to native format (canonical 'testnet4') for BBMTLib
         const networkFromParams = route.params.network.trim();
-        net = networkFromParams === 'testnet' ? 'testnet3' : networkFromParams;
+        net =
+          networkFromParams === 'testnet' || networkFromParams === 'testnet3'
+            ? 'testnet4'
+            : networkFromParams;
         addressTypeToUse = route.params.addressType.trim();
         path = route.params.derivationPath.trim();
         toAddress = route.params.toAddress.trim();
@@ -1358,7 +1527,7 @@ const MobilesPairing = ({navigation}: any) => {
         // Set network and API in BBMTLib for this transaction
         const apiUrl = resolveStoredMempoolApiBase(net);
         await BBMTLibNativeModule.setBtcNetwork(net);
-        await BBMTLibNativeModule.setAPI(net, apiUrl);
+        await ensureMempoolApiApplied(net, apiUrl);
         // CRITICAL: Update LocalCache 'api' key so any balance/UTXO fetches use correct API
         // This ensures operations use the network from route params, not device's current network
         appConfigRepository.set('api', apiUrl);
@@ -1461,18 +1630,14 @@ const MobilesPairing = ({navigation}: any) => {
               setMpcModalActive(false);
               return;
             }
-            if (
-              !signedPsbt ||
-              signedPsbt.includes('error') ||
-              signedPsbt.includes('failed')
-            ) {
+            if (!signedPsbt || typeof signedPsbt !== 'string') {
               if (
                 !isMpcAbortedOrCanceledError(signedPsbt) &&
                 shouldShowMpcFlowAlert(mpcFlowAlertGate())
               ) {
-                showMpcFlowAlert(
-                  'Operation Error',
-                  `Could not sign PSBT.\n${String(signedPsbt)}`,
+                showMpcSignFailure(
+                  'Could not sign PSBT',
+                  String(signedPsbt || 'Empty result'),
                   mpcFlowAlertGate(),
                 );
               }
@@ -1482,6 +1647,7 @@ const MobilesPairing = ({navigation}: any) => {
             }
             dbg(partyID, 'PSBT signed successfully');
             keepAliveOutcomeRef.current = 'success';
+            clearMpcFlowAttempt(mpcAttemptIdRef.current ?? undefined);
             dbg(
               'PSBT signing complete: Navigating to Wallet tab with signedPsbt',
             );
@@ -1506,9 +1672,9 @@ const MobilesPairing = ({navigation}: any) => {
               !isMpcAbortedOrCanceledError(e) &&
               shouldShowMpcFlowAlert(mpcFlowAlertGate())
             ) {
-              showMpcFlowAlert(
-                'Operation Error',
-                `Could not sign PSBT.\n${e?.message}`,
+              showMpcSignFailure(
+                'Could not sign PSBT',
+                e?.message || String(e),
                 mpcFlowAlertGate(),
               );
             }
@@ -1645,6 +1811,7 @@ const MobilesPairing = ({navigation}: any) => {
           }
           setSignedTxRawHex(rawTxHex);
           keepAliveOutcomeRef.current = 'success';
+          clearMpcFlowAttempt(mpcAttemptIdRef.current ?? undefined);
           setMpcModalActive(false);
         } catch (multiPathErr) {
           dbg('MobilesPairing: multi-path send failed:', multiPathErr);
@@ -1663,9 +1830,9 @@ const MobilesPairing = ({navigation}: any) => {
         !isMpcAbortedOrCanceledError(error) &&
         shouldShowMpcFlowAlert(mpcFlowAlertGate())
       ) {
-        showMpcFlowAlert(
-          'Operation Error',
-          error?.message || error,
+        showMpcSignFailure(
+          'Could not sign',
+          error?.message || String(error),
           mpcFlowAlertGate(),
         );
       }
@@ -1674,7 +1841,7 @@ const MobilesPairing = ({navigation}: any) => {
       if (originalNetwork && originalApiUrl) {
         try {
           await BBMTLibNativeModule.setBtcNetwork(originalNetwork);
-          await BBMTLibNativeModule.setAPI(originalNetwork, originalApiUrl);
+          await ensureMempoolApiApplied(originalNetwork, originalApiUrl);
           // Restore LocalCache 'api' key to original network's API
           appConfigRepository.set('api', originalApiUrl);
           // Restore WalletService internal state
@@ -1903,6 +2070,43 @@ const MobilesPairing = ({navigation}: any) => {
     return () => clearInterval(interval);
   }, [isPairing]);
   useEffect(() => {
+    if (!isPairing) {
+      stopLanDiscovery();
+    }
+  }, [isPairing]);
+  useEffect(() => {
+    if (!isPairing) {
+      return;
+    }
+    const found = isTrio ? Boolean(peerIP && peerIP2) : Boolean(peerIP);
+    if (found) {
+      stopLanDiscovery();
+    }
+  }, [isPairing, isTrio, peerIP, peerIP2]);
+  useEffect(
+    () => () => {
+      stopLanDiscovery();
+      const live = setupCeremonyRef.current;
+      setupCeremonyRef.current = null;
+      if (live) {
+        releaseCeremonyToken(live.token).catch(() => {});
+      }
+    },
+    [],
+  );
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', state => {
+      if (state === 'background') {
+        stopLanDiscovery();
+        return;
+      }
+      if (state === 'active' && isPairing) {
+        startLanDiscovery().catch(err => dbg('lan discovery restart', err));
+      }
+    });
+    return () => sub.remove();
+  }, [isPairing]);
+  useEffect(() => {
     if (!peerIP) {
       connectionAnimation.value = withRepeat(
         withTiming(1, {
@@ -1926,6 +2130,7 @@ const MobilesPairing = ({navigation}: any) => {
     if (!guardOnlineAction('Wallet is offline — pairing needs the network')) {
       return;
     }
+    await startLanDiscovery();
     mpcAbortRef.current = false;
     setIsPairing(true);
     pairingDeadlineRef.current = Date.now() + timeout * 1000;
@@ -1950,7 +2155,8 @@ const MobilesPairing = ({navigation}: any) => {
     try {
       // Android: keep gomobile for LAN pairing only; load libbbmtmobile at wallet setup (mpcTssSetup).
       setStatus('Generating device keys...');
-      const jkp = await BBMTLibNativeModule.eciesKeypair();
+      // 3b-2b B21: token-gated via TssProvider (OS-visible prompt).
+      const jkp = await TssProvider.eciesKeypair();
       const kp = parseEciesKeypairJson(jkp);
       setKeypair(jkp);
       setStatus('Syncing local IP...');
@@ -2249,7 +2455,7 @@ const MobilesPairing = ({navigation}: any) => {
         setPeerParty2(null);
         setStatus('Pairing timed out. Please try again.');
         if (!mpcAbortRef.current && isFocusedRef.current) {
-          Alert.alert('Pairing Timeout', 'No peer device was detected.');
+          showAppNotice('Pairing Timeout', 'No peer device was detected.');
           navigation.dispatch(
             StackActions.replace('Devices Pairing', route.params),
           );
@@ -2262,7 +2468,7 @@ const MobilesPairing = ({navigation}: any) => {
       setPeerIP2(null);
       setLocalIP(null);
       if (!mpcAbortRef.current && isFocusedRef.current) {
-        Alert.alert('Error', error?.toString() || 'Unknown error occurred');
+        showAppNotice('Error', error?.toString() || 'Unknown error occurred');
       }
     } finally {
       setIsPairing(false);
@@ -2272,16 +2478,22 @@ const MobilesPairing = ({navigation}: any) => {
     peerURL: string,
     privateKey: string,
     checksum: string,
+    // 3b-2c B14: handshake ceremony token (REQUIRED — transport
+    // never mints; the poll loop reuses the phase token).
+    ceremonyToken: string,
+    ceremonySessionID: string,
     acceptPayload?: (data: string) => boolean,
     timeoutSec: number = timeout,
   ) {
     const until = Date.now() + timeoutSec * 1000;
     while (Date.now() < until) {
       try {
-        const rawFetched = await BBMTLibNativeModule.fetchData(
+        const rawFetched = await TssProvider.fetchData(
           peerURL,
           privateKey,
           checksum,
+          ceremonyToken,
+          ceremonySessionID,
         );
         if (rawFetched) {
           if (isNativeFetchErrorPayload(rawFetched)) {
@@ -2349,11 +2561,6 @@ const MobilesPairing = ({navigation}: any) => {
     const until = Date.now() + timeout * 1000;
     const discoveryTimeout = 3;
     let backOff = 1;
-    const pinnedIPs = getPinnedRemoteIPs();
-    dbg('ips', {
-      pinnedIPs,
-      ip,
-    });
     while (Date.now() < until) {
       try {
         const cached = appConfigRepository.get('peerFound');
@@ -2362,6 +2569,11 @@ const MobilesPairing = ({navigation}: any) => {
           return cached;
         }
         backOff *= 2;
+        const pinnedIPs = getPinnedRemoteIPs();
+        dbg('ips', {
+          pinnedIPs,
+          ip,
+        });
         const pinnedCandidatesCSV = pinnedIPs
           .filter(p => isSameSubnet(ip, p))
           .join(',');
@@ -2685,7 +2897,7 @@ const MobilesPairing = ({navigation}: any) => {
       marginTop: 16,
     },
     requirementsIconText: {
-      color: theme.colors.background,
+      color: theme.colors.white,
       fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.bold,
     },
@@ -2750,7 +2962,7 @@ const MobilesPairing = ({navigation}: any) => {
           : theme.colors.bitcoinOrange,
     },
     checkmark: {
-      color: theme.colors.background,
+      color: theme.colors.white,
       fontSize: theme.fontSizes?.sm || 12,
       fontFamily: theme.fontFamilies?.bold,
     },
@@ -3055,7 +3267,9 @@ const MobilesPairing = ({navigation}: any) => {
       justifyContent: 'center',
       position: 'relative',
       marginBottom: 8,
-      marginTop: 8,
+      // Tags are absolutely placed above each phone; this keeps them
+      // off the card's top edge.
+      marginTop: 28,
       paddingHorizontal: 8,
     },
     deviceWrapper: {
@@ -3124,7 +3338,7 @@ const MobilesPairing = ({navigation}: any) => {
     },
     deviceID: {
       position: 'absolute',
-      top: -20,
+      top: -26,
       fontSize: theme.fontSizes?.sm || 12,
       fontFamily: theme.fontFamilies?.bold,
       color:
@@ -3675,13 +3889,12 @@ const MobilesPairing = ({navigation}: any) => {
       alignItems: 'center',
     },
     horizontalProgressTrack: {
-      width: 200,
+      width: '100%',
       height: 6,
-      backgroundColor: theme.colors.cardBackground,
+      backgroundColor: theme.colors.border,
       borderRadius: 3,
       overflow: 'hidden',
       justifyContent: 'center',
-      alignItems: 'center',
     },
     horizontalProgressBar: {
       height: '100%',
@@ -4289,8 +4502,8 @@ const MobilesPairing = ({navigation}: any) => {
                     )}
                   </View>
                 </View>
-                {/* Security Code Matching Hint */}
-                {peerIP && (
+                {/* Security codes are compared while creating the wallet. */}
+                {peerIP && !isSendBitcoin && !isSignPSBT && (
                   <Text
                     style={styles.pairingHint}
                     numberOfLines={2}
@@ -4456,8 +4669,7 @@ const MobilesPairing = ({navigation}: any) => {
                           </View>
                         </AppPressable>
                         {/* Show Countdown Timer During Pairing */}
-                        {isPreparing && (
-                          <Modal
+                        <AppModal
                             transparent={true}
                             visible={isPreparing}
                             onRequestClose={
@@ -4468,14 +4680,14 @@ const MobilesPairing = ({navigation}: any) => {
                                 <MpcProgressModalHeader
                                   icon={require('../assets/prepare-icon.png')}
                                   title={prepareCopy.title}
-                                  subtitle={getMpcKeepAlivePrepareModalSubtitle(
-                                    keepAliveOs,
-                                    keepAliveHintOpts,
-                                  )}
+                                  subtitle={prepareCopy.subtitle}
                                 />
-                                <MpcKeepAliveHints />
                                 {/* Loading Indicator */}
-                                <View style={styles.progressContainer}>
+                                <View
+                                  style={[
+                                    styles.progressContainer,
+                                    {alignSelf: 'stretch', width: '100%'},
+                                  ]}>
                                   <View
                                     style={styles.horizontalProgressContainer}>
                                     <View
@@ -4504,10 +4716,10 @@ const MobilesPairing = ({navigation}: any) => {
                                     Time elapsed: {prepCounter} seconds
                                   </Text>
                                 </View>
+                                <MpcKeepAliveHints />
                               </View>
                             </GlassModalOverlay>
-                          </Modal>
-                        )}
+                          </AppModal>
                       </View>
                     )))}
                 {/* Device Ready Text and MPC Keygen Panel */}
@@ -4641,8 +4853,7 @@ const MobilesPairing = ({navigation}: any) => {
                         </View>
                         <Text style={styles.warningIcon}>⚠️</Text>
                       </AppPressable>
-                      {doingMPC && (
-                        <Modal
+                      <AppModal
                           transparent={true}
                           visible={doingMPC}
                           animationType="fade"
@@ -4671,8 +4882,7 @@ const MobilesPairing = ({navigation}: any) => {
                               />
                             </View>
                           </GlassModalOverlay>
-                        </Modal>
-                      )}
+                        </AppModal>
                       <AppPressable
                         style={
                           isKeygenReady
@@ -4906,10 +5116,9 @@ const MobilesPairing = ({navigation}: any) => {
           />
         ) : null}
       </KeyboardAvoidingView>
-      {doingMPC && (isSendBitcoin || isSignPSBT) && (
-        <Modal
+      <AppModal
           transparent={true}
-          visible={doingMPC}
+          visible={doingMPC && (isSendBitcoin || isSignPSBT)}
           animationType="fade"
           onRequestClose={() => {} /* non-dismissible: block Android back */}>
           <GlassModalOverlay style={styles.modalOverlay}>
@@ -4975,8 +5184,7 @@ const MobilesPairing = ({navigation}: any) => {
               )}
             </View>
           </GlassModalOverlay>
-        </Modal>
-      )}
+        </AppModal>
       {/* Backup Modal */}
       <BackupKeyshareModal
         visible={isBackupModalVisible}
@@ -4986,6 +5194,25 @@ const MobilesPairing = ({navigation}: any) => {
       <SignedTxBroadcastModal
         visible={!!signedTxRawHex}
         rawTxHex={signedTxRawHex ?? ''}
+        payment={
+          broadcastSuccessPayloadRef.current
+            ? {
+                toAddress: broadcastSuccessPayloadRef.current.toAddress,
+                amountSatoshi: String(
+                  broadcastSuccessPayloadRef.current.satoshiAmount,
+                ),
+                feeSatoshi: String(
+                  broadcastSuccessPayloadRef.current.satoshiFees,
+                ),
+                changeAddress:
+                  broadcastSuccessPayloadRef.current.outputs?.find(
+                    output =>
+                      output.scriptpubkey_address !==
+                      broadcastSuccessPayloadRef.current?.toAddress,
+                  )?.scriptpubkey_address ?? '',
+              }
+            : null
+        }
         onBroadcastSuccess={async (txId: string) => {
           const p = broadcastSuccessPayloadRef.current;
           broadcastSuccessPayloadRef.current = null;
@@ -5070,7 +5297,7 @@ const MobilesPairing = ({navigation}: any) => {
               if (p.originalNetwork && p.originalApiUrl) {
                 try {
                   await BBMTLibNativeModule.setBtcNetwork(p.originalNetwork);
-                  await BBMTLibNativeModule.setAPI(
+                  await ensureMempoolApiApplied(
                     p.originalNetwork,
                     p.originalApiUrl,
                   );

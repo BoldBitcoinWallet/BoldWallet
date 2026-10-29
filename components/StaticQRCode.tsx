@@ -5,7 +5,6 @@ import Clipboard from '@react-native-clipboard/clipboard';
 import Toast from 'react-native-toast-message';
 import AppPressable from './AppPressable';
 import {useTheme} from '../theme';
-import {createToastConfig} from '../utils/toastConfig';
 import {dbg} from '../utils';
 
 const DEFAULT_SIZE = 200;
@@ -76,37 +75,31 @@ const StaticQRCode: React.FC<StaticQRCodeProps> = ({
   ];
 
   return (
-    <>
-      <AppPressable
-        style={[styles.outer, style]}
-        onPress={copyDisabled ? undefined : handlePress}
-        disabled={copyDisabled}
-        android_ripple={copyDisabled ? undefined : {color: 'rgba(0,0,0,0.1)'}}>
-        <View style={qrContainerStyle}>
-          {value ? (
-            <QRCode
-              {...(getRef ? {getRef} : {})}
-              value={value}
-              size={size}
-              color="black"
-              backgroundColor="white"
-              logo={showLogo ? require('../assets/icon.png') : undefined}
-              logoSize={showLogo ? logoSize : undefined}
-              logoMargin={showLogo ? LOGO_MARGIN : undefined}
-              logoBorderRadius={showLogo ? LOGO_BORDER_RADIUS : undefined}
-              ecl={ecl}
-              onError={error => {
-                dbg('StaticQRCode: QR encode failed', error);
-              }}
-            />
-          ) : null}
-        </View>
-      </AppPressable>
-      {/* Local Toast instance renders above modal content */}
-      <View pointerEvents="box-none" style={styles.toastWrapper}>
-        <Toast config={createToastConfig(theme)} />
+    <AppPressable
+      style={[styles.outer, style]}
+      onPress={copyDisabled ? undefined : handlePress}
+      disabled={copyDisabled}
+      android_ripple={copyDisabled ? undefined : {color: 'rgba(0,0,0,0.1)'}}>
+      <View style={qrContainerStyle}>
+        {value ? (
+          <QRCode
+            {...(getRef ? {getRef} : {})}
+            value={value}
+            size={size}
+            color="black"
+            backgroundColor="white"
+            logo={showLogo ? require('../assets/icon.png') : undefined}
+            logoSize={showLogo ? logoSize : undefined}
+            logoMargin={showLogo ? LOGO_MARGIN : undefined}
+            logoBorderRadius={showLogo ? LOGO_BORDER_RADIUS : undefined}
+            ecl={ecl}
+            onError={(error: unknown) => {
+              dbg('StaticQRCode: QR encode failed', error);
+            }}
+          />
+        ) : null}
       </View>
-    </>
+    </AppPressable>
   );
 };
 
@@ -121,15 +114,6 @@ const styles = StyleSheet.create({
     shadowOffset: {width: 0, height: 1},
     shadowOpacity: 0.2,
     shadowRadius: 1.41,
-  },
-  toastWrapper: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    zIndex: 9999,
-    elevation: 9999,
   },
 });
 

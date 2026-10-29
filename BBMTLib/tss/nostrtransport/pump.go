@@ -29,6 +29,9 @@ type MessagePump struct {
 	seenWrapIDs   map[string]struct{}
 	seenWrapIDsMu sync.Mutex
 	onAbort       func(reason string)
+	// F39: post-DKG group-key hash collection. Invoked (sender
+	// hex, content) for phase "keygen-groupkey" rumors.
+	onGroupKey func(senderHex, gkHash string)
 }
 
 func NewMessagePump(cfg Config, client *Client) (result *MessagePump) {
@@ -59,10 +62,20 @@ func (p *MessagePump) SetOnAbort(fn func(reason string)) {
 	p.onAbort = fn
 }
 
+// SetOnGroupKey registers the F39 group-key collector. The
+// callback must be non-blocking (it fires on the pump loop).
+func (p *MessagePump) SetOnGroupKey(fn func(senderHex, gkHash string)) {
+	if p == nil {
+		return
+	}
+	p.onGroupKey = fn
+}
+
 // handleCoordinatorPhase returns true if the rumor is a session coordinator
-// phase (ready/complete/abort) and should not be passed to TSS. Abort invokes
-// onAbort so remaining parties fail fast instead of waiting out MaxTimeout.
-func (p *MessagePump) handleCoordinatorPhase(chunkMessage map[string]interface{}) bool {
+// phase (ready/complete/abort/keygen-groupkey) and should not be passed to
+// TSS. Abort invokes onAbort so remaining parties fail fast instead of
+// waiting out MaxTimeout. Group-key phases invoke onGroupKey (F39).
+func (p *MessagePump) handleCoordinatorPhase(chunkMessage map[string]interface{}, senderHex string) bool {
 	if p == nil || chunkMessage == nil {
 		return false
 	}
@@ -75,6 +88,12 @@ func (p *MessagePump) handleCoordinatorPhase(chunkMessage map[string]interface{}
 		reason, _ := chunkMessage["content"].(string)
 		if p.onAbort != nil {
 			p.onAbort(reason)
+		}
+	}
+	if strings.EqualFold(phase, "keygen-groupkey") {
+		content, _ := chunkMessage["content"].(string)
+		if p.onGroupKey != nil && content != "" {
+			p.onGroupKey(senderHex, content)
 		}
 	}
 	return true
@@ -256,7 +275,7 @@ func (p *MessagePump) runInternal(ctx context.Context, handler func([]byte) erro
 		}
 
 		// Check if this is a ready/complete/abort message (handled by SessionCoordinator, not TSS).
-		if p.handleCoordinatorPhase(chunkMessage) {
+		if p.handleCoordinatorPhase(chunkMessage, sealSenderNpub) {
 			return nil
 		}
 

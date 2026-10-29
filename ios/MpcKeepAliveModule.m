@@ -17,6 +17,9 @@ RCT_EXTERN_METHOD(stop:(NSDictionary *)options
 RCT_EXTERN_METHOD(warnBackgrounded:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+RCT_EXTERN_METHOD(sweepExpiredNotices:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(isIgnoringBatteryOptimizations:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 

@@ -5,6 +5,22 @@ import {isPsbtBytes, readPsbtBase64FromFile} from './psbtIdentity';
 
 export type IncomingFileKind = 'psbt' | 'keyshare' | 'unknown';
 
+/** Shared files enter via SEND/VIEW from any app. Keyshares are ~2 KiB and
+ * PSBTs stay well under 1 MiB; anything larger is rejected before its bytes
+ * are read into JS memory (large-file OOM guard, F37). */
+export const MAX_SHARED_FILE_BYTES = 1024 * 1024;
+
+export class IncomingFileTooLargeError extends Error {
+  readonly byteSize: number;
+  constructor(byteSize: number) {
+    super(
+      `Shared file is too large (${byteSize} bytes; limit ${MAX_SHARED_FILE_BYTES}).`,
+    );
+    this.name = 'IncomingFileTooLargeError';
+    this.byteSize = byteSize;
+  }
+}
+
 export function inferFileKindFromUri(uri: string): IncomingFileKind | null {
   const lower = uri.toLowerCase();
   if (lower.includes('.psbt')) {
@@ -62,14 +78,30 @@ export function looksLikeNonWalletBytes(bytes: Buffer): boolean {
   return false;
 }
 
-async function readFilePeekBase64(uri: string): Promise<Buffer> {
+/** Copy a shared URI into the app sandbox, enforcing MAX_SHARED_FILE_BYTES
+ * on the copied file (F37). Returns the local path. */
+async function copySharedFileWithCap(
+  uri: string,
+  localName: string,
+): Promise<string> {
   const normalizedUri =
     uri.startsWith('file://') || uri.startsWith('content://')
       ? uri
       : `file://${uri}`;
-  const localFilePath = `${RNFS.DocumentDirectoryPath}/tempIncomingPeek.bin`;
+  const localFilePath = `${RNFS.DocumentDirectoryPath}/${localName}`;
   await safeUnlink(localFilePath);
   await RNFS.copyFile(normalizedUri, localFilePath);
+  const stat = await RNFS.stat(localFilePath);
+  const size = Number(stat.size);
+  if (Number.isFinite(size) && size > MAX_SHARED_FILE_BYTES) {
+    await safeUnlink(localFilePath);
+    throw new IncomingFileTooLargeError(size);
+  }
+  return localFilePath;
+}
+
+async function readFilePeekBase64(uri: string): Promise<Buffer> {
+  const localFilePath = await copySharedFileWithCap(uri, 'tempIncomingPeek.bin');
   const content = await RNFS.readFile(localFilePath, 'base64');
   await safeUnlink(localFilePath);
   return Buffer.from(content, 'base64');
@@ -84,8 +116,12 @@ export async function classifyIncomingFile(uri: string): Promise<IncomingFileKin
     if (looksLikeNonWalletBytes(bytes)) {
       return 'unknown';
     }
-  } catch {
-    // fall through to URI hint
+  } catch (e) {
+    // Oversized shared files are a typed reject (F37) — never silently
+    // reclassified by extension. All other read errors keep the URI hint.
+    if (e instanceof IncomingFileTooLargeError) {
+      throw e;
+    }
   }
   const hinted = inferFileKindFromUri(uri);
   if (hinted) {
@@ -97,13 +133,7 @@ export async function classifyIncomingFile(uri: string): Promise<IncomingFileKin
 }
 
 export async function readPsbtBase64FromSharedUri(uri: string): Promise<string> {
-  const normalizedUri =
-    uri.startsWith('file://') || uri.startsWith('content://')
-      ? uri
-      : `file://${uri}`;
-  const localFilePath = `${RNFS.DocumentDirectoryPath}/tempPsbtImport.psbt`;
-  await safeUnlink(localFilePath);
-  await RNFS.copyFile(normalizedUri, localFilePath);
+  const localFilePath = await copySharedFileWithCap(uri, 'tempPsbtImport.psbt');
   const readFile = (path: string, encoding: 'base64' | 'utf8') =>
     RNFS.readFile(path, encoding);
   const filePath = localFilePath.replace('file://', '');

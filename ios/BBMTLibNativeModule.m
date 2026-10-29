@@ -11,19 +11,21 @@
 // SHA256 Method
 RCT_EXTERN_METHOD(sha256:(NSString *)message resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
+// F32 (Option A): trio ECDH exchange for LAN keygen.
+RCT_EXTERN_METHOD(trioECDHPhase1:(NSString *)server session:(NSString *)session selfParty:(NSString *)selfParty parties:(NSString *)parties resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(trioECDHConfirm:(NSString *)handle session:(NSString *)session resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(trioECDHAbort:(NSString *)handle resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
 RCT_EXTERN_METHOD(secureRandom:(int)length resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // ECIES Key Pair Generation
-RCT_EXTERN_METHOD(eciesKeypair:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(eciesKeypair:(NSString *)ceremonyToken resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
-// AES Encryption
-RCT_EXTERN_METHOD(aesEncrypt:(NSString *)data key:(NSString *)key resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+// 3a-2: aesEncrypt / aesDecrypt / aesEncryptStoredKeyshare / backupDecrypt
+// externs removed with their dead implementations — no JS-callable oracle remains.
 
-// AES Decryption
-RCT_EXTERN_METHOD(aesDecrypt:(NSString *)data key:(NSString *)key resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
-
-// AES encrypt keyshare loaded from RNES-compatible secure storage (no plaintext through JS)
-RCT_EXTERN_METHOD(aesEncryptStoredKeyshare:(NSString *)key resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+// F1: versioned backup export (Argon2id + AES-GCM in Go) and import (v2 + legacy envelope)
+RCT_EXTERN_METHOD(backupEncryptStoredKeyshare:(NSString *)password ceremonyToken:(NSString *)ceremonyToken resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // Pre-Params Method
 RCT_EXTERN_METHOD(preparams:(NSString *)outFile timeout:(NSString *)timeout resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
@@ -44,6 +46,7 @@ RCT_EXTERN_METHOD(mpcTssSetup:(NSString *)server
                   encKey:(NSString *)encKey
                   decKey:(NSString *)decKey
                   chaincode:(NSString *)chaincode
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -87,6 +90,8 @@ RCT_EXTERN_METHOD(stopRelay:(NSString *)tag
 RCT_EXTERN_METHOD(fetchData:(NSString *)url
                   decKey:(NSString *)decKey
                   payload:(NSString *)payload
+                  ceremonyToken:(NSString *)ceremonyToken
+                  ceremonySessionID:(NSString *)ceremonySessionID
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -96,6 +101,8 @@ RCT_EXTERN_METHOD(publishData:(NSString *)port
                   encKey:(NSString *)encKey
                   raw:(NSString *)raw
                   mode:(NSString *)mode
+                  ceremonyToken:(NSString *)ceremonyToken
+                  ceremonySessionID:(NSString *)ceremonySessionID
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -143,11 +150,15 @@ RCT_EXTERN_METHOD(setFeePolicy:(NSString *)policy
 // Call setAPI
 RCT_EXTERN_METHOD(setAPI:(NSString *)network
                   baseAPI:(NSString *)baseAPI
+                  ceremonyToken:(NSString *)ceremonyToken
+                  ceremonySessionID:(NSString *)ceremonySessionID
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Call setFeeAPIs
 RCT_EXTERN_METHOD(setFeeAPIs:(NSString *)urls
+                  ceremonyToken:(NSString *)ceremonyToken
+                  ceremonySessionID:(NSString *)ceremonySessionID
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -199,11 +210,12 @@ RCT_EXTERN_METHOD(mpcSendBTCWithUTXOs:(NSString *)server
                   feeSatoshi:(NSString *)feeSatoshi
                   utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
                   changeAddress:(NSString *)changeAddress
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Nostr Keypair Generation
-RCT_EXTERN_METHOD(nostrKeypair:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(nostrKeypair:(NSString *)ceremonyToken resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
 
 // Hex to Npub Conversion
 RCT_EXTERN_METHOD(hexToNpub:(NSString *)hexKey resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
@@ -216,20 +228,11 @@ RCT_EXTERN_METHOD(nostrMpcTssSetup:(NSString *)relaysCSV
                   sessionKey:(NSString *)sessionKey
                   chaincode:(NSString *)chaincode
                   ppmFile:(NSString *)ppmFile
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-// Nostr Join Keysign
-RCT_EXTERN_METHOD(nostrJoinKeysign:(NSString *)relaysCSV
-                  partyNsec:(NSString *)partyNsec
-                  partiesNpubsCSV:(NSString *)partiesNpubsCSV
-                  sessionID:(NSString *)sessionID
-                  sessionKey:(NSString *)sessionKey
-                  keyshareJSON:(NSString *)keyshareJSON
-                  derivationPath:(NSString *)derivationPath
-                  message:(NSString *)message
-                  resolver:(RCTPromiseResolveBlock)resolve
-                  rejecter:(RCTPromiseRejectBlock)reject)
+// F18 (3b-3): nostrJoinKeysign export REMOVED (dead from JS).
 
 // Nostr MPC Send BTC (UTXO multi-path only); nsec read from stored keyshare in native
 RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
@@ -241,6 +244,7 @@ RCT_EXTERN_METHOD(nostrMpcSendBTC:(NSString *)relaysCSV
                   estimatedFee:(NSString *)estimatedFee
                   utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
                   changeAddress:(NSString *)changeAddress
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -253,6 +257,7 @@ RCT_EXTERN_METHOD(mpcSignPSBT:(NSString *)server
                   encKey:(NSString *)encKey
                   decKey:(NSString *)decKey
                   psbtBase64:(NSString *)psbtBase64
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -261,6 +266,7 @@ RCT_EXTERN_METHOD(nostrMpcSignPSBT:(NSString *)relaysCSV
                   partiesNpubsCSV:(NSString *)partiesNpubsCSV
                   npubsSorted:(NSString *)npubsSorted
                   psbtBase64:(NSString *)psbtBase64
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -275,6 +281,7 @@ RCT_EXTERN_METHOD(dklsMpcTssSetup:(NSString *)server
                   encKey:(NSString *)encKey
                   decKey:(NSString *)decKey
                   chaincode:(NSString *)chaincode
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -284,14 +291,17 @@ RCT_EXTERN_METHOD(dklsNostrMpcTssSetup:(NSString *)relaysCSV
                   sessionID:(NSString *)sessionID
                   sessionKey:(NSString *)sessionKey
                   chaincode:(NSString *)chaincode
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(dklsCancelMpcSession:(NSString *)sessionID
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
-RCT_EXTERN_METHOD(dklsCancelNostrMpc:(RCTPromiseResolveBlock)resolve
+RCT_EXTERN_METHOD(dklsCancelNostrMpc:(NSString *)ceremonyToken
+                  resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 RCT_EXTERN_METHOD(dklsMpcSignPSBT:(NSString *)server
@@ -302,6 +312,7 @@ RCT_EXTERN_METHOD(dklsMpcSignPSBT:(NSString *)server
                   encKey:(NSString *)encKey
                   decKey:(NSString *)decKey
                   psbtBase64:(NSString *)psbtBase64
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -318,6 +329,7 @@ RCT_EXTERN_METHOD(dklsMpcSendBTCWithUTXOs:(NSString *)server
                   satoshiFees:(NSString *)satoshiFees
                   utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
                   changeAddress:(NSString *)changeAddress
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -330,6 +342,7 @@ RCT_EXTERN_METHOD(dklsNostrMpcSendBTC:(NSString *)relaysCSV
                   satoshiFees:(NSString *)satoshiFees
                   utxosWithPathsJSON:(NSString *)utxosWithPathsJSON
                   changeAddress:(NSString *)changeAddress
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -337,6 +350,7 @@ RCT_EXTERN_METHOD(dklsNostrMpcSignPSBT:(NSString *)relaysCSV
                   partiesNpubsCSV:(NSString *)partiesNpubsCSV
                   npubsSorted:(NSString *)npubsSorted
                   psbtBase64:(NSString *)psbtBase64
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
@@ -361,11 +375,13 @@ RCT_EXTERN_METHOD(computeTxId:(NSString *)rawTxHex
 
 // Cancel server-based MPC session (sessionID prefix)
 RCT_EXTERN_METHOD(cancelMpcSession:(NSString *)sessionID
+                  ceremonyToken:(NSString *)ceremonyToken
                   resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Cancel active Nostr MPC operation (best-effort)
-RCT_EXTERN_METHOD(cancelNostrMpc:(RCTPromiseResolveBlock)resolve
+RCT_EXTERN_METHOD(cancelNostrMpc:(NSString *)ceremonyToken
+                  resolver:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
 // Minimal keyshare fields for Nostr UI/session prep (full blob never sent to JS)
@@ -376,8 +392,44 @@ RCT_EXTERN_METHOD(getKeyshareNostrPrepJSON:(RCTPromiseResolveBlock)resolve
 RCT_EXTERN_METHOD(hasKeyshareInSecureStorage:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
 
+// F36 device-integrity signals (always resolves a JSON string, fail-open)
+RCT_EXTERN_METHOD(getDeviceIntegritySignals:(RCTPromiseResolveBlock)resolve
+                  rejecter:(RCTPromiseRejectBlock)reject)
+
 // Device entropy source metadata (informational, not gating)
 RCT_EXTERN_METHOD(getDeviceEntropyMetadata:(RCTPromiseResolveBlock)resolve
                   rejecter:(RCTPromiseRejectBlock)reject)
+
+// F15b-1 staged import/persist/read/destroy/migration (Wave 3a)
+RCT_EXTERN_METHOD(importBackupToStagedHandle:(NSString *)blob password:(NSString *)password ceremonyToken:(NSString *)ceremonyToken ceremonySessionID:(NSString *)ceremonySessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(persistStoredKeyshare:(NSString *)handle nsec:(NSString *)nsec npub:(NSString *)npub ceremonyToken:(NSString *)ceremonyToken ceremonySessionID:(NSString *)ceremonySessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(getKeyshareMetadataJSON:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(getKeyshareStructureRedacted:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(destroyKeyshareHandles:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(ensureKeyshareEnveloped:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(repairGg18KeyshareBigInts:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
+// 3b-1 ceremony tokens: per-ceremony mint ONLY (hardcoded class +
+// prompt copy each). No generic mint exists by design.
+RCT_EXTERN_METHOD(requestSignCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(requestSignTransportCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+// F20: silent digest-bound PSBT sign mint. Export confirm is separate.
+RCT_EXTERN_METHOD(requestPsbtSignCeremonyToken:(NSString *)sessionID psbtBase64:(NSString *)psbtBase64 resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(confirmPsbtExport:(NSString *)psbtBase64 resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+// F20-1b: silent payment-bound send mint. Broadcast confirm is separate.
+RCT_EXTERN_METHOD(requestSendSignCeremonyToken:(NSString *)sessionID toAddress:(NSString *)toAddress amountSatoshi:(NSString *)amountSatoshi feeSatoshi:(NSString *)feeSatoshi changeAddress:(NSString *)changeAddress resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+
+RCT_EXTERN_METHOD(confirmSpendBroadcast:(NSString *)toAddress amountSatoshi:(NSString *)amountSatoshi feeSatoshi:(NSString *)feeSatoshi changeAddress:(NSString *)changeAddress resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(requestKeygenCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(requestWalletSetupCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(rebindCeremonySession:(NSString *)token sessionID:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(requestExportCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(requestImportCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(requestConfigCeremonyToken:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(completeCeremonyToken:(NSString *)token resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+RCT_EXTERN_METHOD(releaseCeremonyToken:(NSString *)token resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+#if DEBUG
+RCT_EXTERN_METHOD(requestCeremonyTokenTest:(NSString *)op sessionID:(NSString *)sessionID resolver:(RCTPromiseResolveBlock)resolve rejecter:(RCTPromiseRejectBlock)reject)
+#endif
 
 @end

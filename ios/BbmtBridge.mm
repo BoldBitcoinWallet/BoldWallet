@@ -11,7 +11,10 @@ static void (*pBbmtFree)(char *);
 static BOOL resolveFree(void);
 
 static char *dupC(NSString *s) {
-  if (!s) return strdup("");
+  // F11: propagate nil so Go's mustGoStr rejects it with a typed
+  // error instead of silently converting to "". free(NULL) is safe
+  // at all call sites.
+  if (!s) return NULL;
   const char *u = s.UTF8String;
   return u ? strdup(u) : strdup("");
 }
@@ -149,9 +152,59 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   NSString *out = wrap(BbmtAesDecrypt(k0, k1));
   free(k0); free(k1); return out;
 }
++ (NSString *)backupEncrypt:(NSString *)plaintext password:(NSString *)password {
+  char *k0=dupC(plaintext); char *k1=dupC(password);
+  NSString *out = wrap(BbmtBackupEncrypt(k0, k1));
+  free(k0); free(k1); return out;
+}
++ (NSString *)importBackupStaged:(NSString *)blob password:(NSString *)password {
+  char *k0=dupC(blob); char *k1=dupC(password);
+  NSString *out = wrap(BbmtImportBackupStaged(k0, k1));
+  free(k0); free(k1); return out;
+}
++ (NSString *)finalizeStagedForPersist:(NSString *)handle nsec:(NSString *)nsec npub:(NSString *)npub {
+  char *k0=dupC(handle); char *k1=dupC(nsec); char *k2=dupC(npub);
+  NSString *out = wrap(BbmtFinalizeStagedForPersist(k0, k1, k2));
+  free(k0); free(k1); free(k2); return out;
+}
++ (NSString *)destroyStaged:(NSString *)handle {
+  char *k0=dupC(handle);
+  NSString *out = wrap(BbmtDestroyStaged(k0));
+  free(k0); return out;
+}
++ (NSString *)destroyAllStaged {
+  NSString *out = wrap(BbmtDestroyAllStaged());
+  return out;
+}
++ (NSString *)projectMetadata:(NSString *)fullJson {
+  char *k0=dupC(fullJson);
+  NSString *out = wrap(BbmtProjectMetadata(k0));
+  free(k0); return out;
+}
++ (NSString *)redactedStructure:(NSString *)fullJson {
+  char *k0=dupC(fullJson);
+  NSString *out = wrap(BbmtRedactedStructure(k0));
+  free(k0); return out;
+}
 + (NSString *)sha256:(NSString *)message {
   char *k0=dupC(message);
   NSString *out = wrap(BbmtSha256(k0));
+  free(k0); return out;
+}
+// F32 (Option A): trio ECDH exchange for LAN keygen.
++ (NSString *)trioECDHPhase1:(NSString *)server session:(NSString *)session selfParty:(NSString *)selfParty parties:(NSString *)parties {
+  char *k0=dupC(server); char *k1=dupC(session); char *k2=dupC(selfParty); char *k3=dupC(parties);
+  NSString *out = wrap(BbmtTrioECDHPhase1(k0, k1, k2, k3));
+  free(k0); free(k1); free(k2); free(k3); return out;
+}
++ (NSString *)trioECDHConfirm:(NSString *)handle session:(NSString *)session {
+  char *k0=dupC(handle); char *k1=dupC(session);
+  NSString *out = wrap(BbmtTrioECDHConfirm(k0, k1));
+  free(k0); free(k1); return out;
+}
++ (NSString *)trioECDHAbort:(NSString *)handle {
+  char *k0=dupC(handle);
+  NSString *out = wrap(BbmtTrioECDHAbort(k0));
   free(k0); return out;
 }
 + (NSString *)secureRandom:(int)length {
@@ -242,6 +295,11 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   NSString *out = wrap(BbmtPsbtIdentityHash(k0));
   free(k0); return out;
 }
++ (NSString *)psbtConfirmation:(NSString *)psbt {
+  char *k0=dupC(psbt);
+  NSString *out = wrap(BbmtPsbtConfirmation(k0));
+  free(k0); return out;
+}
 
 + (NSString *)listenForPeers:(NSString *)partyId pubkey:(NSString *)pubkey port:(NSString *)port timeout:(NSString *)timeout mode:(NSString *)mode {
   char *a=dupC(partyId),*b=dupC(pubkey),*c=dupC(port),*d=dupC(timeout),*e=dupC(mode);
@@ -261,11 +319,7 @@ BBMT_DKLS_8(lanJoinKeygenWithKey, DklsLanJoinKeygen, key, parties, session, serv
   NSString *out = wrap(BbmtNostrJoinKeygen(r,n,p,s,sk,c,pp));
   free(r);free(n);free(p);free(s);free(sk);free(c);free(pp); return out;
 }
-+ (NSString *)nostrJoinKeysign:(NSString *)relays nsec:(NSString *)nsec peers:(NSString *)peers session:(NSString *)session sessionKey:(NSString *)sessionKey keyshare:(NSString *)keyshare derivePath:(NSString *)derivePath message:(NSString *)message {
-  char *r=dupC(relays),*n=dupC(nsec),*p=dupC(peers),*s=dupC(session),*sk=dupC(sessionKey),*ks=dupC(keyshare),*dp=dupC(derivePath),*m=dupC(message);
-  NSString *out = wrap(BbmtNostrJoinKeysign(r,n,p,s,sk,ks,dp,m));
-  free(r);free(n);free(p);free(s);free(sk);free(ks);free(dp);free(m); return out;
-}
+// F18 (3b-3): nostrJoinKeysign REMOVED with its sole caller.
 + (NSString *)mpcSignPSBT:(NSString *)server key:(NSString *)key parties:(NSString *)parties session:(NSString *)session sessionKey:(NSString *)sessionKey encKey:(NSString *)encKey decKey:(NSString *)decKey keyshare:(NSString *)keyshare psbt:(NSString *)psbt {
   char *sv=dupC(server),*k=dupC(key),*p=dupC(parties),*s=dupC(session),*sk=dupC(sessionKey),*ek=dupC(encKey),*dk=dupC(decKey),*ks=dupC(keyshare),*pb=dupC(psbt);
   NSString *out = wrap(BbmtMpcSignPSBT(sv,k,p,s,sk,ek,dk,ks,pb));

@@ -1,5 +1,6 @@
 import React from 'react';
-import {Modal, View, Text, StyleSheet, Image} from 'react-native';
+import {View, Text, StyleSheet, Image} from 'react-native';
+import AppModal from './AppModal';
 import AppPressable from './AppPressable';
 import GlassModalOverlay from './GlassModalOverlay';
 import {useTheme} from '../theme';
@@ -9,16 +10,22 @@ type Props = {
   onClose: () => void;
   onKeepOffline: () => void;
   onGoOnline: () => void;
+  /** Optional body copy; default explains the offline sandbox. */
+  message?: string;
 };
 
+const DEFAULT_BODY =
+  'Your wallet is set to the offline sandbox. This action needs the Internet. Cached balances and history stay available while offline.';
+
 /**
- * Shown when the user taps refresh while the in-app offline sandbox is on.
+ * Shown when an online-only action is attempted while the offline sandbox is on.
  */
 export default function WalletOfflineSandboxModal({
   visible,
   onClose,
   onKeepOffline,
   onGoOnline,
+  message,
 }: Props) {
   const {theme} = useTheme();
   const isDark = theme.colors.background !== '#ffffff';
@@ -28,7 +35,7 @@ export default function WalletOfflineSandboxModal({
   const primaryBtnText = isDark ? theme.colors.text : theme.colors.white;
 
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent
       animationType="fade"
@@ -83,9 +90,7 @@ export default function WalletOfflineSandboxModal({
                 fontFamily: theme.fontFamilies?.regular,
               },
             ]}>
-            Your wallet is set to the offline sandbox network. Refresh needs
-            the Internet. Cached balances and history stay available while
-            offline.
+            {message?.trim() ? message.trim() : DEFAULT_BODY}
           </Text>
 
           <View style={styles.actions}>
@@ -129,7 +134,7 @@ export default function WalletOfflineSandboxModal({
           </View>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 }
 

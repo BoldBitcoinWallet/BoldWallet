@@ -17,14 +17,22 @@ import appConfigRepository, {CONFIG_KEYS} from './repositories/AppConfigReposito
 import walletRepository from './repositories/WalletRepository';
 import balanceRepository from './repositories/BalanceRepository';
 import transactionRepository, {type PendingTxData} from './repositories/TransactionRepository';
+import {normalizeNetworkKey} from './mempoolApiBase';
 import priceRepository from './repositories/PriceRepository';
 import database from './Database';
 import {dbg} from '../utils';
 
-const MIGRATION_VERSION = 'v1';
+const MIGRATION_VERSION = 'v2';
 
-// All network+addressType combinations to scan for HD index keys
+// Pre-migration key namespaces to scan (read-only legacy: old installs
+// stored keys under 'testnet3'). Rows are written under the canonical
+// key via rowNetwork() below; testnet3 data is preserved, not dropped.
 const NETWORKS = ['mainnet', 'testnet3'];
+
+/** Canonical row-network for migrated data (legacy testnet3 → testnet4). */
+function rowNetwork(net: string): string {
+  return net === 'testnet3' ? 'testnet4' : net;
+}
 const ADDRESS_TYPES = ['legacy', 'segwit-native', 'segwit-compatible'];
 
 // Mapping from old LocalCache key → new app_config key
@@ -46,21 +54,39 @@ const SIMPLE_KEY_MAP: Record<string, string> = {
 
 export async function runMigrationIfNeeded(): Promise<void> {
   try {
-    // Already migrated?
     const done = appConfigRepository.get(CONFIG_KEYS.SQLITE_MIGRATION_DONE);
     if (done === MIGRATION_VERSION) {
       dbg('LocalCacheMigration: already done, skipping');
       return;
     }
+    // v1 (LocalCache → SQLite) runs only for installs that never migrated.
+    if (done !== 'v1') {
+      await runV1LocalCacheMigration();
+    }
+    // v2 (testnet4): purge retired testnet3 rows; sync repopulates testnet4.
+    purgeRetiredTestnet3Rows();
+    appConfigRepository.set(CONFIG_KEYS.SQLITE_MIGRATION_DONE, MIGRATION_VERSION);
+    dbg('LocalCacheMigration: at migration version', MIGRATION_VERSION);
+  } catch (err) {
+    // Migration failure is non-fatal — app continues with empty SQLite tables
+    // and the sync layer will re-populate from the network.
+    dbg('LocalCacheMigration: unexpected error (non-fatal)', err);
+  }
+}
 
+async function runV1LocalCacheMigration(): Promise<void> {
+  try {
     dbg('LocalCacheMigration: starting v1 migration from LocalCache → SQLite');
     const start = Date.now();
 
     // ── 1. Simple preference keys → app_config ───────────────────────────
     for (const [oldKey, newKey] of Object.entries(SIMPLE_KEY_MAP)) {
       try {
-        const value = await LocalCache.getItem(oldKey);
-        if (value != null) {
+        const stored = await LocalCache.getItem(oldKey);
+        if (stored != null) {
+          // Normalize persisted network prefs (testnet/testnet3 → testnet4).
+          const value =
+            oldKey === 'network' ? normalizeNetworkKey(stored) : stored;
           appConfigRepository.set(newKey, value);
           dbg('LocalCacheMigration: migrated', oldKey, '→', newKey, '=', value);
         }
@@ -74,11 +100,15 @@ export async function runMigrationIfNeeded(): Promise<void> {
       try {
         const api = await LocalCache.getItem(`api_${net}`);
         if (api) {
-          const isActive = (appConfigRepository.get(CONFIG_KEYS.NETWORK) ?? 'mainnet') === net ? 1 : 0;
+          const rowNet = rowNetwork(net);
+          const activeNet = normalizeNetworkKey(
+            appConfigRepository.get(CONFIG_KEYS.NETWORK) ?? 'mainnet',
+          );
+          const isActive = activeNet === rowNet ? 1 : 0;
           database.execute(
             `INSERT OR IGNORE INTO network_providers (network, api_url, is_active, updated_at)
              VALUES (?, ?, ?, ?)`,
-            [net, api, isActive, Date.now()],
+            [rowNet, api, isActive, Date.now()],
           );
           dbg('LocalCacheMigration: migrated api_' + net, '=', api);
         }
@@ -128,7 +158,7 @@ export async function runMigrationIfNeeded(): Promise<void> {
             const discoveryLastAt = lastAtRaw != null ? parseInt(lastAtRaw, 10) || null : null;
 
             walletRepository.setHdState({
-              network: net,
+              network: rowNetwork(net),
               addressType: addrType,
               externalIndex,
               changeIndex,
@@ -154,7 +184,9 @@ export async function runMigrationIfNeeded(): Promise<void> {
     // The sync layer will re-fetch and populate the rest on first launch.
     try {
       const currentAddr = appConfigRepository.get(CONFIG_KEYS.CURRENT_ADDRESS);
-      const net = appConfigRepository.get(CONFIG_KEYS.NETWORK) ?? 'mainnet';
+      const net = normalizeNetworkKey(
+        appConfigRepository.get(CONFIG_KEYS.NETWORK) ?? 'mainnet',
+      );
 
       if (currentAddr) {
         // Balance
@@ -252,13 +284,37 @@ export async function runMigrationIfNeeded(): Promise<void> {
     } catch {
       // non-fatal
     }
-
-    // ── Mark migration complete ───────────────────────────────────────────
-    appConfigRepository.set(CONFIG_KEYS.SQLITE_MIGRATION_DONE, MIGRATION_VERSION);
-    dbg('LocalCacheMigration: completed in', Date.now() - start, 'ms');
+    dbg('LocalCacheMigration: v1 section complete in', Date.now() - start, 'ms');
   } catch (err) {
-    // Migration failure is non-fatal — app continues with empty SQLite tables
-    // and the sync layer will re-populate from the network.
-    dbg('LocalCacheMigration: unexpected error (non-fatal)', err);
+    dbg('LocalCacheMigration: v1 error (non-fatal)', err);
   }
+}
+
+/**
+ * v2: delete testnet3-namespaced rows left by pre-migration installs.
+ * Testnet chain data is disposable — fresh sync repopulates under
+ * 'testnet4'. Mainnet rows are never touched.
+ */
+function purgeRetiredTestnet3Rows(): void {
+  const tables = [
+    'network_providers',
+    'hd_state',
+    'wallet_addresses',
+    'address_balances',
+    'utxos',
+    'transactions',
+    'transaction_addresses',
+    'pending_transactions',
+    'branta_verified_txs',
+  ];
+  for (const table of tables) {
+    try {
+      database.execute(
+        `DELETE FROM ${table} WHERE network IN ('testnet3', 'testnet')`,
+      );
+    } catch {
+      // non-fatal (table may predate the network column)
+    }
+  }
+  dbg('LocalCacheMigration: purged retired testnet3 rows');
 }

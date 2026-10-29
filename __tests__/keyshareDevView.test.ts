@@ -1,4 +1,5 @@
 import {
+  emitBareOversizedJsonIntegers,
   parseKeyshareJsonForDevView,
   prettyPrintKeyshareJson,
   quoteOversizedJsonIntegers,
@@ -52,6 +53,21 @@ describe('keyshareDevView', () => {
     };
     expect(parsed.ecdsa_local_data.Alpha).toBe(huge);
     expect(parsed.created_at).toBe(1779458846762);
+  });
+
+  it('emitBareOversizedJsonIntegers restores Go-compatible bare numbers', () => {
+    const huge = '9'.repeat(400);
+    const quoted = `{"ecdsa_local_data":{"Alpha":"${huge}"},"created_at":1779458846762}`;
+    const bare = emitBareOversizedJsonIntegers(quoted);
+    expect(bare).toContain(`"Alpha":${huge}`);
+    expect(bare).not.toContain(`"Alpha":"${huge}"`);
+    // Round-trip through quote → stringify → emit matches Go shape.
+    const roundTrip = emitBareOversizedJsonIntegers(
+      JSON.stringify(JSON.parse(quoteOversizedJsonIntegers(
+        `{"Alpha":${huge}}`,
+      ))),
+    );
+    expect(roundTrip).toBe(`{"Alpha":${huge}}`);
   });
 
   it('parseKeyshareJsonForDevView keeps ecdsa_local_data.Alpha as string', () => {

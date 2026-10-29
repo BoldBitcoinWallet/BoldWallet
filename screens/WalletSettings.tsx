@@ -1,44 +1,53 @@
 import React, {useCallback, useEffect, useState, useRef, useMemo} from 'react';
+import {confirmAppPrompt, showAppNotice} from '../services/appPrompt';
 import {
   View,
   Text,
   StyleSheet,
   TextInput,
-  Alert,
-  Modal,
-  NativeModules,
   ScrollView,
   Image,
   Platform,
   DeviceEventEmitter,
   ActivityIndicator,
+  type LayoutChangeEvent,
+  type StyleProp,
+  type TextStyle,
 } from 'react-native';
+import AppModal from '../components/AppModal';
 import AppPressable from '../components/AppPressable';
+import AppText from '../components/AppText';
 import AppSwitch from '../components/AppSwitch';
 import Animated, {
+  Easing,
+  interpolate,
+  interpolateColor,
+  useAnimatedStyle,
+  useDerivedValue,
   useSharedValue,
   withTiming,
-  useAnimatedStyle,
-  interpolate,
+  type SharedValue,
 } from 'react-native-reanimated';
+import {DISSOLVE_FADE, DissolveFade} from '../components/DissolveFade';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import EncryptedStorage from 'react-native-encrypted-storage';
-const {BBMTLibNativeModule} = NativeModules;
 import DeviceInfo from 'react-native-device-info';
 import {useUser} from '../context/UserContext';
-import {CANONICAL_TESTNET_MEMPOOL_API_BASE} from '../services/mempoolApiBase';
-import {
-  getMempoolHealth,
-  providerHealthDotStyle,
-  subscribeMempoolHealth,
-  type MempoolHealthQuality,
-} from '../services/mempoolHealth';
+import {ensureFeeApisApplied, ensureMempoolApiApplied} from '../services/apiConfigApply';
 import {
   notifyWalletOnlineToggle,
   setWalletOnline,
   useWalletOnline,
 } from '../services/walletOnlineStore';
 import {setNavMenuStyle, useNavMenuStyle} from '../services/navMenuStore';
+import {
+  setWalletAutoLock,
+  useWalletAutoLock,
+  WALLET_AUTO_LOCK_OPTIONS,
+  type WalletAutoLockPolicy,
+} from '../services/walletAutoLock';
+import {useFloatingScrollPadding} from '../components/FloatingTabBar';
+import {discardPendingKeyshares} from '../services/keyshareHandles';
 import {
   dbg,
   setHapticsEnabled,
@@ -55,6 +64,7 @@ import {
   WALLET_SENSITIVE_ACTION_AUTH,
   type WalletBiometricPromptOptions,
 } from '../services/walletBiometricAuth';
+import {confirmDeviceIntegrityForSensitiveAction} from '../services/deviceIntegrity';
 import {useTheme} from '../theme';
 import {waitMS, WalletService} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
@@ -63,7 +73,6 @@ import appConfigRepository, {
 } from '../services/repositories/AppConfigRepository';
 import {
   getGapLimit,
-  getMinScanIndex,
   getApiTimeoutMs,
   getUtxoEmptyCacheTtlMs,
   getFetchTimeoutMs,
@@ -92,6 +101,7 @@ import {
 } from '../services/nostrRelaysStore';
 import {
   activeProviderUrls,
+  loadDefaultMempoolProviderEntries,
   loadMempoolProviderEntries,
   primaryProviderUrl,
   saveMempoolProviderEntries,
@@ -131,6 +141,40 @@ import {useRoute, useFocusEffect, RouteProp} from '@react-navigation/native';
 
 type SettingsParams = {expandSection?: string};
 
+type SettingsTabId = 'App' | 'Wallet' | 'Features' | 'Info';
+
+const SETTINGS_TABS: SettingsTabId[] = ['App', 'Wallet', 'Features', 'Info'];
+
+/** Collapsible key → the one settings tab that shows it. */
+const SECTION_TAB: Record<string, SettingsTabId> = {
+  theme: 'App',
+  autoLock: 'App',
+  ceremonyNotices: 'App',
+  haptics: 'App',
+  manchette: 'App',
+  updater: 'App',
+  displayFormat: 'App',
+  storage: 'App',
+  appIcon: 'App',
+  menu: 'App',
+  backup: 'Wallet',
+  advanced: 'Wallet',
+  hdOptions: 'Wallet',
+  nostr: 'Wallet',
+  branta: 'Wallet',
+  devicePairing: 'Wallet',
+  addressType: 'Wallet',
+  devDebug: 'Wallet',
+  mempoolPlayground: 'Features',
+  utxos: 'Features',
+  addresses: 'Features',
+  psbt: 'Features',
+  wallet: 'Features',
+  legal: 'Info',
+  about: 'Info',
+  fontTesting: 'Info',
+};
+
 function syncFailureToast(
   e: unknown,
   fallbackText2: string,
@@ -155,6 +199,8 @@ interface CollapsibleSectionProps {
   styles: any;
   theme: any;
 }
+const SECTION_OPEN_MS = 280;
+
 const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   title,
   children,
@@ -163,38 +209,43 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   styles,
   theme,
 }) => {
-  const rotationAnim = useSharedValue(isExpanded ? 1 : 0);
+  const progress = useSharedValue(isExpanded ? 1 : 0);
+  const measured = useSharedValue(0);
   useEffect(() => {
-    // Sync rotation with isExpanded on mount or prop change
-    rotationAnim.value = withTiming(isExpanded ? 1 : 0, {duration: 200});
-  }, [isExpanded, rotationAnim]);
-  const rotateAnimatedStyle = useAnimatedStyle(() => {
-    const rotation = interpolate(rotationAnim.value, [0, 1], [0, 90]);
+    progress.value = withTiming(isExpanded ? 1 : 0, {
+      duration: SECTION_OPEN_MS,
+      easing: Easing.out(Easing.cubic),
+    });
+  }, [isExpanded, progress]);
+  const rotateAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      {rotate: `${interpolate(progress.value, [0, 1], [0, 90])}deg`},
+    ],
+  }));
+  const shown = useDerivedValue(() =>
+    interpolate(progress.value, [0, 0.28, 1], [0, 1, 1]),
+  );
+  const bodyStyle = useAnimatedStyle(() => {
+    const height = measured.value;
+    if (height <= 0) {
+      return {overflow: 'hidden' as const, height: 0};
+    }
     return {
-      transform: [{rotate: `${rotation}deg`}],
+      overflow: 'hidden' as const,
+      height: height * progress.value,
     };
   });
-  const handlePress = () => {
-    // Animate rotation immediately
-    rotationAnim.value = withTiming(isExpanded ? 0 : 1, {duration: 200});
-    // Toggle content
-    onToggle();
+  const onBodyLayout = (event: LayoutChangeEvent) => {
+    const next = event.nativeEvent.layout.height;
+    if (next > 0 && Math.abs(measured.value - next) > 0.5) {
+      measured.value = next;
+    }
   };
-  const animatedStyle = useMemo(
-    () => ({
-      opacity: isExpanded ? 1 : 0,
-      height: isExpanded ? 'auto' : 0,
-      transform: [{scaleY: isExpanded ? 1 : 0.8}],
-      padding: isExpanded ? 16 : 0,
-    }),
-    [isExpanded],
-  );
   return (
-    <View
-      style={[styles.collapsibleSection, isExpanded && styles.sectionExpanded]}>
+    <View style={styles.collapsibleSection}>
       <AppPressable
         style={styles.sectionHeader}
-        onPress={handlePress}
+        onPress={onToggle}
         android_ripple={{color: 'rgba(0,0,0,0.1)'}}
         accessible={true}
         accessibilityRole="button"
@@ -223,10 +274,17 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
           ▶
         </Animated.Text>
       </AppPressable>
-      {/* Always render content, collapse with opacity/scale animation */}
-      <Animated.View style={[styles.sectionContent, animatedStyle]}>
-        {children}
-      </Animated.View>
+      <DissolveFade
+        shown={shown}
+        coverColor={theme.colors.cardBackground}
+        style={bodyStyle}
+        pointerEvents={isExpanded ? 'auto' : 'none'}>
+        <View
+          onLayout={onBodyLayout}
+          style={[styles.sectionContent, styles.sectionBodyMeasure]}>
+          {children}
+        </View>
+      </DissolveFade>
     </View>
   );
 };
@@ -235,6 +293,8 @@ const getSectionIcon = (title: string): any => {
   switch (title.toLowerCase()) {
     case 'theme':
       return require('../assets/theme-icon.png');
+    case 'ceremony notices':
+      return require('../assets/notice-icon.png');
     case 'menu':
       return require('../assets/nav-icon.png');
     case 'address type':
@@ -286,26 +346,101 @@ const getSectionIcon = (title: string): any => {
   }
 };
 
-interface SettingsSectionGroupProps {
-  title: string;
-  children: React.ReactNode;
-  styles: any;
-  theme: any;
+const SETTINGS_TAB_MS = 280;
+const settingsTabEase = Easing.out(Easing.cubic);
+
+function SettingsTabChrome({
+  label,
+  index,
+  selectedIndex,
+  selected,
+  onPress,
+  pageColor,
+  chromeColor,
+  borderColor,
+  labelStyle,
+  labelSelectedStyle,
+}: {
+  label: string;
+  index: number;
+  selectedIndex: SharedValue<number>;
+  selected: boolean;
+  onPress: () => void;
+  pageColor: string;
+  chromeColor: string;
+  borderColor: string;
+  labelStyle: StyleProp<TextStyle>;
+  labelSelectedStyle: StyleProp<TextStyle>;
+}) {
+  const gap = useAnimatedStyle(() => {
+    const on = 1 - Math.min(Math.abs(selectedIndex.value - index), 1);
+    return {
+      marginTop: interpolate(on, [0, 1], [6, 0]),
+    };
+  });
+  const shape = useAnimatedStyle(() => {
+    const on = 1 - Math.min(Math.abs(selectedIndex.value - index), 1);
+    return {
+      minHeight: interpolate(on, [0, 1], [32, 40]),
+      backgroundColor: interpolateColor(on, [0, 1], [chromeColor, pageColor]),
+      borderBottomWidth: interpolate(on, [0, 1], [1, 0]),
+    };
+  });
+  const labelMotion = useAnimatedStyle(() => {
+    const on = 1 - Math.min(Math.abs(selectedIndex.value - index), 1);
+    return {
+      opacity: DISSOLVE_FADE ? 1 : interpolate(on, [0, 1], [0.55, 1]),
+      transform: [{translateY: interpolate(on, [0, 1], [2, 0])}],
+    };
+  });
+  return (
+    <Animated.View style={[settingsChromeStyles.slot, gap]}>
+      <AppPressable
+        style={settingsChromeStyles.press}
+        onPress={onPress}
+        accessibilityRole="tab"
+        accessibilityState={{selected}}
+        accessibilityLabel={`${label} settings`}
+        android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
+        <Animated.View
+          style={[settingsChromeStyles.tab, {borderColor}, shape]}>
+          <Animated.View style={labelMotion}>
+            <AppText
+              variant="button"
+              tone={selected ? 'default' : 'muted'}
+              numberOfLines={1}
+              style={[labelStyle, selected && labelSelectedStyle]}>
+              {label}
+            </AppText>
+          </Animated.View>
+        </Animated.View>
+      </AppPressable>
+    </Animated.View>
+  );
 }
-const SettingsSectionGroup: React.FC<SettingsSectionGroupProps> = ({
-  title,
-  children,
-  styles,
-  theme,
-}) => (
-  <View style={styles.sectionGroup}>
-    <Text
-      style={[styles.sectionGroupTitle, {color: theme.colors.textSecondary}]}>
-      {title.toUpperCase()}
-    </Text>
-    {children}
-  </View>
-);
+
+const settingsChromeStyles = StyleSheet.create({
+  slot: {
+    flex: 1,
+  },
+  press: {
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    overflow: 'hidden',
+  },
+  tab: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    paddingHorizontal: 2,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+    borderTopWidth: 1,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+  },
+});
+
 const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const route = useRoute<RouteProp<{params: SettingsParams}, 'params'>>();
   // Hide toast when leaving Settings so it does not persist on other tabs
@@ -359,24 +494,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const [providerEntries, setProviderEntries] = useState<
     MempoolProviderEntry[]
   >([]);
+  const [curatedProviderUrls, setCuratedProviderUrls] = useState<string[]>([]);
   const [savedProviderSnapshot, setSavedProviderSnapshot] = useState('');
   const walletOnline = useWalletOnline();
-  const [providerQuality, setProviderQuality] =
-    useState<MempoolHealthQuality | null>(
-      () => getMempoolHealth()?.quality ?? null,
-    );
-  useEffect(() => {
-    return subscribeMempoolHealth(state => {
-      setProviderQuality(state.quality);
-    });
-  }, []);
   const [relayEntries, setRelayEntries] = useState<NostrRelayEntry[]>([]);
   const [savedRelaySnapshot, setSavedRelaySnapshot] = useState('');
   const [hasNostr, setHasNostr] = useState(false);
   const [hdGapLimit, setHdGapLimit] = useState(() => String(getGapLimit()));
-  const [hdMinScanIndex, setHdMinScanIndex] = useState(() =>
-    String(getMinScanIndex()),
-  );
   const [hdApiTimeoutMs, setHdApiTimeoutMs] = useState(() =>
     String(getApiTimeoutMs()),
   );
@@ -407,6 +531,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     'terms',
   );
   const [hapticsEnabled, setHapticsEnabledState] = useState(true);
+  const [ceremonyNoticesEnabled, setCeremonyNoticesEnabled] = useState(true);
   const [lockScreenManchetteEnabled, setLockScreenManchetteEnabled] =
     useState(true);
   const [lockScreenUpdateCheckerEnabled, setLockScreenUpdateCheckerEnabled] =
@@ -424,6 +549,107 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const walletSensitiveAuthPendingRef = useRef(false);
   const [walletSensitiveAuthPending, setWalletSensitiveAuthPending] =
     useState(false);
+  const [selectedSettingsTab, setSelectedSettingsTab] =
+    useState<SettingsTabId>(() => {
+      const section = route.params?.expandSection;
+      return (section && SECTION_TAB[section]) || 'App';
+    });
+  const settingsTabIndex = useSharedValue(
+    SETTINGS_TABS.indexOf(
+      (route.params?.expandSection &&
+        SECTION_TAB[route.params.expandSection]) ||
+        'App',
+    ),
+  );
+  const settingsContentX = useSharedValue(0);
+  const settingsContentOpacity = useSharedValue(1);
+  const settingsCover = useSharedValue(0);
+  const settingsContentStyle = useAnimatedStyle(() => ({
+    opacity: DISSOLVE_FADE ? 1 : settingsContentOpacity.value,
+    transform: [{translateX: settingsContentX.value}],
+  }));
+  const settingsCoverStyle = useAnimatedStyle(() => ({
+    opacity: settingsCover.value,
+  }));
+  const settingsScrollRef = useRef<ScrollView>(null);
+  const pendingSettingsScrollRef = useRef<'top' | 'end' | null>(null);
+  const selectedSettingsTabRef = useRef(selectedSettingsTab);
+  selectedSettingsTabRef.current = selectedSettingsTab;
+
+  const scrollSettingsList = useCallback((target: 'top' | 'end') => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (target === 'end') {
+          settingsScrollRef.current?.scrollToEnd({animated: false});
+        } else {
+          settingsScrollRef.current?.scrollTo({y: 0, animated: false});
+        }
+      });
+    });
+  }, []);
+
+  const showSettingsTab = useCallback(
+    (tab: SettingsTabId, scroll: 'top' | 'end' = 'top') => {
+      if (selectedSettingsTabRef.current === tab) {
+        scrollSettingsList(scroll);
+        return;
+      }
+      const next = SETTINGS_TABS.indexOf(tab);
+      const current = SETTINGS_TABS.indexOf(selectedSettingsTabRef.current);
+      const dir = next >= current ? 1 : -1;
+      settingsContentX.value = dir * 48;
+      if (DISSOLVE_FADE) {
+        settingsCover.value = 1;
+      } else {
+        settingsContentOpacity.value = 0;
+      }
+      settingsTabIndex.value = withTiming(next, {
+        duration: SETTINGS_TAB_MS,
+        easing: settingsTabEase,
+      });
+      pendingSettingsScrollRef.current = scroll;
+      setSelectedSettingsTab(tab);
+    },
+    [
+      scrollSettingsList,
+      settingsContentOpacity,
+      settingsContentX,
+      settingsCover,
+      settingsTabIndex,
+    ],
+  );
+
+  useEffect(() => {
+    settingsContentX.value = withTiming(0, {
+      duration: SETTINGS_TAB_MS + 40,
+      easing: settingsTabEase,
+    });
+    if (DISSOLVE_FADE) {
+      settingsCover.value = withTiming(0, {
+        duration: SETTINGS_TAB_MS,
+        easing: settingsTabEase,
+      });
+    } else {
+      settingsContentOpacity.value = withTiming(1, {
+        duration: SETTINGS_TAB_MS,
+        easing: settingsTabEase,
+      });
+    }
+  }, [
+    selectedSettingsTab,
+    settingsContentOpacity,
+    settingsContentX,
+    settingsCover,
+  ]);
+
+  useEffect(() => {
+    const target = pendingSettingsScrollRef.current;
+    if (!target) {
+      return;
+    }
+    pendingSettingsScrollRef.current = null;
+    scrollSettingsList(target);
+  }, [selectedSettingsTab, scrollSettingsList]);
 
   const runWithWalletBiometric = useCallback(
     async (
@@ -436,6 +662,13 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       walletSensitiveAuthPendingRef.current = true;
       setWalletSensitiveAuthPending(true);
       try {
+        // F36: warn-and-confirm on compromised devices before key material moves.
+        const integrityOk = await confirmDeviceIntegrityForSensitiveAction(
+          prompts.integrityActionLabel ?? 'This sensitive action',
+        );
+        if (!integrityOk) {
+          return;
+        }
         const ok = await promptWalletBiometricAuth({
           ...prompts,
           showFailureAlert: true,
@@ -488,6 +721,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         about: false,
         devDebug: true,
       }));
+      showSettingsTab('Wallet', 'end');
       Toast.show({
         type: 'success',
         text1: 'Dev Mode Enabled',
@@ -503,13 +737,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     }, WALLET_SENSITIVE_ACTION_AUTH.enableDeveloperMode).catch(error => {
       dbg('enableDeveloperModeWithAuth failed', error);
     });
-  }, [runWithWalletBiometric]);
+  }, [runWithWalletBiometric, showSettingsTab]);
   const nonDevMainnetGuardRanRef = useRef(false);
   // Collapsible states
   const [expandedSections, setExpandedSections] = useState<{
     [key: string]: boolean;
   }>({
     theme: false,
+    autoLock: false,
+    ceremonyNotices: false,
     menu: false,
     haptics: false,
     manchette: false,
@@ -536,6 +772,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   });
   const {theme, themeMode, setThemeMode} = useTheme();
   const menuStyle = useNavMenuStyle();
+  const autoLockPolicy = useWalletAutoLock();
+  const floatingScrollPadding = useFloatingScrollPadding();
   // Force re-render on Android when theme changes
   const [themeUpdateKey, setThemeUpdateKey] = useState(0);
   const [appVersion, setAppVersion] = useState('');
@@ -704,7 +942,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           appConfigRepository.get('api') ||
           (network === 'mainnet'
             ? 'https://mempool.space/api'
-            : 'https://mempool.space/testnet/api');
+            : 'https://mempool.space/testnet4/api');
 
         // ── Step 2: flush in-memory caches before discovery ───────────────
         // Every isAddressUsed call inside discoverHdIndexesForNetwork must
@@ -758,7 +996,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         // getAggregateBalance sums all per-address rows written by balanceSyncer
         // above (excluding the virtual aggregate key which doesn't exist yet
         // because clearWalletCacheData wiped the table before sync started).
-        const agg = balanceRepository.getAggregateBalance(network);
+        const agg = balanceRepository.getAggregateBalance(
+          network,
+          addressesWithPaths.map(a => a.address),
+        );
         balanceRepository.setBalance({
           address: `aggregate_${network}_${addressType}`,
           network,
@@ -827,7 +1068,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         appConfigRepository.get('api') ||
         (network === 'mainnet'
           ? 'https://mempool.space/api'
-          : 'https://mempool.space/testnet/api');
+          : 'https://mempool.space/testnet4/api');
 
       appConfigRepository.set(CONFIG_KEYS.NETWORK, network);
       appConfigRepository.set('api', apiUrl);
@@ -871,6 +1112,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     const section = route.params?.expandSection;
     const validSections = new Set([
       'theme',
+      'autoLock',
+      'ceremonyNotices',
       'menu',
       'haptics',
       'manchette',
@@ -896,12 +1139,19 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     ]);
     if (section && validSections.has(section)) {
       setExpandedSections(prev => ({...prev, [section]: true}));
+      const tab = SECTION_TAB[section];
+      if (tab) {
+        showSettingsTab(tab);
+      }
     }
-  }, [route.params?.expandSection]);
+  }, [route.params?.expandSection, showSettingsTab]);
   useEffect(() => {
     setAppVersion(DeviceInfo.getVersion());
     setBuildNumber(DeviceInfo.getBuildNumber());
     setHapticsEnabledState(areHapticsEnabled());
+    setCeremonyNoticesEnabled(
+      appConfigRepository.getBool(CONFIG_KEYS.CEREMONY_NOTICES, true),
+    );
     setLockScreenManchetteEnabled(
       appConfigRepository.getBool(
         CONFIG_KEYS.LOCK_SCREEN_MANCHETTE_ENABLED,
@@ -970,20 +1220,27 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         resolvedApi =
           net === 'mainnet'
             ? 'https://mempool.space/api'
-            : 'https://mempool.space/testnet/api';
+            : 'https://mempool.space/testnet4/api';
         appConfigRepository.set('api', resolvedApi);
         if (net) appConfigRepository.set(`api_${net}`, resolvedApi);
       }
-      if (net) BBMTLibNativeModule.setAPI(net, resolvedApi);
+      if (net) {
+        ensureMempoolApiApplied(net, resolvedApi).catch(err =>
+          dbg('WalletSettings: setAPI failed', err),
+        );
+      }
+      const providerNet = net && net !== 'mainnet' ? 'testnet4' : 'mainnet';
+      loadDefaultMempoolProviderEntries(providerNet).then(defaults => {
+        setCuratedProviderUrls(defaults.map(entry => entry.url));
+      });
+      loadMempoolProviderEntries(providerNet).then(entries => {
+        setProviderEntries(entries);
+        setSavedProviderSnapshot(JSON.stringify(entries));
+      });
     })();
-    // Load Nostr relays (from cache if available, otherwise fetch dynamically)
     loadNostrRelayEntries().then(entries => {
       setRelayEntries(entries);
       setSavedRelaySnapshot(JSON.stringify(entries));
-    });
-    loadMempoolProviderEntries().then(entries => {
-      setProviderEntries(entries);
-      setSavedProviderSnapshot(JSON.stringify(entries));
     });
   }, []);
   const toggleNetwork = async (
@@ -991,11 +1248,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     options?: {silent?: boolean},
   ): Promise<boolean> => {
     dbg('=== Network toggle started:', value ? 'testnet' : 'mainnet');
-    const previousNetwork = value ? 'mainnet' : 'testnet3';
-    const newNetwork = value ? 'testnet3' : 'mainnet';
+    const previousNetwork = value ? 'mainnet' : 'testnet4';
+    const newNetwork = value ? 'testnet4' : 'mainnet';
     const networkName = value ? 'Testnet' : 'Mainnet';
     setIsTestnet(value);
     await setActiveNetwork(newNetwork);
+    const entries = await loadMempoolProviderEntries(newNetwork);
+    setProviderEntries(entries);
+    setSavedProviderSnapshot(JSON.stringify(entries));
+    loadDefaultMempoolProviderEntries(newNetwork).then(defaults => {
+      setCuratedProviderUrls(defaults.map(entry => entry.url));
+    });
 
     // Fast path: wallet already discovered for this combo — skip full restore
     if (canFastSwitch(newNetwork, activeAddressType)) {
@@ -1030,20 +1293,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     }
 
     if (!options?.silent) {
+      setWalletOnline(false);
+      setExpandedSections(prev => ({...prev, advanced: true}));
+      showSettingsTab('Wallet');
       setTimeout(() => {
-        if (newNetwork === 'mainnet') {
-          Alert.alert(
-            `Switched to ${networkName}`,
-            'Mainnet Bitcoin is the real Bitcoin. It is the main network for all Bitcoin transactions.',
-            [{text: 'I understand', onPress: () => {}}],
-          );
-        } else {
-          Alert.alert(
-            `Switched to ${networkName}`,
-            'Testnet Bitcoin is not real Bitcoin. It is a test network for developers to test their applications. Do not use it for real transactions.',
-            [{text: 'I understand', onPress: () => {}}],
-          );
-        }
+        showAppNotice(
+          `Now on ${networkName}`,
+          'Wallet is offline. Turn it back on in Network Providers.',
+        );
       }, 300);
     }
     return true;
@@ -1071,24 +1328,28 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   const saveMempoolProviders = async () => {
     try {
       if (activeProviderUrls(providerEntries).length === 0) {
-        Alert.alert('Error', 'Please keep at least one provider enabled');
+        showAppNotice('Error', 'Please keep at least one provider enabled');
         return;
       }
-      saveMempoolProviderEntries(providerEntries);
+      saveMempoolProviderEntries(
+        providerEntries,
+        isTestnet ? 'testnet4' : 'mainnet',
+      );
       const primary = primaryProviderUrl(providerEntries);
       const enabled = activeProviderUrls(providerEntries);
       await setActiveApiProvider(primary);
       mempoolClient.setPublicBases(enabled);
       try {
-        await BBMTLibNativeModule.setFeeAPIs(enabled.join(','));
+        // Direct mint: provider list already on screen in the save flow.
+        await ensureFeeApisApplied(enabled, null);
       } catch {
         // no-op
       }
       setSavedProviderSnapshot(JSON.stringify(providerEntries));
-      Alert.alert('Success', 'Mempool providers saved successfully!');
+      showAppNotice('Success', 'Mempool providers saved successfully!');
     } catch (error) {
       dbg('Error saving mempool providers:', error);
-      Alert.alert(
+      showAppNotice(
         'Error',
         'Failed to save mempool providers. Please try again.',
       );
@@ -1120,23 +1381,29 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             removeLegacyEncryptedPrefKeys(),
           ]);
         }
+        // F15b-1 (A10): wipe any Go-staged keyshare behind a dropped handle.
+        await discardPendingKeyshares();
         await resetLauncherCamouflageToDefault();
         // Trigger a full app reload so all providers/contexts re‑initialize
         navigation.reset({index: 0, routes: [{name: 'Welcome'}]});
         DeviceEventEmitter.emit('app:reload', {revalidateRoute: true});
       } catch (error) {
         dbg('handleResetWallet', error);
-        Alert.alert('Error', 'Failed to reset wallet. Please try again.');
+        showAppNotice('Error', 'Failed to reset wallet. Please try again.');
       } finally {
         setIsDeleting(false);
         setDeleteInput('');
       }
     } else {
-      Alert.alert(
+      showAppNotice(
         'Incorrect Input',
         'You must type "delete my wallet" exactly to reset your wallet.',
       );
     }
+  };
+  const handleToggleCeremonyNotices = (value: boolean) => {
+    setCeremonyNoticesEnabled(value);
+    appConfigRepository.setBool(CONFIG_KEYS.CEREMONY_NOTICES, value);
   };
   const handleToggleHaptics = (value: boolean) => {
     setHapticsEnabledState(value);
@@ -1200,10 +1467,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       const revert = previous === 'loading' ? 'default' : previous;
       setSelectedIcon(revert);
       persistLauncherCamouflagePreference(revert).catch(() => {});
-      Alert.alert(
+      showAppNotice(
         'Error',
         error?.message || 'Failed to change app icon. Please try again.',
-        [{text: 'OK'}],
       );
       return false;
     }
@@ -1229,7 +1495,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   };
   const handleToggleCamouflagePin = async (value: boolean) => {
     if (!value && camouflageIconActive) {
-      Alert.alert(
+      showAppNotice(
         'PIN stays on',
         'A camouflage icon requires a 4-digit PIN before fingerprint unlock.',
       );
@@ -1277,7 +1543,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       }
     } catch (error: any) {
       dbg('Error saving camouflage PIN', error);
-      Alert.alert('Error', 'Could not save PIN. Please try again.');
+      showAppNotice('Error', 'Could not save PIN. Please try again.');
     }
   };
   const handleToggleBalanceFormatting = (value: boolean) => {
@@ -1299,21 +1565,70 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         },
         scrollView: {
           flex: 1,
+          backgroundColor: theme.colors.background,
         },
         scrollContent: {
           flexGrow: 1,
           padding: 16,
           paddingBottom: 24,
         },
-        sectionGroup: {
-          marginBottom: 24,
+        // Browser-style tab strip: chrome behind the tabs, selected tab open onto the page.
+        settingsTabBar: {
+          flexDirection: 'row',
+          alignItems: 'flex-end',
+          backgroundColor: theme.colors.cardBackground,
+          paddingTop: 8,
         },
-        sectionGroupTitle: {
-          fontSize: theme.fontSizes?.xs || 11,
+        settingsTabRule: {
+          width: 10,
+          height: 1,
+          backgroundColor: theme.colors.border,
+        },
+        settingsTabRuleGap: {
+          width: 3,
+          height: 1,
+          backgroundColor: theme.colors.border,
+        },
+        settingsTab: {
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+          marginTop: 6,
+          minHeight: 32,
+          paddingVertical: 7,
+          paddingHorizontal: 2,
+          backgroundColor: 'transparent',
+          borderTopLeftRadius: theme.borderRadius.small,
+          borderTopRightRadius: theme.borderRadius.small,
+          borderTopWidth: 1,
+          borderLeftWidth: 1,
+          borderRightWidth: 1,
+          borderBottomWidth: 1,
+          borderColor:
+            theme.colors.background.toLowerCase() === '#ffffff'
+              ? theme.colors.blackOverlay10
+              : theme.colors.whiteOverlay12,
+          borderBottomColor: theme.colors.border,
+        },
+        settingsTabSelected: {
+          marginTop: 0,
+          minHeight: 40,
+          paddingVertical: 9,
+          backgroundColor: theme.colors.background,
+          borderColor: theme.colors.border,
+          borderBottomWidth: 0,
+          zIndex: 1,
+        },
+        settingsTabLabel: {
+          fontSize: theme.fontSizes?.sm || 13,
+          lineHeight: 18,
+          textAlign: 'center',
+        },
+        settingsTabLabelSelected: {
           fontFamily: theme.fontFamilies?.bold,
-          letterSpacing: 1.2,
+        },
+        sectionGroup: {
           marginBottom: 8,
-          marginLeft: 4,
         },
         header: {
           paddingHorizontal: 16,
@@ -1367,12 +1682,18 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           fontFamily: theme.fontFamilies?.bold,
         },
         sectionContent: {
-          paddingHorizontal: 12,
+          padding: 16,
           borderTopWidth: 1,
           borderTopColor:
             theme.colors.background === '#ffffff'
               ? theme.colors.accent
               : theme.colors.bitcoinOrange,
+        },
+        sectionBodyMeasure: {
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: 0,
         },
         toggleContainer: {
           flexDirection: 'row',
@@ -1614,8 +1935,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           padding: 12,
           borderRadius: 8,
           borderWidth: 1,
-          borderStyle: 'dashed',
-          borderColor: theme.colors.border,
+          borderColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.border
+              : theme.colors.bitcoinOrange + '73',
         },
         apiNetworkModeRow: {
           flexDirection: 'row',
@@ -1664,18 +1987,21 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           color: theme.colors.received,
         },
         apiInfoButton: {
-          flex: 1,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
+          marginLeft: 'auto',
           paddingHorizontal: 10,
-          paddingVertical: 8,
+          paddingVertical: 6,
           borderRadius: 6,
-          backgroundColor: theme.colors.background,
+          backgroundColor: 'transparent',
           borderWidth: 1,
-          borderColor: theme.colors.primary,
+          borderColor:
+            theme.colors.background === '#ffffff'
+              ? theme.colors.primary
+              : theme.colors.bitcoinOrange,
           gap: 6,
-          minHeight: 40,
+          minHeight: 32,
         },
         apiInfoButtonIcon: {
           width: 14,
@@ -1688,12 +2014,14 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           color:
             theme.colors.background === '#ffffff'
               ? theme.colors.primary
-              : theme.colors.text,
+              : theme.colors.bitcoinOrange,
         },
         apiNetworkDescription: {
           fontSize: theme.fontSizes?.sm || 12,
-          lineHeight: 16,
+          fontFamily: theme.fontFamilies?.regular,
+          lineHeight: 18,
           marginTop: 4,
+          color: theme.colors.textSecondary,
         },
         apiNetworkDescriptionTestnet: {
           color: theme.colors.textSecondary,
@@ -1933,11 +2261,22 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           color: theme.colors.text, // Use text color for better readability in dark mode
           marginBottom: 4,
         },
+        endpointsHeading: {
+          flex: 1,
+          marginBottom: 0,
+        },
         apiDescription: {
           fontSize: theme.fontSizes?.base || 14,
           color: theme.colors.textSecondary,
           lineHeight: 20,
           marginBottom: 6,
+        },
+        hdOptionHint: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.regular,
+          color: theme.colors.textSecondary,
+          lineHeight: 16,
+          marginTop: 6,
         },
         linkText: {
           fontSize: theme.fontSizes?.base || 14,
@@ -2546,37 +2885,43 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   useEffect(() => {
     setThemeUpdateKey(prev => prev + 1);
   }, [theme.colors.background, themeMode]);
-  const walletOnlineDot = providerHealthDotStyle(theme.colors, {
-    online: walletOnline,
-    quality: providerQuality,
-  });
-  const walletOnlineDotPaint = useMemo(() => {
-    const paint: {
-      borderColor: string;
-      opacity: number;
-      backgroundColor?: string;
-    } = {
-      borderColor: walletOnlineDot.color,
-      opacity: walletOnlineDot.opacity,
-    };
-    if (!walletOnlineDot.hollow) {
-      paint.backgroundColor = walletOnlineDot.color;
-    }
-    return paint;
-  }, [walletOnlineDot]);
-  const walletOnlineDotTextStyle = useMemo(
-    () => ({color: walletOnlineDot.color}),
-    [walletOnlineDot.color],
-  );
   return (
     <SafeAreaView
       style={styles.container}
       edges={['left', 'right']}
       key={themeUpdateKey}>
+      <View style={styles.settingsTabBar} accessibilityRole="tablist">
+        <View style={styles.settingsTabRule} />
+        {SETTINGS_TABS.map((tab, index) => {
+          const selected = selectedSettingsTab === tab;
+          return (
+            <React.Fragment key={tab}>
+              {index > 0 ? <View style={styles.settingsTabRuleGap} /> : null}
+              <SettingsTabChrome
+                label={tab}
+                index={index}
+                selectedIndex={settingsTabIndex}
+                selected={selected}
+                onPress={() => showSettingsTab(tab)}
+                pageColor={theme.colors.background}
+                chromeColor={theme.colors.cardBackground}
+                borderColor={theme.colors.border}
+                labelStyle={styles.settingsTabLabel}
+                labelSelectedStyle={styles.settingsTabLabelSelected}
+              />
+            </React.Fragment>
+          );
+        })}
+        <View style={styles.settingsTabRule} />
+      </View>
       <ScrollView
+        ref={settingsScrollRef}
         key={themeUpdateKey}
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          {paddingBottom: 24 + floatingScrollPadding},
+        ]}
         removeClippedSubviews
         keyboardShouldPersistTaps="handled"
         overScrollMode="never"
@@ -2584,8 +2929,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         nestedScrollEnabled={true}
         bounces={true}
         scrollEventThrottle={16}>
-        {/* App: Theme, Menu, Balance Display, Haptics, Manchette, Updater, Storage */}
-        <SettingsSectionGroup title="App" styles={styles} theme={theme}>
+        <View>
+        <Animated.View style={settingsContentStyle}>
+        {/* App: appearance and app-wide preferences */}
+        {selectedSettingsTab === 'App' && (
+          <View style={styles.sectionGroup}>
           <CollapsibleSection
             title="Theme"
             isExpanded={expandedSections.theme}
@@ -2678,14 +3026,79 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </CollapsibleSection>
           <CollapsibleSection
+            title="Auto lock"
+            isExpanded={expandedSections.autoLock}
+            onToggle={() => toggleSection('autoLock')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Locks when you leave the app. Unlock with Face ID or your PIN as
+              usual.
+            </Text>
+            <View style={styles.themeOptionContainer}>
+              {WALLET_AUTO_LOCK_OPTIONS.map(option => {
+                const selected = autoLockPolicy === option.value;
+                return (
+                  <AppPressable
+                    key={option.value}
+                    style={[
+                      styles.themeOption,
+                      selected && styles.themeOptionSelected,
+                    ]}
+                    onPress={() => {
+                      setWalletAutoLock(option.value as WalletAutoLockPolicy);
+                    }}
+                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                    <View style={styles.themeOptionContent}>
+                      <Text
+                        style={[
+                          styles.themeOptionLabel,
+                          selected && styles.themeOptionLabelSelected,
+                        ]}>
+                        {option.label}
+                      </Text>
+                      {selected ? (
+                        <Image
+                          source={require('../assets/check-icon.png')}
+                          style={styles.themeOptionCheck}
+                          resizeMode="contain"
+                        />
+                      ) : null}
+                    </View>
+                  </AppPressable>
+                );
+              })}
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="Ceremony notices"
+            isExpanded={expandedSections.ceremonyNotices}
+            onToggle={() => toggleSection('ceremonyNotices')}
+            styles={styles}
+            theme={theme}>
+            <Text style={styles.toggleDescription}>
+              Finished, interrupted, and return notices. They disappear after 2
+              minutes. Android still shows the required progress notice while
+              setup or co-signing is running.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Off</Text>
+              <AppSwitch
+                onValueChange={handleToggleCeremonyNotices}
+                value={ceremonyNoticesEnabled}
+              />
+              <Text style={styles.toggleLabel}>On</Text>
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
             title="Menu"
             isExpanded={expandedSections.menu}
             onToggle={() => toggleSection('menu')}
             styles={styles}
             theme={theme}>
             <Text style={styles.toggleDescription}>
-              Floating is the default bottom pill (max 90% width) that scrolls
-              if tabs overflow. Docked is the full-width tab bar.
+              Floating is a centered pill only as wide as its icons. Docked is
+              the full-width bar with a label under each icon.
             </Text>
             <View style={styles.toggleContainer}>
               <Text style={styles.toggleLabel}>Docked</Text>
@@ -2818,7 +3231,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   activeApiProvider ||
                   (activeNetwork === 'mainnet'
                     ? 'https://mempool.space/api'
-                    : 'https://mempool.space/testnet/api');
+                    : 'https://mempool.space/testnet4/api');
                 try {
                   await runRestoreIndexing(
                     activeNetwork,
@@ -2948,10 +3361,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </View>
             </CollapsibleSection>
           )}
-        </SettingsSectionGroup>
+          </View>
+        )}
 
-        {/* Wallet: Security, Address Type, Network providers, Nostr Relays, Branta */}
-        <SettingsSectionGroup title="Wallet" styles={styles} theme={theme}>
+        {selectedSettingsTab === 'Wallet' && (
+          <View style={styles.sectionGroup}>
           <CollapsibleSection
             title="Security"
             isExpanded={expandedSections.backup}
@@ -3216,29 +3630,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             onToggle={() => toggleSection('advanced')}
             styles={styles}
             theme={theme}>
-            <View style={styles.walletOnlineStatusRow}>
-              <Text style={styles.toggleLabel}>Internet</Text>
-              <View style={styles.walletOnlineStatus}>
-                <View
-                  style={[
-                    styles.walletOnlineStatusDot,
-                    walletOnlineDot.hollow
-                      ? styles.walletOnlineStatusDotHollow
-                      : styles.walletOnlineStatusDotFilled,
-                    walletOnlineDotPaint,
-                  ]}
-                />
-                <Text
-                  style={[
-                    styles.walletOnlineStatusText,
-                    walletOnlineDotTextStyle,
-                  ]}>
-                  {walletOnline ? 'Online' : 'Offline'}
-                </Text>
-              </View>
-            </View>
             <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Offline</Text>
+              <Text style={styles.toggleLabel}>
+                {walletOnline ? 'Online' : 'Offline'}
+              </Text>
               <AppSwitch
                 onValueChange={value => {
                   setWalletOnline(value);
@@ -3246,108 +3641,42 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 value={walletOnline}
               />
-              <Text style={styles.toggleLabel}>Online</Text>
             </View>
             <Text style={[styles.hintText, styles.hintSpacing]}>
-              When offline, the wallet uses cached data and makes no network
-              calls.
+              {walletOnline
+                ? 'Online uses the endpoints that are on. Turn this off to stay on cached data.'
+                : 'Offline. Choose which endpoints stay on, save, then turn Online back on.'}
             </Text>
             <View style={styles.apiNetworkInfoContainer}>
               <View style={styles.apiNetworkModeRow}>
-                <View
-                  style={[
-                    styles.apiNetworkModeBadge,
-                    isTestnet
-                      ? styles.apiNetworkModeBadgeTestnet
-                      : styles.apiNetworkModeBadgeMainnet,
-                  ]}>
-                  <Image
-                    source={
-                      isTestnet
-                        ? require('../assets/locker-icon.png')
-                        : require('../assets/privacy-icon.png')
-                    }
-                    style={[
-                      styles.apiNetworkModeIcon,
-                      {
-                        tintColor: isTestnet
-                          ? theme.colors.background === '#ffffff'
-                            ? theme.colors.accent
-                            : theme.colors.bitcoinOrange
-                          : theme.colors.received,
-                      },
-                    ]}
-                    resizeMode="contain"
-                  />
-                  <Text
-                    style={[
-                      styles.apiNetworkModeText,
-                      isTestnet
-                        ? styles.apiNetworkModeTextTestnet
-                        : styles.apiNetworkModeTextMainnet,
-                    ]}>
-                    {isTestnet ? 'Testnet Mode' : 'Mainnet Mode'}
-                  </Text>
-                </View>
-                {!isTestnet && (
-                  <AppPressable
-                    style={styles.apiInfoButton}
-                    onPress={() => {
-                      setIsApiInfoVisible(true);
-                    }}
-                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                    <Image
-                      source={require('../assets/about-icon.png')}
-                      style={styles.apiInfoButtonIcon}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.apiInfoButtonText}>
-                      Change Provider?
-                    </Text>
-                  </AppPressable>
-                )}
+                <Text style={[styles.apiName, styles.endpointsHeading]}>
+                  {isTestnet ? 'Testnet endpoints' : 'Mainnet endpoints'}
+                </Text>
+                <AppPressable
+                  style={styles.apiInfoButton}
+                  onPress={() => {
+                    setIsApiInfoVisible(true);
+                  }}
+                  android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                  <Text style={styles.apiInfoButtonText}>About</Text>
+                </AppPressable>
               </View>
-              <Text
-                style={[
-                  styles.apiNetworkDescription,
-                  isTestnet
-                    ? styles.apiNetworkDescriptionTestnet
-                    : styles.apiNetworkDescriptionMainnet,
-                ]}>
-                {isTestnet
-                  ? 'Testnet Provider is restricted to mempool.space/testnet'
-                  : 'Toggle providers on for failover. At least one must stay on.'}
+              <Text style={styles.apiNetworkDescription}>
+                Turn public endpoints on, or add your own. At least one stays
+                on. Save applies the list.
               </Text>
             </View>
-            {isTestnet ? (
-              <View style={styles.apiItem}>
-                <Text style={styles.apiName}>
-                  {CANONICAL_TESTNET_MEMPOOL_API_BASE}
-                </Text>
-                <Text style={styles.apiDescription}>
-                  Testnet uses a single fixed mempool.space endpoint.
-                </Text>
-              </View>
-            ) : (
-              <>
-                <View style={styles.apiItem}>
-                  <Text style={styles.apiName}>Mempool Provider List</Text>
-                  <Text style={styles.apiDescription}>
-                    Enabled hosts are used for balance, UTXO, and transaction
-                    sync with automatic failover to the most reliable ones.
-                  </Text>
-                </View>
-                <MempoolProvidersEditor
-                  entries={providerEntries}
-                  onChange={setProviderEntries}
-                  showSave
-                  saveDisabled={
-                    JSON.stringify(providerEntries) === savedProviderSnapshot
-                  }
-                  onSave={saveMempoolProviders}
-                />
-              </>
-            )}
+            <MempoolProvidersEditor
+              network={isTestnet ? 'testnet4' : 'mainnet'}
+              curatedUrls={curatedProviderUrls}
+              entries={providerEntries}
+              onChange={setProviderEntries}
+              showSave
+              saveDisabled={
+                JSON.stringify(providerEntries) === savedProviderSnapshot
+              }
+              onSave={saveMempoolProviders}
+            />
           </CollapsibleSection>
           <CollapsibleSection
             title="HD Options"
@@ -3356,11 +3685,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             styles={styles}
             theme={theme}>
             <Text style={[styles.hintText, styles.hintSpacing]}>
-              Tune discovery gap, scan range, and API timeouts. Change only if
-              you know what you're doing.
+              Discovery and API timing. A normal refresh only queries used
+              addresses plus a short forward probe. Change these only if you
+              know what you are doing.
             </Text>
             <View style={styles.apiItem}>
-              <Text style={styles.apiName}>Gap limit</Text>
+              <Text style={styles.apiName}>Discovery gap</Text>
               <TextInput
                 style={styles.input}
                 value={hdGapLimit}
@@ -3379,32 +3709,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 placeholderTextColor={theme.colors.textSecondary + '80'}
               />
+              <Text style={styles.hdOptionHint}>
+                Unused addresses scanned on restore only — not a normal refresh.
+              </Text>
             </View>
             <View style={styles.apiItem}>
-              <Text style={styles.apiName}>Min scan index</Text>
-              <TextInput
-                style={styles.input}
-                value={hdMinScanIndex}
-                onChangeText={setHdMinScanIndex}
-                keyboardType="number-pad"
-                onBlur={() => {
-                  const n = parseInt(hdMinScanIndex, 10);
-                  const def =
-                    HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MIN_SCAN_INDEX];
-                  const clamped = Number.isNaN(n)
-                    ? def
-                    : Math.max(1, Math.min(1000, n));
-                  setHdMinScanIndex(String(clamped));
-                  appConfigRepository.set(
-                    HD_OPTIONS_KEYS.MIN_SCAN_INDEX,
-                    String(clamped),
-                  );
-                }}
-                placeholderTextColor={theme.colors.textSecondary + '80'}
-              />
-            </View>
-            <View style={styles.apiItem}>
-              <Text style={styles.apiName}>API timeout (ms)</Text>
+              <Text style={styles.apiName}>Price request timeout (ms)</Text>
               <TextInput
                 style={styles.input}
                 value={hdApiTimeoutMs}
@@ -3425,9 +3735,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 placeholderTextColor={theme.colors.textSecondary + '80'}
               />
+              <Text style={styles.hdOptionHint}>
+                Timeout for price requests; address sync uses its own timers.
+              </Text>
             </View>
             <View style={styles.apiItem}>
-              <Text style={styles.apiName}>UTXO empty cache TTL (ms)</Text>
+              <Text style={styles.apiName}>Empty coin lookup skip (ms)</Text>
               <TextInput
                 style={styles.input}
                 value={hdUtxoCacheTtlMs}
@@ -3450,9 +3763,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 placeholderTextColor={theme.colors.textSecondary + '80'}
               />
+              <Text style={styles.hdOptionHint}>
+                Skip repeat empty coin lookups on send fallback — not home sync.
+              </Text>
             </View>
             <View style={styles.apiItem}>
-              <Text style={styles.apiName}>Fetch timeout (ms)</Text>
+              <Text style={styles.apiName}>Provider request timeout (ms)</Text>
               <TextInput
                 style={styles.input}
                 value={hdFetchTimeoutMs}
@@ -3473,9 +3789,12 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 placeholderTextColor={theme.colors.textSecondary + '80'}
               />
+              <Text style={styles.hdOptionHint}>
+                Abort timer for provider HTTP — slow hosts show as Calls timeouts.
+              </Text>
             </View>
             <View style={styles.apiItem}>
-              <Text style={styles.apiName}>Mempool default TTL (ms)</Text>
+              <Text style={styles.apiName}>Other response cache (ms)</Text>
               <TextInput
                 style={styles.input}
                 value={hdMempoolTtlMs}
@@ -3496,6 +3815,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 placeholderTextColor={theme.colors.textSecondary + '80'}
               />
+              <Text style={styles.hdOptionHint}>
+                How long unmatched mempool responses stay in memory.
+              </Text>
             </View>
             <View style={styles.apiItem}>
               <Text style={styles.apiName}>Transaction sync TTL (ms)</Text>
@@ -3519,6 +3841,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 }}
                 placeholderTextColor={theme.colors.textSecondary + '80'}
               />
+              <Text style={styles.hdOptionHint}>
+                Reuse each address history for this long before downloading again.
+              </Text>
             </View>
             <View style={styles.apiActionButtonsRow}>
               <AppPressable
@@ -3531,9 +3856,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   restoreHdOptionsDefaults();
                   setHdGapLimit(
                     String(HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.GAP_LIMIT]),
-                  );
-                  setHdMinScanIndex(
-                    String(HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.MIN_SCAN_INDEX]),
                   );
                   setHdApiTimeoutMs(
                     String(HD_OPTIONS_DEFAULTS[HD_OPTIONS_KEYS.API_TIMEOUT_MS]),
@@ -3606,7 +3928,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 onSave={async () => {
                   try {
                     if (activeRelaysCSV(relayEntries).length === 0) {
-                      Alert.alert(
+                      showAppNotice(
                         'Error',
                         'Please keep at least one relay enabled',
                       );
@@ -3614,10 +3936,10 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     }
                     await saveNostrRelayEntries(relayEntries);
                     setSavedRelaySnapshot(JSON.stringify(relayEntries));
-                    Alert.alert('Success', 'Nostr relays saved successfully!');
+                    showAppNotice('Success', 'Nostr relays saved successfully!');
                   } catch (error) {
                     dbg('Error saving Nostr relays:', error);
-                    Alert.alert('Error', 'Failed to save Nostr relays');
+                    showAppNotice('Error', 'Failed to save Nostr relays');
                   }
                 }}
               />
@@ -3643,10 +3965,150 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.toggleLabel}>On</Text>
             </View>
           </CollapsibleSection>
-        </SettingsSectionGroup>
+          {/* Developer Mode — network switch plus diagnostics. Unlocked from About. */}
+          {devDebugEnabled && (
+            <CollapsibleSection
+              title="Developer Mode"
+              isExpanded={expandedSections.devDebug}
+              onToggle={() => toggleSection('devDebug')}
+              styles={styles}
+              theme={theme}>
+              <View
+                style={[
+                  styles.warningContainer,
+                  {
+                    backgroundColor: theme.colors.warningBg,
+                    borderColor: theme.colors.warningBorder,
+                  },
+                ]}>
+                <Text
+                  style={[
+                    styles.warningText,
+                    {color: theme.colors.warningText},
+                  ]}>
+                  ⚠️ Developers Only
+                </Text>
+                <Text
+                  style={[
+                    styles.warningDescription,
+                    {color: theme.colors.warningText},
+                  ]}>
+                  {Platform.OS === 'android'
+                    ? 'Debug logs may contain sensitive information. Use only on trusted devices, and only if you know what you are doing. View detailed logs in logcat (Android only, requires USB debugging). Session-only setting for debug logging — resets on app restart.'
+                    : 'Developer options may affect network behavior. Use only on trusted devices, and only if you know what you are doing.'}
+                </Text>
+              </View>
+              <View style={styles.toggleContainer}>
+                <View style={styles.networkOption}>
+                  <Image
+                    source={require('../assets/mainnet-icon.png')}
+                    style={styles.networkIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.toggleLabel}>Mainnet</Text>
+                </View>
+                <AppSwitch
+                  onValueChange={v => {
+                    toggleNetwork(v).catch(() => {});
+                  }}
+                  value={isTestnet}
+                />
+                <View style={styles.networkOption}>
+                  <Image
+                    source={require('../assets/testnet-icon.png')}
+                    style={styles.networkIcon}
+                    resizeMode="contain"
+                  />
+                  <Text style={styles.toggleLabel}>Testnet4</Text>
+                </View>
+              </View>
+              {/* Debug Logging — Android only (logcat) */}
+              {Platform.OS === 'android' && (
+                <View style={styles.debugLoggingCard}>
+                  <View style={styles.debugLoggingHeader}>
+                    <Text style={styles.debugLoggingTitle}>Debug Logging</Text>
+                    <View style={styles.debugLoggingStatus}>
+                      <View
+                        style={[
+                          styles.debugLoggingStatusDot,
+                          {
+                            backgroundColor: debugLoggingEnabled
+                              ? theme.colors.success
+                              : theme.colors.textSecondary,
+                          },
+                        ]}
+                      />
+                      <Text
+                        style={[
+                          styles.debugLoggingStatusText,
+                          {
+                            color: debugLoggingEnabled
+                              ? theme.colors.success
+                              : theme.colors.textSecondary,
+                          },
+                        ]}>
+                        {debugLoggingEnabled ? 'Active' : 'Inactive'}
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.toggleContainer}>
+                    <Text style={styles.toggleLabel}>Enable Logging</Text>
+                    <AppSwitch
+                      onValueChange={handleToggleDebugLogging}
+                      value={debugLoggingEnabled}
+                    />
+                  </View>
+                </View>
+              )}
+              <AppPressable
+                style={styles.disableDevModeButton}
+                onPress={() => {
+                  confirmAppPrompt({
+                    icon: 'dev',
+                    title: 'Hide developer tools?',
+                    hint: 'Tap the build number 7 times to show them again.',
+                    cancelLabel: 'Cancel',
+                    confirmLabel: 'Hide',
+                    tone: 'danger',
+                  }).then(ok => {
+                    if (!ok) {
+                      return;
+                    }
+                          const runDisableDev = async () => {
+                            if (isTestnet) {
+                              const switched = await toggleNetwork(false, {
+                                silent: true,
+                              });
+                              if (!switched) {
+                                return;
+                              }
+                            }
+                            setDevDebugEnabled(false);
+                            setDevDebugEnabledPref(false);
+                            Toast.show({
+                              type: 'info',
+                              text1: 'Dev Mode Disabled',
+                              text2: 'Developer Mode section is now hidden',
+                              position: 'top',
+                            });
+                          };
+                          runDisableDev().catch(e =>
+                            dbg('Disable Dev Mode:', e),
+                          );
+                  });
+                }}
+                android_ripple={{color: 'rgba(255,255,255,0.2)'}}>
+                <Text style={styles.disableDevModeButtonText}>
+                  Disable Dev Mode
+                </Text>
+              </AppPressable>
+            </CollapsibleSection>
+          )}
+          </View>
+        )}
 
-        {/* Tabs: Wallet, UTXO, PSBT, Playground */}
-        <SettingsSectionGroup title="Tabs" styles={styles} theme={theme}>
+        {selectedSettingsTab === 'Features' && (
+          <View style={styles.sectionGroup}>
           <CollapsibleSection
             title="Wallet"
             isExpanded={expandedSections.wallet}
@@ -3752,173 +4214,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </View>
             </CollapsibleSection>
           )}
-          {/* Developer Mode — enabled via 7 taps on build number (About) */}
-          {devDebugEnabled && (
-            <CollapsibleSection
-              title="Developer Mode"
-              isExpanded={expandedSections.devDebug}
-              onToggle={() => toggleSection('devDebug')}
-              styles={styles}
-              theme={theme}>
-              <View
-                style={[
-                  styles.warningContainer,
-                  {
-                    backgroundColor: theme.colors.warningBg,
-                    borderColor: theme.colors.warningBorder,
-                  },
-                ]}>
-                <Text
-                  style={[
-                    styles.warningText,
-                    {color: theme.colors.warningText},
-                  ]}>
-                  ⚠️ Developers Only
-                </Text>
-                <Text
-                  style={[
-                    styles.warningDescription,
-                    {color: theme.colors.warningText},
-                  ]}>
-                  {Platform.OS === 'android'
-                    ? 'Debug logs may contain sensitive information. Use only on trusted devices, and only if you know what you are doing. View detailed logs in logcat (Android only, requires USB debugging). Session-only setting for debug logging — resets on app restart.'
-                    : 'Developer options may affect network behavior. Use only on trusted devices, and only if you know what you are doing.'}
-                </Text>
-              </View>
-              <View style={styles.toggleContainer}>
-                <View style={styles.networkOption}>
-                  <Image
-                    source={require('../assets/mainnet-icon.png')}
-                    style={styles.networkIcon}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.toggleLabel}>Mainnet</Text>
-                </View>
-                <AppSwitch
-                  onValueChange={v => {
-                    toggleNetwork(v).catch(() => {});
-                  }}
-                  value={isTestnet}
-                />
-                <View style={styles.networkOption}>
-                  <Image
-                    source={require('../assets/testnet-icon.png')}
-                    style={styles.networkIcon}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.toggleLabel}>Testnet3</Text>
-                </View>
-              </View>
-              {/* Debug Logging — Android only (logcat) */}
-              {Platform.OS === 'android' && (
-                <View style={styles.debugLoggingCard}>
-                  <View style={styles.debugLoggingHeader}>
-                    <Text style={styles.debugLoggingTitle}>Debug Logging</Text>
-                    <View style={styles.debugLoggingStatus}>
-                      <View
-                        style={[
-                          styles.debugLoggingStatusDot,
-                          {
-                            backgroundColor: debugLoggingEnabled
-                              ? theme.colors.success
-                              : theme.colors.textSecondary,
-                          },
-                        ]}
-                      />
-                      <Text
-                        style={[
-                          styles.debugLoggingStatusText,
-                          {
-                            color: debugLoggingEnabled
-                              ? theme.colors.success
-                              : theme.colors.textSecondary,
-                          },
-                        ]}>
-                        {debugLoggingEnabled ? 'Active' : 'Inactive'}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.toggleContainer}>
-                    <Text style={styles.toggleLabel}>Enable Logging</Text>
-                    <AppSwitch
-                      onValueChange={handleToggleDebugLogging}
-                      value={debugLoggingEnabled}
-                    />
-                  </View>
-                </View>
-              )}
+          </View>
+        )}
 
-              {/* Enhanced Disable Dev Mode Button */}
-              <AppPressable
-                style={styles.disableDevModeButton}
-                onPress={() => {
-                  Alert.alert(
-                    'Disable Dev Mode',
-                    'Are you sure you want to hide the Developer Mode section? You can enable it again by clicking the build number 7 times.',
-                    [
-                      {
-                        text: 'Cancel',
-                        style: 'cancel',
-                      },
-                      {
-                        text: 'Disable',
-                        style: 'destructive',
-                        onPress: () => {
-                          const runDisableDev = async () => {
-                            if (isTestnet) {
-                              const ok = await toggleNetwork(false, {
-                                silent: true,
-                              });
-                              if (!ok) {
-                                return;
-                              }
-                            }
-                            setDevDebugEnabled(false);
-                            setDevDebugEnabledPref(false);
-                            Toast.show({
-                              type: 'info',
-                              text1: 'Dev Mode Disabled',
-                              text2: 'Developer Mode section is now hidden',
-                              position: 'top',
-                            });
-                          };
-                          runDisableDev().catch(e =>
-                            dbg('Disable Dev Mode:', e),
-                          );
-                        },
-                      },
-                    ],
-                  );
-                }}
-                android_ripple={{color: 'rgba(255,255,255,0.2)'}}>
-                <Text style={styles.disableDevModeButtonText}>
-                  Disable Dev Mode
-                </Text>
-              </AppPressable>
-            </CollapsibleSection>
-          )}
-          {/* Font Testing - Development Only */}
-          {__DEV__ && (
-            <CollapsibleSection
-              title="Font Testing"
-              isExpanded={expandedSections.fontTesting}
-              onToggle={() => toggleSection('fontTesting')}
-              styles={styles}
-              theme={theme}>
-              <Text style={styles.toggleDescription}>
-                Visual font comparison tool to verify unified fonts across
-                platforms. This section only appears in development builds. Note
-                that rendered fonts may differ from the actual fonts on your
-                device. Also, the font testing section is only visible in
-                development builds.
-              </Text>
-              <FontComparisonScreen />
-            </CollapsibleSection>
-          )}
-        </SettingsSectionGroup>
-
-        {/* Info: Legal, About */}
-        <SettingsSectionGroup title="Info" styles={styles} theme={theme}>
+        {selectedSettingsTab === 'Info' && (
+          <View style={styles.sectionGroup}>
           <CollapsibleSection
             title="Legal"
             isExpanded={expandedSections.legal}
@@ -4042,7 +4342,37 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </View>
             </AppPressable>
           </CollapsibleSection>
-        </SettingsSectionGroup>
+          {__DEV__ && (
+            <CollapsibleSection
+              title="Font Testing"
+              isExpanded={expandedSections.fontTesting}
+              onToggle={() => toggleSection('fontTesting')}
+              styles={styles}
+              theme={theme}>
+              <Text style={styles.toggleDescription}>
+                Visual font comparison tool to verify unified fonts across
+                platforms. This section only appears in development builds. Note
+                that rendered fonts may differ from the actual fonts on your
+                device. Also, the font testing section is only visible in
+                development builds.
+              </Text>
+              <FontComparisonScreen />
+            </CollapsibleSection>
+          )}
+          </View>
+        )}
+        </Animated.View>
+        {DISSOLVE_FADE ? (
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              StyleSheet.absoluteFillObject,
+              {backgroundColor: theme.colors.background},
+              settingsCoverStyle,
+            ]}
+          />
+        ) : null}
+        </View>
       </ScrollView>
       {/* Modals */}
       <RestoringIndexesModal
@@ -4053,7 +4383,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         phase={restoreProgress?.phase}
         progress={restoreProgress?.progress}
       />
-      <Modal
+      <AppModal
         visible={showAppUpdateModal}
         transparent
         animationType="fade"
@@ -4086,8 +4416,8 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </View>
         </GlassModalOverlay>
-      </Modal>
-      <Modal
+      </AppModal>
+      <AppModal
         visible={pinSetupVisible}
         transparent
         animationType="fade"
@@ -4131,7 +4461,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </View>
         </GlassModalOverlay>
-      </Modal>
+      </AppModal>
       <BackupKeyshareModal
         visible={isBackupModalVisible}
         onClose={() => setIsBackupModalVisible(false)}
@@ -4141,7 +4471,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         visible={isAirgapExportModalVisible}
         onClose={() => setIsAirgapExportModalVisible(false)}
       />
-      <Modal
+      <AppModal
         visible={isModalResetVisible}
         transparent={true}
         animationType="fade"
@@ -4199,7 +4529,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </View>
         </GlassModalOverlay>
-      </Modal>
+      </AppModal>
       <LegalModal
         visible={isLegalModalVisible}
         onClose={() => {
@@ -4208,7 +4538,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         type={legalModalType}
       />
       {/* API Info Modal */}
-      <Modal
+      <AppModal
         visible={isApiInfoVisible}
         transparent={true}
         animationType="fade"
@@ -4304,7 +4634,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </AppPressable>
           </View>
         </GlassModalOverlay>
-      </Modal>
+      </AppModal>
     </SafeAreaView>
   );
 };

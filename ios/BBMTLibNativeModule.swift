@@ -6,6 +6,9 @@
 //
 import Darwin
 import Foundation
+import UIKit
+import LocalAuthentication
+import MachO
 import Network
 import React
 import Security
@@ -35,15 +38,18 @@ class BBMTLibNativeModule: RCTEventEmitter {
     return ["BBMT_APPLE"]
   }
 
-  private func resolve(
-    _ tag: String, _ output: String, _ error: NSError?, _ resolver: @escaping RCTPromiseResolveBlock
+  // F27: resolve-or-reject gate. Go errors reject with a typed code — error
+  // text is never resolved as a value (the pre-F27 behavior of this helper).
+  private func resolveOrReject(
+    _ tag: String, _ output: String, _ error: NSError?, _ resolver: @escaping RCTPromiseResolveBlock,
+    _ rejecter: @escaping RCTPromiseRejectBlock, _ code: String
   ) {
     if error == nil {
       sendLogEvent(tag, output)
       resolver(output)
     } else {
       sendLogEvent(tag, error!.localizedDescription)
-      resolver(error!.localizedDescription)
+      rejecter(code, error!.localizedDescription, error)
     }
   }
 
@@ -58,21 +64,6 @@ class BBMTLibNativeModule: RCTEventEmitter {
   /// RN always passes the keyshare as a Swift `String` from JS (unavoidable bridge copy). This
   /// does not remove that; it zeroes the UTF-8 staging buffer we allocate and short-lived temporaries
   /// via `autoreleasepool`. Tss still receives `NSString*`; copies inside Tss are not under app control.
-  private func withZeroedUTF8Keyshare<T>(_ keyshareFromBridge: String, _ work: (String) -> T) -> T {
-    var bytes = ContiguousArray(keyshareFromBridge.utf8)
-    defer {
-      bytes.withUnsafeMutableBufferPointer { buf in
-        if let base = buf.baseAddress, buf.count > 0 {
-          memset(base, 0, buf.count)
-        }
-      }
-    }
-    let ephemeral = String(bytes: bytes, encoding: .utf8) ?? keyshareFromBridge
-    return autoreleasepool {
-      work(ephemeral)
-    }
-  }
-
   /// Keychain account for the full keyshare JSON. Must match `react-native-encrypted-storage`
   /// (`EncryptedStorage.setItem('keyshare', …)` → `kSecAttrAccount`).
   private enum RNESKeychain {
@@ -120,7 +111,9 @@ class BBMTLibNativeModule: RCTEventEmitter {
       "diag rawLen=\(rawLen) keys=[\(keysCsv)] nsec=\(nsecDesc)")
   }
 
-  /// One Keychain read: parsed Nostr `nsec` for Tss + same raw keyshare JSON string for `withZeroedUTF8Keyshare`.
+  /// One Keychain read: parsed Nostr `nsec` for Tss + same raw keyshare JSON string for native MPC calls.
+  /// NOTE (F15): these strings are the irreducible bridge copies (JS String -> NSString -> Go string).
+  /// Do not add staging copies; full elimination needs native-held shares (F15b).
   private func nsecAndKeyshareJSONFromRNES() throws -> (partyNsec: String, keyshareJSON: String) {
     guard let raw = loadKeyshareJSONFromRNES() else {
       sendLogEvent("nsecFromKeyshare", "FAIL: no_keychain_blob account=keyshare")
@@ -129,7 +122,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
         userInfo: [NSLocalizedDescriptionKey: "No keyshare found in secure storage"])
     }
     let rawLen = raw.utf8.count
-    let data = raw.data(using: .utf8)
+    let data = Self.quoteOversizedJsonIntegersForParser(raw).data(using: .utf8)
     var obj: [String: Any]?
     var parseError: Error?
     if let data = data {
@@ -235,26 +228,222 @@ class BBMTLibNativeModule: RCTEventEmitter {
 
   /// Read keyshare from the same Keychain layout as `RNEncryptedStorage` iOS implementation.
   private func loadKeyshareJSONFromRNES() -> String? {
-    let query: [String: Any] = [
-      kSecClass as String: kSecClassGenericPassword,
-      kSecAttrAccount as String: RNESKeychain.keyshareAccount,
-      kSecReturnData as String: true,
-      kSecMatchLimit as String: kSecMatchLimitOne,
-    ]
-    var dataRef: CFTypeRef?
-    let status = SecItemCopyMatching(query as CFDictionary, &dataRef)
-    if status == errSecItemNotFound { return nil }
-    guard status == errSecSuccess else { return nil }
-    guard let ref = dataRef else { return nil }
-    // Do not call CFRelease: SecItemCopyMatching result is bridged to Data and ARC-managed.
-    guard let data = ref as? Data else { return nil }
-    return String(data: data, encoding: .utf8)
+    // F15b-1: de-envelopes; pre-migration plaintext self-heals
+    // inline. Corruption surfaces loudly at bootstrap migration;
+    // here nil → NO_KEYSHARE (same user action: re-import).
+    guard let data = try? KeyshareEnvelope.readItem(account: RNESKeychain.keyshareAccount),
+      let raw = String(data: data, encoding: .utf8)
+    else { return nil }
+    let plain: String?
+    if !KeyshareEnvelope.isEnvelope(raw) {
+      guard (try? KeyshareEnvelope.ensureEnveloped(account: RNESKeychain.keyshareAccount)) != nil,
+        let data2 = try? KeyshareEnvelope.readItem(account: RNESKeychain.keyshareAccount),
+        let migrated = String(data: data2, encoding: .utf8),
+        KeyshareEnvelope.isEnvelope(migrated)
+      else { return nil }
+      plain = try? KeyshareEnvelope.decrypt(migrated)
+    } else {
+      plain = try? KeyshareEnvelope.decrypt(raw)
+    }
+    guard let plain else { return nil }
+    return healGg18QuotedBigInts(plain)
+  }
+
+  private static let gg18IssueNone = "none"
+  private static let gg18IssueQuoted = "quoted_oversized_ints"
+  private static let gg18IssueSci = "scientific_float"
+  private static let gg18IssueNotGg18 = "not_gg18"
+  private static let gg18IssueEmpty = "empty"
+
+  private static func detectGg18BigIntIssue(_ raw: String) -> String {
+    if raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+      return gg18IssueEmpty
+    }
+    if !raw.contains("ecdsa_local_data") {
+      return gg18IssueNotGg18
+    }
+    if raw.range(of: #"\d+\.\d+[eE][+\-]?\d+"#, options: .regularExpression) != nil
+      || raw.contains("Infinity")
+    {
+      return gg18IssueSci
+    }
+    if raw.range(of: #"([:\[,]\s*)"(-?\d{17,})""#, options: .regularExpression) != nil {
+      return gg18IssueQuoted
+    }
+    return gg18IssueNone
+  }
+
+  /// Recover GG18 shares whose *big.Int fields were stored as JSON
+  /// strings (JS round-trip). Re-emit bare numbers and persist.
+  private func healGg18QuotedBigInts(_ plain: String) -> String {
+    let issue = Self.detectGg18BigIntIssue(plain)
+    if issue == Self.gg18IssueSci {
+      sendLogEvent("gg18BigIntRepair", "issue=scientific_float action=unrecoverable")
+      return plain
+    }
+    guard issue == Self.gg18IssueQuoted else { return plain }
+    sendLogEvent("gg18BigIntRepair", "issue=quoted_oversized_ints action=repair")
+    let repaired = Self.emitBareOversizedJsonIntegers(plain)
+    guard repaired != plain else { return plain }
+    do {
+      let envelope = try KeyshareEnvelope.encrypt(repaired)
+      try KeyshareEnvelope.deleteItem(account: RNESKeychain.keyshareAccount)
+      try KeyshareEnvelope.addItem(
+        account: RNESKeychain.keyshareAccount,
+        data: Data(envelope.utf8),
+        accessible: KeyshareEnvelope.keyshareAccessible)
+      sendLogEvent("gg18BigIntRepair", "issue=quoted_oversized_ints action=persist_ok")
+    } catch {
+      sendLogEvent(
+        "gg18BigIntRepair",
+        "persist failed: \(error.localizedDescription)")
+    }
+    return repaired
+  }
+
+  /// Quote bare >16-digit integers on a temporary copy before passing to
+  /// JSONSerialization so Paillier-scale integers never fail NSNumber parsing.
+  private static func quoteOversizedJsonIntegersForParser(_ raw: String) -> String {
+    guard raw.contains("ecdsa_local_data") else { return raw }
+    guard
+      let re = try? NSRegularExpression(
+        pattern: #"([:\[,]\s*)(-?\d{17,})(?=\s*[,}\]\]])"#, options: [])
+    else { return raw }
+    let range = NSRange(raw.startIndex..<raw.endIndex, in: raw)
+    return re.stringByReplacingMatches(
+      in: raw, options: [], range: range, withTemplate: "$1\"$2\"")
+  }
+
+  /// Mirror of JS `emitBareOversizedJsonIntegers` / Go NormalizeQuotedBigIntJSON.
+  private static func emitBareOversizedJsonIntegers(_ raw: String) -> String {
+    guard detectGg18BigIntIssue(raw) == gg18IssueQuoted else { return raw }
+    guard
+      let re = try? NSRegularExpression(
+        pattern: #"([:\[,]\s*)"(-?\d{17,})""#, options: [])
+    else { return raw }
+    let range = NSRange(raw.startIndex..<raw.endIndex, in: raw)
+    return re.stringByReplacingMatches(
+      in: raw, options: [], range: range, withTemplate: "$1$2")
+  }
+
+  /// Detect + repair GG18 quoted *big.Int JSON. Resolves
+  /// {detected, repaired, issue} — never share bytes.
+  @objc func repairGg18KeyshareBigInts(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard let self = self else {
+        rejecter("GG18_BIGINT_REPAIR_ERROR", "module deallocated", nil)
+        return
+      }
+      guard let data = try? KeyshareEnvelope.readItem(account: RNESKeychain.keyshareAccount),
+        let raw = String(data: data, encoding: .utf8),
+        !raw.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else {
+        resolver(["detected": false, "repaired": false, "issue": Self.gg18IssueEmpty])
+        return
+      }
+      let plain: String
+      if !KeyshareEnvelope.isEnvelope(raw) {
+        if !raw.contains("ecdsa_local_data") {
+          resolver([
+            "detected": false, "repaired": false, "issue": Self.gg18IssueNotGg18,
+          ])
+          return
+        }
+        plain = raw
+      } else {
+        guard let decrypted = try? KeyshareEnvelope.decrypt(raw) else {
+          rejecter(
+            "GG18_BIGINT_REPAIR_ERROR",
+            "Could not decrypt keyshare envelope", nil)
+          return
+        }
+        plain = decrypted
+      }
+      let issue = Self.detectGg18BigIntIssue(plain)
+      let detected = issue == Self.gg18IssueQuoted || issue == Self.gg18IssueSci
+      if issue != Self.gg18IssueQuoted {
+        if issue == Self.gg18IssueSci {
+          self.sendLogEvent(
+            "gg18BigIntRepair",
+            "issue=scientific_float action=unrecoverable")
+        }
+        resolver(["detected": detected, "repaired": false, "issue": issue])
+        return
+      }
+      let repaired = self.healGg18QuotedBigInts(plain)
+      let fixed = Self.detectGg18BigIntIssue(repaired) == Self.gg18IssueNone
+      resolver(["detected": true, "repaired": fixed, "issue": issue])
+    }
+  }
+
+  /// F15b-1 resolve guard: returns false (and logs) when a value
+  /// about to resolve to JS contains share-material labels.
+  private func guardJsSafeResolve(_ value: String, method: String) -> Bool {
+    if KeyshareEnvelope.containsShareSecrets(value) {
+      sendLogEvent(method, "REFUSED to resolve share bytes to JS")
+      return false
+    }
+    return true
+  }
+
+  /// Dev tree view keeps secret KEYS so the shape is visible, but only
+  /// when each value is a `<redacted …>` marker. Any other occurrence
+  /// of those labels is still refused.
+  private func guardRedactedStructureResolve(_ value: String, method: String) -> Bool {
+    let pattern = #""(share_b64|nsec|ecdsa_local_data)"\s*:\s*"(?:<redacted|\\u003credacted)[^"]*""#
+    let stripped = value.replacingOccurrences(
+      of: pattern,
+      with: "",
+      options: .regularExpression
+    )
+    return guardJsSafeResolve(stripped, method: method)
+  }
+
+  /// F15b-1: staged DKG/import results must carry a handle ID.
+  private func guardStagedShape(_ value: String, method: String) -> Bool {
+    guard guardJsSafeResolve(value, method: method) else { return false }
+    guard value.contains("\"handle\"") else {
+      sendLogEvent(method, "REFUSED malformed staged result (no handle)")
+      return false
+    }
+    return true
+  }
+
+  /// Maps envelope/keychain failures to the shared
+  /// [SECURE_STORAGE_*] tokens so JS copy matches F3/F4.
+  private func secureStorageMessage(_ error: Error) -> String {
+    if let e = error as? KeyshareEnvelopeError {
+      switch e {
+      case .keychain(let op, let status):
+        if status == errSecInteractionNotAllowed || status == errSecAuthFailed {
+          return "[SECURE_STORAGE_LOCKED] Keychain \(op) failed. Your keyshare was not saved/read."
+        }
+        return "[SECURE_STORAGE_UNAVAILABLE] Keychain \(op) failed (\(status)). Your keyshare was not saved/read."
+      case .malformed, .authFailed:
+        return "[SECURE_STORAGE_CORRUPTED] Secure storage is corrupted. Your keyshare was not saved/read. Please re-import your keyshare backup."
+      }
+    }
+    return "[SECURE_STORAGE_UNAVAILABLE] Secure storage unavailable. Your keyshare was not saved/read."
   }
 
   @objc func publishData(
-    _ port: String, timeout: String, encKey: String, raw: String, mode: String,
+    _ port: String?, timeout: String?, encKey: String?, raw: String?, mode: String?,
+    ceremonyToken: String?, ceremonySessionID: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let port = port, let timeout = timeout, let encKey = encKey, let raw = raw, let mode = mode, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-2c B13: rides the handshake ceremony token (sign|keygen).
+    guard CeremonyTokens.verifyTransport(token: ceremonyToken, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssPublishData(port, timeout, encKey, raw, mode, &error)
@@ -263,15 +452,28 @@ class BBMTLibNativeModule: RCTEventEmitter {
         resolver(output)
       } else {
         self?.sendLogEvent("publishData", error!.localizedDescription)
-        resolver("")
+        rejecter("PUBLISH_DATA_ERROR", error!.localizedDescription, error)
       }
     }
   }
 
   @objc func fetchData(
-    _ url: String, decKey: String, payload: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ url: String?, decKey: String?, payload: String?,
+    ceremonyToken: String?, ceremonySessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let url = url, let decKey = decKey, let payload = payload, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-2c B14: rides the handshake ceremony token (sign|keygen).
+    guard CeremonyTokens.verifyTransport(token: ceremonyToken, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     var error: NSError?
     let output = TssFetchData(url, decKey, payload, &error)
     if error == nil {
@@ -279,85 +481,139 @@ class BBMTLibNativeModule: RCTEventEmitter {
       resolver(output)
     } else {
       self.sendLogEvent("fetchData", error!.localizedDescription)
-      resolver("")
+      rejecter("FETCH_DATA_ERROR", error!.localizedDescription, error)
     }
   }
 
   @objc func setBtcNetwork(
-    _ network: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ network: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let network = network else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       TssSetNetwork(network, &error)
       let output = TssGetNetwork(&error)
-      self?.sendLogEvent("setBtcNetwork", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("setBtcNetwork", error.localizedDescription)
+        rejecter("SET_BTC_NETWORK_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("setBtcNetwork", output)
+        resolver(output)
+      }
     }
   }
 
   @objc func spendingHash(
-    _ senderAddress: String,
-    receiverAddress: String,
-    amountSatoshi: String,
+    _ senderAddress: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let senderAddress = senderAddress, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssSpendingHash(
         senderAddress,
         receiverAddress,
         Int64(amountSatoshi) ?? 0, &error)
-      self?.sendLogEvent("spendingHash", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("spendingHash", error.localizedDescription)
+        rejecter("SPENDING_HASH_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("spendingHash", output)
+        resolver(output)
+      }
     }
   }
 
   @objc func spendingHashWithUTXOs(
-    _ utxosWithPathsJSON: String,
-    receiverAddress: String,
-    amountSatoshi: String,
+    _ utxosWithPathsJSON: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let utxosWithPathsJSON = utxosWithPathsJSON, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssSpendingHashWithUTXOs(
         utxosWithPathsJSON,
         receiverAddress,
         amountSatoshi, &error)
-      self?.sendLogEvent("spendingHashWithUTXOs", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("spendingHashWithUTXOs", error.localizedDescription)
+        rejecter("SPENDING_HASH_WITH_UTXOS_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("spendingHashWithUTXOs", output)
+        resolver(output)
+      }
     }
   }
 
   @objc func estimateFees(
-    _ senderAddress: String,
-    receiverAddress: String,
-    amountSatoshi: String,
+    _ senderAddress: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let senderAddress = senderAddress, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssEstimateFees(
         senderAddress,
         receiverAddress,
         Int64(amountSatoshi) ?? 0, &error)
-      self?.sendLogEvent("estimateFee", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("estimateFee", error.localizedDescription)
+        rejecter("ESTIMATE_FEES_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("estimateFee", output)
+        resolver(output)
+      }
     }
   }
 
   @objc func estimateFeeWithUTXOs(
-    _ utxosWithPathsJSON: String,
-    receiverAddress: String,
-    amountSatoshi: String,
-    changeAddress: String,
+    _ utxosWithPathsJSON: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
+    changeAddress: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let utxosWithPathsJSON = utxosWithPathsJSON, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi, let changeAddress = changeAddress else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssEstimateFeeWithUTXOs(
@@ -365,36 +621,66 @@ class BBMTLibNativeModule: RCTEventEmitter {
         receiverAddress,
         amountSatoshi,
         changeAddress, &error)
-      self?.sendLogEvent("estimateFeeWithUTXOs", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("estimateFeeWithUTXOs", error.localizedDescription)
+        rejecter("ESTIMATE_FEE_WITH_UTXOS_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("estimateFeeWithUTXOs", output)
+        resolver(output)
+      }
     }
   }
 
   @objc func runRelay(
-    _ port: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ port: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let port = port else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssRunRelay(port, &error)
-      self?.sendLogEvent("runRelay", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("runRelay", error.localizedDescription)
+        rejecter("RUN_RELAY_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("runRelay", output)
+        resolver(output)
+      }
     }
   }
 
   @objc func stopRelay(
-    _ tag: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ tag: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let tag = tag else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssStopRelay(&error)
-    resolve("stopRelay", output, error, resolver)
+    resolveOrReject("stopRelay", output, error, resolver, rejecter, "STOP_RELAY_ERROR")
   }
 
   @objc func listenForPeers(
-    _ id: String, pubkey: String, port: String, timeout: String, mode: String,
+    _ id: String?, pubkey: String?, port: String?, timeout: String?, mode: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let id = id, let pubkey = pubkey, let port = port, let timeout = timeout, let mode = mode else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssListenForPeers(id, pubkey, port, timeout, mode, &error)
@@ -403,15 +689,21 @@ class BBMTLibNativeModule: RCTEventEmitter {
         resolver(output)
       } else {
         self?.sendLogEvent("listenForPeers", error!.localizedDescription)
-        resolver("")
+        rejecter("LISTEN_PEERS_ERROR", error!.localizedDescription, error)
       }
     }
   }
 
   @objc func discoverPeers(
-    _ id: String, pubkey: String, localIp: String, remoteIp: String, port: String, timeout: String, mode: String,
+    _ id: String?, pubkey: String?, localIp: String?, remoteIp: String?, port: String?, timeout: String?, mode: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let id = id, let pubkey = pubkey, let localIp = localIp, let remoteIp = remoteIp, let port = port, let timeout = timeout, let mode = mode else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssDiscoverPeers(id, pubkey, localIp, remoteIp, port, timeout, mode, &error)
@@ -420,15 +712,21 @@ class BBMTLibNativeModule: RCTEventEmitter {
         resolver(output)
       } else { 
         self?.sendLogEvent("discoverPeers", error!.localizedDescription)
-        resolver("")
+        rejecter("DISCOVER_PEERS_ERROR", error!.localizedDescription, error)
       }
     }
   }
 
   @objc func getLanIp(
-    _ peerIP: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ peerIP: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let peerIP = peerIP else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var address: String?
     var classCAddress: String?
     var iphoneHotspotIp: String?
@@ -510,38 +808,755 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func eciesKeypair(
-    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    _ ceremonyToken: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // Pairing device key only. The Pair tap is the intent. The wallet
+    // share is still behind the setup ceremony prompt.
+    _ = ceremonyToken
     var error: NSError?
     let output = TssGenerateKeyPair(&error)
-    resolve("eciesKeypair", output, error, resolver)
+    resolveOrReject("eciesKeypair", output, error, resolver, rejecter, "ECIES_KEYPAIR_ERROR")
   }
 
-  @objc func aesEncrypt(
-    _ data: String, key: String, resolver: @escaping RCTPromiseResolveBlock,
+  // F10 (3a): dead oracle methods aesEncrypt / aesDecrypt /
+  // aesEncryptStoredKeyshare REMOVED (zero callers repo-wide, no
+  // WebView/eval/reflection path; Go TssAes* stays for native use).
+  /// F1: versioned backup import. Resolves {"format":"v2"|"legacy","plaintext":"..."}.
+  // F15b-1 (A5): backupDecrypt REMOVED — plaintext-to-JS import
+  // replaced by importBackupToStagedHandle (A6).
+  /// F15b-1 (A6): versioned backup import that stages natively.
+  /// Resolves {handle, metadata, legacy} — never plaintext.
+  @objc func importBackupToStagedHandle(
+    _ blob: String?, password: String?, ceremonyToken: String?, ceremonySessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
-    var error: NSError?
-    let output = TssAesEncrypt(data, key, &error)
-    resolve("aesEncrypt", output, error, resolver)
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let blob = blob, let password = password, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-2e B17: strict import ceremony (owner-shared stage+persist).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .import, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let output = TssImportBackupStaged(blob, password, &error)
+      if let error = error {
+        rejecter("BACKUP_IMPORT_ERROR", error.localizedDescription, error)
+        return
+      }
+      guard self?.guardStagedShape(output, method: "importBackupToStagedHandle") == true else {
+        rejecter("BACKUP_IMPORT_ERROR", "Keyshare staging failed", nil)
+        return
+      }
+      resolver(output)
+    }
   }
 
-  @objc func aesDecrypt(
-    _ data: String, key: String, resolver: @escaping RCTPromiseResolveBlock,
-    rejecter: @escaping RCTPromiseRejectBlock
+  /// F15b-1 (A7): persist a staged handle to enveloped Keychain.
+  /// Resolves post-finalize metadata for the JS mirror. Staged
+  /// entry is destroyed only after a VERIFIED write (retryable).
+  @objc func persistStoredKeyshare(
+    _ handle: String?, nsec: String?, npub: String?,
+    ceremonyToken: String?, ceremonySessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
-    var error: NSError?
-    let output = TssAesDecrypt(data, key, &error)
-    resolve("aesDecrypt", output, error, resolver)
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let handle = handle, let nsec = nsec, let npub = npub, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // Backup import uses an import token. A wallet just created on
+    // this phone reuses its setup (keygen) token, so saving does not
+    // ask again.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .import, sessionID: ceremonySessionID)
+      || CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: ceremonySessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      var error: NSError?
+      let json = TssFinalizeStagedForPersist(handle, nsec, npub, &error)
+      if let error = error {
+        rejecter("PERSIST_ERROR", error.localizedDescription, error)
+        return
+      }
+      do {
+        let envelope = try KeyshareEnvelope.encrypt(json)
+        try KeyshareEnvelope.deleteItem(account: RNESKeychain.keyshareAccount)
+        try KeyshareEnvelope.addItem(
+          account: RNESKeychain.keyshareAccount, data: Data(envelope.utf8),
+          accessible: KeyshareEnvelope.keyshareAccessible)
+        guard let check = try KeyshareEnvelope.readItem(account: RNESKeychain.keyshareAccount),
+          let checkStr = String(data: check, encoding: .utf8),
+          (try? KeyshareEnvelope.decrypt(checkStr)) == json
+        else {
+          rejecter(
+            "PERSIST_ERROR",
+            "Secure write verification failed. Retry setup without force-closing the app.", nil)
+          return
+        }
+        var metaError: NSError?
+        let metadata = TssProjectMetadata(json, &metaError)
+        if let metaError = metaError {
+          rejecter("PERSIST_ERROR", metaError.localizedDescription, metaError)
+          return
+        }
+        var destroyError: NSError?
+        _ = TssDestroyStaged(handle, &destroyError) // best-effort; memory-only entry
+        guard self?.guardJsSafeResolve(metadata, method: "persistStoredKeyshare") == true else {
+          rejecter("PERSIST_ERROR", "Refusing to expose keyshare secrets to JS", nil)
+          return
+        }
+        resolver(metadata)
+      } catch {
+        rejecter("PERSIST_ERROR", self?.secureStorageMessage(error) ?? "Secure storage error", error as NSError)
+      }
+    }
+  }
+
+  /// F15b-1 (A8): §3 superset metadata. Never share bytes.
+  @objc func getKeyshareMetadataJSON(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard let raw = self?.loadKeyshareJSONFromRNES() else {
+        rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        return
+      }
+      var error: NSError?
+      let metadata = TssProjectMetadata(raw, &error)
+      if let error = error {
+        rejecter("KEYSHARE_META_ERROR", error.localizedDescription, error)
+        return
+      }
+      guard self?.guardJsSafeResolve(metadata, method: "getKeyshareMetadataJSON") == true else {
+        rejecter("KEYSHARE_META_ERROR", "Refusing to expose keyshare secrets to JS", nil)
+        return
+      }
+      resolver(metadata)
+    }
+  }
+
+  /// F15b-1 (A9): redacted structure for the dev tree view.
+  @objc func getKeyshareStructureRedacted(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      guard let raw = self?.loadKeyshareJSONFromRNES() else {
+        rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        return
+      }
+      var error: NSError?
+      let redacted = TssRedactedStructure(raw, &error)
+      if let error = error {
+        rejecter("KEYSHARE_STRUCT_ERROR", error.localizedDescription, error)
+        return
+      }
+      guard self?.guardRedactedStructureResolve(redacted, method: "getKeyshareStructureRedacted") == true else {
+        rejecter("KEYSHARE_STRUCT_ERROR", "Refusing to expose keyshare secrets to JS", nil)
+        return
+      }
+      resolver(redacted)
+    }
+  }
+
+  /// F15b-1 (A10): wipe staged Go entries. No Keychain touch.
+  @objc func destroyKeyshareHandles(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async {
+      var error: NSError?
+      _ = TssDestroyAllStaged(&error)
+      if let error = error {
+        rejecter("DESTROY_HANDLES_ERROR", error.localizedDescription, error)
+        return
+      }
+      resolver(true)
+    }
+  }
+
+  /// 3b-1 ceremony mint, per-ceremony methods ONLY. There is
+  /// deliberately NO generic "request token for class X" bridge
+  /// method: each entry point below hardcodes its op class and
+  /// its prompt copy, so JS can neither choose the class nor
+  /// spoof the action label. Transport rides the parent
+  /// ceremony token (sign|keygen) — no transport mint exists.
+  @objc func requestSignCeremonyToken(
+    _ sessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    promptAndMint(
+      opClass: .sign, sessionID: sessionID,
+      title: "Authenticate to sign", subtitle: "Approve the signing ceremony",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  /// Silent SIGN mint for LAN handshake transport and cancel paths.
+  /// No OS prompt — co-sign approval waits until broadcast or export.
+  @objc func requestSignTransportCeremonyToken(
+    _ sessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    guard !sessionID.isEmpty else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    resolver(CeremonyTokens.mint(opClass: .sign, sessionID: sessionID))
+  }
+
+  /// F20: silent digest-bound SIGN mint for PSBT keysign. Parses the
+  /// PSBT in Go; the user approves later when exporting the signed PSBT.
+  @objc func requestPsbtSignCeremonyToken(
+    _ sessionID: String?,
+    psbtBase64: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID, let psbtBase64 = psbtBase64 else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    guard !sessionID.isEmpty else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async {
+      var error: NSError?
+      let output = TssPsbtConfirmation(psbtBase64, &error)
+      guard error == nil,
+            let data = output.data(using: .utf8),
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+            let digest = json["digest"] as? String, digest.count == 64
+      else {
+        rejecter(
+          "CEREMONY_PSBT_INVALID",
+          "Could not read this transaction. It was not signed.", error)
+        return
+      }
+      resolver(CeremonyTokens.mint(opClass: .sign, sessionID: sessionID, boundDigest: digest))
+    }
+  }
+
+  /// Approve exporting a signed PSBT (copy / share / QR). Shows the
+  /// Go-parsed summary, then the device credential. Does not mint.
+  @objc func confirmPsbtExport(
+    _ psbtBase64: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    guard let psbtBase64 = psbtBase64 else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      var error: NSError?
+      let output = TssPsbtConfirmation(psbtBase64, &error)
+      guard error == nil,
+            let data = output.data(using: .utf8),
+            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+      else {
+        rejecter(
+          "CEREMONY_PSBT_INVALID",
+          "Could not read this transaction.", error)
+        return
+      }
+      let summary = self?.psbtConfirmationSummary(json) ?? ""
+      self?.showPsbtExportConfirmation(summary: summary, resolver: resolver, rejecter: rejecter)
+    }
+  }
+
+  private func showPsbtExportConfirmation(
+    summary: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, let presenter = self.topViewController() else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        return
+      }
+      var settled = false
+      let alert = UIAlertController(
+        title: "Confirm export", message: summary, preferredStyle: .alert)
+      alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+        if !settled {
+          settled = true
+          rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        }
+      })
+      alert.addAction(UIAlertAction(title: "Confirm", style: .default) { _ in
+        settled = true
+        self.promptAndMint(
+          opClass: .sign, sessionID: "psbt-export",
+          title: "Authenticate to export", subtitle: "Approve sharing this signed PSBT",
+          resolver: resolver, rejecter: rejecter, skipMint: true)
+      })
+      presenter.present(alert, animated: true)
+    }
+  }
+
+  /// Renders the Go-parsed summary. Amounts stay in sats — exact.
+  private func psbtConfirmationSummary(_ json: [String: Any]) -> String {
+    var lines: [String] = []
+    let network = (json["network"] as? String) ?? "testnet4"
+    lines.append(network == "testnet4" ? "TESTNET4 — no real value" : "MAINNET — real funds")
+    lines.append("")
+    var totalOut: Int64 = 0
+    if let outputs = json["outputs"] as? [[String: Any]] {
+      for o in outputs {
+        let amount = psbtAmount(o["amount"])
+        totalOut += amount
+        let change = (o["isChange"] as? Bool) == true ? " (change)" : ""
+        lines.append("→ \((o["address"] as? String) ?? "?")  \(amount) sat\(change)")
+      }
+    }
+    lines.append("")
+    lines.append("Total out: \(totalOut) sat")
+    lines.append("Fee: \(psbtAmountString(json["fee"])) sat")
+    return lines.joined(separator: "\n")
+  }
+
+  private func psbtAmount(_ v: Any?) -> Int64 {
+    if let s = v as? String { return Int64(s) ?? 0 }
+    if let n = v as? NSNumber { return n.int64Value }
+    return 0
+  }
+
+  private func psbtAmountString(_ v: Any?) -> String {
+    if let s = v as? String { return s }
+    if let n = v as? NSNumber { return n.stringValue }
+    return "0"
+  }
+
+  private func topViewController() -> UIViewController? {
+    let keyWindow = UIApplication.shared.connectedScenes
+      .compactMap { $0 as? UIWindowScene }
+      .flatMap { $0.windows }
+      .first { $0.isKeyWindow }
+    var top = keyWindow?.rootViewController
+    while let presented = top?.presentedViewController {
+      top = presented
+    }
+    return top
+  }
+
+  /// F20 Phase 1b: mint a sign token bound to this payment without
+  /// a prompt. The user approves later, on Broadcast, because a
+  /// signature alone does not publish the transaction.
+  @objc func requestSendSignCeremonyToken(
+    _ sessionID: String?,
+    toAddress: String?,
+    amountSatoshi: String?,
+    feeSatoshi: String?,
+    changeAddress: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID, let toAddress = toAddress,
+          let amountSatoshi = amountSatoshi, let feeSatoshi = feeSatoshi,
+          let changeAddress = changeAddress
+    else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    guard !sessionID.isEmpty else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    let digest = SendBinding.digest(
+      toAddress: toAddress, amountSatoshi: amountSatoshi,
+      feeSatoshi: feeSatoshi, changeAddress: changeAddress)
+    // Signing does not publish. The payment sheet and biometric
+    // run later, when the user taps Broadcast.
+    resolver(CeremonyTokens.mint(opClass: .sign, sessionID: sessionID, boundDigest: digest))
+  }
+
+  /// Spend approval for an already-signed transaction. Shows the
+  /// payment, then the device credential. Does not mint a token.
+  @objc func confirmSpendBroadcast(
+    _ toAddress: String?,
+    amountSatoshi: String?,
+    feeSatoshi: String?,
+    changeAddress: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    guard let toAddress = toAddress, let amountSatoshi = amountSatoshi,
+          let feeSatoshi = feeSatoshi, let changeAddress = changeAddress
+    else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    let trim = { (s: String) in s.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var lines = [
+      SendBinding.isTestnetAddress(toAddress) ? "TESTNET4 — no real value" : "MAINNET — real funds",
+      "",
+      "Send \(trim(amountSatoshi)) sat",
+      "To: \(trim(toAddress))",
+      "Fee: \(trim(feeSatoshi)) sat",
+    ]
+    if !trim(changeAddress).isEmpty {
+      lines.append("Change: \(trim(changeAddress))")
+    }
+    showSendConfirmation(
+      summary: lines.joined(separator: "\n"),
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  private func showSendConfirmation(
+    summary: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, let presenter = self.topViewController() else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        return
+      }
+      var settled = false
+      let alert = UIAlertController(
+        title: "Confirm payment", message: summary, preferredStyle: .alert)
+      alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+        if !settled {
+          settled = true
+          rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+        }
+      })
+      alert.addAction(UIAlertAction(title: "Confirm", style: .default) { _ in
+        settled = true
+        self.promptAndMint(
+          opClass: .sign, sessionID: "broadcast",
+          title: "Authenticate to broadcast", subtitle: "Approve sending this payment",
+          resolver: resolver, rejecter: rejecter, skipMint: true)
+      })
+      presenter.present(alert, animated: true)
+    }
+  }
+
+  /// F20-1b: bound-token send check shared by the send methods.
+  /// Returns true when the caller must stop (already rejected).
+  private func rejectIfSendBindingMismatch(
+    token: String, toAddress: String, amountSatoshi: String,
+    feeSatoshi: String, changeAddress: String,
+    rejecter: RCTPromiseRejectBlock
+  ) -> Bool {
+    let actual = SendBinding.digest(
+      toAddress: toAddress, amountSatoshi: amountSatoshi,
+      feeSatoshi: feeSatoshi, changeAddress: changeAddress)
+    if CeremonyTokens.contentBindingOk(token: token, actualDigestHex: actual) {
+      return false
+    }
+    rejecter(
+      "CEREMONY_SEND_MISMATCH",
+      "Payment details changed since confirmation — review and confirm again.", nil)
+    return true
+  }
+
+  /// F20: bound-token PSBT check shared by the four sign methods.
+  /// Returns true when the caller must stop (already rejected).
+  private func rejectIfPsbtBindingMismatch(
+    token: String, psbtBase64: String,
+    rejecter: RCTPromiseRejectBlock
+  ) -> Bool {
+    if CeremonyTokens.contentBindingOk(
+      token: token, actualDigestHex: PsbtDigest.compute(psbtBase64)) {
+      return false
+    }
+    rejecter(
+      "CEREMONY_PSBT_MISMATCH",
+      "Transaction changed since confirmation — review and confirm again.", nil)
+    return true
+  }
+
+  @objc func requestKeygenCeremonyToken(
+    _ sessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    promptAndMint(
+      opClass: .keygen, sessionID: sessionID,
+      title: "Authenticate to generate keys", subtitle: "Approve the wallet setup ceremony",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestWalletSetupCeremonyToken(
+    _ sessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    promptAndMint(
+      opClass: .keygen, sessionID: sessionID,
+      title: "Create this wallet with these phones", subtitle: "Approve wallet setup",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestExportCeremonyToken(
+    _ sessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    promptAndMint(
+      opClass: .export, sessionID: sessionID,
+      title: "Authenticate to export backup", subtitle: "Approve the backup export",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestImportCeremonyToken(
+    _ sessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    promptAndMint(
+      opClass: .import, sessionID: sessionID,
+      title: "Authenticate to import backup", subtitle: "Approve the backup import",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  @objc func requestConfigCeremonyToken(
+    _ sessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    promptAndMint(
+      opClass: .config, sessionID: sessionID,
+      title: "Authenticate to change settings", subtitle: "Approve the network settings change",
+      resolver: resolver, rejecter: rejecter)
+  }
+
+  /// Shared mint worker. PRIVATE — not a bridge method, not
+  /// JS-reachable. OS-visible auth FIRST (LAContext,
+  /// biometric-or-device-passcode), mint ONLY on success. No
+  /// screen lock → CEREMONY_AUTH_NO_LOCK refuse (Q3). Every other
+  /// failure → CEREMONY_AUTH_REQUIRED (no reason oracle).
+  private func promptAndMint(
+    opClass: CeremonyOpClass, sessionID: String, title: String, subtitle: String,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock,
+    boundDigest: String? = nil, skipMint: Bool = false
+  ) {
+    guard !sessionID.isEmpty else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
+      return
+    }
+    let context = LAContext()
+    var evalError: NSError?
+    guard context.canEvaluatePolicy(.deviceOwnerAuthentication, error: &evalError) else {
+      if let code = evalError?.code, code == LAError.passcodeNotSet.rawValue {
+        rejecter("CEREMONY_AUTH_NO_LOCK", "Set a device screen lock to continue.", nil)
+      } else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", evalError)
+      }
+      return
+    }
+    // LAContext takes a single reason string (Android uses
+    // title+subtitle); combine for parity. Copy is hardcoded
+    // per ceremony above — JS supplies nothing, so the action
+    // label is unspoofable (the per-transaction WHAT remains a
+    // disclosed residual per §6.4; F20 owns the native screen).
+    // The prompt itself is always OS-rendered.
+    let reason = title + " — " + subtitle
+    context.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: reason) { success, _ in
+      if success {
+        if skipMint {
+          resolver(true)
+        } else {
+          resolver(CeremonyTokens.mint(opClass: opClass, sessionID: sessionID, boundDigest: boundDigest))
+        }
+      } else {
+        // User cancel, fallback, lockout, failure: never mint.
+        rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
+      }
+    }
+  }
+
+  /// 3b-1: retire a token after ceremony success (-> used).
+  @objc func completeCeremonyToken(
+    _ token: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let token = token else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    CeremonyTokens.complete(token: token)
+    resolver(true)
+  }
+
+  /// 3b-1: revoke a token on teardown (-> revoked). Idempotent.
+  @objc func releaseCeremonyToken(
+    _ token: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let token = token else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    CeremonyTokens.release(token: token)
+    resolver(true)
+  }
+
+  /// Point the setup approval at the session derived after connect.
+  @objc func rebindCeremonySession(
+    _ token: String?, sessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    guard let token = token, let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    if CeremonyTokens.rebindSession(token: token, newSessionID: sessionID) {
+      resolver(true)
+    } else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+    }
+  }
+
+  #if DEBUG
+    /// DEBUG-ONLY prompt-bypassing mint for tests. Stripped from
+    /// release by #if DEBUG (unlike Android's runtime gate;
+    /// disclosed, same security property). Production code must
+    /// never call this — guardrailed in jest.
+    @objc func requestCeremonyTokenTest(
+      _ op: String?, sessionID: String?,
+      resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let op = op, let sessionID = sessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+      guard let opClass = CeremonyOpClass.parse(op), !sessionID.isEmpty else {
+        rejecter("CEREMONY_AUTH_REQUIRED", "Confirm to continue — authenticate in the prompt.", nil)
+        return
+      }
+      resolver(CeremonyTokens.mint(opClass: opClass, sessionID: sessionID))
+    }
+  #endif
+
+  /// F15b-1 migration bootstrap (§1.5 step 7): idempotent
+  /// plaintext → envelope migration. Resolves {migrated:bool}.
+  /// Storage failures reject with [SECURE_STORAGE_*] copy.
+  @objc func ensureKeyshareEnveloped(
+    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .background).async { [weak self] in
+      do {
+        let migrated = try KeyshareEnvelope.ensureEnveloped(account: RNESKeychain.keyshareAccount)
+        resolver(["migrated": migrated])
+      } catch {
+        rejecter("MIGRATION_ERROR", self?.secureStorageMessage(error) ?? String(describing: error), error as NSError)
+      }
+    }
   }
 
   @objc func sha256(
-    _ message: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ message: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let message = message else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssSha256(message, &error)
-    resolve("sha256", output, error, resolver)
+    resolveOrReject("sha256", output, error, resolver, rejecter, "SHA256_ERROR")
+  }
+
+  // F32 (Option A): trio ECDH exchange for LAN keygen. Phase 1 blocks
+  // polling for peers (bounded server-side), so all three run off the
+  // bridge queue. Typed TRIO_* errors reject to JS for handling.
+  @objc func trioECDHPhase1(
+    _ server: String?, session: String?, selfParty: String?, parties: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    guard let server = server, let session = session, let selfParty = selfParty, let parties = parties else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async {
+      var error: NSError?
+      let output = TssTrioECDHPhase1(server, session, selfParty, parties, &error)
+      self.resolveOrReject("trioECDHPhase1", output, error, resolver, rejecter, "TRIO_ECDH_ERROR")
+    }
+  }
+
+  @objc func trioECDHConfirm(
+    _ handle: String?, session: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    guard let handle = handle, let session = session else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async {
+      var error: NSError?
+      let output = TssTrioECDHConfirm(handle, session, &error)
+      self.resolveOrReject("trioECDHConfirm", output, error, resolver, rejecter, "TRIO_ECDH_ERROR")
+    }
+  }
+
+  @objc func trioECDHAbort(
+    _ handle: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    guard let handle = handle else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+    DispatchQueue.global(qos: .userInitiated).async {
+      var error: NSError?
+      let output = TssTrioECDHAbort(handle, &error)
+      self.resolveOrReject("trioECDHAbort", output, error, resolver, rejecter, "TRIO_ECDH_ERROR")
+    }
   }
 
   @objc func secureRandom(
@@ -550,116 +1565,249 @@ class BBMTLibNativeModule: RCTEventEmitter {
   ) {
     var error: NSError?
     let output = TssSecureRandom(Int32(length), &error)
-    resolve("secureRandom", output, error, resolver)
+    resolveOrReject("secureRandom", output, error, resolver, rejecter, "SECURE_RANDOM_ERROR")
   }
 
   @objc func recoverPubkey(
-    _ r: String, s: String, v: String, h: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ r: String?, s: String?, v: String?, h: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let r = r, let s = s, let v = v, let h = h else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssSecP256k1Recover(r, s, v, h, &error)
-    resolve("recoverPubkey", output, error, resolver)
+    resolveOrReject("recoverPubkey", output, error, resolver, rejecter, "RECOVER_PUBKEY_ERROR")
   }
 
   @objc func derivePubkey(
-    _ hexPubkey: String, hexChaincode: String, path: String,
+    _ hexPubkey: String?, hexChaincode: String?, path: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let hexPubkey = hexPubkey, let hexChaincode = hexChaincode, let path = path else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssGetDerivedPubKey(hexPubkey, hexChaincode, path, false, &error)
-    resolve("derivePubkey", output, error, resolver)
+    if let error = error {
+      sendLogEvent("derivePubkey", error.localizedDescription)
+      rejecter("DERIVE_PUBKEY_ERROR", "Failed to derive pubkey: \(error.localizedDescription)", error)
+      return
+    }
+    resolveOrReject("derivePubkey", output, nil, resolver, rejecter, "DERIVE_PUBKEY_ERROR")
   }
 
   @objc func encodeXpub(
-    _ hexPubkey: String, hexChaincode: String, network: String,
+    _ hexPubkey: String?, hexChaincode: String?, network: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let hexPubkey = hexPubkey, let hexChaincode = hexChaincode, let network = network else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssEncodeXpub(hexPubkey, hexChaincode, network, &error)
-    resolve("encodeXpub", output, error, resolver)
+    resolveOrReject("encodeXpub", output, error, resolver, rejecter, "ENCODE_XPUB_ERROR")
   }
 
   @objc func getOutputDescriptor(
-    _ hexPubkey: String, hexChaincode: String, network: String, addressType: String,
+    _ hexPubkey: String?, hexChaincode: String?, network: String?, addressType: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let hexPubkey = hexPubkey, let hexChaincode = hexChaincode, let network = network, let addressType = addressType else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssGetOutputDescriptor(hexPubkey, hexChaincode, network, addressType, &error)
-    resolve("getOutputDescriptor", output, error, resolver)
+    resolveOrReject("getOutputDescriptor", output, error, resolver, rejecter, "GET_OUTPUT_DESCRIPTOR_ERROR")
   }
 
   @objc func appendOutputDescriptorChecksum(
-    _ descriptorBody: String,
+    _ descriptorBody: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let descriptorBody = descriptorBody else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssAppendOutputDescriptorChecksum(descriptorBody, &error)
-    resolve("appendOutputDescriptorChecksum", output, error, resolver)
+    resolveOrReject("appendOutputDescriptorChecksum", output, error, resolver, rejecter, "APPEND_OUTPUT_DESCRIPTOR_CHECKSUM_ERROR")
   }
 
   @objc func btcAddress(
-    _ compressedPubkey: String, network: String, addressType: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ compressedPubkey: String?, network: String?, addressType: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
-    var error: NSError?
-    if addressType == "segwit-native" {
-      let segwitNative = TssPubToP2WPKH(compressedPubkey, network, &error)
-      resolve("btcAddress", segwitNative, error, resolver)
-    } else if addressType == "segwit-compatible" {
-      let segwitCompatible = TssPubToP2SHP2WKH(compressedPubkey, network, &error)
-      resolve("btcAddress", segwitCompatible, error, resolver)
-    } else if addressType == "taproot" {
-      let taproot = TssPubToP2TR(compressedPubkey, network, &error)
-      resolve("btcAddress", taproot, error, resolver)
-    } else if addressType == "legacy" {
-      let legacy = TssPubToP2KH(compressedPubkey, network, &error)
-      resolve("btcAddress", legacy, error, resolver)
-    } else {
-      resolve("btcAddress", "", error, resolver)
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let compressedPubkey = compressedPubkey, let network = network, let addressType = addressType else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
     }
+
+    var error: NSError?
+    let output: String
+    if addressType == "segwit-native" {
+      output = TssPubToP2WPKH(compressedPubkey, network, &error)
+    } else if addressType == "segwit-compatible" {
+      output = TssPubToP2SHP2WKH(compressedPubkey, network, &error)
+    } else if addressType == "taproot" {
+      output = TssPubToP2TR(compressedPubkey, network, &error)
+    } else if addressType == "legacy" {
+      output = TssPubToP2KH(compressedPubkey, network, &error)
+    } else {
+      output = ""
+    }
+    if let error = error {
+      sendLogEvent("btcAddress", error.localizedDescription)
+      rejecter("BTC_ADDRESS_ERROR", "Failed to generate BTC address: \(error.localizedDescription)", error)
+      return
+    }
+    resolveOrReject("btcAddress", output, nil, resolver, rejecter, "BTC_ADDRESS_ERROR")
   }
 
   @objc func setFeePolicy(
-    _ policy: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ policy: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let policy = policy else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssUseFeePolicy(policy, &error)
-    resolve("setFeePolicy", output, error, resolver)
+    resolveOrReject("setFeePolicy", output, error, resolver, rejecter, "SET_FEE_POLICY_ERROR")
+  }
+
+  /// 3b-2d B15/B16: native-held API allowlist store.
+  /// UserDefaults key with NO other writer (grep-verified).
+  private var apiAllowlistStore: CeremonyApiAllowlist.Store {
+    CeremonyApiAllowlist.Store(
+      load: {
+        Set(UserDefaults.standard.stringArray(forKey: "ceremonyApiAllowlistUrls") ?? [])
+      },
+      save: { urls in
+        UserDefaults.standard.set(Array(urls), forKey: "ceremonyApiAllowlistUrls")
+      }
+    )
+  }
+
+  /// 3b-2d: allowlist-or-token gate. True when the call may
+  /// proceed (newly approved URLs persisted best-effort — a
+  /// persist failure still applies this use since the user
+  /// approved it; the next launch simply prompts again).
+  private func gateApiUrls(
+    _ urls: [String], token: String, sessionID: String,
+    method: String, rejecter: @escaping RCTPromiseRejectBlock
+  ) -> Bool {
+    // F11: shape before auth — malformed URLs never prompt nor persist.
+    for url in urls {
+      if !CeremonyApiAllowlist.isAllowedApiUrlShape(url) {
+        sendLogEvent(method, "rejecting malformed API URL")
+        rejecter("INVALID_URL", "Malformed API URL", nil)
+        return false
+      }
+    }
+    switch CeremonyApiAllowlist.decide(urls: urls, token: token, sessionID: sessionID, store: apiAllowlistStore) {
+    case .reject:
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return false
+    case .applyAndPersist:
+      CeremonyApiAllowlist.persist(urls, store: apiAllowlistStore)
+      return true
+    case .apply:
+      return true
+    }
   }
 
   @objc func setAPI(
-    _ network: String, baseAPI: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ network: String?, baseAPI: String?, ceremonyToken: String?, ceremonySessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let network = network, let baseAPI = baseAPI, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    guard gateApiUrls([baseAPI], token: ceremonyToken, sessionID: ceremonySessionID, method: "setAPI", rejecter: rejecter) else {
+      return
+    }
     var error: NSError?
     let output = TssUseAPI(network, baseAPI, &error)
-    resolve("setAPI", output, error, resolver)
+    if let error = error {
+      sendLogEvent("setAPI", error.localizedDescription)
+      rejecter("SET_API_ERROR", error.localizedDescription, error)
+      return
+    }
+    resolveOrReject("setAPI", output, nil, resolver, rejecter, "SET_API_ERROR")
   }
 
   @objc func setFeeAPIs(
-    _ urls: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ urls: String?, ceremonyToken: String?, ceremonySessionID: String?,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let urls = urls, let ceremonyToken = ceremonyToken, let ceremonySessionID = ceremonySessionID else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    guard gateApiUrls(CeremonyApiAllowlist.parseCsv(urls), token: ceremonyToken, sessionID: ceremonySessionID, method: "setFeeAPIs", rejecter: rejecter) else {
+      return
+    }
     var error: NSError?
     let output = TssUseFeeAPIs(urls, &error)
-    resolve("setFeeAPIs", output, error, resolver)
+    if let error = error {
+      sendLogEvent("setFeeAPIs", error.localizedDescription)
+      rejecter("SET_FEE_APIS_ERROR", error.localizedDescription, error)
+      return
+    }
+    resolveOrReject("setFeeAPIs", output, nil, resolver, rejecter, "SET_FEE_APIS_ERROR")
   }
   
   @objc func totalUTXO(
-    _ address: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ address: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let address = address else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let output = TssTotalUTXO(address, &error)
-    resolve("totalUTXO", output, error, resolver)
+    resolveOrReject("totalUTXO", output, error, resolver, rejecter, "TOTAL_UTXO_ERROR")
   }
 
   @objc func preparams(
-    _ outFile: String, timeout: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ outFile: String?, timeout: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let outFile = outFile, let timeout = timeout else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     var success: ObjCBool = false
     let waitMinutes = Int(timeout) ?? 2
@@ -678,37 +1826,86 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
   }
 
+  // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
+  // variant decision deferred). DKLs twins stage natively.
   @objc func mpcTssSetup(
-    _ server: String, partyID: String, ppmFile: String, partiesCSV: String, sessionID: String,
-    sessionKey: String, encKey: String, decKey: String, chaincode: String,
+    _ server: String?, partyID: String?, ppmFile: String?, partiesCSV: String?, sessionID: String?,
+    sessionKey: String?, encKey: String?, decKey: String?, chaincode: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let ppmFile = ppmFile, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let chaincode = chaincode, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-6: GG18 setup takes a keygen token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     var error: NSError?
     let output = TssJoinKeygen(
       ppmFile, partyID, partiesCSV, encKey, decKey, sessionID, server, chaincode, sessionKey, &error)
-    resolve("mpcTssSetup", output, error, resolver)
+    // F27-GG18: reject Go errors; never resolve error text as a keyshare.
+    if let error = error {
+      sendLogEvent("mpcTssSetup", error.localizedDescription)
+      rejecter("MPC_TSS_SETUP_ERROR", error.localizedDescription, error)
+    } else {
+      resolveOrReject("mpcTssSetup", output, nil, resolver, rejecter, "MPC_TSS_SETUP_ERROR")
+    }
   }
 
   @objc func nostrKeypair(
-    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    _ ceremonyToken: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-2b B20: single-call keygen ceremony (no MPC session yet).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .keygen) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssNostrKeypair(&error)
-      self?.sendLogEvent("nostrKeypair", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a keypair.
+      if let error = error {
+        self?.sendLogEvent("nostrKeypair", error.localizedDescription)
+        rejecter("NOSTR_KEYPAIR_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("nostrKeypair", output)
+        resolver(output)
+      }
     }
   }
 
   @objc func hexToNpub(
-    _ hexKey: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ hexKey: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let hexKey = hexKey else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssHexToNpub(hexKey, &error)
-      self?.sendLogEvent("hexToNpub", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("hexToNpub", error.localizedDescription)
+        rejecter("HEX_TO_NPUB_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("hexToNpub", output)
+        resolver(output)
+      }
     }
   }
 
@@ -729,10 +1926,22 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsMpcTssSetup(
-    _ server: String, partyID: String, partiesCSV: String, sessionID: String,
-    sessionKey: String, encKey: String, decKey: String, chaincode: String,
+    _ server: String?, partyID: String?, partiesCSV: String?, sessionID: String?,
+    sessionKey: String?, encKey: String?, decKey: String?, chaincode: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let chaincode = chaincode, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-2b: gate FIRST — before runtime checks.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter(
@@ -748,16 +1957,32 @@ class BBMTLibNativeModule: RCTEventEmitter {
         rejecter("DKLS_MPC_SETUP_ERROR", output, nil)
         return
       }
-      self?.sendLogEvent("dklsMpcTssSetup", String(output.prefix(120)))
+      // F15b-1: staged shape only; never log resolve values.
+      guard self?.guardStagedShape(output, method: "dklsMpcTssSetup") == true else {
+        rejecter("DKLS_MPC_SETUP_ERROR", "Keyshare staging failed", nil)
+        return
+      }
+      self?.sendLogEvent("dklsMpcTssSetup", "staged ok len=\(output.count)")
       resolver(output)
     }
   }
 
   @objc func dklsNostrMpcTssSetup(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, chaincode: String,
+    _ relaysCSV: String?, partyNsec: String?, partiesNpubsCSV: String?, sessionID: String?,
+    sessionKey: String?, chaincode: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partyNsec = partyNsec, let partiesNpubsCSV = partiesNpubsCSV, let sessionID = sessionID, let sessionKey = sessionKey, let chaincode = chaincode, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-2b: gate FIRST — before runtime checks.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter(
@@ -773,15 +1998,32 @@ class BBMTLibNativeModule: RCTEventEmitter {
         rejecter("DKLS_NOSTR_KEYGEN_ERROR", output, nil)
         return
       }
-      self?.sendLogEvent("dklsNostrMpcTssSetup", String(output.prefix(120)))
+      // F15b-1: staged shape only; never log resolve values.
+      guard self?.guardStagedShape(output, method: "dklsNostrMpcTssSetup") == true else {
+        rejecter("DKLS_NOSTR_KEYGEN_ERROR", "Keyshare staging failed", nil)
+        return
+      }
+      self?.sendLogEvent("dklsNostrMpcTssSetup", "staged ok len=\(output.count)")
       resolver(output)
     }
   }
 
   @objc func dklsCancelMpcSession(
-    _ sessionID: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ sessionID: String?, ceremonyToken: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-4 B19: cancel consumes the ceremony token (same
+    // op+session) and atomically revokes the session.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     if BbmtBridge.isAvailable() {
       BbmtBridge.cancelMpcSession(sessionID)
     }
@@ -789,8 +2031,21 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsCancelNostrMpc(
-    _ resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
+    _ ceremonyToken: String?,
+    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-4 B19: global cancel consumes a live ceremony
+    // token; the token's own session scopes revocation.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: nil) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     if BbmtBridge.isAvailable() {
       BbmtBridge.cancelNostrMpc()
     }
@@ -798,10 +2053,22 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsMpcSignPSBT(
-    _ server: String, partyID: String, partiesCSV: String, sessionID: String,
-    sessionKey: String, encKey: String, decKey: String, psbtBase64: String,
+    _ server: String?, partyID: String?, partiesCSV: String?, sessionID: String?,
+    sessionKey: String?, encKey: String?, decKey: String?, psbtBase64: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let psbtBase64 = psbtBase64, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-2a: gate FIRST — before runtime checks or storage reads.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -809,6 +2076,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       }
       guard let keyshare = self?.loadKeyshareJSONFromRNES() else {
         rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        return
+      }
+      // F20: sign only the confirmed artifact.
+      guard let self = self, !self.rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
         return
       }
       let output = BbmtBridge.mpcSignPsbt(
@@ -824,12 +2095,23 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsMpcSendBTCWithUTXOs(
-    _ server: String, partyID: String, partiesCSV: String, sessionID: String,
-    sessionKey: String, encKey: String, decKey: String, btcPub: String,
-    toAddress: String, satoshiAmount: String, satoshiFees: String,
-    utxosWithPathsJSON: String, changeAddress: String,
+    _ server: String?, partyID: String?, partiesCSV: String?, sessionID: String?,
+    sessionKey: String?, encKey: String?, decKey: String?, btcPub: String?,
+    toAddress: String?, satoshiAmount: String?, satoshiFees: String?,
+    utxosWithPathsJSON: String?, changeAddress: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let btcPub = btcPub, let toAddress = toAddress, let satoshiAmount = satoshiAmount, let satoshiFees = satoshiFees, let utxosWithPathsJSON = utxosWithPathsJSON, let changeAddress = changeAddress, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-2a: gate FIRST — before runtime checks or storage reads.
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -837,6 +2119,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       }
       guard let keyshare = self?.loadKeyshareJSONFromRNES() else {
         rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
+        return
+      }
+      // F20-1b: pay only the confirmed payment.
+      guard let self = self, !self.rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: toAddress, amountSatoshi: satoshiAmount, feeSatoshi: satoshiFees, changeAddress: changeAddress, rejecter: rejecter) else {
         return
       }
       let output = BbmtBridge.mpcSendBtc(
@@ -853,11 +2139,23 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsNostrMpcSendBTC(
-    _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
-    balanceSats: String, toAddress: String, satoshiAmount: String,
-    satoshiFees: String, utxosWithPathsJSON: String, changeAddress: String,
+    _ relaysCSV: String?, partiesNpubsCSV: String?, npubsSorted: String?,
+    balanceSats: String?, toAddress: String?, satoshiAmount: String?,
+    satoshiFees: String?, utxosWithPathsJSON: String?, changeAddress: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partiesNpubsCSV = partiesNpubsCSV, let npubsSorted = npubsSorted, let balanceSats = balanceSats, let toAddress = toAddress, let satoshiAmount = satoshiAmount, let satoshiFees = satoshiFees, let utxosWithPathsJSON = utxosWithPathsJSON, let changeAddress = changeAddress, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-2a: gate FIRST — single-call ceremony, no MPC session.
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -866,6 +2164,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       do {
         let (partyNsec, keyshareJSON) = try self?.nsecAndKeyshareJSONFromRNES()
           ?? ("", "")
+        // F20-1b: pay only the confirmed payment.
+        guard let self = self, !self.rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: toAddress, amountSatoshi: satoshiAmount, feeSatoshi: satoshiFees, changeAddress: changeAddress, rejecter: rejecter) else {
+          return
+        }
         let output = BbmtBridge.nostrMpcSendBtc(
           withRelays: relaysCSV, nsec: partyNsec, parties: partiesNpubsCSV,
           npubsSorted: npubsSorted, balance: balanceSats, keyshare: keyshareJSON,
@@ -883,10 +2185,21 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func dklsNostrMpcSignPSBT(
-    _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
-    psbtBase64: String,
+    _ relaysCSV: String?, partiesNpubsCSV: String?, npubsSorted: String?,
+    psbtBase64: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partiesNpubsCSV = partiesNpubsCSV, let npubsSorted = npubsSorted, let psbtBase64 = psbtBase64, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-2a: gate FIRST — single-call ceremony, no MPC session.
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -895,6 +2208,10 @@ class BBMTLibNativeModule: RCTEventEmitter {
       do {
         let (partyNsec, keyshareJSON) = try self?.nsecAndKeyshareJSONFromRNES()
           ?? ("", "")
+        // F20: sign only the confirmed artifact.
+        guard let self = self, !self.rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
+          return
+        }
         let output = BbmtBridge.nostrMpcSignPsbt(
           withRelays: relaysCSV, nsec: partyNsec, parties: partiesNpubsCSV,
           npubsSorted: npubsSorted, keyshare: keyshareJSON, psbt: psbtBase64)
@@ -909,46 +2226,54 @@ class BBMTLibNativeModule: RCTEventEmitter {
     }
   }
 
+  // F19: GG18 setup output stays plaintext in Wave 3 (protocol-
+  // variant decision deferred). DKLs twins stage natively.
   @objc func nostrMpcTssSetup(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, chaincode: String, ppmFile: String,
+    _ relaysCSV: String?, partyNsec: String?, partiesNpubsCSV: String?, sessionID: String?,
+    sessionKey: String?, chaincode: String?, ppmFile: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partyNsec = partyNsec, let partiesNpubsCSV = partiesNpubsCSV, let sessionID = sessionID, let sessionKey = sessionKey, let chaincode = chaincode, let ppmFile = ppmFile, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-6: GG18 setup takes a keygen token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .keygen, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssNostrJoinKeygen(
         relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, chaincode, ppmFile, &error)
-      self?.sendLogEvent("nostrMpcTssSetup", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27-GG18: reject Go errors; never resolve error text as a keyshare.
+      if let error = error {
+        self?.sendLogEvent("nostrMpcTssSetup", error.localizedDescription)
+        rejecter("NOSTR_MPC_TSS_SETUP_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("nostrMpcTssSetup", output)
+        resolver(output)
+      }
     }
   }
 
-  @objc func nostrJoinKeysign(
-    _ relaysCSV: String, partyNsec: String, partiesNpubsCSV: String, sessionID: String,
-    sessionKey: String, keyshareJSON: String, derivationPath: String, message: String,
-    resolver: @escaping RCTPromiseResolveBlock, rejecter: @escaping RCTPromiseRejectBlock
-  ) {
-    DispatchQueue.global(qos: .background).async { [weak self] in
-      guard let self = self else {
-        resolver("")
-        return
-      }
-      var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshareJSON) { ks in
-        TssNostrJoinKeysign(
-          relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKey, ks,
-          derivationPath, message, &error)
-      }
-      self.sendLogEvent("nostrJoinKeysign", output)
-      resolver(error == nil ? output : error!.localizedDescription)
-    }
-  }
+  // F18 (3b-3): nostrJoinKeysign REMOVED (dead from JS — zero
+  // static/dynamic/WebView/reflection callers). Go
+  // BbmtNostrJoinKeysign stays (native-only, harmless).
 
   @objc func postTx(
-    _ rawTxHex: String,
+    _ rawTxHex: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let rawTxHex = rawTxHex else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let txid = TssPostTx(rawTxHex, &error)
@@ -962,10 +2287,16 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func computeTxId(
-    _ rawTxHex: String,
+    _ rawTxHex: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let rawTxHex = rawTxHex else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     var error: NSError?
     let txid = TssComputeTxId(rawTxHex, &error)
     if error == nil {
@@ -976,10 +2307,22 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func cancelMpcSession(
-    _ sessionID: String,
+    _ sessionID: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let sessionID = sessionID, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-4 B19: cancel consumes the ceremony token (same
+    // op+session) and atomically revokes the session.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async {
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -996,9 +2339,22 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func cancelNostrMpc(
-    _ resolver: @escaping RCTPromiseResolveBlock,
+    _ ceremonyToken: String?,
+    resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-4 B19: global cancel consumes a live ceremony
+    // token; the token's own session scopes revocation.
+    guard CeremonyTokens.cancelConsume(token: ceremonyToken, sessionID: nil) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async {
       guard BbmtBridge.isAvailable() else {
         rejecter("DKLS_NATIVE_REQUIRED", "Run BBMTLib/build-dkls.sh ios", nil)
@@ -1015,30 +2371,54 @@ class BBMTLibNativeModule: RCTEventEmitter {
   }
 
   @objc func disableLogging(
-    _ tag: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ tag: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let tag = tag else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     useLog = false
     TssDisableLogs()
     resolver(tag)
   }
 
   @objc func parsePSBTDetails(
-    _ psbtBase64: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ psbtBase64: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let psbtBase64 = psbtBase64 else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssParsePSBTDetails(psbtBase64, &error)
-      self?.sendLogEvent("parsePSBTDetails", output)
-      resolver(error == nil ? output : error!.localizedDescription)
+      // F27: reject Go errors; never resolve error text as a value.
+      if let error = error {
+        self?.sendLogEvent("parsePSBTDetails", error.localizedDescription)
+        rejecter("PARSE_PSBT_ERROR", error.localizedDescription, error)
+      } else {
+        self?.sendLogEvent("parsePSBTDetails", output)
+        resolver(output)
+      }
     }
   }
 
   @objc func psbtIdentityHash(
-    _ psbtBase64: String, resolver: @escaping RCTPromiseResolveBlock,
+    _ psbtBase64: String?, resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let psbtBase64 = psbtBase64 else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
     DispatchQueue.global(qos: .background).async { [weak self] in
       var error: NSError?
       let output = TssPsbtIdentityHash(psbtBase64, &error)
@@ -1055,17 +2435,33 @@ class BBMTLibNativeModule: RCTEventEmitter {
   // MARK: - Stored keyshare (read from RNES-compatible storage; no keyshare string from JS bridge)
 
   @objc func mpcSignPSBT(
-    _ server: String,
-    partyID: String,
-    partiesCSV: String,
-    sessionID: String,
-    sessionKey: String,
-    encKey: String,
-    decKey: String,
-    psbtBase64: String,
+    _ server: String?,
+    partyID: String?,
+    partiesCSV: String?,
+    sessionID: String?,
+    sessionKey: String?,
+    encKey: String?,
+    decKey: String?,
+    psbtBase64: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let psbtBase64 = psbtBase64, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-6: GG18 sign takes a sign token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    // F20: sign only the confirmed artifact.
+    guard !rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1076,40 +2472,60 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshare) { ks in
-        TssMpcSignPSBT(
-          server,
-          partyID,
-          partiesCSV,
-          sessionID,
-          sessionKey,
-          encKey,
-          decKey,
-          ks,
-          psbtBase64, &error)
+      let output = TssMpcSignPSBT(
+        server,
+        partyID,
+        partiesCSV,
+        sessionID,
+        sessionKey,
+        encKey,
+        decKey,
+        keyshare,
+        psbtBase64, &error)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("mpcSignPSBT", error.localizedDescription)
+        rejecter("MPC_SIGN_PSBT_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("mpcSignPSBT", output)
+        resolver(output)
       }
-      self.sendLogEvent("mpcSignPSBT", output)
-      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
   @objc func mpcSendBTCWithUTXOs(
-    _ server: String,
-    partyID: String,
-    partiesCSV: String,
-    sessionID: String,
-    sessionKey: String,
-    encKey: String,
-    decKey: String,
-    publicKey: String,
-    receiverAddress: String,
-    amountSatoshi: String,
-    feeSatoshi: String,
-    utxosWithPathsJSON: String,
-    changeAddress: String,
+    _ server: String?,
+    partyID: String?,
+    partiesCSV: String?,
+    sessionID: String?,
+    sessionKey: String?,
+    encKey: String?,
+    decKey: String?,
+    publicKey: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
+    feeSatoshi: String?,
+    utxosWithPathsJSON: String?,
+    changeAddress: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let server = server, let partyID = partyID, let partiesCSV = partiesCSV, let sessionID = sessionID, let sessionKey = sessionKey, let encKey = encKey, let decKey = decKey, let publicKey = publicKey, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi, let feeSatoshi = feeSatoshi, let utxosWithPathsJSON = utxosWithPathsJSON, let changeAddress = changeAddress, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-6: GG18 send takes a sign token (strict session).
+    guard CeremonyTokens.verify(token: ceremonyToken, opClass: .sign, sessionID: sessionID) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    // F20-1b: pay only the confirmed payment.
+    guard !rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: receiverAddress, amountSatoshi: amountSatoshi, feeSatoshi: feeSatoshi, changeAddress: changeAddress, rejecter: rejecter) else {
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1120,41 +2536,61 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshare) { ks in
-        TssMpcSendBTCWithUTXOs(
-          server,
-          partyID,
-          partiesCSV,
-          sessionID,
-          sessionKey,
-          encKey,
-          decKey,
-          ks,
-          publicKey,
-          receiverAddress,
-          amountSatoshi,
-          feeSatoshi,
-          utxosWithPathsJSON,
-          changeAddress, &error)
+      let output = TssMpcSendBTCWithUTXOs(
+        server,
+        partyID,
+        partiesCSV,
+        sessionID,
+        sessionKey,
+        encKey,
+        decKey,
+        keyshare,
+        publicKey,
+        receiverAddress,
+        amountSatoshi,
+        feeSatoshi,
+        utxosWithPathsJSON,
+        changeAddress, &error)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("mpcSendBTCWithUTXOs", error.localizedDescription)
+        rejecter("MPC_SEND_BTC_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("mpcSendBTCWithUTXOs", output)
+        resolver(output)
       }
-      self.sendLogEvent("mpcSendBTCWithUTXOs", output)
-      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
   @objc func nostrMpcSendBTC(
-    _ relaysCSV: String,
-    partiesNpubsCSV: String,
-    npubsSorted: String,
-    balanceSats: String,
-    receiverAddress: String,
-    amountSatoshi: String,
-    estimatedFee: String,
-    utxosWithPathsJSON: String,
-    changeAddress: String,
+    _ relaysCSV: String?,
+    partiesNpubsCSV: String?,
+    npubsSorted: String?,
+    balanceSats: String?,
+    receiverAddress: String?,
+    amountSatoshi: String?,
+    estimatedFee: String?,
+    utxosWithPathsJSON: String?,
+    changeAddress: String?,
+    ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partiesNpubsCSV = partiesNpubsCSV, let npubsSorted = npubsSorted, let balanceSats = balanceSats, let receiverAddress = receiverAddress, let amountSatoshi = amountSatoshi, let estimatedFee = estimatedFee, let utxosWithPathsJSON = utxosWithPathsJSON, let changeAddress = changeAddress, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-6: GG18 nostr send takes a sign token (single-call).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    // F20-1b: pay only the confirmed payment.
+    guard !rejectIfSendBindingMismatch(token: ceremonyToken, toAddress: receiverAddress, amountSatoshi: amountSatoshi, feeSatoshi: estimatedFee, changeAddress: changeAddress, rejecter: rejecter) else {
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1176,31 +2612,50 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshareJSON) { ks in
-        TssNostrMpcSendBTCWithUTXOs(
-          relaysCSV,
-          partyNsec,
-          partiesNpubsCSV,
-          npubsSorted,
-          balanceSats,
-          ks,
-          receiverAddress,
-          amountSatoshi,
-          estimatedFee,
-          utxosWithPathsJSON,
-          changeAddress, &error)
+      let output = TssNostrMpcSendBTCWithUTXOs(
+        relaysCSV,
+        partyNsec,
+        partiesNpubsCSV,
+        npubsSorted,
+        balanceSats,
+        keyshareJSON,
+        receiverAddress,
+        amountSatoshi,
+        estimatedFee,
+        utxosWithPathsJSON,
+        changeAddress, &error)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("nostrMpcSendBTC", error.localizedDescription)
+        rejecter("NOSTR_MPC_SEND_BTC_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("nostrMpcSendBTC", output)
+        resolver(output)
       }
-      self.sendLogEvent("nostrMpcSendBTC", output)
-      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
   @objc func nostrMpcSignPSBT(
-    _ relaysCSV: String, partiesNpubsCSV: String, npubsSorted: String,
-    psbtBase64: String,
+    _ relaysCSV: String?, partiesNpubsCSV: String?, npubsSorted: String?,
+    psbtBase64: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let relaysCSV = relaysCSV, let partiesNpubsCSV = partiesNpubsCSV, let npubsSorted = npubsSorted, let psbtBase64 = psbtBase64, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-6: GG18 nostr sign takes a sign token (single-call).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .sign) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
+    // F20: sign only the confirmed artifact.
+    guard !rejectIfPsbtBindingMismatch(token: ceremonyToken, psbtBase64: psbtBase64, rejecter: rejecter) else {
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1222,20 +2677,38 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(keyshareJSON) { ks in
-        TssNostrMpcSignPSBT(
-          relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, ks, psbtBase64, &error)
+      let output = TssNostrMpcSignPSBT(
+        relaysCSV, partyNsec, partiesNpubsCSV, npubsSorted, keyshareJSON, psbtBase64, &error)
+      // F27-GG18: reject Go errors; never resolve error text as a signature.
+      if let error = error {
+        self.sendLogEvent("nostrMpcSignPSBT", error.localizedDescription)
+        rejecter("NOSTR_MPC_SIGN_PSBT_ERROR", error.localizedDescription, error)
+      } else {
+        self.sendLogEvent("nostrMpcSignPSBT", output)
+        resolver(output)
       }
-      self.sendLogEvent("nostrMpcSignPSBT", output)
-      resolver(error == nil ? output : error!.localizedDescription)
     }
   }
 
-  @objc func aesEncryptStoredKeyshare(
-    _ key: String,
+  // (aesEncryptStoredKeyshare removed here — see note at aesEncrypt.)
+  /// F1: versioned backup export. Password goes to Go (Argon2id + AES-GCM);
+  /// JS never sees a derived key. Emits v2 format only.
+  @objc func backupEncryptStoredKeyshare(
+    _ password: String?, ceremonyToken: String?,
     resolver: @escaping RCTPromiseResolveBlock,
     rejecter: @escaping RCTPromiseRejectBlock
   ) {
+    // F11: JS null reaches Swift as nil; non-optional params would trap.
+    guard let password = password, let ceremonyToken = ceremonyToken else {
+      rejecter("INVALID_ARGS", "null string argument", nil)
+      return
+    }
+
+    // 3b-3 A12: single-call export ceremony (no MPC session).
+    guard CeremonyTokens.verifySingleCall(token: ceremonyToken, opClass: .export) else {
+      rejecter("CEREMONY_AUTH_REQUIRED", "Ceremony authorization required for this call", nil)
+      return
+    }
     DispatchQueue.global(qos: .background).async { [weak self] in
       guard let self = self else {
         rejecter("MODULE_GONE", "Native module released", nil)
@@ -1246,14 +2719,11 @@ class BBMTLibNativeModule: RCTEventEmitter {
         return
       }
       var error: NSError?
-      let output = self.withZeroedUTF8Keyshare(data) { ks in
-        TssAesEncrypt(ks, key, &error)
-      }
-      self.sendLogEvent("aesEncryptStoredKeyshare", output)
-      if error == nil {
-        resolver(output)
+      let output = TssBackupEncrypt(data, password, &error)
+      if let error = error {
+        rejecter("BACKUP_ENCRYPT_ERROR", error.localizedDescription, error)
       } else {
-        resolver(error!.localizedDescription)
+        resolver(output)
       }
     }
   }
@@ -1266,6 +2736,78 @@ class BBMTLibNativeModule: RCTEventEmitter {
   ) {
     DispatchQueue.global(qos: .userInitiated).async { [weak self] in
       resolve(self?.keyshareExistsInRNES() ?? false)
+    }
+  }
+
+  /// F36: device-integrity signals (jailbreak artifacts, sandbox escape,
+  /// suspicious dylibs incl. Frida, simulator build). Defense-in-depth with
+  /// no backend: heuristics only, always resolves a JSON string
+  /// `{"compromised":bool,"signals":[...]}`. Fail-open on internal error —
+  /// detection must never brick the app. A hooked device can lie to this
+  /// check; it raises the bar for casual jailbroken use, it is not
+  /// attestation (that needs App Attest plus backend verification).
+  @objc func getDeviceIntegritySignals(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.global(qos: .userInitiated).async {
+      var signals: [String] = []
+      let fm = FileManager.default
+      let jbPaths = [
+        "/Applications/Cydia.app",
+        "/Library/MobileSubstrate/MobileSubstrate.dylib",
+        "/bin/bash",
+        "/usr/sbin/sshd",
+        "/etc/apt",
+        "/private/var/lib/apt/",
+        "/private/var/stash",
+        "/private/var/lib/cydia",
+        "/private/var/tmp/cydia.log",
+        "/Applications/RockApp.app",
+        "/Applications/Icy.app",
+        "/Applications/WinterBoard.app",
+        "/Library/MobileSubstrate/DynamicLibraries/Veency.plist",
+        "/System/Library/LaunchDaemons/com.ikey.bbot.plist",
+        "/System/Library/LaunchDaemons/com.saurik.Cydia.Startup.plist",
+      ]
+      for p in jbPaths {
+        if fm.fileExists(atPath: p) {
+          signals.append("ios-jailbreak-artifact")
+          break
+        }
+      }
+      // Sandbox escape probe: App Store apps cannot write outside their container.
+      let probe = "/private/" + UUID().uuidString
+      if fm.createFile(atPath: probe, contents: Data("x".utf8)) {
+        try? fm.removeItem(atPath: probe)
+        if !signals.contains("ios-jailbreak-artifact") {
+          signals.append("ios-sandbox-escape")
+        }
+      }
+      // Suspicious injected dylibs (Substrate / SSL kill-switches / Frida gadget).
+      let imageCount = _dyld_image_count()
+      for i in 0..<imageCount {
+        if let cName = _dyld_get_image_name(i) {
+          let name = String(cString: cName).lowercased()
+          if name.contains("mobilesubstrate") || name.contains("cydiasubstrate")
+            || name.contains("sslkillswitch") || name.contains("frida")
+            || name.contains("cynject") {
+            signals.append("ios-suspicious-dylib")
+            break
+          }
+        }
+      }
+      #if targetEnvironment(simulator)
+      signals.append("ios-simulator-build")
+      #endif
+      let unique = Array(Set(signals)).sorted()
+      let payload: [String: Any] = ["compromised": !unique.isEmpty, "signals": unique]
+      if let data = try? JSONSerialization.data(withJSONObject: payload),
+        let json = String(data: data, encoding: .utf8) {
+        resolve(json)
+      } else {
+        resolve("{\"compromised\":false,\"signals\":[]}")
+      }
     }
   }
 
@@ -1282,7 +2824,7 @@ class BBMTLibNativeModule: RCTEventEmitter {
         rejecter("NO_KEYSHARE", "No keyshare found in secure storage", nil)
         return
       }
-      guard let data = raw.data(using: .utf8),
+      guard let data = Self.quoteOversizedJsonIntegersForParser(raw).data(using: .utf8),
         let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
       else {
         rejecter("PARSE_ERROR", "Invalid keyshare JSON", nil)

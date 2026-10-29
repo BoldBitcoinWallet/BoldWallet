@@ -1,11 +1,11 @@
 import {CommonActions} from '@react-navigation/native';
+import {confirmAppPrompt, showAppNotice} from '../services/appPrompt';
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Alert,
-  Modal,
   ScrollView,
   Animated,
   Easing,
@@ -14,6 +14,7 @@ import {
   Pressable,
   ActivityIndicator,
 } from 'react-native';
+import AppModal, {armModalDismiss} from '../components/AppModal';
 import AppPressable from '../components/AppPressable';
 import GlassModalOverlay from '../components/GlassModalOverlay';
 import DocumentPicker from 'react-native-document-picker';
@@ -29,12 +30,17 @@ import {
   clearShowcaseImportPrefs,
   removeLegacyEncryptedPrefKeys,
 } from '../services/encryptedPrefsMigration';
+import {discardPendingKeyshares} from '../services/keyshareHandles';
 import KeyshareImportPasswordModal from '../components/KeyshareImportPasswordModal';
 import QRScanner, {stopAndroidContinuousScan} from '../components/QRScanner';
 import {
+  AirgapHostResumeError,
+  waitForAirgapHostScreen,
+} from '../utils/airgapHostResume';
+import {
   assertNoExistingWallet,
   importKeyshareFromBase64,
-  readKeyshareBase64FromUri,
+  readBackupBlobFromUri,
   showKeyshareImportError,
   showWalletAlreadyLoadedAlert,
   WalletAlreadyLoadedError,
@@ -49,10 +55,7 @@ import {
   setKeygenTssBackendPreference,
 } from '../services/tssConfig';
 import type {TssBackend} from '../services/tssBackend';
-import database from '../services/Database';
-import {WalletService} from '../services/WalletService';
-import mempoolClient from '../services/MempoolClient';
-import LocalCache from '../services/LocalCache';
+import {clearCachesBeforeWalletSession} from '../services/walletSessionReset';
 import {useUser} from '../context/UserContext';
 import {shouldIgnoreNonUrDuringSendScan} from '../utils/sendQrScan';
 import {
@@ -63,6 +66,8 @@ import {
   urSeqIndexFromPart,
   type UrBytesProgress,
 } from '../utils/urBytesQr';
+const AIRGAP_IMPORT_TIMEOUT_MS = 90_000;
+
 const ShowcaseScreen = ({navigation}: any) => {
   const [modalVisible, setModalVisible] = useState(false);
   const [fileContent, setFileContent] = useState('');
@@ -78,6 +83,7 @@ const ShowcaseScreen = ({navigation}: any) => {
     null,
   );
   const airgapImportingRef = useRef(false);
+  const airgapImportEpochRef = useRef(0);
   const airgapPasswordRef = useRef('');
   const airgapLastLoggedReceivedRef = useRef(-1);
   const [walletAlreadyLoaded, setWalletAlreadyLoaded] = useState(false);
@@ -88,6 +94,7 @@ const ShowcaseScreen = ({navigation}: any) => {
   const [isModeModalVisible, setIsModeModalVisible] = useState(false);
   const [selectedMode, setSelectedMode] = useState<'duo' | 'trio' | null>(null);
   const [isTransportModalVisible, setIsTransportModalVisible] = useState(false);
+  const transportDismissRef = useRef<(() => void) | null>(null);
   const [pendingMode, setPendingMode] = useState<'duo' | 'trio' | null>(null);
   const [pendingKeygenBackend, setPendingKeygenBackend] =
     useState<TssBackend | null>(null);
@@ -106,26 +113,13 @@ const ShowcaseScreen = ({navigation}: any) => {
     const clearAllCache = async () => {
       try {
         dbg('=== ShowcaseScreen: Full reset for wallet import');
-
-        // 1. Wipe all SQLite wallet tables (UTXOs, balances, transactions,
-        //    HD indexes, sync metadata, pending txs, …).
-        database.clearWalletData();
-        dbg('SQLite wallet data cleared');
-
-        // 2. Wipe in-memory caches so stale data never leaks into the new
-        //    wallet session.
-        const ws = WalletService.getInstance();
-        ws.invalidateAddressCache();
-        mempoolClient.invalidateAll();
-        dbg('In-memory caches cleared');
+        await clearCachesBeforeWalletSession();
+        dbg('Wallet caches cleared');
 
         // Display / PIN / debug prefs. Launcher identity + keyshare meta stay.
         clearShowcaseImportPrefs();
         await removeLegacyEncryptedPrefKeys();
         dbg('Import prefs cleared');
-
-        await LocalCache.clear();
-        dbg('Local file cache cleared');
 
         dbg('=== ShowcaseScreen: Full reset completed');
       } catch (err) {
@@ -200,26 +194,27 @@ const ShowcaseScreen = ({navigation}: any) => {
     );
   };
   const removeLoadedKeyshare = () => {
-    Alert.alert(
-      'Remove keyshare?',
-      'This deletes the wallet on this phone. It does not delete a backup file you already saved.',
-      [
-        {text: 'Cancel', style: 'cancel'},
-        {
-          text: 'Remove',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await EncryptedStorage.removeItem(KEYSHARE_STORAGE_KEY);
-            } catch (e) {
-              dbg('Showcase: keyshare remove failed', e);
-            }
-            await clearKeyshareMetadata();
-            setWalletAlreadyLoaded(false);
-          },
-        },
-      ],
-    );
+    confirmAppPrompt({
+      icon: 'delete',
+      title: 'Remove this wallet?',
+      hint: 'A backup file you already saved stays.',
+      cancelLabel: 'Cancel',
+      confirmLabel: 'Remove',
+      tone: 'danger',
+    }).then(async ok => {
+      if (!ok) {
+        return;
+      }
+      try {
+        await EncryptedStorage.removeItem(KEYSHARE_STORAGE_KEY);
+      } catch (e) {
+        dbg('Showcase: keyshare remove failed', e);
+      }
+      await clearKeyshareMetadata();
+      // F15b-1 (A10): wipe any Go-staged keyshare behind a dropped handle.
+      await discardPendingKeyshares();
+      setWalletAlreadyLoaded(false);
+    });
   };
   const handleRestoreWallet = async () => {
     try {
@@ -227,7 +222,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       const res = await DocumentPicker.pickSingle({
         type: [DocumentPicker.types.allFiles],
       });
-      const content = await readKeyshareBase64FromUri(`${res.uri}`);
+      const content = await readBackupBlobFromUri(`${res.uri}`);
       setRestoreMode('file');
       setFileContent(content);
       setModalVisible(true);
@@ -240,7 +235,7 @@ const ShowcaseScreen = ({navigation}: any) => {
         dbg('User cancelled the picker');
       } else {
         dbg('Error reading file:', err.message || err);
-        Alert.alert('Error', 'Failed to read the file');
+        showAppNotice('Error', 'Failed to read the file');
       }
     }
   };
@@ -270,20 +265,64 @@ const ShowcaseScreen = ({navigation}: any) => {
   };
   const importAirgapCipher = useCallback(
     async (base64Content: string, password: string) => {
+      const epoch = ++airgapImportEpochRef.current;
       airgapImportingRef.current = true;
       setIsImporting(true);
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      let invalidated = false;
       try {
-        await importKeyshareFromBase64(base64Content, password, {
+        // Camera activity / scanner modal must be gone before the OS auth
+        // sheet. Prompting during that handoff never calls back.
+        await waitForAirgapHostScreen();
+        if (airgapImportEpochRef.current !== epoch) {
+          return;
+        }
+        const imported = importKeyshareFromBase64(base64Content, password, {
           setActiveNetwork,
-          navigate: action => navigation.dispatch(action),
+          navigate: action => {
+            if (airgapImportEpochRef.current !== epoch) {
+              return;
+            }
+            navigation.dispatch(action);
+          },
         });
+        imported.catch(() => undefined);
+        const timedOut = new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => {
+            reject(new Error('AIRGAP_IMPORT_TIMEOUT'));
+          }, AIRGAP_IMPORT_TIMEOUT_MS);
+        });
+        await Promise.race([imported, timedOut]);
+        if (airgapImportEpochRef.current !== epoch) {
+          return;
+        }
         setModalVisible(false);
         setRestoreMode(null);
         resetAirgapRestore();
       } catch (error) {
+        if (airgapImportEpochRef.current !== epoch) {
+          return;
+        }
         airgapImportingRef.current = false;
-        if (error instanceof WrongKeysharePasswordError) {
-          Alert.alert('Wrong PIN', 'That PIN does not match this QR.');
+        const stalled =
+          (error instanceof Error && error.message === 'AIRGAP_IMPORT_TIMEOUT') ||
+          error instanceof AirgapHostResumeError;
+        if (stalled) {
+          // Drop a late success so a prompt that returns after the timeout
+          // cannot navigate away from the error.
+          invalidated = true;
+          airgapImportEpochRef.current += 1;
+          showAppNotice(
+            'Import timed out',
+            error instanceof AirgapHostResumeError
+              ? error.message
+              : 'Authentication did not finish. Scan the QR again.',
+          );
+          setModalVisible(false);
+          setRestoreMode(null);
+          resetAirgapRestore();
+        } else if (error instanceof WrongKeysharePasswordError) {
+          showAppNotice('Wrong PIN', 'That PIN does not match this QR.');
           setIsAirgapScannerVisible(false);
           setModalVisible(true);
         } else {
@@ -293,7 +332,12 @@ const ShowcaseScreen = ({navigation}: any) => {
           resetAirgapRestore();
         }
       } finally {
-        setIsImporting(false);
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        if (airgapImportEpochRef.current === epoch || invalidated) {
+          setIsImporting(false);
+        }
       }
     },
     [navigation, resetAirgapRestore, setActiveNetwork],
@@ -411,12 +455,12 @@ const ShowcaseScreen = ({navigation}: any) => {
       airgapUrDecoderRef.current = null;
       setAirgapUrProgress(urResult.progress);
       setAirgapCipherBase64(urResult.payload);
-      // Stop ZXing and import on this event. setTimeout is frozen while
-      // MainActivity is paused behind the capture activity (same as elapsed 0s).
+      // Stop the camera now. Import waits until this screen is active again
+      // before the OS auth prompt — prompting during finish() never returns.
       stopAndroidContinuousScan();
       setIsAirgapScannerVisible(false);
       setIsImporting(true);
-      void importAirgapCipher(urResult.payload, airgapPasswordRef.current);
+      importAirgapCipher(urResult.payload, airgapPasswordRef.current);
     }
   }, [importAirgapCipher]);
   const styles = StyleSheet.create({
@@ -523,6 +567,8 @@ const ShowcaseScreen = ({navigation}: any) => {
       backgroundColor: theme.colors.bitcoinOrange,
       borderColor: theme.colors.bitcoinOrange,
     },
+    walletLoadedActionLabel: {fontWeight: '600'},
+    walletLoadedActionPrimaryLabel: {color: '#FFFFFF', fontWeight: '700'},
     ctaButtonPrimary: {
       backgroundColor:
         theme.colors.background === '#ffffff'
@@ -644,7 +690,7 @@ const ShowcaseScreen = ({navigation}: any) => {
           : theme.colors.bitcoinOrange,
     },
     checkmark: {
-      color: theme.colors.background,
+      color: theme.colors.white,
       fontSize: theme.fontSizes?.lg || 16,
       fontFamily: theme.fontFamilies?.bold,
     },
@@ -1185,14 +1231,20 @@ const ShowcaseScreen = ({navigation}: any) => {
               <AppPressable
                 style={styles.walletLoadedAction}
                 onPress={removeLoadedKeyshare}>
-                <Text style={{color: theme.colors.text, fontWeight: '600'}}>
+                <Text
+                  style={[
+                    styles.walletLoadedActionLabel,
+                    {color: theme.colors.text},
+                  ]}>
                   Remove
                 </Text>
               </AppPressable>
               <AppPressable
                 style={[styles.walletLoadedAction, styles.walletLoadedActionPrimary]}
                 onPress={openLoadedWallet}>
-                <Text style={{color: '#FFFFFF', fontWeight: '700'}}>Open wallet</Text>
+                <Text style={styles.walletLoadedActionPrimaryLabel}>
+                  Open wallet
+                </Text>
               </AppPressable>
             </View>
           </View>
@@ -1344,6 +1396,7 @@ const ShowcaseScreen = ({navigation}: any) => {
       {/* Transport Mode Selector */}
       <TransportModeSelector
         visible={isTransportModalVisible}
+        onDismiss={() => transportDismissRef.current?.()}
         onClose={() => {
           setIsTransportModalVisible(false);
           setPendingMode(null);
@@ -1355,6 +1408,9 @@ const ShowcaseScreen = ({navigation}: any) => {
             transport: transport === 'local' ? ('lan' as const) : ('nostr' as const),
             backend: pendingKeygenBackend ?? undefined,
           };
+          const closed = armModalDismiss(transportDismissRef);
+          setIsTransportModalVisible(false);
+          closed.then(() => {
           if (transport === 'local') {
             navigation.dispatch(
               CommonActions.reset({
@@ -1381,12 +1437,13 @@ const ShowcaseScreen = ({navigation}: any) => {
             );
           }
           setPendingKeygenBackend(null);
+          });
         }}
         title="Select Pairing Method"
         description="Choose how to connect with other devices"
       />
       {/* Mode Selection Modal */}
-      <Modal
+      <AppModal
         transparent={true}
         visible={isModeModalVisible}
         animationType="fade"
@@ -1647,7 +1704,7 @@ const ShowcaseScreen = ({navigation}: any) => {
                       const url =
                         'https://x.com/boldbtcwallet/status/1988322162386854108';
                       Linking.openURL(url).catch(err => {
-                        Alert.alert('Error', 'Unable to open the video link');
+                        showAppNotice('Error', 'Unable to open the video link');
                         dbg('Error opening URL:', err);
                       });
                     }}
@@ -1686,7 +1743,7 @@ const ShowcaseScreen = ({navigation}: any) => {
             </View>
           </View>
         </GlassModalOverlay>
-      </Modal>
+      </AppModal>
       {isImporting && restoreMode === 'airgap' && !isAirgapScannerVisible ? (
         <View style={styles.importingOverlay} pointerEvents="auto">
           <View style={styles.importingCard}>

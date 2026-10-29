@@ -1,9 +1,16 @@
 #!/usr/bin/env bash
 # BoldWallet mobile native libs:
 #   ./build-all.sh       → libtss + GG18 + DKLs (Android + iOS on macOS) — use before release
-#   ./build.sh           → GG18 gomobile (tss.aar / Tss.xcframework)
+#   ./build.sh           → toolchain setup + DKLs (see --with-dkls); legacy Tss binds below
 #   ./build-dkls.sh      → DKLs23 c-shared (libbbmtmobile.so / libbbmtmobile.xcframework)
 #   ./build.sh --with-dkls → GG18 + DKLs (same as build-all minus libtss pre-step / host smoke)
+#
+# Legacy: gomobile tss.aar / Tss.xcframework are NOT linked by either app
+# (single libbbmtmobile runtime; see ios/BbmtMobile/README.md, BBMTLib/README.md,
+# androidSingleRuntime test). Their binds are skipped by default; the iOS bind
+# additionally fails on current Xcode (gobind emits ObjC `byte` for uint8
+# struct fields, rejected by newer SDKs). Set BUILD_LEGACY_TSS=1 or pass
+# --legacy-tss to run them anyway.
 #
 # Do not gomobile-bind dklsbind on Android: dkls.aar duplicates go.Seq from tss.aar.
 set -euo pipefail
@@ -13,18 +20,21 @@ cd "${ROOT}"
 
 WITH_DKLS=0
 CLEAR_CACHE=0
+LEGACY_TSS="${BUILD_LEGACY_TSS:-0}"
 for arg in "$@"; do
   case "${arg}" in
     --with-dkls) WITH_DKLS=1 ;;
     --clear-cache) CLEAR_CACHE=1 ;;
+    --legacy-tss) LEGACY_TSS=1 ;;
     -h|--help)
-      echo "Usage: $0 [--clear-cache] [--with-dkls]"
+      echo "Usage: $0 [--clear-cache] [--with-dkls] [--legacy-tss]"
       echo "  --with-dkls    Also run build-dkls.sh (Android + iOS on macOS)"
+      echo "  --legacy-tss   Also bind legacy tss.aar / Tss.xcframework (unused by the apps)"
       exit 0
       ;;
     *)
       echo "Unknown option: ${arg}"
-      echo "Usage: $0 [--clear-cache] [--with-dkls]"
+      echo "Usage: $0 [--clear-cache] [--with-dkls] [--legacy-tss]"
       exit 1
       ;;
   esac
@@ -137,14 +147,15 @@ fi
 # Set flag for Go modules
 export GOFLAGS="-mod=mod"
 
+# DKLs23 on Android: ./build-dkls.sh android → libbbmtmobile.so + dkls_jni (not dkls.aar).
+# A second gomobile AAR duplicates go.Seq / go.Universe at link time.
+
+if [[ "${LEGACY_TSS}" == "1" ]]; then
 # Run Bind
 # Note: -androidapi 21 is the standard min version
 # Android 15 requires 16 KB page size support. Go 1.23+ supports it, but we explicitly
 # set the max-page-size for the linker to ensure libgojni.so is compliant.
 gomobile bind -v -target=android -androidapi 21 -ldflags="-extldflags=-Wl,-z,max-page-size=16384" -o tss.aar github.com/BoldBitcoinWallet/BBMTLib/tss
-
-# DKLs23 on Android: ./build-dkls.sh android → libbbmtmobile.so + dkls_jni (not dkls.aar).
-# A second gomobile AAR duplicates go.Seq / go.Universe from tss.aar at link time.
 
 # Copy Artifacts
 if [[ -d "../android/app/libs" ]]; then
@@ -152,7 +163,7 @@ if [[ -d "../android/app/libs" ]]; then
     info "Copying Android artifacts..."
     cp -v tss.aar ../android/app/libs/tss.aar || warn "Copy tss.aar failed"
     echo "✓ tss.aar copied to ../android/app/libs/tss.aar"
-    # gomobile bind generates sources jar alongside the aar? 
+    # gomobile bind generates sources jar alongside the aar?
     # Usually it produces just the .aar. If you have a custom process generating -sources.jar, keep this.
     if [[ -f "tss-sources.jar" ]]; then
         cp -v tss-sources.jar ../android/app/libs/tss-sources.jar || warn "Copy sources.jar failed"
@@ -160,28 +171,35 @@ if [[ -d "../android/app/libs" ]]; then
     fi
     rm -f ../android/app/libs/dkls.aar 2>/dev/null || true
 fi
+else
+    info "Skipping legacy tss.aar (unused; apps link libbbmtmobile). Set BUILD_LEGACY_TSS=1 to build it."
+fi
 
 # --- 4. Build: iOS/macOS ---
 
 if [[ "$(uname)" == "Darwin" ]]; then
-    info "macOS detected → Building for iOS/Simulator/macOS"
-    
-    # Ensure Xcode command line tools or Xcode is valid
-    if ! xcode-select -p &>/dev/null; then
-        echo "Error: Xcode tools not found. Cannot build for iOS."
-        exit 1
-    fi
+    if [[ "${LEGACY_TSS}" == "1" ]]; then
+        info "macOS detected → Building legacy Tss.xcframework"
 
-    # GG18 only; DKLs23 iOS uses ./build-dkls.sh ios → libdklsmobile.xcframework + DklsBridge
-    gomobile bind -v -target=ios,iossimulator,macos -o Tss.xcframework github.com/BoldBitcoinWallet/BBMTLib/tss
+        # Ensure Xcode command line tools or Xcode is valid
+        if ! xcode-select -p &>/dev/null; then
+            echo "Error: Xcode tools not found. Cannot build for iOS."
+            exit 1
+        fi
 
-    # Copy Artifacts
-    if [[ -d "../ios" ]]; then
-        info "Copying iOS artifacts..."
-        rm -rf ../ios/Tss.xcframework 2>/dev/null || true
-        cp -a ./Tss.xcframework ../ios/ || warn "Copy Tss.xcframework failed"
-        echo "✓ Tss.xcframework copied to ../ios/Tss.xcframework"
-        rm -rf ../ios/Dkls.xcframework 2>/dev/null || true
+        # GG18 only; DKLs23 iOS uses ./build-dkls.sh ios → libbbmtmobile.xcframework + BbmtBridge
+        gomobile bind -v -target=ios,iossimulator,macos -o Tss.xcframework github.com/BoldBitcoinWallet/BBMTLib/tss
+
+        # Copy Artifacts
+        if [[ -d "../ios" ]]; then
+            info "Copying iOS artifacts..."
+            rm -rf ../ios/Tss.xcframework 2>/dev/null || true
+            cp -a ./Tss.xcframework ../ios/ || warn "Copy Tss.xcframework failed"
+            echo "✓ Tss.xcframework copied to ../ios/Tss.xcframework"
+            rm -rf ../ios/Dkls.xcframework 2>/dev/null || true
+        fi
+    else
+        info "Skipping legacy Tss.xcframework (unused; app links libbbmtmobile). Set BUILD_LEGACY_TSS=1 to build it."
     fi
 else
     info "Not running on macOS → Skipping iOS/macOS targets"
@@ -202,6 +220,10 @@ else
 fi
 
 info "Build complete!"
-info "  GG18:  android/app/libs/tss.aar"
+if [[ "${LEGACY_TSS}" == "1" ]]; then
+info "  GG18:  android/app/libs/tss.aar (+ Tss.xcframework on macOS)"
+else
+info "  GG18:  legacy tss.aar/Tss.xcframework skipped (BUILD_LEGACY_TSS=${LEGACY_TSS})"
+fi
 info "  DKLs:  android jniLibs/*/libbbmtmobile.so, ios/BbmtMobile/libbbmtmobile.xcframework"
 info "  All:   ./build-all.sh"

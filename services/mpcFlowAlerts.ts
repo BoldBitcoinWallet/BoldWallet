@@ -1,4 +1,4 @@
-import {Alert} from 'react-native';
+import {confirmAppPrompt, showAppNotice} from './appPrompt';
 
 export type MpcFlowAlertGate = {
   /** User tapped Abort on this flow. */
@@ -7,7 +7,28 @@ export type MpcFlowAlertGate = {
   focused?: boolean;
   /** Flow UI is still active (modal/pairing in progress). */
   flowActive?: boolean;
+  /** Must match the live attempt from beginMpcFlowAttempt. */
+  attemptId?: string;
 };
+
+let activeAttemptId: string | null = null;
+
+/** Start a new co-sign/keygen attempt; late errors from older runs are ignored. */
+export function beginMpcFlowAttempt(): string {
+  activeAttemptId = `mpc-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+  return activeAttemptId;
+}
+
+export function getActiveMpcFlowAttempt(): string | null {
+  return activeAttemptId;
+}
+
+/** Clear after success, or when a specific attempt ends. */
+export function clearMpcFlowAttempt(id?: string): void {
+  if (id == null || id === activeAttemptId) {
+    activeAttemptId = null;
+  }
+}
 
 function mpcErrorMessage(err: unknown): string {
   if (
@@ -33,6 +54,12 @@ export function shouldShowMpcFlowAlert(gate: MpcFlowAlertGate): boolean {
   if (gate.flowActive === false) {
     return false;
   }
+  if (
+    gate.attemptId != null &&
+    (activeAttemptId == null || gate.attemptId !== activeAttemptId)
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -44,7 +71,28 @@ export function showMpcFlowAlert(
   if (!shouldShowMpcFlowAlert(gate)) {
     return;
   }
-  Alert.alert(title, message);
+  showAppNotice(title, message);
+}
+
+/**
+ * Fatal keysign failure: full message in an in-app sheet so it is
+ * not lost under a short toast or a successful retry.
+ */
+export function showMpcSignFailure(
+  title: string,
+  message: string,
+  gate: MpcFlowAlertGate = {},
+): void {
+  if (!shouldShowMpcFlowAlert(gate)) {
+    return;
+  }
+  const text = String(message || '').trim() || 'Signing failed.';
+  confirmAppPrompt({
+    icon: 'warning',
+    title,
+    detail: text.slice(0, 400),
+    confirmLabel: 'OK',
+  });
 }
 
 /** Native/Go errors after user abort often include these markers. */
@@ -83,4 +131,9 @@ export function peerAbortUserMessage(
     return `${head}.\n\n${reason}`;
   }
   return `${head}.`;
+}
+
+/** Test-only. */
+export function resetMpcFlowAttemptForTests(): void {
+  activeAttemptId = null;
 }

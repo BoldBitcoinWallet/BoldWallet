@@ -9,6 +9,7 @@ import {WalletService} from '../WalletService';
 import syncRepository from '../repositories/SyncRepository';
 import apiQueue from '../ApiQueue';
 import transactionSyncer from './TransactionSyncer';
+import utxoSyncer from './UtxoSyncer';
 import syncCoordinator from './SyncCoordinator';
 
 export type WalletRefreshSessionOpts = {
@@ -19,6 +20,8 @@ export type WalletRefreshSessionOpts = {
   pendingSent?: number;
   activeOnly?: boolean;
   includeTx?: boolean;
+  /** User refresh: re-read history even inside the short sync TTL. */
+  forceTx?: boolean;
 };
 
 export async function runWalletRefreshSession(
@@ -65,6 +68,19 @@ export async function runWalletRefreshSession(
             list.map(address => ({address, network: opts.network})),
             apiUrl,
             setProgress,
+            {force: opts.forceTx === true},
+          ),
+        );
+        await apiQueue.enqueue('Syncing UTXOs…', setProgress =>
+          utxoSyncer.syncAddresses(
+            addrs.map(a => ({
+              address: a.address,
+              network: opts.network,
+              derivationPath: a.derivationPath,
+            })),
+            apiUrl,
+            setProgress,
+            {force: opts.forceTx === true},
           ),
         );
       }

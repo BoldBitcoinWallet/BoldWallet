@@ -39,35 +39,33 @@ export function MpcProgressModalHeader({
             resizeMode="contain"
           />
         </View>
-        <View style={styles.textCol}>
-          <Text
-            style={[
-              styles.title,
-              {
-                color: theme.colors.text,
-                fontFamily: theme.fontFamilies?.bold,
-                fontSize: theme.fontSizes?.xl || 18,
-              },
-            ]}
-            numberOfLines={2}>
-            {title}
-          </Text>
-          {subtitle ? (
-            <Text
-              style={[
-                styles.subtitle,
-                {
-                  color: theme.colors.textSecondary,
-                  fontFamily: theme.fontFamilies?.regular,
-                  fontSize: theme.fontSizes?.base || 14,
-                },
-              ]}
-              numberOfLines={4}>
-              {subtitle}
-            </Text>
-          ) : null}
-        </View>
+        <Text
+          style={[
+            styles.title,
+            {
+              color: theme.colors.text,
+              fontFamily: theme.fontFamilies?.bold,
+              fontSize: theme.fontSizes?.xl || 18,
+            },
+          ]}
+          numberOfLines={2}>
+          {title}
+        </Text>
       </View>
+      {subtitle ? (
+        <Text
+          style={[
+            styles.subtitle,
+            {
+              color: theme.colors.textSecondary,
+              fontFamily: theme.fontFamilies?.regular,
+              fontSize: theme.fontSizes?.base || 14,
+            },
+          ]}
+          numberOfLines={2}>
+          {subtitle}
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -83,9 +81,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   iconBg: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -93,18 +91,15 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
   },
-  textCol: {
+  title: {
     flex: 1,
     marginLeft: 12,
-    justifyContent: 'center',
-  },
-  title: {
     textAlign: 'left',
     lineHeight: 24,
   },
   subtitle: {
     textAlign: 'left',
     lineHeight: 20,
-    marginTop: 4,
+    marginTop: 10,
   },
 });

@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -44,8 +43,8 @@ type UTXOWithPath struct {
 	Scriptpubkey   string `json:"scriptpubkey,omitempty"`
 }
 
-var _btc_net = "testnet3" // default to testnet
-var _api_url = "https://mempool.space/testnet/api"
+var _btc_net = "testnet4" // default to testnet
+var _api_url = "https://mempool.space/testnet4/api"
 var _api_urls = []string{"https://mempool.space/api", "https://benpool.space/api"}
 
 var _fee_set = "30m"
@@ -56,13 +55,14 @@ func UseFeeAPIs(urls string) (string, error) {
 }
 
 func SetNetwork(network string) (string, error) {
-	if network == "mainnet" || network == "testnet3" {
+	network = normalizeNetwork(network)
+	if network == "mainnet" || network == "testnet4" {
 		_btc_net = network
 		switch network {
 		case "mainnet":
 			_api_url = "https://mempool.space/api"
-		case "testnet3":
-			_api_url = "https://mempool.space/testnet/api"
+		case "testnet4":
+			_api_url = "https://mempool.space/testnet4/api"
 		}
 		return _api_url, nil
 	}
@@ -70,7 +70,8 @@ func SetNetwork(network string) (string, error) {
 }
 
 func UseAPI(network, base string) (string, error) {
-	if network == "mainnet" || network == "testnet3" {
+	network = normalizeNetwork(network)
+	if network == "mainnet" || network == "testnet4" {
 		_btc_net = network
 		_api_url = strings.TrimSuffix(base, "/")
 		return _api_url, nil
@@ -97,27 +98,17 @@ func FetchUTXOs(address string) (result []UTXO, err error) {
 
 	url := fmt.Sprintf("%s/address/%s/utxo", _api_url, address)
 	Logf("Fetching UTXOs from endpoint: %s", url)
-	resp, err := http.Get(url)
+	bodyBytes, status, err := mempoolHTTPGet(url)
 	if err != nil {
 		Logf("Error fetching UTXOs from %s: %v", url, err)
 		return nil, fmt.Errorf("failed to fetch UTXOs: %w", err)
 	}
-	defer resp.Body.Close()
 
-	// Check response status
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		Logf("Error response from %s: HTTP %d - %s", url, resp.StatusCode, string(body))
-		return nil, fmt.Errorf("failed to fetch UTXOs: HTTP %d - %s", resp.StatusCode, string(body))
+	if status != http.StatusOK {
+		Logf("Error response from %s: HTTP %d - %s", url, status, string(bodyBytes))
+		return nil, fmt.Errorf("failed to fetch UTXOs: HTTP %d - %s", status, string(bodyBytes))
 	}
-	Logf("Successfully fetched UTXOs from %s (HTTP %d)", url, resp.StatusCode)
-
-	// Read the response body to log it
-	bodyBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		Logf("Error reading response body from %s: %v", url, err)
-		return nil, fmt.Errorf("failed to read UTXO response: %w", err)
-	}
+	Logf("Successfully fetched UTXOs from %s (HTTP %d)", url, status)
 
 	// Log the raw response (first 500 chars to avoid huge logs)
 	bodyStr := string(bodyBytes)
@@ -189,12 +180,14 @@ func FetchUTXODetails(txID string, vout uint32) (result *wire.TxOut, isWitnessRe
 
 	url := fmt.Sprintf("%s/tx/%s", _api_url, txID)
 	Logf("Fetching UTXO details from endpoint: %s", url)
-	resp, err := http.Get(url)
+	bodyBytes, status, err := mempoolHTTPGet(url)
 	if err != nil {
 		Logf("Error fetching UTXO details from %s: %v", url, err)
 		return nil, false, fmt.Errorf("failed to fetch transaction details: %w", err)
 	}
-	defer resp.Body.Close()
+	if status != http.StatusOK {
+		return nil, false, fmt.Errorf("failed to fetch transaction details: HTTP %d - %s", status, string(bodyBytes))
+	}
 
 	var txData struct {
 		Vout []struct {
@@ -202,7 +195,7 @@ func FetchUTXODetails(txID string, vout uint32) (result *wire.TxOut, isWitnessRe
 			Value        int64  `json:"value"`
 		} `json:"vout"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&txData); err != nil {
+	if err := json.Unmarshal(bodyBytes, &txData); err != nil {
 		return nil, false, fmt.Errorf("failed to parse transaction response: %w", err)
 	}
 
@@ -228,35 +221,80 @@ func FetchUTXODetails(txID string, vout uint32) (result *wire.TxOut, isWitnessRe
 	return &wire.TxOut{PkScript: scriptBytes, Value: voutData.Value}, isWitness, nil
 }
 
+// F31: sanity bounds on mempool-suggested fee rates. A malicious
+// or corrupt mempool endpoint must not drive an absurd rate into
+// tx building. MaxFeeRateSatVB is ~5x the worst observed mainnet
+// spike (Apr-2024 Runes peak ~2k sat/vB) — anything above is
+// rejected, not clamped (fail closed; the endpoint is untrusted).
+const MaxFeeRateSatVB = 10000
+
+// checkFeeRateSanity rejects absurd mempool fee-rate values in
+// both directions. Called on every tier value before use.
+func checkFeeRateSanity(rate int) error {
+	if rate < 1 {
+		return fmt.Errorf("fee rate %d sat/vB below minimum relay rate 1 sat/vB", rate)
+	}
+	if rate > MaxFeeRateSatVB {
+		return fmt.Errorf("fee rate %d sat/vB exceeds sanity cap %d sat/vB", rate, MaxFeeRateSatVB)
+	}
+	return nil
+}
+
+// checkFeeVsAmount rejects a total fee that exceeds the payment
+// itself — almost surely a corrupt suggestion or swap, never an
+// intended payment (change outputs aside).
+func checkFeeVsAmount(feeSatoshi, amountSatoshi int64) error {
+	if feeSatoshi < 0 {
+		return fmt.Errorf("negative fee %d", feeSatoshi)
+	}
+	if amountSatoshi <= 0 {
+		return fmt.Errorf("non-positive payment amount %d", amountSatoshi)
+	}
+	if feeSatoshi > amountSatoshi {
+		return fmt.Errorf("fee %d sat exceeds payment %d sat — refusing", feeSatoshi, amountSatoshi)
+	}
+	return nil
+}
+
 func RecommendedFees(feeType string) (int, error) {
 	for _, url := range _api_urls {
 		fee_url := strings.TrimSuffix(url, "/")
 		url := fmt.Sprintf("%s/v1/fees/recommended", fee_url)
 		Logf("Fetching recommended fees from endpoint: %s (fee type: %s)", url, feeType)
-		resp, err := http.Get(url)
+		bodyBytes, status, err := mempoolHTTPGet(url)
 		if err != nil {
 			Logf("Error fetching fees from %s: %v, trying next endpoint", url, err)
 			continue
 		}
-		defer resp.Body.Close()
-		var fees FeeResponse
-		if err := json.NewDecoder(resp.Body).Decode(&fees); err != nil {
+		if status != http.StatusOK {
+			Logf("Error fetching fees from %s: HTTP %d, trying next endpoint", url, status)
 			continue
 		}
+		var fees FeeResponse
+		if err := json.Unmarshal(bodyBytes, &fees); err != nil {
+			continue
+		}
+		var rate int
 		switch feeType {
 		case "top":
-			return fees.FastestFee, nil
+			rate = fees.FastestFee
 		case "30m":
-			return fees.HalfHourFee, nil
+			rate = fees.HalfHourFee
 		case "1hr":
-			return fees.HourFee, nil
+			rate = fees.HourFee
 		case "eco":
-			return fees.EconomyFee, nil
+			rate = fees.EconomyFee
 		case "min":
-			return fees.MinimumFee, nil
+			rate = fees.MinimumFee
 		default:
 			return 0, errors.New("invalid fee type: top, eco, min, 1hr, 30m")
 		}
+		// F31: reject absurd endpoint values before they flow anywhere.
+		if err := checkFeeRateSanity(rate); err != nil {
+			Logf("Fee endpoint %s returned absurd %s rate: %v, trying next endpoint", url, feeType, err)
+			continue
+		}
+		return rate, nil
 	}
 	return 0, errors.New("failed to get fees")
 }
@@ -292,42 +330,18 @@ func PostTx(rawTxHex string) (string, error) {
 }
 
 func postTxOnce(rawTxHex string) (string, error) {
-	// Define the Blockstream API endpoint for broadcasting transactions
 	url := fmt.Sprintf("%s/tx", _api_url)
 	Logf("Broadcasting transaction to endpoint: %s", url)
 
-	// Create a POST request with the raw transaction hex as the body
-	req, err := http.NewRequest("POST", url, bytes.NewBufferString(rawTxHex))
-	if err != nil {
-		Logf("Error creating POST request to %s: %v", url, err)
-		return "", fmt.Errorf("failed to create request: %w", err)
-	}
-
-	// Set appropriate headers
-
-	// Send the request
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	body, status, err := mempoolHTTPPost(url, rawTxHex)
 	if err != nil {
 		return "", fmt.Errorf("failed to send request: %w", err)
 	}
-	defer resp.Body.Close()
-
-	// Check the response status
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+	if status != http.StatusOK {
 		return "", fmt.Errorf("failed to broadcast transaction: %s", string(body))
-	} else {
-		Logf("ok")
 	}
-	// Read the transaction ID (txid) from the response body
-	txid, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", fmt.Errorf("failed to read response: %w", err)
-	}
-
-	// Return the txid as a string
-	return string(txid), nil
+	Logf("ok")
+	return string(body), nil
 }
 
 // SelectUTXOs selects the optimal set of UTXOs based on the strategy
@@ -722,9 +736,15 @@ func MpcSendBTC(
 	publicKey, senderAddress, receiverAddress string, amountSatoshi, estimatedFee int64) (result string, err error) {
 	defer RecoverAsError("MpcSendBTC", &err, &result)
 
+	// F31: backstop at spend time (fee is F20-1b-displayed; this
+	// catches a corrupt value that reached the native layer).
+	if err := checkFeeVsAmount(estimatedFee, amountSatoshi); err != nil {
+		return "", err
+	}
+
 	Logln("BBMTLog", "invoking MpcSendBTC...")
 
-	params := &chaincfg.TestNet3Params
+	params := &TestNet4Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 		Logln("Using mainnet parameters")
@@ -865,7 +885,7 @@ func MpcSendBTC(
 	for i, utxo := range selectedUTXOs {
 		// update utxo session - counter
 		utxoIndex = i + 1
-		utxoSession = fmt.Sprintf("%s%d", session, i)
+		utxoSession = deriveUtxoSession(session, i)
 
 		mpcHook("btc_send", "fetching utxo details", session, utxoSession, utxoIndex, utxoCount, false)
 		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
@@ -1192,6 +1212,12 @@ func MpcSendBTCWithUTXOs(
 		return "", fmt.Errorf("invalid estimatedFee %q: %w", estimatedFeeStr, parseErr)
 	}
 
+	// F31: backstop at spend time (fee is F20-1b-displayed; this
+	// catches a corrupt value that reached the native layer).
+	if err := checkFeeVsAmount(estimatedFee, amountSatoshi); err != nil {
+		return "", err
+	}
+
 	utxos, err := parseUTXOsWithPathsJSON(utxosWithPathsJSON)
 	if err != nil {
 		return "", err
@@ -1213,7 +1239,7 @@ func MpcSendBTCWithUTXOs(
 		return "", err
 	}
 
-	params := &chaincfg.TestNet3Params
+	params := &TestNet4Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 	}
@@ -1288,7 +1314,7 @@ func MpcSendBTCWithUTXOs(
 			return "", fmt.Errorf("invalid derived pubkey for input %d: %w", i, err)
 		}
 
-		utxoSession := fmt.Sprintf("%s%d", session, i)
+		utxoSession := deriveUtxoSession(session, i)
 		// Re-use the already-resolved prevout (no second network call per input).
 		outpointHash, _ := chainhash.NewHashFromStr(utxo.TxID)
 		txOut := prevOuts[wire.OutPoint{Hash: *outpointHash, Index: utxo.Vout}]
@@ -1388,12 +1414,12 @@ func MpcSendBTCWithUTXOs(
 }
 
 func calculateFees(senderAddress string, utxos []UTXO, satoshiAmount int64, receiverAddress string) (int64, error) {
-	params := &chaincfg.TestNet3Params
+	params := &TestNet4Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 		Logln("Using MainNet parameters")
 	} else {
-		Logln("Using TestNet3 parameters")
+		Logln("Using TestNet4 parameters")
 	}
 
 	// Decode addresses
@@ -1547,6 +1573,11 @@ func calculateFees(senderAddress string, utxos []UTXO, satoshiAmount int64, rece
 	}
 
 	Logf("Final estimated transaction size: %d vbytes, Fee: %d satoshis", vbytes, estimatedFee)
+	// F31: the suggestion path rejects absurd totals at estimation
+	// time, so JS surfaces the failure before any ceremony starts.
+	if err := checkFeeVsAmount(estimatedFee, satoshiAmount); err != nil {
+		return 0, err
+	}
 	return estimatedFee, nil
 }
 
@@ -1580,7 +1611,7 @@ func SecP256k1Recover(r, s, v, h string) (result string, err error) {
 	return hex.EncodeToString(pubKey.SerializeCompressed()), nil
 }
 
-func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
+func PubToP2KH(pubKeyCompressed, network string) (result string, err error) {
 	defer RecoverAsError("PubToP2KH", &err, &result)
 
 	// Decode the hex string to bytes
@@ -1597,13 +1628,13 @@ func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err e
 	// Convert the public key to a P2PKH address
 	pubKeyHash := btcutil.Hash160(pubKeyBytes)
 	var address *btcutil.AddressPubKeyHash
-	switch mainnetORtestnet3 {
+	switch network {
 	case "mainnet":
 		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &chaincfg.MainNetParams)
-	case "testnet3":
-		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &chaincfg.TestNet3Params)
+	case "testnet", "testnet3", "testnet4":
+		address, err = btcutil.NewAddressPubKeyHash(pubKeyHash, &TestNet4Params)
 	default:
-		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet4")
 	}
 	if err != nil {
 		return "", fmt.Errorf("failed to create Bech32 address: %w", err)
@@ -1611,7 +1642,7 @@ func PubToP2KH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err e
 	return address.EncodeAddress(), nil
 }
 
-func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
+func PubToP2WPKH(pubKeyCompressed, network string) (result string, err error) {
 	defer RecoverAsError("PubToP2WPKH", &err, &result)
 
 	// Decode hex-encoded compressed public key
@@ -1625,13 +1656,13 @@ func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err
 
 	// Determine network parameters
 	var params *chaincfg.Params
-	switch mainnetORtestnet3 {
+	switch network {
 	case "mainnet":
 		params = &chaincfg.MainNetParams
-	case "testnet3":
-		params = &chaincfg.TestNet3Params
+	case "testnet", "testnet3", "testnet4":
+		params = &TestNet4Params
 	default:
-		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet4")
 	}
 
 	// Create native SegWit (P2WPKH) address
@@ -1644,7 +1675,7 @@ func PubToP2WPKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err
 	return address.EncodeAddress(), nil
 }
 
-func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, err error) {
+func PubToP2SHP2WKH(pubKeyCompressed, network string) (result string, err error) {
 	defer RecoverAsError("PubToP2SHP2WKH", &err, &result)
 
 	// Decode hex-encoded compressed public key
@@ -1658,13 +1689,13 @@ func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, 
 
 	// Determine network parameters
 	var params *chaincfg.Params
-	switch mainnetORtestnet3 {
+	switch network {
 	case "mainnet":
 		params = &chaincfg.MainNetParams
-	case "testnet3":
-		params = &chaincfg.TestNet3Params
+	case "testnet", "testnet3", "testnet4":
+		params = &TestNet4Params
 	default:
-		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet4")
 	}
 
 	// Create nested SegWit (P2SH-P2WPKH) address
@@ -1687,7 +1718,7 @@ func PubToP2SHP2WKH(pubKeyCompressed, mainnetORtestnet3 string) (result string, 
 	return wrappedAddr.EncodeAddress(), nil
 }
 
-func PubToP2TR(pubKeyCompressedHex, mainnetORtestnet3 string) (result string, err error) {
+func PubToP2TR(pubKeyCompressedHex, network string) (result string, err error) {
 	defer RecoverAsError("PubToP2TR", &err, &result)
 
 	// Decode the compressed public key
@@ -1703,13 +1734,13 @@ func PubToP2TR(pubKeyCompressedHex, mainnetORtestnet3 string) (result string, er
 	xOnlyPubKey := pubKeyBytes[1:]
 
 	var params *chaincfg.Params
-	switch mainnetORtestnet3 {
+	switch network {
 	case "mainnet":
 		params = &chaincfg.MainNetParams
-	case "testnet3":
-		params = &chaincfg.TestNet3Params
+	case "testnet", "testnet3", "testnet4":
+		params = &TestNet4Params
 	default:
-		return "", fmt.Errorf("invalid network, options: mainnet, testnet3")
+		return "", fmt.Errorf("invalid network, options: mainnet, testnet4")
 	}
 
 	taprootAddr, err := btcutil.NewAddressTaproot(xOnlyPubKey, params)

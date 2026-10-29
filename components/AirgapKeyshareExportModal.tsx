@@ -1,16 +1,16 @@
 import React, {useEffect, useRef, useState} from 'react';
+import {showAppNotice} from '../services/appPrompt';
 import {
-  Modal,
   View,
   Text,
   Image,
-  Alert,
+
   StyleSheet,
   ActivityIndicator,
   ScrollView,
   useWindowDimensions,
-  NativeModules,
 } from 'react-native';
+import AppModal from './AppModal';
 import {Buffer} from 'buffer';
 import type {UR} from '@ngraveio/bc-ur';
 import AppPressable from './AppPressable';
@@ -26,8 +26,7 @@ import {
   type AirgapQrSpeed,
 } from '../utils/urBytesQr';
 import {formatAirgapPinDisplay, generateAirgapPin} from '../services/airgapPin';
-
-const {BBMTLibNativeModule} = NativeModules;
+import {TssProvider} from '../services/TssProvider';
 
 type ExportStep = 'pin' | 'qr';
 
@@ -95,10 +94,10 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
         if (!meta) {
           throw new Error('Invalid keyshare.');
         }
+        // F1: v2 format (Argon2id + AES-GCM in Go). PIN entropy itself is F16b, out of scope.
+        // 3b-3 A12: token-gated export (OS-visible prompt).
         const encryptedKeyshare =
-          await BBMTLibNativeModule.aesEncryptStoredKeyshare(
-            await BBMTLibNativeModule.sha256(nextPin),
-          );
+          await TssProvider.backupEncryptStoredKeyshare(nextPin);
         if (!encryptedKeyshare) {
           throw new Error('Failed to encrypt the keyshare.');
         }
@@ -114,7 +113,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       } catch (error) {
         dbg('Error encrypting airgap keyshare:', error);
         if (!cancelled) {
-          Alert.alert(
+          showAppNotice(
             'Error',
             error instanceof Error
               ? error.message
@@ -374,7 +373,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
   const pinReady = !!pin && !!exportUr && !isEncrypting;
 
   return (
-    <Modal
+    <AppModal
       visible={visible}
       transparent={true}
       animationType="fade"
@@ -492,7 +491,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
           </View>
         </View>
       </GlassModalOverlay>
-    </Modal>
+    </AppModal>
   );
 };
 

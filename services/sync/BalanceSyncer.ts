@@ -46,10 +46,18 @@ class BalanceSyncer {
   ): Promise<void> {
     if (!addresses.length) return;
     const cleanApi = apiBase.replace(/\/+$/, '');
-    const total = addresses.length;
     const concurrency = mempoolClient.syncPoolConcurrency(cleanApi);
     let skipped = 0;
-    let fetchedCount = 0;
+    let nextStartAt = 0;
+    const paceAddressStart = async () => {
+      const now = Date.now();
+      const scheduled = Math.max(now, nextStartAt);
+      nextStartAt = scheduled + INTER_ADDRESS_DELAY_MS;
+      const wait = scheduled - now;
+      if (wait > 0) {
+        await sleep(wait);
+      }
+    };
 
     const perAddress = await mapPool(
       addresses,
@@ -62,10 +70,7 @@ class BalanceSyncer {
           return null;
         }
 
-        if (concurrency === 1 && fetchedCount > 0) {
-          await sleep(INTER_ADDRESS_DELAY_MS);
-        }
-        fetchedCount++;
+        await paceAddressStart();
         try {
           const url = `${cleanApi}/address/${encodeURIComponent(address)}`;
           const res = await with429Retry<MempoolAddressResponse>(

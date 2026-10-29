@@ -261,7 +261,7 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 		close(endCh)
 		return "", fmt.Errorf("fail to normalize chain code: %w", err)
 	}
-	_, err = tssServerImp.KeygenECDSA(&KeygenRequest{
+	keygenResp, err := tssServerImp.KeygenECDSA(&KeygenRequest{
 		LocalPartyID: key,
 		AllParties:   strings.Join(parties, ","),
 		ChainCodeHex: chainCodeHex,
@@ -313,6 +313,21 @@ func JoinKeygen(ppmPath, key, partiesCSV, encKey, decKey, session, server, chain
 	time.Sleep(time.Second)
 	if err = endSession(server, session); err != nil {
 		Logln("BBMTLog", "Warning: endSession", "error", err)
+	}
+	// F39: post-DKG group-key cross-check for GG18 (mirrors the DKLS
+	// wiring in dkls/lan.go). keygenResp.PubKey is the hex-encoded
+	// group point — deterministic across honest parties. A mismatch
+	// fails closed: localState is never returned. Old-version relays
+	// warn and proceed (same mixed-version rule as DKLS).
+	if keygenResp == nil || strings.TrimSpace(keygenResp.PubKey) == "" {
+		close(endCh)
+		wg.Wait()
+		return "", fmt.Errorf("F39: GG18 keygen produced no group key — refusing to return share")
+	}
+	if gkErr := exchangeGroupKeyConsensus(server, session, key, parties, keygenResp.PubKey); gkErr != nil {
+		close(endCh)
+		wg.Wait()
+		return "", gkErr
 	}
 	status.Step++
 	status.Info = "session ended"
@@ -481,6 +496,29 @@ func computePayloadAuthTag(data, keyHex string) (string, error) {
 	return "h1:" + hex.EncodeToString(mac.Sum(nil)), nil
 }
 
+// VerifyLANPayloadTag reports whether hash is the valid h1 tag of body
+// under sessionKey. F24: shared by the DKLs transport (lan_pump), which
+// previously verified nothing. Pure: callers own logging.
+func VerifyLANPayloadTag(body, sessionKey, hash string) bool {
+	if !strings.HasPrefix(hash, "h1:") || len(sessionKey) == 0 {
+		return false
+	}
+	expectedTag, err := computePayloadAuthTag(body, sessionKey)
+	if err != nil {
+		return false
+	}
+	return hmac.Equal([]byte(expectedTag), []byte(hash))
+}
+
+// VerifyLANPayloadDigest reports whether hash is the valid d1 digest of
+// body. F24: shared by the DKLs transport (lan_pump). Pure.
+func VerifyLANPayloadDigest(body, hash string) bool {
+	if !strings.HasPrefix(hash, "d1:") {
+		return false
+	}
+	return computePayloadDigest(body) == hash
+}
+
 func AesEncrypt(data, key string) (result string, err error) {
 	defer RecoverAsError("AesEncrypt", &err, &result)
 
@@ -622,7 +660,7 @@ func (m *MessengerImp) Send(from, to, body string) error {
 	defer ReportTransportProgress(m.SessionID, "lan", "out", 0, 1, false)
 
 	// Prepare the HTTP request
-	resp, err := http.Post(url, "application/json", bytes.NewReader(requestBody))
+	resp, err := relayRequestClient.Post(url, "application/json", bytes.NewReader(requestBody))
 	if err != nil {
 		Logln("BBMTLog", "fail to send message: ", err)
 		return fmt.Errorf("fail to send message: %w", err)
@@ -679,7 +717,7 @@ func joinSession(server, session, key string) error {
 	tryJoin := func() bool {
 		attempts++
 		bodyReader := bytes.NewReader(body)
-		resp, err := http.Post(sessionUrl, "application/json", bodyReader)
+		resp, err := relayPollClient.Post(sessionUrl, "application/json", bodyReader)
 		if err != nil {
 			Logln("BBMTLog", "joinSession: POST failed", "url=", sessionUrl, "party=", key, "attempt=", attempts, "err=", err)
 			return false
@@ -830,6 +868,124 @@ func fetchCompletedKeygenParties(server, session string) ([]string, error) {
 	return keys, nil
 }
 
+// errGroupKeyEndpointMissing signals a relay that predates the
+// F39 group-key exchange (old app version as LAN master).
+// Callers warn and proceed without the cross-check (status quo);
+// a MISMATCH, by contrast, always fails closed.
+var errGroupKeyEndpointMissing = fmt.Errorf("relay has no groupkey endpoint (old version)")
+
+func postGroupKeygenHash(server, session, party, gkHashHex string) error {
+	payload, err := json.Marshal(map[string]string{"party": party, "gkhash": gkHashHex})
+	if err != nil {
+		return fmt.Errorf("failed to marshal groupkey payload: %w", err)
+	}
+	resp, err := relayRequestClient.Post(
+		strings.TrimRight(server, "/")+"/groupkey/keygen/"+session,
+		"application/json", bytes.NewBuffer(payload))
+	if err != nil {
+		return fmt.Errorf("failed to post groupkey hash: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return errGroupKeyEndpointMissing
+	}
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("groupkey/keygen status %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	return nil
+}
+
+func fetchGroupKeygenHashes(server, session string) (map[string]string, error) {
+	resp, err := relayRequestClient.Get(strings.TrimRight(server, "/") + "/groupkey/keygen/" + session)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch groupkey hashes: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, errGroupKeyEndpointMissing
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("groupkey/keygen status %s", resp.Status)
+	}
+	buff, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read groupkey body: %w", err)
+	}
+	var hashes map[string]string
+	if err := json.Unmarshal(buff, &hashes); err != nil {
+		return nil, fmt.Errorf("failed to decode groupkey hashes: %w", err)
+	}
+	return hashes, nil
+}
+
+// exchangeGroupKeyConsensus posts this party's group-key hash and
+// requires unanimity across `parties` before the keyshare is used.
+// Mismatch (divergent DKG results) fails closed with a typed
+// error; an endpoint missing on an old-version relay warns and
+// proceeds (today's behavior — the check only guards honest
+// divergence, and old↔new ceremonies must keep working).
+func exchangeGroupKeyConsensus(server, session, selfParty string, parties []string, gkHashHex string) error {
+	if err := postGroupKeygenHash(server, session, selfParty, gkHashHex); err != nil {
+		if err == errGroupKeyEndpointMissing {
+			Logln("BBMTLog", "F39: relay predates group-key check; proceeding without cross-check")
+			return nil
+		}
+		return fmt.Errorf("F39 group-key post failed: %w", err)
+	}
+	need := make([]string, 0, len(parties))
+	for _, p := range parties {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			need = append(need, p)
+		}
+	}
+	if len(need) == 0 {
+		return nil
+	}
+	waitFor := lanCompleteAwaitTimeout(len(need))
+	timeout := time.NewTimer(waitFor)
+	defer timeout.Stop()
+	poll := time.NewTicker(time.Second)
+	defer poll.Stop()
+	for {
+		hashes, err := fetchGroupKeygenHashes(server, session)
+		if err != nil {
+			if err == errGroupKeyEndpointMissing {
+				Logln("BBMTLog", "F39: relay predates group-key check; proceeding without cross-check")
+				return nil
+			}
+			Logln("BBMTLog", "F39: group-key fetch failed (retrying):", err)
+		} else {
+			complete := true
+			for _, p := range need {
+				if _, ok := hashes[p]; !ok {
+					complete = false
+					break
+				}
+			}
+			if complete {
+				for p, h := range hashes {
+					if !strings.EqualFold(h, gkHashHex) {
+						return fmt.Errorf("DKG_GROUP_KEY_MISMATCH: party %s derived a different group key — aborting before first use (divergent DKG results lock funds)", p)
+					}
+				}
+				Logln("BBMTLog", "F39: group-key consensus across", len(need), "parties")
+				return nil
+			}
+		}
+		select {
+		case <-timeout.C:
+			// Bounded wait over: a peer on an old version never
+			// posts. Warn and proceed (status quo) rather than
+			// deadlock mixed-version ceremonies.
+			Logln("BBMTLog", "F39: group-key wait timed out; proceeding without full consensus")
+			return nil
+		case <-poll.C:
+		}
+	}
+}
+
 func awaitPartyCompletions(ctx context.Context, parties []string, server, session string) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -908,7 +1064,7 @@ func awaitPartyCompletions(ctx context.Context, parties []string, server, sessio
 }
 
 func fetchSessionParticipants(sessionUrl string) ([]string, error) {
-	resp, err := http.Get(sessionUrl)
+	resp, err := relayPollClient.Get(sessionUrl)
 	if err != nil {
 		return nil, err
 	}
@@ -952,12 +1108,12 @@ func stringSet(vals []string) map[string]struct{} {
 func endSession(server, session string) error {
 	sessionUrl := server + "/" + session
 	Logln("======================================================> Session Closure: ", session)
-	client := http.Client{}
+	// F25: bounded relay client (shared).
 	req, err := http.NewRequest(http.MethodDelete, sessionUrl, nil)
 	if err != nil {
 		return fmt.Errorf("fail to end session: %w", err)
 	}
-	resp, err := client.Do(req)
+	resp, err := relayRequestClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("fail to end session: %w", err)
 	}
@@ -982,11 +1138,8 @@ func flagPartyKeysignComplete(relayHost, sessionID, message, body string) error 
 	req.Header.Set("message_id", message)
 	// req.Header.Set("Content-Type", "text/plain")
 
-	// Configure the HTTP client with a timeout
-	client := &http.Client{}
-
-	// Execute the HTTP POST request
-	resp, err := client.Do(req)
+	// F25: bounded relay client (shared).
+	resp, err := relayRequestClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to send POST request: %w", err)
 	}
@@ -1017,7 +1170,7 @@ func flagPartyComplete(serverURL, session, localPartyID string) error {
 		return fmt.Errorf("failed to marshal payload: %w", err)
 	}
 
-	resp, err := http.Post(serverURL+"/complete/keygen/"+session, "application/json", bytes.NewBuffer(payload))
+	resp, err := relayRequestClient.Post(serverURL+"/complete/keygen/"+session, "application/json", bytes.NewBuffer(payload))
 	if err != nil {
 		return fmt.Errorf("failed to send POST request: %w", err)
 	}
@@ -1062,7 +1215,7 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 			Logln("BBMTLog", "Fetching messages...")
 
 			// Fetch messages from the server
-			resp, err := http.Get(server + "/message/" + session + "/" + key)
+			resp, err := relayPollClient.Get(server + "/message/" + session + "/" + key)
 			if err != nil {
 				Logln("BBMTLog", "Error fetching messages:", err)
 				isApplyingMessages = false
@@ -1151,7 +1304,16 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 				if len(sessionKey) > 0 {
 					body, err = AesDecrypt(message.Body, sessionKey)
 					if err != nil {
+						// F6: uniform observable outcome. A decrypt failure
+						// must delete on the same poll as a tag mismatch,
+						// else the relay gets a keep/delete padding oracle.
+						// The h1 tag covers plaintext by wire design, so true
+						// verify-before-decrypt would break cross-version
+						// ceremonies; the dummy tag keeps the work (and
+						// timing) equivalent instead.
 						Logln("BBMTLog", "Failed to decrypt message:", err)
+						_, _ = computePayloadAuthTag(message.Body, sessionKey)
+						deleteMessage(server, session, key, message.Hash)
 						continue
 					}
 				} else {
@@ -1161,7 +1323,12 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 					if len(decKey) > 0 {
 						body, err = EciesDecrypt(message.Body, decKey)
 						if err != nil {
+							// F6: same uniform-outcome rule as the AES path;
+							// the digest stands in for tag work (no session
+							// key on the ECIES path).
 							Logln("BBMTLog", "Failed to decrypt ECIES message:", err)
+							_ = computePayloadDigest(message.Body)
+							deleteMessage(server, session, key, message.Hash)
 							continue
 						}
 					}
@@ -1176,7 +1343,10 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 						}
 						expectedTag, tagErr := computePayloadAuthTag(body, sessionKey)
 						if tagErr != nil {
+							// F6: delete like every other reject class (only
+							// reachable with a malformed local session key).
 							Logln("BBMTLog", "Failed to verify payload auth tag:", tagErr)
+							deleteMessage(server, session, key, message.Hash)
 							continue
 						}
 						if !hmac.Equal([]byte(expectedTag), []byte(message.Hash)) {
@@ -1196,6 +1366,13 @@ func downloadMessage(server, session, sessionKey, key string, tssServerImp Servi
 						deleteMessage(server, session, key, message.Hash)
 						continue
 					}
+				} else {
+					// F24: no legitimate producer emits an empty hash (the
+					// sender always sets d1/h1; the relay stores verbatim).
+					// Reject like every other class (F6 uniform outcome).
+					Logln("BBMTLog", "Missing payload hash; dropping message", message.SeqNo)
+					deleteMessage(server, session, key, message.Hash)
+					continue
 				}
 
 				Logln("BBMTLog", "Applying inbound message body")
@@ -1226,14 +1403,21 @@ func deleteMessage(server, session, key, messageHash string) {
 
 	req, err := http.NewRequest("DELETE", delURL, nil)
 	if err != nil {
+		// F6: never Do(nil); a malformed URL fails closed here.
 		Logln("BBMTLog", "HTTP_DELETE Request Error", err)
+		return
 	}
 
-	resp, rspErr := http.DefaultClient.Do(req)
+	resp, rspErr := relayRequestClient.Do(req)
 	if rspErr != nil {
 		Logln("BBMTLog", "HTTP_DELETE Error", rspErr)
+		return
 	}
-	Logln("BBMTLog", "deleted message", messageHash)
-
+	if resp == nil || resp.Body == nil {
+		// F6: defensive; a nil response must never reach Body.Close.
+		Logln("BBMTLog", "HTTP_DELETE empty response for", messageHash)
+		return
+	}
 	defer resp.Body.Close()
+	Logln("BBMTLog", "deleted message", messageHash)
 }

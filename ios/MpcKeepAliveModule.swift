@@ -11,14 +11,18 @@ import ActivityKit
 class MpcKeepAliveModule: NSObject {
   private static let notifId = "mpc-keep-alive-done"
   private static let returnNotifId = "mpc-keep-alive-return"
+  private static let noticeLifetime: TimeInterval = 120
   private static var bgTask = UIBackgroundTaskIdentifier.invalid
   private static var running = false
   private static var camouflaged = false
+  private static var noticesEnabled = true
   private static var lastPercent = 0
   private static var lastStatus = "Working…"
   private static var lastTitle = "Wallet setup"
   private static var lastKind = "keygen"
   private static var backgroundWarned = false
+  private static var expiryItems: [String: DispatchWorkItem] = [:]
+  private static var foregroundObs: NSObjectProtocol?
 
   @objc
   static func requiresMainQueueSetup() -> Bool {
@@ -36,17 +40,21 @@ class MpcKeepAliveModule: NSObject {
     let title = (options["title"] as? String) ?? "Wallet setup"
     let kind = (options["kind"] as? String) ?? "keygen"
     Self.camouflaged = camouflaged
+    Self.noticesEnabled = options["notices"] == nil ? true : boolValue(options, "notices")
     Self.lastStatus = status
     Self.lastTitle = title
     Self.lastKind = kind
     Self.lastPercent = 0
     Self.running = true
     Self.backgroundWarned = false
+    Self.observeForeground()
     DispatchQueue.main.async {
       UIApplication.shared.isIdleTimerDisabled = true
       Self.beginBgTask()
-      Self.requestNotificationAuth()
-      Self.startLiveActivity()
+      if Self.noticesEnabled {
+        Self.requestNotificationAuth()
+        Self.startLiveActivity()
+      }
       resolve(true)
     }
   }
@@ -78,16 +86,29 @@ class MpcKeepAliveModule: NSObject {
     let outcome = (options["outcome"] as? String) ?? "failure"
     let title = (options["title"] as? String) ?? ""
     let body = (options["body"] as? String) ?? ""
+    if options["notices"] != nil {
+      Self.noticesEnabled = boolValue(options, "notices")
+    }
     Self.running = false
     DispatchQueue.main.async {
       UIApplication.shared.isIdleTimerDisabled = false
       Self.endBgTask()
       Self.endLiveActivity(outcome: outcome, title: title, body: body)
-      if outcome != "abort", !title.isEmpty {
+      if Self.noticesEnabled, outcome != "abort", !title.isEmpty {
         Self.postLocal(id: Self.notifId, title: title, body: body)
       }
       resolve(true)
     }
+  }
+
+  @objc
+  func sweepExpiredNotices(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    Self.observeForeground()
+    Self.sweepExpired()
+    resolve(true)
   }
 
   @objc
@@ -166,12 +187,16 @@ class MpcKeepAliveModule: NSObject {
   private static func beginBgTask() {
     endBgTask()
     bgTask = UIApplication.shared.beginBackgroundTask(withName: "mpc-keep-alive") {
-      postReturnToBoldIfNeeded()
-      endLiveActivity(
-        outcome: "failure",
-        title: "Setup may have stopped",
-        body: "Setup may have stopped — open Bold."
-      )
+      if noticesEnabled {
+        postReturnToBoldIfNeeded()
+        endLiveActivity(
+          outcome: "failure",
+          title: "Setup may have stopped",
+          body: "Setup may have stopped — open Bold."
+        )
+      } else {
+        endLiveActivity(outcome: "abort", title: "", body: "")
+      }
       endBgTask()
     }
   }
@@ -184,7 +209,7 @@ class MpcKeepAliveModule: NSObject {
   }
 
   private static func postReturnToBoldIfNeeded() {
-    guard running, !backgroundWarned else { return }
+    guard noticesEnabled, running, !backgroundWarned else { return }
     backgroundWarned = true
     if camouflaged {
       postLocal(id: returnNotifId, title: "Return", body: "Open the app to continue.")
@@ -203,6 +228,7 @@ class MpcKeepAliveModule: NSObject {
   }
 
   private static func postLocal(id: String, title: String, body: String) {
+    guard noticesEnabled else { return }
     let content = UNMutableNotificationContent()
     content.title = title
     content.body = body
@@ -212,10 +238,50 @@ class MpcKeepAliveModule: NSObject {
       content: content,
       trigger: nil
     )
-    UNUserNotificationCenter.current().add(request, withCompletionHandler: nil)
+    UNUserNotificationCenter.current().add(request) { _ in
+      scheduleExpiry(id: id)
+    }
+  }
+
+  private static func scheduleExpiry(id: String) {
+    expiryItems[id]?.cancel()
+    let item = DispatchWorkItem {
+      let center = UNUserNotificationCenter.current()
+      center.removeDeliveredNotifications(withIdentifiers: [id])
+      center.removePendingNotificationRequests(withIdentifiers: [id])
+      expiryItems[id] = nil
+    }
+    expiryItems[id] = item
+    DispatchQueue.main.asyncAfter(deadline: .now() + noticeLifetime, execute: item)
+  }
+
+  private static func observeForeground() {
+    guard foregroundObs == nil else { return }
+    foregroundObs = NotificationCenter.default.addObserver(
+      forName: UIApplication.willEnterForegroundNotification,
+      object: nil,
+      queue: .main
+    ) { _ in
+      sweepExpired()
+    }
+  }
+
+  private static func sweepExpired() {
+    let center = UNUserNotificationCenter.current()
+    let ids: Set<String> = [notifId, returnNotifId]
+    let cutoff = Date().addingTimeInterval(-noticeLifetime)
+    center.getDeliveredNotifications { notes in
+      let stale = notes.filter {
+        ids.contains($0.request.identifier) && $0.date <= cutoff
+      }.map { $0.request.identifier }
+      if !stale.isEmpty {
+        center.removeDeliveredNotifications(withIdentifiers: stale)
+      }
+    }
   }
 
   private static func startLiveActivity() {
+    guard noticesEnabled else { return }
     #if canImport(ActivityKit)
     if #available(iOS 16.1, *) {
       MpcKeepAliveLiveActivityController.start(
@@ -244,8 +310,9 @@ class MpcKeepAliveModule: NSObject {
   private static func endLiveActivity(outcome: String, title: String, body: String) {
     #if canImport(ActivityKit)
     if #available(iOS 16.1, *) {
+      let resolved = noticesEnabled ? outcome : "abort"
       MpcKeepAliveLiveActivityController.end(
-        outcome: outcome,
+        outcome: resolved,
         title: title,
         body: body,
         camouflaged: camouflaged
@@ -331,10 +398,11 @@ enum MpcKeepAliveLiveActivityController {
         status: status,
         camouflaged: camouflaged
       )
+      let dismissAt = Date().addingTimeInterval(120)
       if #available(iOS 16.2, *) {
         await current.end(
           ActivityContent(state: state, staleDate: nil),
-          dismissalPolicy: .default
+          dismissalPolicy: .after(dismissAt)
         )
       } else {
         await current.end(using: state, dismissalPolicy: .default)

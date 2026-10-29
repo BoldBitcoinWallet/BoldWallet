@@ -175,13 +175,12 @@ func NostrJoinKeygen(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionKe
 
 	// Create config
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionID,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    90 * time.Second,
+		Relays:     relays,
+		SessionID:  sessionID,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 90 * time.Second,
 	}
 	cfg.ApplyDefaults()
 
@@ -206,7 +205,7 @@ func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionI
 
 	// Parse keyshare JSON
 	var keyshare LocalStateNostr
-	if err := json.Unmarshal([]byte(keyshareJSON), &keyshare); err != nil {
+	if err := json.Unmarshal([]byte(NormalizeQuotedBigIntJSON(keyshareJSON)), &keyshare); err != nil {
 		return "", fmt.Errorf("failed to parse keyshare JSON: %w", err)
 	}
 
@@ -239,13 +238,12 @@ func NostrJoinKeysignWithSighash(relaysCSV, partyNsec, partiesNpubsCSV, sessionI
 
 	// Create config
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionID,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    90 * time.Second,
+		Relays:     relays,
+		SessionID:  sessionID,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 90 * time.Second,
 	}
 	cfg.ApplyDefaults()
 
@@ -270,7 +268,7 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 
 	// Parse keyshare JSON
 	var keyshare LocalStateNostr
-	if err := json.Unmarshal([]byte(keyshareJSON), &keyshare); err != nil {
+	if err := json.Unmarshal([]byte(NormalizeQuotedBigIntJSON(keyshareJSON)), &keyshare); err != nil {
 		return "", fmt.Errorf("failed to parse keyshare JSON: %w", err)
 	}
 
@@ -301,13 +299,12 @@ func NostrJoinKeysign(relaysCSV, partyNsec, partiesNpubsCSV, sessionID, sessionK
 
 	// Create config
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionID,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    90 * time.Second,
+		Relays:     relays,
+		SessionID:  sessionID,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 90 * time.Second,
 	}
 	cfg.ApplyDefaults()
 
@@ -459,11 +456,7 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 	}
 	peerNpub := peersNpub[0]
 
-	// Generate session key from sessionFlag (deterministic)
-	sessionKey, err := Sha256(sessionFlag)
-	if err != nil {
-		return nil, fmt.Errorf("failed to generate session key: %w", err)
-	}
+	// F14: no session key — the Config field was required-but-never-read.
 
 	// Generate random peerNonce
 	peerNonce, err := SecureRandom(64)
@@ -475,13 +468,12 @@ func runNostrPreAgreementSendBTC(relaysCSV, partyNsec, partiesNpubsCSV, sessionF
 
 	// Create config for pre-agreement (using sessionFlag as sessionID)
 	cfg := nostrtransport.Config{
-		Relays:        relays,
-		SessionID:     sessionFlag,
-		SessionKeyHex: sessionKey,
-		LocalNpub:     localNpub,
-		LocalNsec:     partyNsec,
-		PeersNpub:     peersNpub,
-		MaxTimeout:    60 * time.Second,
+		Relays:     relays,
+		SessionID:  sessionFlag,
+		LocalNpub:  localNpub,
+		LocalNsec:  partyNsec,
+		PeersNpub:  peersNpub,
+		MaxTimeout: 60 * time.Second,
 	}
 	cfg.ApplyDefaults()
 
@@ -723,7 +715,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	// Step 5: Use the agreed average fees instead of estimatedFee
 	agreedFee := preAgreement.averageFees
 
-	params := &chaincfg.TestNet3Params
+	params := &TestNet4Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 		Logln("Using mainnet parameters")
@@ -860,7 +852,7 @@ func runNostrMpcSendBTCInternal(relaysCSV, partyNsec, partiesNpubsCSV, npubsSort
 	for i, utxo := range selectedUTXOs {
 		// update utxo session - counter
 		utxoIndex = i + 1
-		utxoSession = fmt.Sprintf("%s%d", sessionID, i)
+		utxoSession = deriveUtxoSession(sessionID, i)
 
 		mpcHook("btc_send", "fetching utxo details", sessionID, utxoSession, utxoIndex, utxoCount, false)
 		txOut, isWitness, err := FetchUTXODetails(utxo.TxID, utxo.Vout)
@@ -1214,7 +1206,7 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 		return "", err
 	}
 
-	params := &chaincfg.TestNet3Params
+	params := &TestNet4Params
 	if _btc_net == "mainnet" {
 		params = &chaincfg.MainNetParams
 	}
@@ -1289,7 +1281,7 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 			return "", fmt.Errorf("invalid derived pubkey for input %d: %w", i, err)
 		}
 
-		utxoSession := fmt.Sprintf("%s%d", sessionID, i)
+		utxoSession := deriveUtxoSession(sessionID, i)
 		// Re-use the already-resolved prevout (no second network call per input).
 		outpointHash, _ := chainhash.NewHashFromStr(utxo.TxID)
 		txOut := prevOuts[wire.OutPoint{Hash: *outpointHash, Index: utxo.Vout}]
@@ -1550,7 +1542,7 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 		pumpCancel()
 		return "", fmt.Errorf("fail to normalize chain code: %w", normErr)
 	}
-	_, err = tssService.KeygenECDSA(&KeygenRequest{
+	keygenResp, err := tssService.KeygenECDSA(&KeygenRequest{
 		LocalPartyID: localNpub,
 		AllParties:   partiesCSV,
 		ChainCodeHex: chainCodeHex,
@@ -1564,6 +1556,21 @@ func runNostrKeygenInternal(cfg nostrtransport.Config, chaincode, ppmPath, local
 			return "", nostrtransport.WrapPeerAbort(reason, err)
 		}
 		return "", fmt.Errorf("keygen failed: %w", err)
+	}
+	if keygenResp == nil || strings.TrimSpace(keygenResp.PubKey) == "" {
+		pumpCancel()
+		return "", fmt.Errorf("F39: GG18 keygen produced no group key — refusing to return share")
+	}
+	// F39: post-DKG group-key cross-check for GG18 nostr (shared core
+	// with DKLS, above). Runs while the pump is still alive; a
+	// mismatch fails closed — localState is never returned.
+	// Old-version peers warn and proceed (same mixed-version rule).
+	if gkErr := nostrtransport.CollectGroupKeyConsensus(
+		ctx, cfg, coordinator, pump,
+		keygenResp.PubKey, localNpub, allParties,
+	); gkErr != nil {
+		pumpCancel()
+		return "", gkErr
 	}
 
 	Logln("BBMTLog", "ECDSA keygen response ok")
