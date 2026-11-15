@@ -54,6 +54,7 @@ import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
 import {
+  brantaZkParamLengths,
   initializeBranta,
   isBrantaEnabled,
   looksLikeBrantaVerifiableInput,
@@ -188,6 +189,14 @@ describe('resolveBrantaQr', () => {
         'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
       ),
     ).toBe(false);
+  });
+
+  test('brantaZkParamLengths reports id and secret lengths without values', () => {
+    expect(
+      brantaZkParamLengths(
+        'bitcoin:tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s?branta_id=abc123&branta_secret=sekrit',
+      ),
+    ).toEqual({qrLen: 88, idLen: 6, secretLen: 6});
   });
 
   test('returns match with address from matchedDestinations', async () => {

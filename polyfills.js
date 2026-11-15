@@ -5,6 +5,40 @@
 const {Buffer} = require('buffer');
 global.Buffer = global.Buffer || Buffer;
 
+// Branta SDK AES helpers use btoa/atob. Some Hermes builds omit them;
+// without these, ZK decrypt silently fails and SDK 4.x returns unknown.
+if (typeof global.btoa !== 'function') {
+  global.btoa = value =>
+    Buffer.from(String(value), 'binary').toString('base64');
+}
+if (typeof global.atob !== 'function') {
+  global.atob = value =>
+    Buffer.from(String(value), 'base64').toString('binary');
+}
+
+// Branta AES decrypt ends in `new TextDecoder().decode(...)`. Hermes on this
+// RN build has TextEncoder but not TextDecoder, so a successful decrypt still
+// throws and SDK 4.x reports unknown (no merchant card).
+if (typeof global.TextEncoder !== 'function') {
+  global.TextEncoder = class TextEncoder {
+    encode(value) {
+      return new Uint8Array(Buffer.from(String(value), 'utf8'));
+    }
+  };
+}
+if (typeof global.TextDecoder !== 'function') {
+  global.TextDecoder = class TextDecoder {
+    decode(input) {
+      if (input == null) {
+        return '';
+      }
+      const bytes =
+        input instanceof Uint8Array ? input : new Uint8Array(input);
+      return Buffer.from(bytes).toString('utf8');
+    }
+  };
+}
+
 // Stream polyfill for libraries that use Node.js stream (e.g., cipher-base)
 const stream = require('readable-stream');
 if (typeof global.stream === 'undefined') {

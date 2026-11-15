@@ -110,6 +110,92 @@ export function isBrantaEnabled(): boolean {
 let service: BrantaService | null = null;
 let currentNetwork: string = '';
 
+function createBrantaCrypto() {
+  return createNobleCryptoProvider({
+    sha256,
+    hmac,
+    gcm,
+    randomBytes,
+  });
+}
+
+/** Probe noble AES-GCM via the same path Branta decrypt uses (btoa/atob + subtle). */
+async function probeBrantaCrypto(
+  crypto: ReturnType<typeof createBrantaCrypto>,
+): Promise<boolean> {
+  try {
+    const secret = 'bold-branta-crypto-probe';
+    const plain = new TextEncoder().encode('tb1qprobe');
+    const keyData = new Uint8Array(
+      await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret)),
+    );
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const key = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      'AES-GCM',
+      false,
+      ['encrypt', 'decrypt'],
+    );
+    const encrypted = new Uint8Array(
+      await crypto.subtle.encrypt({name: 'AES-GCM', iv}, key, plain),
+    );
+    // Round-trip through btoa/atob like AesEncryption.fromBase64/toBase64.
+    const packed = new Uint8Array(iv.length + encrypted.length);
+    packed.set(iv, 0);
+    packed.set(encrypted, iv.length);
+    let binary = '';
+    for (let i = 0; i < packed.length; i++) {
+      binary += String.fromCharCode(packed[i]!);
+    }
+    const b64 = global.btoa(binary);
+    const backBinary = global.atob(b64);
+    const back = new Uint8Array(backBinary.length);
+    for (let i = 0; i < backBinary.length; i++) {
+      back[i] = backBinary.charCodeAt(i);
+    }
+    const backIv = back.slice(0, 12);
+    const backCt = back.slice(12);
+    const backKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      'AES-GCM',
+      false,
+      ['decrypt'],
+    );
+    const decrypted = new Uint8Array(
+      await crypto.subtle.decrypt(
+        {name: 'AES-GCM', iv: backIv},
+        backKey,
+        backCt,
+      ),
+    );
+    return new TextDecoder().decode(decrypted) === 'tb1qprobe';
+  } catch (err) {
+    dbg('probeBrantaCrypto failed', err);
+    return false;
+  }
+}
+
+/** Parse Branta ZK query lengths without logging secrets. */
+export function brantaZkParamLengths(raw: string): {
+  qrLen: number;
+  idLen: number;
+  secretLen: number;
+} {
+  const trimmed = raw.trim();
+  try {
+    const url = new URL(trimmed);
+    return {
+      qrLen: trimmed.length,
+      idLen: (url.searchParams.get('branta_id') || '').length,
+      secretLen: (url.searchParams.get('branta_secret') || '').length,
+    };
+  } catch {
+    return {qrLen: trimmed.length, idLen: 0, secretLen: 0};
+  }
+}
+
 /**
  * Initialize Branta SDK for the given network.
  * Call at app startup and whenever network changes.
@@ -127,17 +213,22 @@ export function initializeBranta(network: string): void {
         ? BrantaEnvironment.Production
         : BrantaEnvironment.Staging;
 
+    const crypto = createBrantaCrypto();
     service = new BrantaService({
       environment,
-      crypto: createNobleCryptoProvider({
-        sha256,
-        hmac,
-        gcm,
-        randomBytes,
-      }),
+      crypto,
     });
     currentNetwork = network;
     dbg('initializeBranta: network =', network, 'environment =', environment);
+    dbg(
+      'initializeBranta: btoa/atob =',
+      typeof global.btoa,
+      typeof global.atob,
+    );
+    // Fire-and-forget probe — logs whether ZK decrypt can work on this runtime.
+    void probeBrantaCrypto(crypto).then(ok => {
+      dbg('initializeBranta: cryptoProbe =', ok ? 'ok' : 'FAIL');
+    });
   } catch (err) {
     dbg('initializeBranta error', err);
   }
@@ -187,8 +278,18 @@ export async function resolveBrantaQr(
   }
 
   try {
-    dbg('resolveBrantaQr: calling verify');
+    const zkLens = brantaZkParamLengths(trimmed);
+    dbg(
+      'resolveBrantaQr: calling verify',
+      'qrLen=',
+      zkLens.qrLen,
+      'idLen=',
+      zkLens.idLen,
+      'secretLen=',
+      zkLens.secretLen,
+    );
     const result = await service.verify(trimmed);
+    dbg('resolveBrantaQr: verify status =', result.status);
 
     if (result.status === 'unknown') {
       dbg('resolveBrantaQr: unknown');
