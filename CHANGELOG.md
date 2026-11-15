@@ -11,11 +11,12 @@
 - **Indexing on the home cache indicator** — address discovery no longer opens a blocking dialog. Receive, Settings (network, address type, Clear Cache), and the scan after a keyshare import report progress on the wallet home indicator and can be cancelled. The wallet stays usable while a scan waits for a connection.
 
 ### Changed
-- **Branta SDK 4.2.0** — send-side lookup uses `verify()` with status handling: show the merchant card on `match` (pay the `matchedDestinations` bitcoin address), stay silent on `unknown`, warn and clear the prefilled address on `tampered`, and notice the user on `incomplete` (offline / 5xx / crypto unavailable) only for Branta-verifiable inputs (ZK params or derived-key rails). Plain address scans stay silent offline. Hermes gets `btoa`/`atob` and `TextDecoder` when they are missing, so ZK decrypt can finish on iOS and Android. The opt-in Branta setting and history labels are unchanged.
+- **Branta SDK 4.2.0** — send-side lookup uses `verify()` with status handling: show the merchant card on `match` (pay the `matchedDestinations` bitcoin address), stay silent on `unknown`, warn and clear the prefilled address on `tampered`, and notice the user on `incomplete` (offline / 5xx / crypto unavailable) only for Branta-verifiable inputs (ZK params or derived-key rails). Plain address scans stay silent offline. The opt-in Branta setting and history labels are unchanged.
 - **Live mempool host lists** — the Settings default-providers action loads `MAINNET.md` and `TESTNET4.md` from `raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main`. A failed fetch keeps the built-in lists. Nostr relays stay pinned to the reviewed commit. A dedicated testnet host (name starting with `testnet`) maps to `/api`; other hosts map to `/testnet4/api`.
 - **Header provider pill** — the count and host follow the wallet network. Testnet no longer shows the mainnet provider list.
 
 ### Fixed
+- **Branta merchant card on Hermes** — React Native Hermes has no `TextDecoder` (and some builds omit `btoa`/`atob`). SDK 4.x decrypt then threw and `verify()` returned `unknown`, so the merchant name and logo never appeared. `polyfills.js` supplies those globals before the SDK loads, on iOS and Android. Bold does not wait on the upstream Branta fallback (https://github.com/BrantaOps/branta-js/pull/107).
 - A confirmed payment stays in history when it wins a replace-by-fee race, and a lagging mempool host cannot hide the higher-fee replacement. Replaced rows leave the pending-address sync set. Unconfirmed children of a replaced transaction are hidden with it.
 - The replacement fee uses the fee the transaction actually paid (inputs minus outputs), including dust that was absorbed, so the minimum is not understated.
 
@@ -23,7 +24,7 @@
 - **Speed up / Cancel**: `services/rbfBuilder.ts`, `components/RbfModal.tsx`, `components/TransactionDetailsModal.tsx`, `services/repositories/TransactionRepository.ts` (`replaced_by_txid`), `services/sync/TransactionSyncer.ts`, `screens/MobilesPairing.tsx`, `screens/MobileNostrPairing.tsx`, `screens/WalletHome.tsx`. Go `buildSpendTx` in `BBMTLib/tss/btc.go` is shared by the LAN and Nostr senders (BIP125 sequence, dust change absorbed). Native libraries are rebuilt locally and are not committed.
 - **Indexing**: `services/sync/walletIndexingSession.ts`. `components/RestoringIndexesModal.tsx` removed.
 - **Host lists / header**: `utils.js` (`MEMPOOL_HOSTS_MAIN`), `services/mempoolProvidersStore.ts`, `components/Header.tsx`, `components/HeaderProviderCard.tsx`.
-- **Branta**: `@branta-ops/branta` **4.2.0**, `services/BrantaService.ts`, `screens/SendBitcoinModal.tsx`.
+- **Branta**: `@branta-ops/branta` **4.2.0**, `services/BrantaService.ts`, `screens/SendBitcoinModal.tsx`, `polyfills.js`.
 - **Version**: `package.json` **4.1.2**; Android **`versionCode` 73** / **`versionName` 4.1.2**; iOS build **73** / **`MARKETING_VERSION` 4.1.2**.
 
 ## [4.1.1] - 2026-10-27
