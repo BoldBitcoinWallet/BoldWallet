@@ -27,6 +27,7 @@ type RawUtxoEntry = {
   derivationPath?: string;
   address?: string;
   scriptpubkey?: string;
+  required?: boolean;
 };
 
 function parseRouteUtxosJson(raw: string): UtxoWithPath[] | null {
@@ -53,6 +54,7 @@ function parseRouteUtxosJson(raw: string): UtxoWithPath[] | null {
       chain: 'receive' as const,
       chainIndex: 0,
       scriptpubkey: u.scriptpubkey,
+      required: u.required === true,
     }));
   } catch {
     return null;
@@ -125,6 +127,7 @@ function utxosToNativeJson(
     derivation_path: u.derivationPath,
     address: u.address,
     scriptpubkey: u.scriptpubkey ?? '',
+    ...(u.required ? {required: true} : {}),
   }));
   return JSON.stringify(forNative);
 }

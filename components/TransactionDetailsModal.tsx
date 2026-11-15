@@ -29,6 +29,12 @@ import {isBrantaEnabled} from '../services/BrantaService';
 import {ActiveTxVisualizer} from './TransactionVisualizer';
 import {isApiTxConfirmed} from '../services/txVisualizerPhase';
 import ErrorBoundary from './ErrorBoundary';
+import RbfModal from './RbfModal';
+import {
+  resolveRbfEligibility,
+  type RbfEligibility,
+  type RbfSendPayload,
+} from '../services/rbfBuilder';
 
 /** Open-state stand-in until the diagram reports its real height. */
 const VISUALIZER_FALLBACK_H = 260;
@@ -39,6 +45,7 @@ interface TransactionDetailsModalProps {
   transaction: any;
   baseApi: string;
   network?: string;
+  addressType?: string;
   selectedCurrency: string;
   /** Historical BTC rate at tx time; fiat shown only when set. */
   historicalRate: number | null;
@@ -60,6 +67,9 @@ interface TransactionDetailsModalProps {
       blockHeight: number | null;
     },
   ) => void;
+  /** Start co-signing a BIP125 replacement built by RbfModal. */
+  onStartReplacement?: (payload: RbfSendPayload) => void;
+  btcRate?: number;
   amounts: {
     sent: number;
     received: number;
@@ -74,6 +84,7 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   transaction,
   baseApi,
   network = 'mainnet',
+  addressType = 'segwit-native',
   selectedCurrency,
   historicalRate,
   getCurrencySymbol,
@@ -82,6 +93,8 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
   amounts,
   isBlurred = false,
   onChainStatus,
+  onStartReplacement,
+  btcRate = 0,
 }) => {
   const {theme} = useTheme();
   const {showSats, balanceFormattingEnabled} = useUser();
@@ -94,6 +107,10 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
     VISUALIZER_FALLBACK_H,
   );
   const [sheetMinH, setSheetMinH] = React.useState(0);
+  const [rbfCase, setRbfCase] = React.useState<RbfEligibility | null>(null);
+  const [rbfMode, setRbfMode] = React.useState<'speedup' | 'cancel' | null>(
+    null,
+  );
   const detailsScrollRef = React.useRef<ScrollView>(null);
   const scrollY = useSharedValue(0);
   const expandedH = useSharedValue(VISUALIZER_FALLBACK_H);
@@ -225,6 +242,60 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       cancelled = true;
     };
   }, [visible, status?.confirmed, transaction?.txid, baseApi]);
+
+  const onStartReplacementRef = React.useRef(onStartReplacement);
+  onStartReplacementRef.current = onStartReplacement;
+
+  React.useEffect(() => {
+    const text = status?.text ?? '';
+    const walletOrigin =
+      text.includes('Sen') ||
+      text.includes('Consolidat') ||
+      text.includes('Rebalanc') ||
+      Boolean(transaction?.sentAt);
+    if (
+      !visible ||
+      !onStartReplacementRef.current ||
+      status?.confirmed ||
+      !walletOrigin ||
+      !transaction?.txid ||
+      !addressPathMap
+    ) {
+      setRbfCase(null);
+      setRbfMode(null);
+      return;
+    }
+    let cancelled = false;
+    resolveRbfEligibility({
+      tx: transaction,
+      baseApi,
+      addressPathMap,
+    })
+      .then(result => {
+        if (!cancelled) {
+          setRbfCase(result);
+        }
+      })
+      .catch(error => {
+        dbg('Transaction details: RBF check failed', error);
+        if (!cancelled) {
+          setRbfCase(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+    // The transaction object is replaced on parent renders. The id is the check.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    visible,
+    status?.confirmed,
+    status?.text,
+    transaction?.txid,
+    transaction?.sentAt,
+    addressPathMap,
+    baseApi,
+  ]);
 
   React.useEffect(() => {
     scrollY.value = 0;
@@ -806,6 +877,9 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
       fontSize: theme.fontSizes?.sm || 13,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
+    },
+    actionBtnDim: {
+      opacity: 0.4,
     },
     clickableText: {
       color: theme.colors.text,
@@ -1407,6 +1481,58 @@ const TransactionDetailsModal: React.FC<TransactionDetailsModalProps> = ({
               <AppText style={styles.txIdText} selectable>
                 {transaction.txid}
               </AppText>
+              {rbfCase && !status.confirmed && isWalletOrigin ? (
+                <View style={styles.actionRow}>
+                  <AppPressable
+                    onPress={() => rbfCase.canSpeedUp && setRbfMode('speedup')}
+                    disabled={!rbfCase.eligible || !rbfCase.canSpeedUp}
+                    style={[
+                      styles.actionBtnGrow,
+                      !rbfCase.canSpeedUp ? styles.actionBtnDim : null,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Speed up transaction">
+                    <AppText style={styles.actionBtnText}>Speed up</AppText>
+                  </AppPressable>
+                  <AppPressable
+                    onPress={() => rbfCase.canCancel && setRbfMode('cancel')}
+                    disabled={!rbfCase.eligible || !rbfCase.canCancel}
+                    style={[
+                      styles.actionBtnGrow,
+                      !rbfCase.canCancel ? styles.actionBtnDim : null,
+                    ]}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cancel transaction">
+                    <AppText style={styles.actionBtnText}>Cancel tx</AppText>
+                  </AppPressable>
+                </View>
+              ) : null}
+              {rbfMode && rbfCase?.eligible ? (
+                <RbfModal
+                  visible
+                  mode={rbfMode}
+                  eligibility={rbfCase}
+                  network={network}
+                  addressType={addressType}
+                  baseApi={baseApi}
+                  btcRate={btcRate > 0 ? btcRate : historicalRate ?? 0}
+                  currencySymbol={getCurrencySymbol(selectedCurrency)}
+                  onClose={() => setRbfMode(null)}
+                  onSuggestCancel={() => setRbfMode('cancel')}
+                  onConfirm={payload => {
+                    setRbfMode(null);
+                    onClose();
+                    onStartReplacementRef.current?.(payload);
+                  }}
+                />
+              ) : null}
+              {rbfCase && (!rbfCase.eligible || rbfCase.warning || rbfCase.reason) ? (
+                <AppText variant="caption" tone="muted" style={styles.chainFacts}>
+                  {rbfCase.eligible
+                    ? rbfCase.warning || (rbfCase.canSpeedUp ? '' : rbfCase.reason)
+                    : rbfCase.reason}
+                </AppText>
+              ) : null}
               <View style={styles.actionRow}>
                 <AppPressable
                   onPress={copyTxid}

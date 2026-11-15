@@ -47,8 +47,8 @@ jest.mock('../services/Database', () => {
       }
       if (q.startsWith('update transactions')) {
         // applyChainStatus: [confirmed, blockHeight, blockTime, blockHash,
-        // rawJson, fetchedAt, txid, network]
-        const row = mockTxRows.get(`${String(p[6])}|${String(p[7])}`);
+        // rawJson, fetchedAt, confirmedAgain, txid, network]
+        const row = mockTxRows.get(`${String(p[7])}|${String(p[8])}`);
         if (row) {
           row.is_confirmed = Number(p[0]);
           row.block_height = (p[1] as number) ?? null;

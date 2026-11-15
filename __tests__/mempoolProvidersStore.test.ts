@@ -46,6 +46,9 @@ describe('mempoolProvidersStore', () => {
       true,
     );
     expect(isTestnetMempoolApiBase('https://mempool.space/api')).toBe(false);
+    expect(isTestnetMempoolApiBase('https://testnet4.xxi.quest/api')).toBe(
+      true,
+    );
   });
 
   beforeEach(() => {
@@ -203,6 +206,40 @@ describe('mempoolProvidersStore', () => {
       host: 'mempool.space/testnet4',
       extraCount: 1,
       label: 'mempool.space/testnet4 +1',
+    });
+  });
+
+  it('explicit network wins over URL sniffing for header display', () => {
+    (appConfigRepository.get as jest.Mock).mockImplementation((key: string) => {
+      if (key === 'mempool_providers_entries') {
+        return JSON.stringify([
+          {url: 'https://mempool.space/api', enabled: true},
+          {url: 'https://mempool.emzy.de/api', enabled: true},
+          {url: 'https://mempool.guide/api', enabled: true},
+        ]);
+      }
+      if (key === 'mempool_providers_entries_testnet') {
+        return JSON.stringify([
+          {url: 'https://mempool.space/testnet4/api', enabled: true},
+          {url: 'https://mempool.ninja/testnet4/api', enabled: true},
+        ]);
+      }
+      return null;
+    });
+    // Host-style URL would sniff as mainnet; explicit network forces testnet list.
+    expect(
+      getHeaderProviderDisplay('https://testnet4.example.com/api', 'testnet4'),
+    ).toEqual({
+      host: 'mempool.space/testnet4',
+      extraCount: 1,
+      label: 'mempool.space/testnet4 +1',
+    });
+    expect(
+      getHeaderProviderDisplay('https://mempool.space/testnet4/api', 'mainnet'),
+    ).toEqual({
+      host: 'mempool.space',
+      extraCount: 2,
+      label: 'mempool.space +2',
     });
   });
 

@@ -245,6 +245,8 @@ class DatabaseService {
           'ALTER TABLE utxos ADD COLUMN block_time INTEGER',
           // B2: pin flag for user-shared receive addresses (nullable ms timestamp).
           'ALTER TABLE wallet_addresses ADD COLUMN pinned_at INTEGER',
+          // BIP125: a replacement points at the tx that spent the same inputs.
+          'ALTER TABLE transactions ADD COLUMN replaced_by_txid TEXT',
         ];
         for (const stmt of COLUMN_MIGRATIONS) {
           try {

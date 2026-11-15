@@ -213,46 +213,70 @@ export type HeaderProviderDisplay = {
 
 /** True for mempool.space-style `/testnet` and `/testnet4` API bases. */
 export function isTestnetMempoolApiBase(apiBase: string): boolean {
-  return /\/testnet4?(\/|$)/i.test(apiBase || '');
+  if (/\/testnet4?(\/|$)/i.test(apiBase || '')) {
+    return true;
+  }
+  try {
+    const host = new URL(apiBase).hostname.toLowerCase();
+    return host.startsWith('testnet4.') || host.startsWith('testnet.');
+  } catch {
+    return false;
+  }
 }
 
 /**
- * Sync label for HeaderProvider: primary enabled host + `+N` when that
- * network's pool has more than one enabled provider. Testnet reads the
- * testnet list, never the mainnet one.
+ * Enabled provider API bases for an explicit network. Prefer this over
+ * sniffing the API URL so the header pill never reads the wrong list.
  */
+export function getActiveProviderUrlsForNetwork(
+  network: string,
+  fallbackBase?: string | null,
+): string[] {
+  const net = providerNetworkKey(network);
+  const fallback = (fallbackBase || '').trim();
+  const stored = appConfigRepository.get(entriesConfigKey(net));
+  const parsed = parseStoredProviderEntries(stored);
+  const active = parsed ? activeProviderUrls(parsed) : [];
+  if (active.length > 0) {
+    return active;
+  }
+  if (fallback) {
+    return [fallback];
+  }
+  return [fallbackProviderUrl(net)];
+}
+
 /** Enabled provider API bases for the network implied by `apiBase`. */
 export function getActiveProviderUrlsForApiBase(
   apiBase?: string | null,
 ): string[] {
   const fallbackBase = (apiBase || '').trim();
   const testnet = isTestnetMempoolApiBase(fallbackBase);
-  const stored = appConfigRepository.get(
-    testnet
-      ? CONFIG_KEYS.MEMPOOL_PROVIDERS_ENTRIES_TESTNET
-      : CONFIG_KEYS.MEMPOOL_PROVIDERS_ENTRIES,
+  return getActiveProviderUrlsForNetwork(
+    testnet ? 'testnet4' : 'mainnet',
+    fallbackBase,
   );
-  const parsed = parseStoredProviderEntries(stored);
-  const active = parsed ? activeProviderUrls(parsed) : [];
-  if (active.length > 0) {
-    return active;
-  }
-  if (fallbackBase) {
-    return [fallbackBase];
-  }
-  return [testnet ? CANONICAL_TESTNET_MEMPOOL_API_BASE : FALLBACK_MAINNET];
 }
 
+/**
+ * Sync label for HeaderProvider: primary enabled host + `+N` when that
+ * network's pool has more than one enabled provider.
+ * When `network` is set it wins over URL sniffing.
+ */
 export function getHeaderProviderDisplay(
   apiBase?: string | null,
+  network?: string | null,
 ): HeaderProviderDisplay {
   const fallbackBase = (apiBase || '').trim();
-  const testnet = isTestnetMempoolApiBase(fallbackBase);
-  const active = getActiveProviderUrlsForApiBase(apiBase);
+  const net =
+    network != null && String(network).trim() !== ''
+      ? providerNetworkKey(network)
+      : isTestnetMempoolApiBase(fallbackBase)
+        ? 'testnet4'
+        : 'mainnet';
+  const active = getActiveProviderUrlsForNetwork(net, fallbackBase);
   const primaryUrl =
-    active[0] ||
-    fallbackBase ||
-    (testnet ? CANONICAL_TESTNET_MEMPOOL_API_BASE : FALLBACK_MAINNET);
+    active[0] || fallbackBase || fallbackProviderUrl(net);
   const host = hostnameFromMempoolApiBase(primaryUrl);
   const enabledCount = active.length > 0 ? active.length : host ? 1 : 0;
   const extraCount = Math.max(0, enabledCount - 1);

@@ -417,8 +417,8 @@ const UtxosScreen: React.FC<{navigation: any}> = ({navigation}) => {
     [btcPrice, selectedCurrency],
   );
   const headerTitle = useCallback(
-    () => <HeaderProvider apiBase={apiBase} />,
-    [apiBase],
+    () => <HeaderProvider apiBase={apiBase} network={network} />,
+    [apiBase, network],
   );
   const headerRight = useCallback(
     () => (

@@ -246,6 +246,16 @@ interface TransactionListProps {
   isBlurred?: boolean;
   /** Home owns the initial network tx sync; list still paints from SQLite. */
   deferInitialFetch?: boolean;
+  onStartReplacement?: (payload: {
+    toAddress: string;
+    amountSats: number;
+    feeSats: number;
+    spendingHash: string;
+    utxosJson: string;
+    changeAddress: string | null;
+    replacedTxId: string;
+    skipChangeIndexBump: boolean;
+  }) => void;
 }
 export interface TransactionListHandle {
   refresh: (useFullList?: boolean) => Promise<void> | void;
@@ -270,6 +280,7 @@ const TransactionList = React.forwardRef<
       onPullRefresh,
       isBlurred = false,
       deferInitialFetch = false,
+      onStartReplacement,
     },
     ref,
   ) => {
@@ -1819,6 +1830,10 @@ const TransactionList = React.forwardRef<
               setSelectedTransaction(null);
             }}
             baseApi={baseApi}
+            network={network}
+            addressType={addressType}
+            btcRate={_btcRate}
+            onStartReplacement={onStartReplacement}
             selectedCurrency={selectedCurrency}
             historicalRate={(() => {
               const selTx = selectedTransaction;
@@ -1907,7 +1922,6 @@ const TransactionList = React.forwardRef<
             }}
             addressPathMap={addressPathMap}
             isBlurred={isBlurred}
-            network={network}
           />
       </View>
     );

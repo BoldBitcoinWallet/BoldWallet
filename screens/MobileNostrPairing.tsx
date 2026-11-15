@@ -177,6 +177,11 @@ import appConfigRepository, {
 } from '../services/repositories/AppConfigRepository';
 import {clearCachesBeforeWalletSession} from '../services/walletSessionReset';
 import transactionRepository from '../services/repositories/TransactionRepository';
+import {
+  broadcastFeeSats,
+  estimateVsize,
+  replacementSkipsChangeBump,
+} from '../services/rbfBuilder';
 import merchantLabelRepository from '../services/repositories/MerchantLabelRepository';
 import {WalletService} from '../services/WalletService';
 import RNFS from 'react-native-fs';
@@ -430,6 +435,8 @@ type RouteParams = {
   utxosJson?: string; // Pre-selected UTXOs from QR (avoids re-fetch on scanner)
   changeAddress?: string; // Pre-computed change address from sender (ensures consistency)
   brantaInitiated?: boolean;
+  replacedTxId?: string;
+  skipChangeIndexBump?: boolean;
 };
 const MobileNostrPairing = ({navigation}: any) => {
   const route = useRoute<RouteProp<{params: RouteParams}>>();
@@ -688,9 +695,12 @@ const MobileNostrPairing = ({navigation}: any) => {
       vout: number;
       value: number;
       scriptpubkey_address: string;
+      required?: boolean;
     }>;
     outputs?: Array<{scriptpubkey_address: string; value: number}>;
     brantaInitiated?: boolean;
+    replacedTxId?: string;
+    skipChangeIndexBump?: boolean;
   } | null>(null);
   const skipRestoreInFinallyRef = useRef(false);
   const nostrAbortRef = useRef(false);
@@ -2124,6 +2134,7 @@ const MobileNostrPairing = ({navigation}: any) => {
             vout: number;
             value: number;
             scriptpubkey_address: string;
+            required?: boolean;
           }>
         | undefined;
       let broadcastOutputs:
@@ -2342,6 +2353,7 @@ const MobileNostrPairing = ({navigation}: any) => {
         vout: u.vout,
         value: u.value,
         scriptpubkey_address: u.address ?? '',
+        required: u.required === true,
       }));
       const totalInput = utxoList.reduce(
         (s: number, u: any) => s + (u.value || 0),
@@ -2352,7 +2364,7 @@ const MobileNostrPairing = ({navigation}: any) => {
       broadcastOutputs = [
         {scriptpubkey_address: toAddress, value: Number(satoshiAmount)},
       ];
-      if (changeAmount > 0) {
+      if (changeAmount > 546 && changeAddress) {
         broadcastOutputs.push({
           scriptpubkey_address: changeAddress,
           value: changeAmount,
@@ -2397,6 +2409,8 @@ const MobileNostrPairing = ({navigation}: any) => {
         ...(broadcastInputs && broadcastOutputs
           ? {inputs: broadcastInputs, outputs: broadcastOutputs}
           : {}),
+        replacedTxId: route.params?.replacedTxId,
+        skipChangeIndexBump: route.params?.skipChangeIndexBump === true,
         brantaInitiated: route.params?.brantaInitiated === true,
       };
       skipRestoreInFinallyRef.current = true;
@@ -6551,6 +6565,9 @@ const MobileNostrPairing = ({navigation}: any) => {
                     },
                     fee: p.satoshiFees,
                     vin: p.inputs.map(inp => ({
+                      txid: inp.txid,
+                      vout: inp.vout,
+                      sequence: 0xfffffffd,
                       prevout: {
                         scriptpubkey_address: inp.scriptpubkey_address,
                         value: inp.value,
@@ -6585,12 +6602,36 @@ const MobileNostrPairing = ({navigation}: any) => {
                       },
                     ],
                   };
+            const inputCount = p.inputs?.length ?? apiTxShape.vin.length;
+            const outputCount = p.outputs?.length ?? apiTxShape.vout.length;
+            const vsize = estimateVsize(inputCount, outputCount, p.addressTypeToUse);
             transactionRepository.insertBroadcastTransaction(
               txId,
               p.net || 'mainnet',
-              apiTxShape,
+              {
+                ...apiTxShape,
+                fee: broadcastFeeSats(
+                  p.inputs ?? [],
+                  p.outputs ?? [],
+                  p.satoshiFees,
+                ),
+                size: vsize,
+                weight: vsize * 4,
+              },
               p.senderAddress,
             );
+            transactionRepository.markConflictsReplacedBy(
+              txId,
+              p.inputs ?? [],
+              p.net || 'mainnet',
+            );
+            if (p.replacedTxId) {
+              transactionRepository.markReplaced(
+                p.replacedTxId,
+                txId,
+                p.net || 'mainnet',
+              );
+            }
             if (p.brantaInitiated) {
               merchantLabelRepository.markVerifiedTx(
                 txId,
@@ -6615,10 +6656,29 @@ const MobileNostrPairing = ({navigation}: any) => {
             setMpcDone(true);
             (async () => {
               try {
-                await WalletService.getInstance().incrementChangeIndexAfterSend(
-                  p.net,
-                  p.addressTypeToUse,
-                );
+                let nextChange: string | null = null;
+                try {
+                  nextChange =
+                    await WalletService.getInstance().getNextChangeAddress(
+                      p.net,
+                      p.addressTypeToUse,
+                    );
+                } catch {
+                  nextChange = null;
+                }
+                const skipBump = replacementSkipsChangeBump({
+                  inputs: p.inputs ?? [],
+                  outputs: p.outputs ?? [],
+                  toAddress: p.toAddress,
+                  nextChangeAddress: nextChange,
+                  skipChangeIndexBump: p.skipChangeIndexBump,
+                });
+                if (!skipBump) {
+                  await WalletService.getInstance().incrementChangeIndexAfterSend(
+                    p.net,
+                    p.addressTypeToUse,
+                  );
+                }
               } catch (e) {
                 dbg(
                   'MobileNostrPairing: incrementChangeIndexAfterSend failed:',

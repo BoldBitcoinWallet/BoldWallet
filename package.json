@@ -1,6 +1,6 @@
 {
   "name": "boldwallet",
-  "version": "4.1.1",
+  "version": "4.1.2",
   "private": true,
   "scripts": {
     "android": "react-native run-android --main-activity .MainActivity",
@@ -16,7 +16,7 @@
     "postinstall": "patch-package"
   },
   "dependencies": {
-    "@branta-ops/branta": "3.2.1",
+    "@branta-ops/branta": "4.2.0",
     "@keystonehq/bc-ur-registry-btc": "0.1.1",
     "@ngraveio/bc-ur": "1.1.13",
     "@noble/ciphers": "^0.4.0",

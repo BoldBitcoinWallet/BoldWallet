@@ -100,6 +100,8 @@ export interface UtxoWithPath extends ApiUtxo {
   /** Present when enriched for PSBT build; either casing may appear from APIs. */
   scriptpubkey?: string;
   scriptPubkey?: string | null;
+  /** Pin this coin into the spend (RBF replacement inputs). */
+  required?: boolean;
 }
 
 export interface Transaction {
@@ -1412,12 +1414,21 @@ export class WalletService {
       index: number,
       gapIndex: number,
     ) => void,
+    options?: {signal?: AbortSignal},
   ): Promise<void> {
     dbg('WalletService: discoverHdIndexesForNetwork START', {
       network,
       addressType,
       apiUrl: apiUrl?.slice(0, 40) + '...',
     });
+    const signal = options?.signal;
+    const throwIfAborted = () => {
+      if (signal?.aborted) {
+        const err = new Error('Discovery aborted');
+        err.name = 'AbortError';
+        throw err;
+      }
+    };
     const ks = await getKeyshareMetadata();
     if (!ks) {
       dbg('WalletService: No keyshare, skipping restore discovery');
@@ -1487,6 +1498,7 @@ export class WalletService {
 
       try {
         while (consecutiveUnused < gapLimit) {
+          throwIfAborted();
           // Fast-forward any known-used indices without network or JNI calls.
           const cached = knownRows.get(idx);
           if (cached?.isUsed === true) {
@@ -1515,6 +1527,7 @@ export class WalletService {
           // Resolve addresses (reuse stored address string if present, else derive once).
           const windowTargets: Array<{index: number; address: string}> = [];
           for (const targetIdx of windowIndices) {
+            throwIfAborted();
             const existingAddr = knownRows.get(targetIdx)?.address;
             if (existingAddr) {
               windowTargets.push({index: targetIdx, address: existingAddr});
@@ -1543,21 +1556,36 @@ export class WalletService {
             windowTargets,
             concurrency,
             async ({index: targetIdx, address: addr}) => {
+              throwIfAborted();
               try {
                 const used = await this.isAddressUsed(addr, apiUrl);
                 return {index: targetIdx, address: addr, used, ok: true};
-              } catch {
+              } catch (probeErr) {
+                if (
+                  probeErr instanceof Error &&
+                  probeErr.name === 'AbortError'
+                ) {
+                  throw probeErr;
+                }
                 dbg(
                   `WalletService: Restore discovery ${chainKind} error, retrying`,
                   {network, addressType, index: targetIdx},
                 );
                 try {
+                  throwIfAborted();
                   await waitMS(1500);
+                  throwIfAborted();
                   const retryUrl = `${cleanApi}/address/${addr}/txs`;
                   mempoolClient.evictInflight(retryUrl);
                   const used = await this.isAddressUsed(addr, apiUrl);
                   return {index: targetIdx, address: addr, used, ok: true};
                 } catch (retryError) {
+                  if (
+                    retryError instanceof Error &&
+                    retryError.name === 'AbortError'
+                  ) {
+                    throw retryError;
+                  }
                   dbg(
                     `WalletService: Restore discovery ${chainKind} error after retry`,
                     {network, addressType, index: targetIdx, error: retryError},
@@ -1608,6 +1636,14 @@ export class WalletService {
         }
         return {maxUsed, status: 'ok'};
       } catch (error) {
+        if (error instanceof Error && error.name === 'AbortError') {
+          dbg(`WalletService: Restore discovery ${chainKind} aborted`, {
+            network,
+            addressType,
+            maxUsed,
+          });
+          return {maxUsed, status: 'partial'};
+        }
         dbg(`WalletService: Restore discovery ${chainKind} FAILED`, {
           network,
           addressType,

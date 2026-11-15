@@ -1201,46 +1201,9 @@ func runNostrMpcSendBTCInternalWithUTXOs(relaysCSV, partyNsec, partiesNpubsCSV, 
 		return "", fmt.Errorf("invalid keyshare")
 	}
 
-	selectedUTXOs, totalAmount, err := SelectUTXOsWithPaths(utxos, amountSatoshi+agreedFee, "smallest")
+	tx, selectedUTXOs, _, err := buildSpendTx(utxos, amountSatoshi, agreedFee, receiverAddress, changeAddress)
 	if err != nil {
 		return "", err
-	}
-
-	params := &TestNet4Params
-	if _btc_net == "mainnet" {
-		params = &chaincfg.MainNetParams
-	}
-	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode receiver address: %w", err)
-	}
-	changeAddr, err := btcutil.DecodeAddress(changeAddress, params)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode change address: %w", err)
-	}
-
-	tx := wire.NewMsgTx(wire.TxVersion)
-	for _, utxo := range selectedUTXOs {
-		hash, err := chainhash.NewHashFromStr(utxo.TxID)
-		if err != nil {
-			return "", fmt.Errorf("invalid UTXO TxID: %w", err)
-		}
-		txIn := wire.NewTxIn(wire.NewOutPoint(hash, utxo.Vout), nil, nil)
-		txIn.Sequence = 0xfffffffd
-		tx.AddTxIn(txIn)
-	}
-
-	if totalAmount < amountSatoshi+agreedFee {
-		return "", fmt.Errorf("insufficient funds")
-	}
-
-	pkScript, _ := txscript.PayToAddrScript(toAddr)
-	tx.AddTxOut(wire.NewTxOut(amountSatoshi, pkScript))
-
-	changeAmount := totalAmount - amountSatoshi - agreedFee
-	if changeAmount > 546 {
-		changePkScript, _ := txscript.PayToAddrScript(changeAddr)
-		tx.AddTxOut(wire.NewTxOut(changeAmount, changePkScript))
 	}
 
 	// Build prevOuts map from inline scriptpubkey (no network call).

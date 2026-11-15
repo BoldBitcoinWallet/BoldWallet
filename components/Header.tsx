@@ -49,10 +49,10 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
     [],
   );
   const display = useMemo(
-    () => getHeaderProviderDisplay(apiBase),
+    () => getHeaderProviderDisplay(apiBase, network),
     // providersRev intentionally invalidates when the provider list changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- providersRev bump
-    [apiBase, providersRev],
+    [apiBase, network, providersRev],
   );
   const providerHost = display.host || 'Loading...';
   const providerLabel = display.label || providerHost;
@@ -269,11 +269,14 @@ export const HeaderNetworkProvider: React.FC<HeaderNetworkProviderProps> = ({
 
 interface HeaderProviderProps {
   apiBase?: string;
+  /** Active wallet network — wins over URL sniffing for the provider list. */
+  network?: string;
   /** Wallet home: online/offline icon plus Connected (+N) or Disconnected. */
   connectionStatus?: boolean;
 }
 export const HeaderProvider: React.FC<HeaderProviderProps> = ({
   apiBase,
+  network,
   connectionStatus = false,
 }) => {
   const {theme} = useTheme();
@@ -296,10 +299,10 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({
     [],
   );
   const display = useMemo(
-    () => getHeaderProviderDisplay(apiBase),
+    () => getHeaderProviderDisplay(apiBase, network),
     // providersRev intentionally invalidates when the provider list changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- providersRev bump
-    [apiBase, providersRev],
+    [apiBase, network, providersRev],
   );
   useEffect(() => {
     return subscribeMempoolHealth(state => {
@@ -458,6 +461,7 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({
         visible={cardOpen}
         onClose={() => setCardOpen(false)}
         apiBase={apiBase}
+        network={network}
         anchor={anchor}
       />
     </View>
@@ -688,7 +692,7 @@ export const HeaderPriceProviderNetwork: React.FC<
         />
       </View>
       <View style={middleSlotStyle}>
-        <HeaderProvider apiBase={apiBase} />
+        <HeaderProvider apiBase={apiBase} network={network} />
       </View>
       <View style={rightSlotStyle}>
         <HeaderNetwork network={network} onPress={onSettingsPress} />

@@ -21,9 +21,11 @@ import {
 } from '../services/walletOnlineStore';
 import {
   activeProviderUrls,
+  fallbackProviderUrl,
   isTestnetMempoolApiBase,
   loadMempoolProviderEntries,
   primaryProviderUrl,
+  providerNetworkKey,
   saveMempoolProviderEntries,
   subscribeMempoolProviders,
   type MempoolProviderEntry,
@@ -46,6 +48,8 @@ type Props = {
   visible: boolean;
   onClose: () => void;
   apiBase?: string;
+  /** Active wallet network — wins over URL sniffing for the provider list. */
+  network?: string;
   /** Pill position from measureInWindow. */
   anchor: Anchor | null;
 };
@@ -159,6 +163,7 @@ export default function HeaderProviderCard({
   visible,
   onClose,
   apiBase,
+  network,
   anchor,
 }: Props) {
   const {theme} = useTheme();
@@ -173,9 +178,12 @@ export default function HeaderProviderCard({
     getMempoolRequestLog(),
   );
 
-  const providerNet = isTestnetMempoolApiBase(apiBase || '')
-    ? 'testnet4'
-    : 'mainnet';
+  const providerNet =
+    network != null && String(network).trim() !== ''
+      ? providerNetworkKey(network)
+      : isTestnetMempoolApiBase(apiBase || '')
+        ? 'testnet4'
+        : 'mainnet';
 
   useEffect(
     () => subscribeMempoolProviders(() => setProvidersRev(n => n + 1)),
@@ -237,7 +245,10 @@ export default function HeaderProviderCard({
         setEntries(saved);
         const enabledUrls = activeProviderUrls(saved);
         mempoolClient.setPublicBases(enabledUrls);
-        const primary = primaryProviderUrl(saved);
+        const primary = primaryProviderUrl(
+          saved,
+          fallbackProviderUrl(providerNet),
+        );
         await setActiveApiProvider(primary);
         try {
           await ensureFeeApisApplied(enabledUrls, null);

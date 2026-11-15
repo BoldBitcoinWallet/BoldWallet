@@ -1,5 +1,5 @@
 /**
- * BrantaService tests — opt-in gating, address match, and SDK wrapper.
+ * BrantaService tests — opt-in gating and SDK 4.x verify() wrapper.
  */
 
 jest.mock('../utils', () => ({
@@ -17,25 +17,28 @@ jest.mock('../services/Database', () => ({
   },
 }));
 
-jest.mock('@branta-ops/branta', () => ({
-  BrantaServerBaseUrl: {
-    Production: 'https://api.branta.pro',
-    Staging: 'https://staging.branta.pro',
-  },
-  createNobleCryptoProvider: jest.fn(() => ({})),
-}), {virtual: true});
-
-const mockGetPaymentsByQrCode = jest.fn();
+const mockVerify = jest.fn();
+const mockOnlineState = {value: true};
 
 jest.mock(
-  '@branta-ops/branta/v2',
+  '@branta-ops/branta',
   () => ({
+    BrantaEnvironment: {
+      Production: 'Production',
+      Staging: 'Staging',
+      Localhost: 'Localhost',
+    },
+    createNobleCryptoProvider: jest.fn(() => ({})),
     BrantaService: jest.fn().mockImplementation(() => ({
-      getPaymentsByQrCode: mockGetPaymentsByQrCode,
+      verify: mockVerify,
     })),
   }),
   {virtual: true},
 );
+
+jest.mock('../services/walletOnlineStore', () => ({
+  isWalletOnline: () => mockOnlineState.value,
+}));
 
 jest.mock('../services/repositories/MerchantLabelRepository', () => ({
   __esModule: true,
@@ -51,9 +54,9 @@ import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
 import {
-  brantaOnChainAddressesMatch,
   initializeBranta,
   isBrantaEnabled,
+  looksLikeBrantaVerifiableInput,
   resolveBrantaQr,
 } from '../services/BrantaService';
 import {runBrantaVerifiedBackfillIfNeeded} from '../services/BrantaVerifiedBackfill';
@@ -61,7 +64,8 @@ import {runBrantaVerifiedBackfillIfNeeded} from '../services/BrantaVerifiedBackf
 const mockExecute = database.execute as jest.Mock;
 const mockBackfill =
   merchantLabelRepository.backfillVerifiedTxsFromMerchantHistory as jest.Mock;
-const MockBrantaSdk = require('@branta-ops/branta/v2').BrantaService as jest.Mock;
+const MockBrantaSdk = require('@branta-ops/branta').BrantaService as jest.Mock;
+const {BrantaEnvironment} = require('@branta-ops/branta');
 
 function setConfigRows(map: Record<string, string | null>) {
   mockExecute.mockImplementation((_sql: string, params: unknown[] = []) => {
@@ -78,9 +82,10 @@ describe('Branta opt-in preference', () => {
   beforeEach(() => {
     mockExecute.mockReset();
     mockExecute.mockReturnValue({rows: []});
-    mockGetPaymentsByQrCode.mockReset();
+    mockVerify.mockReset();
     MockBrantaSdk.mockClear();
     mockBackfill.mockClear();
+    mockOnlineState.value = true;
   });
 
   test('CONFIG_KEYS.BRANTA_ENABLED is branta_enabled', () => {
@@ -111,66 +116,23 @@ describe('Branta opt-in preference', () => {
   });
 });
 
-describe('brantaOnChainAddressesMatch', () => {
-  test('compares bech32 case-insensitively', () => {
-    expect(
-      brantaOnChainAddressesMatch(
-        'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-        'BC1QXY2KGDYGJRSQTZQ2N0YRF2493P83KKFJHX0WLH',
-      ),
-    ).toBe(true);
-  });
-
-  test('rejects different bech32 addresses', () => {
-    expect(
-      brantaOnChainAddressesMatch(
-        'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
-        'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4',
-      ),
-    ).toBe(false);
-  });
-
-  test('compares non-bech32 exactly', () => {
-    expect(
-      brantaOnChainAddressesMatch(
-        '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
-        '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
-      ),
-    ).toBe(true);
-    expect(
-      brantaOnChainAddressesMatch(
-        '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa',
-        '1a1zp1ep5qgefi2dmptftl5slmv7divfna',
-      ),
-    ).toBe(false);
-  });
-
-  test('compares testnet bech32 case-insensitively', () => {
-    expect(
-      brantaOnChainAddressesMatch(
-        'tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s',
-        'TB1QSHRA2MLUJC9WFSCVN4D8AQPYQGXZL55853XG7S',
-      ),
-    ).toBe(true);
-  });
-});
-
-describe('resolveBrantaQr gating', () => {
+describe('resolveBrantaQr', () => {
   beforeEach(() => {
     mockExecute.mockReset();
-    mockGetPaymentsByQrCode.mockReset();
+    mockVerify.mockReset();
     MockBrantaSdk.mockClear();
+    mockOnlineState.value = true;
   });
 
-  test('returns null without calling SDK when disabled', async () => {
+  test('returns unknown without calling SDK when disabled', async () => {
     mockExecute.mockReturnValue({rows: []});
     const result = await resolveBrantaQr(
       'bitcoin:bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh?branta_id=1&branta_secret=2',
       'mainnet',
     );
-    expect(result).toBeNull();
+    expect(result).toEqual({status: 'unknown'});
     expect(MockBrantaSdk).not.toHaveBeenCalled();
-    expect(mockGetPaymentsByQrCode).not.toHaveBeenCalled();
+    expect(mockVerify).not.toHaveBeenCalled();
   });
 
   test('initializeBranta is a no-op when disabled', () => {
@@ -179,43 +141,71 @@ describe('resolveBrantaQr gating', () => {
     expect(MockBrantaSdk).not.toHaveBeenCalled();
   });
 
-  test('still shows merchant when SDK returned a payment (tamper is SDK-side)', async () => {
+  test('uses Production for mainnet and Staging otherwise', () => {
     setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
-    mockGetPaymentsByQrCode.mockResolvedValue({
-      payments: [
-        {
-          platform: 'Test Shop',
-          description: 'order',
-          platformLogoUrl: 'https://example.com/logo.png',
-          platformLogoLightUrl: 'https://example.com/logo-light.png',
-          destinations: [
-            {value: 'bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4'},
-          ],
-        },
-      ],
-      verifyUrl: 'https://branta.pro/verify/test',
-    });
-
-    const result = await resolveBrantaQr(
-      'bitcoin:bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh?amount=0.01&branta_id=1&branta_secret=2',
-      'mainnet',
+    initializeBranta('mainnet');
+    expect(MockBrantaSdk).toHaveBeenCalledWith(
+      expect.objectContaining({environment: BrantaEnvironment.Production}),
     );
-    expect(result?.platform).toBe('Test Shop');
-    expect(result?.address).toBe('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4');
+    MockBrantaSdk.mockClear();
+    initializeBranta('testnet4');
+    expect(MockBrantaSdk).toHaveBeenCalledWith(
+      expect.objectContaining({environment: BrantaEnvironment.Staging}),
+    );
   });
 
-  test('returns merchant payment when BIP-21 and decrypted bech32 match', async () => {
+  test('returns incomplete when offline for Branta QR while enabled', async () => {
     setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
-    mockGetPaymentsByQrCode.mockResolvedValue({
+    mockOnlineState.value = false;
+    const result = await resolveBrantaQr(
+      'bitcoin:bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh?branta_id=1&branta_secret=2',
+      'mainnet',
+    );
+    expect(result).toEqual({status: 'incomplete'});
+    expect(mockVerify).not.toHaveBeenCalled();
+  });
+
+  test('returns unknown when offline for plain address while enabled', async () => {
+    setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
+    mockOnlineState.value = false;
+    const result = await resolveBrantaQr(
+      'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      'mainnet',
+    );
+    expect(result).toEqual({status: 'unknown'});
+    expect(mockVerify).not.toHaveBeenCalled();
+  });
+
+  test('looksLikeBrantaVerifiableInput detects ZK params and derived-key rails', () => {
+    expect(
+      looksLikeBrantaVerifiableInput(
+        'bitcoin:bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh?branta_id=1&branta_secret=2',
+      ),
+    ).toBe(true);
+    expect(looksLikeBrantaVerifiableInput('lnbc1something')).toBe(true);
+    expect(
+      looksLikeBrantaVerifiableInput(
+        'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh',
+      ),
+    ).toBe(false);
+  });
+
+  test('returns match with address from matchedDestinations', async () => {
+    setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
+    mockVerify.mockResolvedValue({
+      status: 'match',
       payments: [
         {
           platform: 'Test Shop',
           description: 'order',
           platformLogoUrl: 'https://example.com/logo.png',
           platformLogoLightUrl: 'https://example.com/logo-light.png',
-          destinations: [
-            {value: 'BC1QXY2KGDYGJRSQTZQ2N0YRF2493P83KKFJHX0WLH'},
-          ],
+        },
+      ],
+      matchedDestinations: [
+        {
+          type: 'bitcoin_address',
+          value: 'BC1QXY2KGDYGJRSQTZQ2N0YRF2493P83KKFJHX0WLH',
         },
       ],
       verifyUrl: 'https://branta.pro/verify/test',
@@ -226,31 +216,35 @@ describe('resolveBrantaQr gating', () => {
       'mainnet',
     );
     expect(result).toEqual({
-      address: 'BC1QXY2KGDYGJRSQTZQ2N0YRF2493P83KKFJHX0WLH',
-      platform: 'Test Shop',
-      description: 'order',
-      logoUrl: 'https://example.com/logo.png',
-      logoLightUrl: 'https://example.com/logo-light.png',
-      verifyUrl: 'https://branta.pro/verify/test',
+      status: 'match',
+      payment: {
+        address: 'BC1QXY2KGDYGJRSQTZQ2N0YRF2493P83KKFJHX0WLH',
+        platform: 'Test Shop',
+        description: 'order',
+        logoUrl: 'https://example.com/logo.png',
+        logoLightUrl: 'https://example.com/logo-light.png',
+        verifyUrl: 'https://branta.pro/verify/test',
+      },
     });
   });
 
-  test('returns merchant payment when lightning is listed before matching on-chain dest', async () => {
+  test('picks bitcoin_address from matchedDestinations when bolt11 sibling present', async () => {
     setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
-    mockGetPaymentsByQrCode.mockResolvedValue({
+    mockVerify.mockResolvedValue({
+      status: 'match',
       payments: [
         {
           platform: 'Test Shop',
           description: 'order',
           platformLogoUrl: 'https://example.com/logo.png',
           platformLogoLightUrl: 'https://example.com/logo-light.png',
-          destinations: [
-            {type: 'bolt11', value: 'lntb1invalidinvoice'},
-            {
-              type: 'bitcoin_address',
-              value: 'tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s',
-            },
-          ],
+        },
+      ],
+      matchedDestinations: [
+        {type: 'bolt11', value: 'lntb1invalidinvoice'},
+        {
+          type: 'bitcoin_address',
+          value: 'tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s',
         },
       ],
       verifyUrl: 'https://branta.pro/verify/test',
@@ -261,41 +255,85 @@ describe('resolveBrantaQr gating', () => {
       'testnet4',
     );
     expect(result).toEqual({
-      address: 'tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s',
-      platform: 'Test Shop',
-      description: 'order',
-      logoUrl: 'https://example.com/logo.png',
-      logoLightUrl: 'https://example.com/logo-light.png',
-      verifyUrl: 'https://branta.pro/verify/test',
+      status: 'match',
+      payment: {
+        address: 'tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s',
+        platform: 'Test Shop',
+        description: 'order',
+        logoUrl: 'https://example.com/logo.png',
+        logoLightUrl: 'https://example.com/logo-light.png',
+        verifyUrl: 'https://branta.pro/verify/test',
+      },
     });
   });
 
-  test('uses typed on-chain dest for address even if listed after lightning', async () => {
+  test('returns unknown for match without bitcoin_address', async () => {
     setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
-    mockGetPaymentsByQrCode.mockResolvedValue({
-      payments: [
-        {
-          platform: 'Test Shop',
-          destinations: [
-            {type: 'bolt11', value: 'lntb1invalidinvoice'},
-            {
-              type: 'bitcoin_address',
-              value: 'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
-            },
-          ],
-        },
-      ],
+    mockVerify.mockResolvedValue({
+      status: 'match',
+      payments: [{platform: 'LN Shop'}],
+      matchedDestinations: [{type: 'bolt11', value: 'lntb1invalidinvoice'}],
       verifyUrl: 'https://branta.pro/verify/test',
     });
 
     const result = await resolveBrantaQr(
-      'bitcoin:tb1qshra2mlujc9wfscvn4d8aqpyqgxzl55853xg7s?branta_id=1&branta_secret=2',
-      'testnet4',
+      'lnbc1something?branta_id=1&branta_secret=2',
+      'mainnet',
     );
-    expect(result?.platform).toBe('Test Shop');
-    expect(result?.address).toBe(
-      'tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx',
+    expect(result).toEqual({status: 'unknown'});
+  });
+
+  test('returns unknown when SDK status is unknown', async () => {
+    setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
+    mockVerify.mockResolvedValue({
+      status: 'unknown',
+      verifyUrl: 'https://branta.pro/verify/test',
+    });
+
+    const result = await resolveBrantaQr(
+      'bitcoin:bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh?branta_id=1&branta_secret=2',
+      'mainnet',
     );
+    expect(result).toEqual({status: 'unknown'});
+  });
+
+  test('returns tampered when SDK status is tampered', async () => {
+    setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
+    mockVerify.mockResolvedValue({
+      status: 'tampered',
+      verifyUrl: 'https://branta.pro/verify/test',
+    });
+
+    const result = await resolveBrantaQr(
+      'bitcoin:bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4?branta_id=1&branta_secret=2',
+      'mainnet',
+    );
+    expect(result).toEqual({status: 'tampered'});
+  });
+
+  test('returns incomplete when SDK status is incomplete', async () => {
+    setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
+    mockVerify.mockResolvedValue({
+      status: 'incomplete',
+      verifyUrl: 'https://branta.pro/verify/test',
+    });
+
+    const result = await resolveBrantaQr(
+      'bitcoin:bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh?branta_id=1&branta_secret=2',
+      'mainnet',
+    );
+    expect(result).toEqual({status: 'incomplete'});
+  });
+
+  test('returns incomplete when verify throws', async () => {
+    setConfigRows({[CONFIG_KEYS.BRANTA_ENABLED]: 'true'});
+    mockVerify.mockRejectedValue(new Error('crypto_unavailable'));
+
+    const result = await resolveBrantaQr(
+      'bitcoin:bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh?branta_id=1&branta_secret=2',
+      'mainnet',
+    );
+    expect(result).toEqual({status: 'incomplete'});
   });
 });
 
