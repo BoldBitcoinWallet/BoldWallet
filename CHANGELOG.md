@@ -16,6 +16,7 @@
 - **Header provider pill** — the count and host follow the wallet network. Testnet no longer shows the mainnet provider list.
 
 ### Fixed
+- **Go toolchain 1.26.11** — `govulncheck` failed on Go 1.26.10 because **GO-2026-6859 / CVE-2026-97054** (`net/http` MaxBytesReader header race) is reachable through the LAN and Nostr HTTP call sites. CI, `BBMTLib/go.mod`, the Dockerfiles, and the native-artifact floor now pin 1.26.11. Native libraries are rebuilt locally and are not committed; the next release build must be Go 1.26.11 or `verify-native-artifacts.sh` fails.
 - **Branta merchant card on Hermes** — React Native Hermes has no `TextDecoder` (and some builds omit `btoa`/`atob`). SDK 4.x decrypt then threw and `verify()` returned `unknown`, so the merchant name and logo never appeared. `polyfills.js` supplies those globals before the SDK loads, on iOS and Android. Bold does not wait on the upstream Branta fallback (https://github.com/BrantaOps/branta-js/pull/107).
 - A confirmed payment stays in history when it wins a replace-by-fee race, and a lagging mempool host cannot hide the higher-fee replacement. Replaced rows leave the pending-address sync set. Unconfirmed children of a replaced transaction are hidden with it.
 - The replacement fee uses the fee the transaction actually paid (inputs minus outputs), including dust that was absorbed, so the minimum is not understated.

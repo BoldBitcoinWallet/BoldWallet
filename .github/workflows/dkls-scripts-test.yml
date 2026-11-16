@@ -35,8 +35,9 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          # F28-exp: pin exact patch — CVE-2026-111943 fixed in go1.26.10.
-          go-version: '1.26.10'
+          # F28-exp: pin exact patch — CVE-2026-111943 fixed in go1.26.10;
+          # GO-2026-6859 / CVE-2026-97054 fixed in go1.26.11.
+          go-version: '1.26.11'
           cache-dependency-path: BBMTLib/go.sum
 
       - name: Install jq
