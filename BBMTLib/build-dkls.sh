@@ -162,7 +162,8 @@ build_android_abi() {
   export CXX="${cc}++"
   export CGO_CFLAGS="-O2"
   # libtss-go #cgo android only adds -lm -llog; path to static FFI comes from here.
-  export CGO_LDFLAGS="-L${ffi_dir} -l:liblibtss_ffi.a -lm -llog -landroid"
+  # Go 1.26.11 rejects -l:filename. Pass the archive as a direct linker input.
+  export CGO_LDFLAGS="-L${ffi_dir} ${ffi_dir}/liblibtss_ffi.a -lm -llog -landroid"
 
   go build -buildmode=c-shared -ldflags="-s -w" -o "${JNI_OUT}/${abi}/libbbmtmobile.so" ./bbmtmobile/
 

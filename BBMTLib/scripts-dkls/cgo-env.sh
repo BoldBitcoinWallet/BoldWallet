@@ -17,7 +17,8 @@ case "$(uname -s)" in
     export CGO_LDFLAGS="-L${_cgo_libtss_release} -llibtss_ffi -lm -framework Security -framework CoreFoundation"
     ;;
   Linux)
-    export CGO_LDFLAGS="-L${_cgo_libtss_release} -l:liblibtss_ffi.a -ldl -lm -lpthread"
+    # Go 1.26.11 rejects -l:filename. -llibtss_ffi finds liblibtss_ffi.a on -L.
+    export CGO_LDFLAGS="-L${_cgo_libtss_release} -llibtss_ffi -ldl -lm -lpthread"
     ;;
   *)
     export CGO_LDFLAGS="-L${_cgo_libtss_release} -llibtss_ffi -ldl -lm -lpthread"
