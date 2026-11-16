@@ -97,11 +97,11 @@ build_host() {
   (cd "${LIBTSS}" && cargo build --release -p libtss-ffi)
   local host_lib="${LIBTSS}/target/release"
   mkdir -p bin
-  export CGO_LDFLAGS="-L${host_lib} -llibtss_ffi -lm"
   if [ "$(uname -s)" = "Darwin" ]; then
-    export CGO_LDFLAGS="${CGO_LDFLAGS} -framework Security -framework CoreFoundation"
+    export CGO_LDFLAGS="-L${host_lib} -llibtss_ffi -lm -framework Security -framework CoreFoundation"
   else
-    export CGO_LDFLAGS="${CGO_LDFLAGS} -ldl -lpthread"
+    # Go 1.26.11 rejects -l:filename. -Bstatic keeps liblibtss_ffi.a, not the .so.
+    export CGO_LDFLAGS="-L${host_lib} -Wl,-Bstatic -llibtss_ffi -Wl,-Bdynamic -lm -ldl -lpthread"
   fi
   info "Building bbmtmobile for host..."
   go build -buildmode=c-shared -o bin/libbbmtmobile ./bbmtmobile/
