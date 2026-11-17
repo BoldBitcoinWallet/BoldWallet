@@ -37,6 +37,27 @@ import {
   getHostQuality,
 } from '../services/mempoolHealth';
 
+const TIP_HASH =
+  'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+function tipHashResponse() {
+  const body = {
+    ok: true,
+    status: 200,
+    text: async () => TIP_HASH,
+    clone() {
+      return this;
+    },
+  };
+  return body;
+}
+
+async function flushProbe() {
+  for (let i = 0; i < 8; i += 1) {
+    await Promise.resolve();
+  }
+}
+
 describe('providerHealthPoller', () => {
   const originalFetch = global.fetch;
 
@@ -46,12 +67,7 @@ describe('providerHealthPoller', () => {
     mockSubscribers.clear();
     resetProviderHealthPollerForTests();
     resetMempoolHealthForTests();
-    global.fetch = jest.fn(async () => ({
-      ok: true,
-      status: 200,
-      text: async () =>
-        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
-    })) as unknown as typeof fetch;
+    global.fetch = jest.fn(async () => tipHashResponse()) as unknown as typeof fetch;
   });
 
   afterEach(() => {
@@ -63,8 +79,7 @@ describe('providerHealthPoller', () => {
 
   it('probes tip/hash immediately when started online', async () => {
     startProviderHealthPoller('https://mempool.space/api');
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushProbe();
     expect(global.fetch).toHaveBeenCalledWith(
       expect.stringMatching(/\/blocks\/tip\/hash$/),
       expect.any(Object),
@@ -75,10 +90,10 @@ describe('providerHealthPoller', () => {
   it('does not fetch while offline', async () => {
     mockOnlineState.value = false;
     startProviderHealthPoller('https://mempool.space/api');
-    await Promise.resolve();
+    await flushProbe();
     expect(global.fetch).not.toHaveBeenCalled();
     jest.advanceTimersByTime(PROVIDER_HEALTH_POLL_MS);
-    await Promise.resolve();
+    await flushProbe();
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
@@ -89,8 +104,7 @@ describe('providerHealthPoller', () => {
     expect(global.fetch).not.toHaveBeenCalled();
     mockOnlineState.value = true;
     mockSubscribers.forEach(fn => fn(true));
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushProbe();
     expect(global.fetch).toHaveBeenCalled();
     stopProviderHealthPoller();
   });

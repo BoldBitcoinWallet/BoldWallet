@@ -26,12 +26,42 @@ function countMatches(text: string, re: RegExp): number {
   return m ? m.length : 0;
 }
 
+/** Nearest fun/func name before each CeremonyTokens.mint( call. */
+function mintFunctions(text: string): string[] {
+  const names: string[] = [];
+  const re = /CeremonyTokens\.mint\(/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    const before = text.slice(0, match.index);
+    const fns = [...before.matchAll(/\b(?:fun|func)\s+([A-Za-z0-9_]+)\s*\(/g)];
+    names.push(fns.length ? fns[fns.length - 1][1] : 'unknown');
+  }
+  return names.sort();
+}
+
+/**
+ * Prompted mint lives in promptAndMint. These three SIGN mints are
+ * silent on purpose: transport/cancel, PSBT keysign, and send sign.
+ * Spend and export still require the OS prompt before anything leaves
+ * the phone. A new mint function fails this list.
+ */
+const SILENT_SIGN_MINTS = [
+  'requestPsbtSignCeremonyToken',
+  'requestSendSignCeremonyToken',
+  'requestSignTransportCeremonyToken',
+];
+const ANDROID_MINTS = [
+  'onAuthenticationSucceeded',
+  ...SILENT_SIGN_MINTS,
+].sort();
+const IOS_RELEASE_MINTS = ['promptAndMint', ...SILENT_SIGN_MINTS].sort();
+
 describe('3b-4 F4 ceremony auth wiring (mint requires OS prompt)', () => {
-  test('Android: exactly one mint call site, inside the prompt success path', () => {
+  test('Android: prompted mint plus the three reviewed silent SIGN mints', () => {
     const kt = read(
       'android/app/src/main/java/com/boldwallet/BBMTLibNativeModule.kt',
     );
-    expect(countMatches(kt, /CeremonyTokens\.mint\(/)).toBe(1);
+    expect(mintFunctions(kt)).toEqual(ANDROID_MINTS);
     expect(kt).toMatch(
       /onAuthenticationSucceeded[\s\S]{0,400}?CeremonyTokens\.mint\(/,
     );
@@ -79,9 +109,9 @@ describe('3b-4 F4 ceremony auth wiring (mint requires OS prompt)', () => {
     ).toBe(false);
   });
 
-  test('iOS: exactly one release mint call site, inside the prompt success path', () => {
+  test('iOS: prompted mint plus the three reviewed silent SIGN mints', () => {
     const swift = stripDebugRegions(read('ios/BBMTLibNativeModule.swift'));
-    expect(countMatches(swift, /CeremonyTokens\.mint\(/)).toBe(1);
+    expect(mintFunctions(swift)).toEqual(IOS_RELEASE_MINTS);
     expect(swift).toMatch(
       /evaluatePolicy[\s\S]{0,600}?CeremonyTokens\.mint\(/,
     );
@@ -112,8 +142,10 @@ describe('3b-4 F4 ceremony auth wiring (mint requires OS prompt)', () => {
 
   test('iOS: test mint stays inside #if DEBUG (stripped from release)', () => {
     const raw = read('ios/BBMTLibNativeModule.swift');
-    // One release mint (prompt) + one DEBUG mint (tests).
-    expect(countMatches(raw, /CeremonyTokens\.mint\(/)).toBe(2);
+    // Release mints plus the DEBUG test mint.
+    expect(mintFunctions(raw)).toEqual(
+      [...IOS_RELEASE_MINTS, 'requestCeremonyTokenTest'].sort(),
+    );
     const debugBlocks = raw.match(/#if DEBUG[\s\S]*?#endif/g) ?? [];
     expect(debugBlocks.length).toBeGreaterThan(0);
     expect(

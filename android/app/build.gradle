@@ -33,7 +33,7 @@ android {
         applicationId "com.boldwallet"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 73
+        versionCode 74
         versionName "4.1.2"
         // App UI is English-only; drop merged AndroidX locale packs from the Play listing.
         resConfigs "en"

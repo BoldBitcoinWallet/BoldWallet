@@ -1,3 +1,5 @@
+jest.mock('../utils', () => ({dbg: jest.fn()}));
+
 import {progressStateAfterAbort} from '../services/mpcProgress';
 import {
   getMpcCancelState,

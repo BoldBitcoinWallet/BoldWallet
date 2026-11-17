@@ -65,7 +65,7 @@ const mockDiscover = jest.fn(
     _a?: unknown,
     _p?: unknown,
     _opts?: {signal?: AbortSignal},
-  ) => undefined,
+  ): Promise<void> => {},
 );
 jest.mock('../services/WalletService', () => ({
   WalletService: {
@@ -106,7 +106,7 @@ describe('walletIndexingSession', () => {
     mockRefresh.mockReset();
     mockPause.mockReset();
     mockResume.mockReset();
-    mockDiscover.mockImplementation(async () => undefined);
+    mockDiscover.mockImplementation(async () => {});
     mockRefresh.mockImplementation(async () => undefined);
     (getStoredNetworkKey as jest.Mock).mockReturnValue('mainnet');
     mockAppConfigGet.mockImplementation((key: string) =>

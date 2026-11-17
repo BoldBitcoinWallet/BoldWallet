@@ -111,6 +111,9 @@ jest.mock('react-native-fs', () => ({
   readFile: jest.fn(),
 }));
 jest.mock('../services/rnfsSafe', () => ({safeUnlink: jest.fn()}));
+jest.mock('../services/walletSessionReset', () => ({
+  clearCachesBeforeWalletSession: jest.fn(async () => undefined),
+}));
 jest.mock('../services/LocalCache', () => ({
   __esModule: true,
   default: {clear: jest.fn()},
