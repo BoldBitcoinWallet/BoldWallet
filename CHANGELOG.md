@@ -1,18 +1,28 @@
 # Changelog
 
-## [4.1.4] - 2026-11-19
+## [4.1.4] - 2026-11-20
 
-> **Wallet release (delta from v4.1.3):** GrapheneOS with memory tagging on no longer dies at launch. Play no longer treats a portrait screen as required.
+> **Wallet release (delta from v4.1.3):** GrapheneOS with memory tagging on no longer dies at launch. Play no longer treats a portrait screen as required. The lock button and the floating menu share one matte glass rim, and the tab order you arrange is kept.
+
+### Added
+- **Tab order** — long-press a tab, then drag it, to reorder the tabs that are switched on. That order is saved. A tab you switch off keeps its place and shows up there again when you switch it back on.
+
+### Changed
+- **Lock button** — the floating lock control is a matte glass circle, the same glaze as the floating menu: a light frost, a faint sheen, and no drop shadow. The rim is 1.25 pt in light mode and 1 pt in dark mode. The button is a little larger and sits farther from the screen edge.
+- **Floating menu** — the pill uses that same matte glaze and the same rim. The glass sits on the inside edge of the stroke, so the corners stay filled.
+- **Headers** — Keyshare info, Wallet Settings, and PSBT no longer show the top header, and their content starts under the status bar. Play, UTXOs, and Addresses show Connected or Disconnected in the center, with the provider count when connected. Tapping that label still opens the provider card.
+- **Provider Calls** — a call's response stays hidden until you tap Response.
+- **Auto lock** — the Auto lock section uses the same locker icon as the lock button.
+- **Play device catalog** — `android:screenOrientation="portrait"` was implying `android.hardware.screen.portrait` required. That feature is now optional, so phones stay portrait and ChromeOS, XR, and landscape-only devices stay eligible.
 
 ### Fixed
 - **GrapheneOS memory tagging** — opening the wallet on GrapheneOS with memory tagging on died with `SIGSEGV` / `SEGV_MTESERR`. Go 1.26's `C.GoString` reads 16 bytes before a C string on android/arm64. Bridge strings are now copied with `strnlen` and `GoBytes`, and native builds use Go **1.27.4**, whose runtime does not do that read. Compatibility mode is not required for this crash.
 
-### Changed
-- **Play device catalog** — `android:screenOrientation="portrait"` was implying `android.hardware.screen.portrait` required. That feature is now optional, so phones stay portrait and ChromeOS, XR, and landscape-only devices stay eligible.
-
 ### Technical Details
 - **GrapheneOS MTE**: `BBMTLib/bbmtmobile/validate.go`. Toolchain pin `go1.27.4` in `BBMTLib/go.mod`, Dockerfiles, and CI. `verify-native-artifacts.sh` floor is 1.27.4. `build-dkls.sh` clears a stale `GOROOT` so a Homebrew Go tree cannot leave the previous `.so` in place. Android and iOS natives are rebuilt locally and are not committed.
 - **Play portrait feature**: `android/app/src/main/AndroidManifest.xml`, `android/scripts/check-play-manifest.sh`, `__tests__/playConsoleManifest.test.ts`.
+- **Glass and tab order**: `components/FloatingTabBar.tsx`, `App.tsx`, `services/navMenuStore.ts`, `services/repositories/AppConfigRepository.ts` (`nav_menu_order`). Disabled tabs stay in the stored list; a reorder writes only the tabs that are on, back into their existing slots. iOS uses a thin material blur; Android uses the same frost without blur, so elevation does not paint a square rim.
+- **Headers and Calls**: `App.tsx` (`headerShown: false` on Device, PSBT, Settings), `components/KeyshareInfoContent.tsx`, `screens/WalletSettings.tsx`, `screens/PSBTScreen.tsx`, `components/Header.tsx`, `screens/MempoolPlaygroundScreen.tsx`, `screens/UtxosScreen.tsx`, `screens/AddressesScreen.tsx`, `components/HeaderProviderCard.tsx`.
 - **Version**: `package.json` **4.1.4**; Android **`versionCode` 76** / **`versionName` 4.1.4**; iOS build **76** / **`MARKETING_VERSION` 4.1.4**.
 
 ## [4.1.3] - 2026-11-17

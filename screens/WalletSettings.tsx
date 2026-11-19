@@ -274,6 +274,8 @@ const getSectionIcon = (title: string): any => {
   switch (title.toLowerCase()) {
     case 'theme':
       return require('../assets/theme-icon.png');
+    case 'auto lock':
+      return require('../assets/locker-icon.png');
     case 'ceremony notices':
       return require('../assets/notice-icon.png');
     case 'menu':
@@ -449,7 +451,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     showWalletTab,
     setShowWalletTab,
     activeNetwork,
-    activeApiProvider,
   } = useUser();
   const [selectedIcon, setSelectedIcon] = useState<
     CamouflagePresetId | 'loading'
@@ -894,7 +895,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       appConfigRepository.set(`api_${network}`, apiUrl);
       appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addressType);
 
-      void requestWalletIndexing({
+      requestWalletIndexing({
         network,
         addressType,
         apiBase: apiUrl,
@@ -2741,7 +2742,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   return (
     <SafeAreaView
       style={styles.container}
-      edges={['left', 'right']}
+      edges={['top', 'left', 'right']}
       key={themeUpdateKey}>
       <View style={styles.settingsTabBar} accessibilityRole="tablist">
         <View style={styles.settingsTabRule} />
@@ -2951,7 +2952,9 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             theme={theme}>
             <Text style={styles.toggleDescription}>
               Floating is a centered pill only as wide as its icons. Docked is
-              the full-width bar with a label under each icon.
+              the full-width bar with a label under each icon. Long-press a
+              tab, then drag it, to change the order. That order is kept for
+              the tabs that are switched on.
             </Text>
             <View style={styles.toggleContainer}>
               <Text style={styles.toggleLabel}>Docked</Text>

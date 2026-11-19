@@ -364,7 +364,7 @@ const PSBTScreen: React.FC<{navigation: any}> = ({navigation}) => {
     checkPSBTModeState();
   }, []);
   return (
-    <SafeAreaView style={styles.screenContainer} edges={['left', 'right']}>
+    <SafeAreaView style={styles.screenContainer} edges={['top', 'left', 'right']}>
       <ScrollView
         style={styles.scroll}
         contentContainerStyle={[

@@ -107,6 +107,7 @@ function CallRow({
   cardBg: string;
   mono?: string;
 }) {
+  const [open, setOpen] = useState(false);
   const ok = entry.status >= 200 && entry.status < 300;
   const rail = ok ? accent : danger;
   const status = statusLabel(entry);
@@ -146,12 +147,26 @@ function CallRow({
         </Text>
         {body ? (
           <View style={[styles.callBodyBox, {borderColor: border, backgroundColor: cardBg}]}>
-            <Text style={[styles.callBodyLabel, {color: muted}]}>Response</Text>
-            <Text
-              selectable
-              style={[styles.callBody, {color: text, fontFamily: mono}]}>
-              {body}
-            </Text>
+            <AppPressable
+              variant="none"
+              haptic={false}
+              onPress={() => setOpen(v => !v)}
+              style={styles.callBodyToggle}
+              accessibilityRole="button"
+              accessibilityState={{expanded: open}}
+              accessibilityLabel={open ? 'Hide response' : 'Show response'}>
+              <Text style={[styles.callBodyLabel, {color: muted}]}>Response</Text>
+              <Text style={[styles.callBodyChevron, {color: muted}]}>
+                {open ? '▾' : '▸'}
+              </Text>
+            </AppPressable>
+            {open ? (
+              <Text
+                selectable
+                style={[styles.callBody, {color: text, fontFamily: mono}]}>
+                {body}
+              </Text>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -496,7 +511,7 @@ export default function HeaderProviderCard({
                       styles.callsHint,
                       {color: muted, fontFamily: theme.fontFamilies?.regular},
                     ]}>
-                    Newest first. The full address is kept. Long responses are shortened.
+                    Newest first. The full address is kept. Tap Response to show it.
                   </Text>
                   {calls.map(entry => (
                     <CallRow
@@ -678,15 +693,24 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 6,
   },
+  callBodyToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   callBodyLabel: {
     fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.3,
-    marginBottom: 4,
+  },
+  callBodyChevron: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   callBody: {
     fontSize: 11,
     lineHeight: 16,
+    marginTop: 6,
   },
 });

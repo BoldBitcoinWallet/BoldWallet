@@ -360,7 +360,7 @@ export function requestWalletIndexing(
           }
         });
         inflightPromise = scanPromise;
-        void scanPromise.then(
+        scanPromise.then(
           result => finishWait?.(result),
           () => finishWait?.('failed'),
         );

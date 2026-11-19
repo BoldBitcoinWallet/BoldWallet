@@ -91,6 +91,12 @@ export const CONFIG_KEYS = {
    */
   NAV_MENU_STYLE: 'nav_menu_style',
   /**
+   * JSON array of main-tab route names in the user's order.
+   * Includes tabs that are switched off, so turning one back on
+   * restores its place among the enabled items.
+   */
+  NAV_MENU_ORDER: 'nav_menu_order',
+  /**
    * Auto lock after leaving the app: `instant` | `1m` | `5m` | `never`.
    * Absent = `1m`.
    */

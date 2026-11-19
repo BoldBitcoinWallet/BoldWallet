@@ -53,6 +53,8 @@ import {
   type GestureResponderEvent,
 } from 'react-native';
 import AppPressable from './components/AppPressable';
+import {BlurView} from '@sbaiahmed1/react-native-blur';
+import LinearGradient from 'react-native-linear-gradient';
 import WalletSettings from './screens/WalletSettings';
 import {NativeModules} from 'react-native';
 import {dbg, resolveInitialWalletRoute} from './utils';
@@ -69,7 +71,7 @@ import AppPromptHost from './components/AppPromptHost';
 import WalletOfflineSandboxHost from './components/WalletOfflineSandboxHost';
 import {installWalletOnlineNetworkGuard} from './services/walletOnlineStore';
 import {installNativeMempoolRequestTrace} from './services/mempoolRequestLog';
-import {useNavMenuStyle} from './services/navMenuStore';
+import {useNavMenuOrder, useNavMenuStyle} from './services/navMenuStore';
 import {isMpcKeepAliveActive} from './services/mpcKeepAlive';
 import {
   getWalletAutoLock,
@@ -77,6 +79,7 @@ import {
 } from './services/walletAutoLock';
 import FloatingTabBar, {
   DOCKED_TAB_BAR_CONTENT_HEIGHT,
+  floatingPillBorderWidth,
   FLOATING_TAB_BAR_CONTENT_HEIGHT,
 } from './components/FloatingTabBar';
 import {
@@ -152,13 +155,10 @@ const renderAppHeader =
 
 // Custom header components with configurable height
 const HomeHeader = renderAppHeader(60);
-const PSBTHeader = renderAppHeader(60);
-const SettingsHeader = renderAppHeader(60);
 const WelcomeHeader = renderAppHeader(60);
 const WalletSetupHeader = renderAppHeader(60);
 const DevicesPairingHeader = renderAppHeader(60);
 const NostrConnectHeader = renderAppHeader(60);
-const DeviceHeader = renderAppHeader(60);
 
 const TAB_BAR_ICON_SIZE = 22;
 
@@ -341,64 +341,107 @@ const TabBarButton = (props: TabBarButtonProps) => {
   );
 };
 
-const LOCK_BUTTON_SIZE = 48;
+const LOCK_BUTTON_SIZE = 56;
 
 function LockWalletButton({bottom}: {bottom: number}) {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
   const isLight = theme.colors.background === '#ffffff';
+  const ring = floatingPillBorderWidth(!isLight);
   const position = {
     position: 'absolute' as const,
-    right: 16 + insets.right,
+    right: 24 + insets.right,
     bottom,
     zIndex: 1000,
   };
-  const shape = {
+  const innerSize = LOCK_BUTTON_SIZE - ring * 2;
+  // The ring is its own circle. A border on the clipped blur view gets
+  // shaved off along the curve, so the stroke looks broken.
+  const ringStyle = {
+    ...position,
     width: LOCK_BUTTON_SIZE,
     height: LOCK_BUTTON_SIZE,
     borderRadius: LOCK_BUTTON_SIZE / 2,
+    borderWidth: ring,
+    borderColor: isLight ? 'rgba(15,23,42,0.22)' : 'rgba(255,255,255,0.55)',
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    backgroundColor: isLight ? theme.colors.primary : theme.colors.bitcoinOrange,
-    borderWidth: 1,
-    borderColor: isLight ? theme.colors.blackOverlay10 : theme.colors.whiteOverlay12,
+    backgroundColor: 'transparent',
+    elevation: 0,
+    shadowOpacity: 0,
   };
-  // Android: elevation on the pressable itself (same view as bg + radius).
-  // Nested wrappers / overflow:hidden / glow rings cast square rims.
-  const style =
-    Platform.OS === 'android'
-      ? {
-          ...position,
-          ...shape,
-          elevation: 10,
-          shadowColor: theme.colors.shadowColor || '#000',
-        }
-      : {
-          ...position,
-          ...shape,
-          shadowColor: theme.colors.shadowColor || '#000',
-          shadowOffset: {width: 0, height: 8},
-          shadowOpacity: 0.32,
-          shadowRadius: 16,
-          elevation: 12,
-        };
+  const fillStyle = {
+    width: innerSize,
+    height: innerSize,
+    borderRadius: innerSize / 2,
+    overflow: 'hidden' as const,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+    backgroundColor:
+      Platform.OS === 'ios'
+        ? 'transparent'
+        : isLight
+          ? 'rgba(255,255,255,0.82)'
+          : 'rgba(44,44,48,0.86)',
+  };
+  const glassSheenColors = isLight
+    ? ([
+        'rgba(255,255,255,0.28)',
+        'rgba(255,255,255,0.1)',
+        'rgba(255,255,255,0)',
+      ] as const)
+    : ([
+        'rgba(255,255,255,0.05)',
+        'rgba(255,255,255,0.02)',
+        'rgba(255,255,255,0)',
+      ] as const);
   const iconStyle = {
-    width: 20,
-    height: 20,
-    tintColor: theme.colors.textOnPrimary,
+    width: 24,
+    height: 24,
+    tintColor: theme.colors.bitcoinOrange,
     resizeMode: 'contain' as const,
   };
+  const icon = (
+    <Image source={require('./assets/locker-icon.png')} style={iconStyle} />
+  );
+  const onPress = () => {
+    DeviceEventEmitter.emit('app:reload');
+  };
+  const a11y = {
+    accessible: true as const,
+    accessibilityRole: 'button' as const,
+    accessibilityLabel: 'Lock wallet',
+    accessibilityHint: 'Locks the wallet',
+  };
+  const glass = (
+    <View style={fillStyle}>
+      {Platform.OS === 'ios' ? (
+        <BlurView
+          style={StyleSheet.absoluteFill}
+          blurType={
+            isLight ? 'systemThinMaterialLight' : 'systemThinMaterialDark'
+          }
+          blurAmount={32}
+          overlayColor={
+            isLight ? 'rgba(255,255,255,0.46)' : 'rgba(28,28,32,0.42)'
+          }
+          reducedTransparencyFallbackColor={
+            isLight ? 'rgba(255,255,255,0.88)' : 'rgba(44,44,48,0.92)'
+          }
+        />
+      ) : null}
+      <LinearGradient
+        pointerEvents="none"
+        colors={[...glassSheenColors]}
+        locations={[0, 0.62, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      {icon}
+    </View>
+  );
   return (
-    <AppPressable
-      style={style}
-      onPress={() => {
-        DeviceEventEmitter.emit('app:reload');
-      }}
-      accessible={true}
-      accessibilityRole="button"
-      accessibilityLabel="Lock wallet"
-      accessibilityHint="Locks the wallet">
-      <Image source={require('./assets/locker-icon.png')} style={iconStyle} />
+    <AppPressable style={ringStyle} onPress={onPress} {...a11y}>
+      {glass}
     </AppPressable>
   );
 }
@@ -407,6 +450,7 @@ const MainTabs = () => {
   const {theme} = useTheme();
   const insets = useSafeAreaInsets();
   const menuStyle = useNavMenuStyle();
+  const menuOrder = useNavMenuOrder();
   const isFloatingMenu = menuStyle === 'floating';
   const isDarkMode = theme.colors.background !== '#ffffff';
   const lockFabOverlayStyle = {
@@ -498,79 +542,123 @@ const MainTabs = () => {
           animation: 'none',
           sceneStyle: {backgroundColor: theme.colors.background},
         }}>
-        <Tab.Screen
-          name="Device"
-          component={DeviceScreen}
-          options={{
-            header: DeviceHeader,
-            tabBarLabel: 'Device',
-            tabBarIcon: TabBarIconDevice,
-          }}
-        />
-        {showPsbtTab && (
-          <Tab.Screen
-            name="PSBT"
-            component={PSBTScreen}
-            options={{
-              header: PSBTHeader,
-              tabBarLabel: 'PSBT',
-              tabBarIcon: TabBarIconPSBT,
-            }}
-          />
-        )}
-        {showWalletTab && (
-          <Tab.Screen
-            name="Wallet"
-            component={WalletHome}
-            options={{
-              header: HomeHeader,
-              tabBarLabel: 'Wallet',
-              tabBarIcon: TabBarIconWallet,
-            }}
-          />
-        )}
-        {showPlayTab && (
-          <Tab.Screen
-            name="Playground"
-            component={MempoolPlaygroundScreen}
-            options={{
-              header: HomeHeader,
-              tabBarLabel: 'Play',
-              tabBarIcon: TabBarIconPlayground,
-            }}
-          />
-        )}
-        {showUtxosTab && (
-          <Tab.Screen
-            name="Utxos"
-            component={UtxosScreen}
-            options={{
-              header: HomeHeader,
-              tabBarLabel: 'UTXOs',
-              tabBarIcon: TabBarIconUtxos,
-            }}
-          />
-        )}
-        {showAddressesTab && (
-          <Tab.Screen
-            name="Addresses"
-            component={AddressesScreen}
-            options={{
-              header: HomeHeader,
-              tabBarLabel: 'Addresses',
-              tabBarIcon: TabBarIconAddresses,
-            }}
-          />
-        )}
-        <Tab.Screen
-          name="Settings"
-          component={WalletSettings}
-          options={{
-            header: SettingsHeader,
-            tabBarLabel: 'Settings',
-            tabBarIcon: TabBarIconSettings,
-          }}
-        />
+        {menuOrder
+          .filter(name => {
+            if (name === 'PSBT') {
+              return showPsbtTab;
+            }
+            if (name === 'Wallet') {
+              return showWalletTab;
+            }
+            if (name === 'Playground') {
+              return showPlayTab;
+            }
+            if (name === 'Utxos') {
+              return showUtxosTab;
+            }
+            if (name === 'Addresses') {
+              return showAddressesTab;
+            }
+            return true;
+          })
+          .map(name => {
+            if (name === 'Device') {
+              return (
+                <Tab.Screen
+                  key="Device"
+                  name="Device"
+                  component={DeviceScreen}
+                  options={{
+                    headerShown: false,
+                    tabBarLabel: 'Device',
+                    tabBarIcon: TabBarIconDevice,
+                  }}
+                />
+              );
+            }
+            if (name === 'PSBT') {
+              return (
+                <Tab.Screen
+                  key="PSBT"
+                  name="PSBT"
+                  component={PSBTScreen}
+                  options={{
+                    headerShown: false,
+                    tabBarLabel: 'PSBT',
+                    tabBarIcon: TabBarIconPSBT,
+                  }}
+                />
+              );
+            }
+            if (name === 'Wallet') {
+              return (
+                <Tab.Screen
+                  key="Wallet"
+                  name="Wallet"
+                  component={WalletHome}
+                  options={{
+                    header: HomeHeader,
+                    tabBarLabel: 'Wallet',
+                    tabBarIcon: TabBarIconWallet,
+                  }}
+                />
+              );
+            }
+            if (name === 'Playground') {
+              return (
+                <Tab.Screen
+                  key="Playground"
+                  name="Playground"
+                  component={MempoolPlaygroundScreen}
+                  options={{
+                    header: HomeHeader,
+                    tabBarLabel: 'Play',
+                    tabBarIcon: TabBarIconPlayground,
+                  }}
+                />
+              );
+            }
+            if (name === 'Utxos') {
+              return (
+                <Tab.Screen
+                  key="Utxos"
+                  name="Utxos"
+                  component={UtxosScreen}
+                  options={{
+                    header: HomeHeader,
+                    tabBarLabel: 'UTXOs',
+                    tabBarIcon: TabBarIconUtxos,
+                  }}
+                />
+              );
+            }
+            if (name === 'Addresses') {
+              return (
+                <Tab.Screen
+                  key="Addresses"
+                  name="Addresses"
+                  component={AddressesScreen}
+                  options={{
+                    header: HomeHeader,
+                    tabBarLabel: 'Addresses',
+                    tabBarIcon: TabBarIconAddresses,
+                  }}
+                />
+              );
+            }
+            return (
+              <Tab.Screen
+                key="Settings"
+                name="Settings"
+                component={WalletSettings}
+                options={{
+                  headerShown: false,
+                  tabBarLabel: 'Settings',
+                  tabBarIcon: TabBarIconSettings,
+                }}
+              />
+            );
+          })}
       </Tab.Navigator>
       <View style={lockFabOverlayStyle} pointerEvents="box-none">
         <LockWalletButton bottom={lockFabBottom} />

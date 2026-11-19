@@ -986,7 +986,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   return (
     <SafeAreaView
       style={screenStyles.safeArea}
-      edges={['left', 'right', 'bottom']}>
+      edges={['top', 'left', 'right', 'bottom']}>
       <ScrollView
         style={screenStyles.scrollView}
         contentContainerStyle={[

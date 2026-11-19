@@ -2805,7 +2805,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             runOrPromptOnline(() => {
               const effectiveType =
                 addressType || userAddressType || 'segwit-native';
-              void requestWalletIndexing({
+              requestWalletIndexing({
                 network,
                 addressType: effectiveType,
                 apiBase: resolveStoredMempoolApiBase(network),
