@@ -41,6 +41,9 @@ type UTXOWithPath struct {
 	UTXO
 	DerivationPath string `json:"derivation_path,omitempty"`
 	Scriptpubkey   string `json:"scriptpubkey,omitempty"`
+	// Required pins this outpoint into the spend (RBF: every input of the
+	// transaction being replaced). Optional coins fill any shortfall.
+	Required bool `json:"required,omitempty"`
 }
 
 var _btc_net = "testnet4" // default to testnet
@@ -390,6 +393,7 @@ type utxoWithPathJSON struct {
 	PathAlt      string `json:"derivationPath"`
 	Address      string `json:"address"`      // optional, for fee estimation fallback
 	Scriptpubkey string `json:"scriptpubkey"` // hex locking script; when set avoids FetchUTXODetails during signing
+	Required     bool   `json:"required,omitempty"`
 }
 
 func (u *utxoWithPathJSON) toUTXOWithPath() UTXOWithPath {
@@ -401,6 +405,7 @@ func (u *utxoWithPathJSON) toUTXOWithPath() UTXOWithPath {
 		UTXO:           UTXO{TxID: u.TxID, Vout: u.Vout, Value: u.Value},
 		DerivationPath: path,
 		Scriptpubkey:   u.Scriptpubkey,
+		Required:       u.Required,
 	}
 }
 
@@ -413,33 +418,68 @@ func SelectUTXOsWithPaths(utxos []UTXOWithPath, totalAmount int64, strategy stri
 		totalSelectedResult = 0
 	})
 
-	// Sort by (TxID, Vout) first for determinism, then by strategy
-	sort.Slice(utxos, func(i, j int) bool {
+	byOutpoint := func(i, j int) bool {
 		if utxos[i].TxID != utxos[j].TxID {
 			return utxos[i].TxID < utxos[j].TxID
 		}
-		if utxos[i].Vout != utxos[j].Vout {
-			return utxos[i].Vout < utxos[j].Vout
+		return utxos[i].Vout < utxos[j].Vout
+	}
+	lessValue := func(a, b UTXOWithPath) bool {
+		switch strategy {
+		case "smallest":
+			return a.Value < b.Value
+		case "largest":
+			return a.Value > b.Value
+		default:
+			return a.Value > b.Value
 		}
-		return false
+	}
+
+	var required, optional []UTXOWithPath
+	for _, u := range utxos {
+		if u.Required {
+			required = append(required, u)
+		} else {
+			optional = append(optional, u)
+		}
+	}
+	sort.Slice(required, func(i, j int) bool {
+		if required[i].TxID != required[j].TxID {
+			return required[i].TxID < required[j].TxID
+		}
+		return required[i].Vout < required[j].Vout
 	})
-	switch strategy {
-	case "smallest":
-		sort.Slice(utxos, func(i, j int) bool { return utxos[i].Value < utxos[j].Value })
-	case "largest":
-		sort.Slice(utxos, func(i, j int) bool { return utxos[i].Value > utxos[j].Value })
-	default:
-		sort.Slice(utxos, func(i, j int) bool { return utxos[i].Value > utxos[j].Value })
+	sort.Slice(optional, func(i, j int) bool {
+		if optional[i].Value != optional[j].Value {
+			return lessValue(optional[i], optional[j])
+		}
+		if optional[i].TxID != optional[j].TxID {
+			return optional[i].TxID < optional[j].TxID
+		}
+		return optional[i].Vout < optional[j].Vout
+	})
+	// No required pins: keep the historical smallest/largest walk.
+	if len(required) == 0 {
+		sort.Slice(utxos, byOutpoint)
+		sort.Slice(utxos, func(i, j int) bool { return lessValue(utxos[i], utxos[j]) })
+		optional = utxos
 	}
 
 	var selected []UTXOWithPath
 	var totalSelected int64
-	for _, utxo := range utxos {
-		Logf("Selecting UTXO: %s vout=%d value=%d path=%s", utxo.TxID, utxo.Vout, utxo.Value, utxo.DerivationPath)
+	for _, utxo := range required {
+		Logf("Selecting required UTXO: %s vout=%d value=%d path=%s", utxo.TxID, utxo.Vout, utxo.Value, utxo.DerivationPath)
 		selected = append(selected, utxo)
 		totalSelected += utxo.Value
-		if totalSelected >= totalAmount {
-			break
+	}
+	if totalSelected < totalAmount {
+		for _, utxo := range optional {
+			Logf("Selecting UTXO: %s vout=%d value=%d path=%s", utxo.TxID, utxo.Vout, utxo.Value, utxo.DerivationPath)
+			selected = append(selected, utxo)
+			totalSelected += utxo.Value
+			if totalSelected >= totalAmount {
+				break
+			}
 		}
 	}
 
@@ -1194,6 +1234,48 @@ func MpcSendBTC(
 	return rawTx, nil
 }
 
+// buildSpendTx selects coins and builds the unsigned payment. Every input
+// signals BIP125. Change at or below the dust limit is left out and paid as fee.
+func buildSpendTx(utxos []UTXOWithPath, amountSatoshi, feeSatoshi int64, receiverAddress, changeAddress string) (*wire.MsgTx, []UTXOWithPath, int64, error) {
+	selected, total, err := SelectUTXOsWithPaths(utxos, amountSatoshi+feeSatoshi, "smallest")
+	if err != nil {
+		return nil, nil, 0, err
+	}
+	params := &TestNet4Params
+	if _btc_net == "mainnet" {
+		params = &chaincfg.MainNetParams
+	}
+	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to decode receiver address: %w", err)
+	}
+	changeAddr, err := btcutil.DecodeAddress(changeAddress, params)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to decode change address: %w", err)
+	}
+	tx := wire.NewMsgTx(wire.TxVersion)
+	for _, utxo := range selected {
+		hash, err := chainhash.NewHashFromStr(utxo.TxID)
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("invalid UTXO TxID %s: %w", utxo.TxID, err)
+		}
+		txIn := wire.NewTxIn(wire.NewOutPoint(hash, utxo.Vout), nil, nil)
+		txIn.Sequence = 0xfffffffd
+		tx.AddTxIn(txIn)
+	}
+	if total < amountSatoshi+feeSatoshi {
+		return nil, nil, 0, fmt.Errorf("insufficient funds: available %d, needed %d", total, amountSatoshi+feeSatoshi)
+	}
+	pkScript, _ := txscript.PayToAddrScript(toAddr)
+	tx.AddTxOut(wire.NewTxOut(amountSatoshi, pkScript))
+	changeAmount := total - amountSatoshi - feeSatoshi
+	if changeAmount > 546 {
+		changePkScript, _ := txscript.PayToAddrScript(changeAddr)
+		tx.AddTxOut(wire.NewTxOut(changeAmount, changePkScript))
+	}
+	return tx, selected, total, nil
+}
+
 // MpcSendBTCWithUTXOs is the multi-path variant: uses pre-fetched UTXOs with per-input derivation paths.
 // utxosWithPathsJSON: JSON array of {txid, vout, value, derivation_path or derivationPath}
 // changeAddress: HD change address for change output (required)
@@ -1234,46 +1316,9 @@ func MpcSendBTCWithUTXOs(
 		return "", fmt.Errorf("invalid keyshare: need pub_key and chain_code_hex")
 	}
 
-	selectedUTXOs, totalAmount, err := SelectUTXOsWithPaths(utxos, amountSatoshi+estimatedFee, "smallest")
+	tx, selectedUTXOs, _, err := buildSpendTx(utxos, amountSatoshi, estimatedFee, receiverAddress, changeAddress)
 	if err != nil {
 		return "", err
-	}
-
-	params := &TestNet4Params
-	if _btc_net == "mainnet" {
-		params = &chaincfg.MainNetParams
-	}
-	toAddr, err := btcutil.DecodeAddress(receiverAddress, params)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode receiver address: %w", err)
-	}
-	changeAddr, err := btcutil.DecodeAddress(changeAddress, params)
-	if err != nil {
-		return "", fmt.Errorf("failed to decode change address: %w", err)
-	}
-
-	tx := wire.NewMsgTx(wire.TxVersion)
-	for _, utxo := range selectedUTXOs {
-		hash, err := chainhash.NewHashFromStr(utxo.TxID)
-		if err != nil {
-			return "", fmt.Errorf("invalid UTXO TxID %s: %w", utxo.TxID, err)
-		}
-		txIn := wire.NewTxIn(wire.NewOutPoint(hash, utxo.Vout), nil, nil)
-		txIn.Sequence = 0xfffffffd
-		tx.AddTxIn(txIn)
-	}
-
-	if totalAmount < amountSatoshi+estimatedFee {
-		return "", fmt.Errorf("insufficient funds: available %d, needed %d", totalAmount, amountSatoshi+estimatedFee)
-	}
-
-	pkScript, _ := txscript.PayToAddrScript(toAddr)
-	tx.AddTxOut(wire.NewTxOut(amountSatoshi, pkScript))
-
-	changeAmount := totalAmount - amountSatoshi - estimatedFee
-	if changeAmount > 546 {
-		changePkScript, _ := txscript.PayToAddrScript(changeAddr)
-		tx.AddTxOut(wire.NewTxOut(changeAmount, changePkScript))
 	}
 
 	// Build prevOuts map from inline scriptpubkey (no network call).

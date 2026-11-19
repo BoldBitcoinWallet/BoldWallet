@@ -14,20 +14,14 @@ import {useRoute} from '@react-navigation/native';
 import AppPressable from '../components/AppPressable';
 import AppText from '../components/AppText';
 import MempoolProvidersEditor from '../components/MempoolProvidersEditor';
-import RestoringIndexesModal from '../components/RestoringIndexesModal';
 import {SafeAreaView} from 'react-native-safe-area-context';
 import {useTheme} from '../theme';
 import {dbg, getResetToMainTabsWallet} from '../utils';
 import {useUser} from '../context/UserContext';
-import {WalletService, waitMS} from '../services/WalletService';
 import mempoolClient from '../services/MempoolClient';
 import database from '../services/Database';
-import walletRepository from '../services/repositories/WalletRepository';
-import balanceRepository from '../services/repositories/BalanceRepository';
-import balanceSyncer from '../services/sync/BalanceSyncer';
-import transactionSyncer from '../services/sync/TransactionSyncer';
-import utxoSyncer from '../services/sync/UtxoSyncer';
 import {clearCachesBeforeWalletSession} from '../services/walletSessionReset';
+import {requestWalletIndexing} from '../services/sync/walletIndexingSession';
 import appConfigRepository, {
   CONFIG_KEYS,
 } from '../services/repositories/AppConfigRepository';
@@ -82,14 +76,6 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   const [verifiedOwnUrl, setVerifiedOwnUrl] = useState<string | null>(null);
   const [verifyingOwn, setVerifyingOwn] = useState(false);
   const [isAPISaving, setIsAPISaving] = useState(false);
-  const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
-  const [restoreProgress, setRestoreProgress] = useState<{
-    chain?: 'external' | 'internal';
-    index?: number;
-    gapIndex?: number;
-    phase?: string;
-    progress?: {current: number; total: number};
-  } | null>(null);
 
   const fallbackBase = isTestnet
     ? CANONICAL_TESTNET_MEMPOOL_API_BASE
@@ -164,105 +150,24 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       return;
     }
     dbg(
-      'UserPreferenceScreen: Running full re-indexing (discovery + sync) with API:',
+      'UserPreferenceScreen: Requesting background indexing with API:',
       apiUrl.slice(0, 40),
     );
     await clearCachesBeforeWalletSession();
-    setIsRestoringIndexes(true);
-    setRestoreProgress(null);
-    await waitMS(250);
     const network = 'mainnet';
     const addressType = 'segwit-native';
     appConfigRepository.set(CONFIG_KEYS.NETWORK, network);
     appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addressType);
     appConfigRepository.set('api', apiUrl);
     appConfigRepository.set(`api_${network}`, apiUrl);
-    try {
-      const ws = WalletService.getInstance();
-
-      // ── Discovery: gap-limit scan for native segwit only ──────────────────
-      await ws.discoverHdIndexesForNetwork(
-        network,
-        addressType,
-        apiUrl,
-        (chain, index, gapIndex) =>
-          setRestoreProgress({chain, index, gapIndex}),
-      );
-      dbg('UserPreferenceScreen: HD index discovery complete');
-
-      const hdState = walletRepository.getHdState(network, addressType);
-      if (!hdState?.restoreDone) {
-        throw new Error(
-          'Index discovery incomplete — network may be unreachable. Please try again.',
-        );
-      }
-
-      // Invalidate sync metadata so balance/tx/UTXO sync re-fetches; keep existing DB rows.
-      database.invalidateSyncMetadataForAddressType(network, addressType);
-      mempoolClient.invalidateAll();
-      ws.invalidateAddressCache();
-
-      const addressesWithPaths = await ws.getHdAddressesWithPaths(
-        network,
-        addressType,
-      );
-
-      // ── Full sync: balances, transactions, UTXOs ───────────────────────
-      setRestoreProgress({phase: 'Syncing balances…'});
-      await balanceSyncer.syncAddresses(
-        addressesWithPaths.map(a => ({address: a.address, network})),
-        apiUrl,
-        (current, total) =>
-          setRestoreProgress(prev =>
-            prev ? {...prev, progress: {current, total}} : null,
-          ),
-      );
-      const agg = balanceRepository.getAggregateBalance(
-        network,
-        addressesWithPaths.map(a => a.address),
-      );
-      balanceRepository.setBalance({
-        address: `aggregate_${network}_${addressType}`,
-        network,
-        balanceSats: agg.balanceSats,
-        pendingSats: agg.pendingSats,
-        hasNonzero: agg.hasNonzero,
-        fetchedAt: agg.fetchedAt || Date.now(),
-      });
-
-      setRestoreProgress({phase: 'Syncing transactions…'});
-      await transactionSyncer.syncAddressesAtomic(
-        addressesWithPaths.map(a => ({address: a.address, network})),
-        apiUrl,
-        (current, total) =>
-          setRestoreProgress(prev =>
-            prev ? {...prev, progress: {current, total}} : null,
-          ),
-      );
-
-      setRestoreProgress({phase: 'Syncing UTXOs…'});
-      await utxoSyncer.syncAddresses(
-        addressesWithPaths.map(a => ({
-          address: a.address,
-          network,
-          derivationPath: a.derivationPath,
-        })),
-        apiUrl,
-        (current, total) =>
-          setRestoreProgress(prev =>
-            prev ? {...prev, progress: {current, total}} : null,
-          ),
-      );
-
-      dbg('UserPreferenceScreen: Full re-indexing complete');
-      mempoolClient.invalidateAll();
-    } catch (e) {
-      dbg('UserPreferenceScreen: Restore failed', e);
-      throw e;
-    } finally {
-      setIsRestoringIndexes(false);
-      setRestoreProgress(null);
-    }
+    database.invalidateSyncMetadataForAddressType(network, addressType);
+    mempoolClient.invalidateAll();
+    void requestWalletIndexing({
+      network,
+      addressType,
+      apiBase: apiUrl,
+      force: true,
+    });
   };
 
   const verifyOwnServer = async (
@@ -301,7 +206,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
   };
 
   const handleContinue = async () => {
-    if (isAPISaving || isRestoringIndexes || verifyingOwn || !providersReady) {
+    if (isAPISaving || verifyingOwn || !providersReady) {
       return;
     }
     setIsAPISaving(true);
@@ -351,11 +256,10 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
       await runRestoreIfNeeded(apiUrl);
       navigateToHome();
     } catch (e) {
+      dbg('UserPreferenceScreen: proceed failed', e);
       showAppNotice(
-        'Restore failed',
-        e instanceof Error
-          ? e.message
-          : 'Index discovery or sync failed. Please try again.',
+        'Could not continue',
+        e instanceof Error ? e.message : 'Please try again.',
       );
     }
   };
@@ -800,8 +704,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
             style={[
               styles.proceedButton,
               (isAPISaving ||
-                isRestoringIndexes ||
-                verifyingOwn ||
+                  verifyingOwn ||
                 !providersReady ||
                 (activeProviderUrls(entries).length === 0 &&
                   ownServerUrl.trim().length === 0)) &&
@@ -810,7 +713,6 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
             onPress={handleContinue}
             disabled={
               isAPISaving ||
-              isRestoringIndexes ||
               verifyingOwn ||
               !providersReady ||
               (activeProviderUrls(entries).length === 0 &&
@@ -836,14 +738,6 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
           </AppPressable>
         </View>
       </KeyboardAvoidingView>
-      <RestoringIndexesModal
-        visible={isRestoringIndexes}
-        chain={restoreProgress?.chain}
-        index={restoreProgress?.index ?? 0}
-        gapIndex={restoreProgress?.gapIndex ?? 0}
-        phase={restoreProgress?.phase}
-        progress={restoreProgress?.progress}
-      />
     </SafeAreaView>
   );
 };

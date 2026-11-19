@@ -128,6 +128,19 @@ function attemptHostKey(url: string): string {
     .replace(/\/api$/i, '');
 }
 
+/** Path `/testnet4` or a dedicated host such as testnet4.xxi.quest. */
+function hostIsTestnetApi(url: string): boolean {
+  if (/\/testnet4(\/|$)/i.test(url || '')) {
+    return true;
+  }
+  try {
+    const host = new URL(url).hostname.toLowerCase();
+    return host.startsWith('testnet4.') || host.startsWith('testnet.');
+  } catch {
+    return false;
+  }
+}
+
 function isAbortOrTimeout(err: unknown): boolean {
   if (!err || typeof err !== 'object') {
     return false;
@@ -322,9 +335,9 @@ class MempoolClient {
    */
   private _getUrlsToTry(url: string): string[] | null {
     if (this._enabledHosts.length === 0) return null;
-    const requestIsTestnet = /\/testnet4(\/|$)/i.test(url);
+    const requestIsTestnet = hostIsTestnetApi(url);
     const pool = this._enabledHosts.filter(
-      host => /\/testnet4(\/|$)/i.test(host) === requestIsTestnet,
+      host => hostIsTestnetApi(host) === requestIsTestnet,
     );
     if (pool.length === 0) return null;
 

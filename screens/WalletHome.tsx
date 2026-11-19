@@ -33,7 +33,6 @@ import TransactionList from '../components/TransactionList';
 import {CommonActions} from '@react-navigation/native';
 import Big from 'big.js';
 import ReceiveModal from './ReceiveModal';
-import RestoringIndexesModal from '../components/RestoringIndexesModal';
 import SignedPSBTModal from './SignedPSBTModal';
 import LegacyWalletModal from '../components/LegacyWalletModal';
 import ExtensionPairingModal from '../components/ExtensionPairingModal';
@@ -110,6 +109,11 @@ import apiQueue from '../services/ApiQueue';
 import mempoolClient from '../services/MempoolClient';
 import {runWalletRefreshSession} from '../services/sync/walletRefreshSession';
 import {
+  cancelWalletIndexing,
+  requestWalletIndexing,
+  useIndexingStatus,
+} from '../services/sync/walletIndexingSession';
+import {
   cacheIndicatorHealthHint,
   getMempoolHealth,
   subscribeMempoolHealth,
@@ -158,6 +162,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     utxoCount?: number;
     changeAddress?: string | null;
     brantaInitiated?: boolean;
+    replacedTxId?: string | null;
+    skipChangeIndexBump?: boolean;
   } | null>(null);
   const [currentDerivationPath, setCurrentDerivationPath] =
     useState<string>('');
@@ -175,12 +181,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     appConfigRepository.get(CONFIG_KEYS.BALANCE_HIDDEN) === 'true',
   );
   const [isReceiveModalVisible, setIsReceiveModalVisible] = useState(false);
-  const [isRestoringIndexes, setIsRestoringIndexes] = useState(false);
-  const [restoreProgress, setRestoreProgress] = useState<{
-    chain: 'external' | 'internal';
-    index: number;
-    gapIndex: number;
-  } | null>(null);
+  const indexingStatus = useIndexingStatus();
   const [receivePathInfo, setReceivePathInfo] = useState<{
     path: string;
     index: number;
@@ -681,12 +682,18 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
 
   // Reset abortRequested once sync has actually stopped so next refresh works normally
   useEffect(() => {
-    if (!isRefreshing && !syncStatus) setAbortRequested(false);
-  }, [isRefreshing, syncStatus]);
+    if (
+      !isRefreshing &&
+      !syncStatus &&
+      (indexingStatus.phase === 'idle' || indexingStatus.phase === 'failed')
+    ) {
+      setAbortRequested(false);
+    }
+  }, [isRefreshing, syncStatus, indexingStatus.phase]);
 
   // Load HD addresses for multi-address transaction list.
-  // If discovery has never been run for this (network, addressType), run it first
-  // so indexes are correct — otherwise getHdAddressesWithPaths returns only 1 receive + 1 change.
+  // If discovery has never been run for this (network, addressType), request it
+  // via the shared indexing session (progress on CacheIndicator).
   // walletAddressesReady is set to true once derivation has settled so TransactionList
   // is never given a partial address list.
   useEffect(() => {
@@ -710,10 +717,15 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
             '[WalletHome] HD restore not done for',
             network,
             effectiveType,
-            '- running discovery',
+            '- requesting indexing session',
           );
           const apiUrl = resolveStoredMempoolApiBase(network);
-          await ws.discoverHdIndexesForNetwork(network, effectiveType, apiUrl);
+          await requestWalletIndexing({
+            network,
+            addressType: effectiveType,
+            apiBase: apiUrl,
+            btcRate,
+          });
         }
         if (cancelled) return;
         const arr = await ws.getHdAddressesWithPaths(network, effectiveType);
@@ -745,7 +757,47 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     return () => {
       cancelled = true;
     };
-  }, [isInitialized, network, addressType, userAddressType]);
+  }, [isInitialized, network, addressType, userAddressType, btcRate]);
+
+  // After a background indexing session finishes, reload the HD address list.
+  const prevIndexingPhaseRef = useRef(indexingStatus.phase);
+  useEffect(() => {
+    const prev = prevIndexingPhaseRef.current;
+    prevIndexingPhaseRef.current = indexingStatus.phase;
+    if (
+      prev === 'idle' ||
+      indexingStatus.phase !== 'idle' ||
+      !isInitialized ||
+      !network
+    ) {
+      return;
+    }
+    const effectiveType = addressType || userAddressType || 'segwit-native';
+    if (walletRepository.getHdState(network, effectiveType)?.restoreDone !== true) {
+      return;
+    }
+    let cancelled = false;
+    WalletService.getInstance()
+      .getHdAddressesWithPaths(network, effectiveType)
+      .then(arr => {
+        if (cancelled) return;
+        setWalletAddresses(arr.map(a => a.address));
+        setWalletAddressesReady(true);
+        transactionListRef.current?.reloadFromCache?.();
+        refreshFromDBRef.current?.();
+      })
+      .catch(err => dbg('[WalletHome] post-index address reload failed', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    indexingStatus.phase,
+    isInitialized,
+    network,
+    addressType,
+    userAddressType,
+  ]);
+
   // Update the ref whenever fetchData changes
   useEffect(() => {
     fetchDataRef.current = fetchData;
@@ -1133,8 +1185,14 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     [btcPrice, selectedCurrency],
   );
   const headerTitle = React.useCallback(
-    () => <HeaderProvider apiBase={resolvedWalletApi} connectionStatus />,
-    [resolvedWalletApi],
+    () => (
+      <HeaderProvider
+        apiBase={resolvedWalletApi}
+        network={network}
+        connectionStatus
+      />
+    ),
+    [resolvedWalletApi, network],
   );
   const headerRight = React.useCallback(
     () => (
@@ -1565,6 +1623,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     utxosJson?: string | null,
     changeAddress?: string | null,
     brantaInitiated?: boolean,
+    replacement?: {replacedTxId?: string; skipChangeIndexBump?: boolean},
   ) => {
     try {
       if (isSending || !(amountSats.gt(0) && feeSats.gt(0) && to)) {
@@ -1653,6 +1712,8 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         utxoCount: parsedUtxoCount,
         changeAddress: changeAddress ?? null,
         brantaInitiated: brantaInitiated === true,
+        replacedTxId: replacement?.replacedTxId ?? null,
+        skipChangeIndexBump: replacement?.skipChangeIndexBump === true,
       });
       await sendClosed;
       setIsTransportModalVisible(true);
@@ -1744,6 +1805,12 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
     }
     if (pendingSendParams.brantaInitiated) {
       navigationParams.brantaInitiated = true;
+    }
+    if (pendingSendParams.replacedTxId) {
+      navigationParams.replacedTxId = pendingSendParams.replacedTxId;
+    }
+    if (pendingSendParams.skipChangeIndexBump) {
+      navigationParams.skipChangeIndexBump = true;
     }
     const transportClosed = armModalDismiss(transportDismissRef);
     setIsTransportModalVisible(false);
@@ -2461,9 +2528,36 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.actionButton,
                 styles.sendButton,
                 styles.flexOneMinWidthZero,
-                isCheckingBalanceForSend && styles.sendButtonDisabled,
+                (isCheckingBalanceForSend ||
+                  indexingStatus.phase === 'scanning' ||
+                  indexingStatus.phase === 'syncing' ||
+                  indexingStatus.phase === 'waitingOnline' ||
+                  walletRepository.getHdState(
+                    network,
+                    addressType || userAddressType || 'segwit-native',
+                  )?.restoreDone !== true) &&
+                  styles.sendButtonDisabled,
               ]}
               onPress={async () => {
+                const effectiveType =
+                  addressType || userAddressType || 'segwit-native';
+                const restoreDone =
+                  walletRepository.getHdState(network, effectiveType)
+                    ?.restoreDone === true;
+                if (
+                  !restoreDone ||
+                  indexingStatus.phase === 'scanning' ||
+                  indexingStatus.phase === 'syncing' ||
+                  indexingStatus.phase === 'waitingOnline'
+                ) {
+                  Toast.show({
+                    type: 'info',
+                    text1: 'Wallet still indexing',
+                    text2: 'Wait for address discovery to finish before sending.',
+                    position: 'top',
+                  });
+                  return;
+                }
                 const balance = parseFloat(balanceBTC || '0');
                 if (!isWalletOnline()) {
                   if (balance > 0) {
@@ -2575,9 +2669,9 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.receiveButton,
                 styles.flexOneMinWidthZero,
               ]}
-              disabled={isReceiveBusy || isRestoringIndexes}
+              disabled={isReceiveBusy}
               onPress={async () => {
-                if (isReceiveBusy || isRestoringIndexes) {
+                if (isReceiveBusy) {
                   return;
                 }
                 try {
@@ -2589,17 +2683,31 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     walletRepository.getHdState(network, effectiveAddressType)
                       ?.restoreDone === true;
 
-                  // Only run full restore discovery once per (network, addressType)
                   if (!restoreDone) {
-                    setIsRestoringIndexes(true);
-                    setRestoreProgress(null);
-                    await ws.discoverHdIndexesForNetwork(
+                    const result = await requestWalletIndexing({
                       network,
-                      effectiveAddressType,
-                      apiUrl,
-                      (chain, index, gapIndex) =>
-                        setRestoreProgress({chain, index, gapIndex}),
-                    );
+                      addressType: effectiveAddressType,
+                      apiBase: apiUrl,
+                      btcRate,
+                    });
+                    if (result === 'waitingOnline') {
+                      Toast.show({
+                        type: 'info',
+                        text1: 'Wallet offline',
+                        text2: 'Go online to finish indexing, then try Receive.',
+                        position: 'top',
+                      });
+                      return;
+                    }
+                    if (result === 'failed' || result === 'cancelled') {
+                      Toast.show({
+                        type: 'error',
+                        text1: 'Indexing incomplete',
+                        text2: 'Tap the cache bar to retry, then try Receive.',
+                        position: 'top',
+                      });
+                      return;
+                    }
                     await refreshUserContext();
                   }
 
@@ -2626,11 +2734,13 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
                     '[WalletHome] Receive modal: discovery or path info error',
                     e,
                   );
-                  setReceivePathInfo(null);
-                  setIsReceiveModalVisible(true);
+                  Toast.show({
+                    type: 'error',
+                    text1: 'Could not open Receive',
+                    text2: 'Try again in a moment.',
+                    position: 'top',
+                  });
                 } finally {
-                  setIsRestoringIndexes(false);
-                  setRestoreProgress(null);
                   setIsReceiveBusy(false);
                 }
               }}
@@ -2639,7 +2749,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               accessibilityLabel="Receive Bitcoin"
               accessibilityHint="Double tap to view your Bitcoin address and QR code"
               accessibilityRole="button">
-              {isReceiveBusy || isRestoringIndexes ? (
+              {isReceiveBusy ? (
                 <ActivityIndicator size="small" color="#FFFFFF" />
               ) : (
                 <>
@@ -2661,12 +2771,50 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
       <CacheIndicator
         ref={cacheIndicatorRef}
         timestamps={cacheTimestamps}
-        statusMessage={syncStatus?.label ?? apiQueueState?.label ?? undefined}
-        progress={syncStatus?.progress ?? apiQueueState?.progress}
-        syncErrorMessage={syncErrorMessage}
-        lastSyncFailed={lastSyncFailed}
-        healthHint={syncErrorMessage ? null : healthHint}
+        statusMessage={
+          indexingStatus.phase === 'scanning' ||
+          indexingStatus.phase === 'syncing' ||
+          indexingStatus.phase === 'waitingOnline'
+            ? indexingStatus.label || undefined
+            : syncStatus?.label ?? apiQueueState?.label ?? undefined
+        }
+        progress={
+          indexingStatus.phase === 'scanning' ||
+          indexingStatus.phase === 'syncing' ||
+          indexingStatus.phase === 'waitingOnline'
+            ? undefined
+            : syncStatus?.progress ?? apiQueueState?.progress
+        }
+        syncErrorMessage={
+          indexingStatus.phase === 'failed'
+            ? indexingStatus.error ?? 'Indexing failed'
+            : syncErrorMessage
+        }
+        lastSyncFailed={
+          indexingStatus.phase === 'failed' ? true : lastSyncFailed
+        }
+        healthHint={
+          syncErrorMessage || indexingStatus.phase === 'failed'
+            ? null
+            : indexingStatus.phase === 'waitingOnline'
+              ? 'Go online to scan this wallet'
+              : healthHint
+        }
         onRefresh={() => {
+          if (indexingStatus.phase === 'failed') {
+            runOrPromptOnline(() => {
+              const effectiveType =
+                addressType || userAddressType || 'segwit-native';
+              void requestWalletIndexing({
+                network,
+                addressType: effectiveType,
+                apiBase: resolveStoredMempoolApiBase(network),
+                force: true,
+                btcRate,
+              });
+            });
+            return;
+          }
           runOrPromptOnline(() => {
             fetchData(true, true);
           });
@@ -2683,6 +2831,7 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               return;
             }
             setAbortRequested(true);
+            cancelWalletIndexing();
             mempoolClient.abortAll();
             apiQueue.clear();
           });
@@ -2699,48 +2848,49 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
               if (!ok) {
                 return;
               }
-                  const effectiveType =
-                    addressType || userAddressType || 'segwit-native';
-                  const api = resolveStoredMempoolApiBase(network);
-                  setIsRefreshing(true);
-                  try {
-                    dbg(
-                      '[WalletHome] Long-press: full sync (discovery + balance + tx)',
-                    );
-                    setSyncStatus({label: 'Discovering addresses…'});
-                    await WalletService.getInstance().discoverHdIndexesForNetwork(
-                      network,
-                      effectiveType,
-                      api,
-                      chain =>
-                        setSyncStatus({
-                          label: `Scanning ${
-                            chain === 'external' ? 'receive' : 'change'
-                          } addresses…`,
-                        }),
-                    );
-                    setSyncStatus({label: 'Rebuilding wallet data…'});
-                    const arr =
-                      await WalletService.getInstance().getHdAddressesWithPaths(
-                        network,
-                        effectiveType,
-                      );
-                    setWalletAddresses(arr.map(a => a.address));
-                  } catch (e) {
-                    dbg('[WalletHome] Long-press reconstruction error', e);
-                  }
-                  setSyncStatus(null);
-                  await fetchData(false);
-                  transactionListRef.current?.reloadFromCache?.();
+              const effectiveType =
+                addressType || userAddressType || 'segwit-native';
+              const api = resolveStoredMempoolApiBase(network);
+              setIsRefreshing(true);
+              try {
+                dbg(
+                  '[WalletHome] Long-press: full sync via indexing session',
+                );
+                await requestWalletIndexing({
+                  network,
+                  addressType: effectiveType,
+                  apiBase: api,
+                  force: true,
+                  btcRate,
+                });
+                const arr =
+                  await WalletService.getInstance().getHdAddressesWithPaths(
+                    network,
+                    effectiveType,
+                  );
+                setWalletAddresses(arr.map(a => a.address));
+              } catch (e) {
+                dbg('[WalletHome] Long-press reconstruction error', e);
+              }
+              setIsRefreshing(false);
+              transactionListRef.current?.reloadFromCache?.();
             });
           });
         }}
         theme={theme}
-        isRefreshing={(isRefreshing || !!syncStatus) && !abortRequested}
+        isRefreshing={
+          ((isRefreshing ||
+            !!syncStatus ||
+            indexingStatus.phase === 'scanning' ||
+            indexingStatus.phase === 'syncing' ||
+            indexingStatus.phase === 'waitingOnline') &&
+            !abortRequested)
+        }
         usingCache={
           !walletOnline ||
           (!isRefreshing &&
             !syncStatus &&
+            indexingStatus.phase === 'idle' &&
             !abortRequested &&
             cacheTimestamps.price > 0 &&
             cacheTimestamps.balance > 0 &&
@@ -2771,6 +2921,21 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
           btcRate={btcRate}
           getCurrencySymbol={getCurrencySymbol}
           deferInitialFetch
+          onStartReplacement={payload => {
+            handleSend(
+              payload.toAddress,
+              new Big(payload.amountSats),
+              new Big(payload.feeSats),
+              payload.spendingHash,
+              payload.utxosJson,
+              payload.changeAddress,
+              false,
+              {
+                replacedTxId: payload.replacedTxId,
+                skipChangeIndexBump: payload.skipChangeIndexBump,
+              },
+            );
+          }}
           onPullRefresh={async () => {
             if (!isWalletOnline()) {
               openWalletOfflineSandbox({
@@ -2903,12 +3068,6 @@ const WalletHome: React.FC<{navigation: any}> = ({navigation}) => {
         defaultTransport={isNostrTransportSupported ? null : 'local'}
         sendBitcoinData={sendBitcoinData}
         showQRCode={!scannedFromQR} // Don't show QR if data came from scan
-      />
-      <RestoringIndexesModal
-        visible={isRestoringIndexes}
-        chain={restoreProgress?.chain}
-        index={restoreProgress?.index}
-        gapIndex={restoreProgress?.gapIndex}
       />
       <ReceiveModal
           visible={isReceiveModalVisible}

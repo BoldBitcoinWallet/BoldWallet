@@ -106,7 +106,15 @@ export function isValidTestnetMempoolApiUrl(url: string): boolean {
   if (root === MAINNET_MEMPOOL_DEFAULT_ROOT) {
     return false;
   }
-  return u.includes('/testnet4');
+  if (u.includes('/testnet4')) {
+    return true;
+  }
+  try {
+    const host = new URL(u).hostname.toLowerCase();
+    return host.startsWith('testnet4.') || host.startsWith('testnet.');
+  } catch {
+    return false;
+  }
 }
 
 /**

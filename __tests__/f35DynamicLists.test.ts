@@ -60,11 +60,11 @@ afterEach(() => {
 });
 
 describe('F35 pinned dynamic lists', () => {
-  test('API fetch uses the pinned commit URL', async () => {
+  test('API fetch uses main MAINNET.md', async () => {
     mockFetchOnce('- https://mempool.space\n');
     const out = await fetchDynamicAPIEndpoints();
-    expect((global.fetch as jest.Mock).mock.calls[0][0]).toContain(
-      `/mempool-space-hosts/${PIN}/MAINNET.md`,
+    expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
+      'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main/MAINNET.md',
     );
     expect(out).toEqual(['https://mempool.space/api']);
   });
@@ -148,22 +148,24 @@ describe('F35 pinned dynamic lists', () => {
       [
         '- https://mempool.space',
         '- https://mempool.ninja/testnet4',
+        '- https://testnet4.xxi.quest',
         '- https://mempool.space/api',
         '- https://evil.com/?x=mempool',
         '- https://mempool.space/testnet/api',
       ].join('\n'),
     );
     const out = await fetchDynamicTestnetAPIEndpoints();
-    expect((global.fetch as jest.Mock).mock.calls[0][0]).toContain(
-      `/mempool-space-hosts/${PIN}/TESTNET4.md`,
+    expect((global.fetch as jest.Mock).mock.calls[0][0]).toBe(
+      'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main/TESTNET4.md',
     );
     expect(out).toEqual([
       'https://mempool.space/testnet4/api',
       'https://mempool.ninja/testnet4/api',
+      'https://testnet4.xxi.quest/api',
     ]);
   });
 
-  test('testnet API list falls back when the pinned file is missing', async () => {
+  test('testnet API list falls back when main TESTNET4.md is missing', async () => {
     (global.fetch as jest.Mock).mockResolvedValueOnce({ok: false});
     expect(await getTestnetAPIList()).toEqual(TESTNET_APIS);
   });

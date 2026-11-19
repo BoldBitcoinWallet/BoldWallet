@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+## [4.1.3] - 2026-11-17
+
+> **Wallet release (delta from v4.1.2):** new-wallet setup is one stepped screen. Signing, restore, and co-sign pairing are unchanged.
+
+### Changed
+- **New wallet setup** — Setup New Wallet opens one screen, New Wallet Setup, instead of the MPC signing stack, device-count, and pairing-method modals. Three steps stay on the page and only the active step is open: how many phones, how they connect, and the signing stack (DKLs23 unless you change it). Duo needs both phones for every spend; Trio lets any two of three approve. Local Wi‑Fi or hotspot setup stays on the local network, and Nostr cannot be added later. Nostr works over the internet and on the local network. Previous and Next move between steps. Continue still starts Devices Pairing or Nostr Connect with the same mode, transport, and backend. Restore, legal acceptance, and co-sign pairing are unchanged.
+
+### Technical Details
+- **New wallet setup**: `screens/WalletSetupScreen.tsx`, `screens/ShowcaseScreen.tsx`, `App.tsx`. Jest collects `*.test.*` only, stubs toast/haptics/encrypted storage, and the ceremony-auth and mempool-health suites match the current silent SIGN mints and traced tip-hash probe.
+- **Version**: `package.json` **4.1.3**; Android **`versionCode` 75** / **`versionName` 4.1.3**; iOS build **75** / **`MARKETING_VERSION` 4.1.3**.
+
+## [4.1.2] - 2026-11-15
+
+> **Wallet release (delta from v4.1.1):** speed up or cancel a stuck send, indexing that no longer blocks the wallet, provider lists that follow the live host catalog, and Branta SDK 4.2.0. GG18 keyshares keep working — no forced migration.
+
+### Added
+- **Speed up and Cancel** — an unconfirmed wallet send can be replaced from its details. Speed up keeps the recipient and the amount and raises the fee (from change, or from one extra confirmed coin when change cannot cover it). A one-output send back to your own wallet takes the higher fee from that output. Cancel replaces the payment and returns the funds to the wallet. The fee sheet uses the same chips and slider as Send, in light and dark, and the fee shown is the fee that is signed. Cancel uses the danger color. The replacement goes through the existing LAN or Nostr send ceremony. If the original confirms first it stays in history; otherwise the higher-fee replacement stays and the stuck row leaves the list. The other phone hides the conflicting row from the inputs it signed.
+- **Indexing on the home cache indicator** — address discovery no longer opens a blocking dialog. Receive, Settings (network, address type, Clear Cache), and the scan after a keyshare import report progress on the wallet home indicator and can be cancelled. The wallet stays usable while a scan waits for a connection.
+
+### Changed
+- **Branta SDK 4.2.0** — send-side lookup uses `verify()` with status handling: show the merchant card on `match` (pay the `matchedDestinations` bitcoin address), stay silent on `unknown`, warn and clear the prefilled address on `tampered`, and notice the user on `incomplete` (offline / 5xx / crypto unavailable) only for Branta-verifiable inputs (ZK params or derived-key rails). Plain address scans stay silent offline. The opt-in Branta setting and history labels are unchanged.
+- **Live mempool host lists** — the Settings default-providers action loads `MAINNET.md` and `TESTNET4.md` from `raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main`. A failed fetch keeps the built-in lists. Nostr relays stay pinned to the reviewed commit. A dedicated testnet host (name starting with `testnet`) maps to `/api`; other hosts map to `/testnet4/api`.
+- **Header provider pill** — the count and host follow the wallet network. Testnet no longer shows the mainnet provider list.
+
+### Fixed
+- **Go toolchain 1.26.11** — `govulncheck` failed on Go 1.26.10 because **GO-2026-6859 / CVE-2026-97054** (`net/http` MaxBytesReader header race) is reachable through the LAN and Nostr HTTP call sites. CI, `BBMTLib/go.mod`, the Dockerfiles, and the native-artifact floor now pin 1.26.11. Go 1.26.11 also rejects `#cgo` `-l:liblibtss_ffi.a`; CI rewrites that flag to `-Wl,-Bstatic -llibtss_ffi -Wl,-Bdynamic` so the link stays on `liblibtss_ffi.a` (a plain `-llibtss_ffi` loads the `.so` and the test binary cannot start). Android/Linux build scripts do the same. Native libraries are rebuilt locally and are not committed; the next release build must be Go 1.26.11 or `verify-native-artifacts.sh` fails.
+- **Branta merchant card on Hermes** — React Native Hermes has no `TextDecoder` (and some builds omit `btoa`/`atob`). SDK 4.x decrypt then threw and `verify()` returned `unknown`, so the merchant name and logo never appeared. `polyfills.js` supplies those globals before the SDK loads, on iOS and Android. Bold does not wait on the upstream Branta fallback (https://github.com/BrantaOps/branta-js/pull/107).
+- A confirmed payment stays in history when it wins a replace-by-fee race, and a lagging mempool host cannot hide the higher-fee replacement. Replaced rows leave the pending-address sync set. Unconfirmed children of a replaced transaction are hidden with it.
+- The replacement fee uses the fee the transaction actually paid (inputs minus outputs), including dust that was absorbed, so the minimum is not understated.
+
+### Technical Details
+- **Speed up / Cancel**: `services/rbfBuilder.ts`, `components/RbfModal.tsx`, `components/TransactionDetailsModal.tsx`, `services/repositories/TransactionRepository.ts` (`replaced_by_txid`), `services/sync/TransactionSyncer.ts`, `screens/MobilesPairing.tsx`, `screens/MobileNostrPairing.tsx`, `screens/WalletHome.tsx`. Go `buildSpendTx` in `BBMTLib/tss/btc.go` is shared by the LAN and Nostr senders (BIP125 sequence, dust change absorbed). Native libraries are rebuilt locally and are not committed.
+- **Indexing**: `services/sync/walletIndexingSession.ts`. `components/RestoringIndexesModal.tsx` removed.
+- **Host lists / header**: `utils.js` (`MEMPOOL_HOSTS_MAIN`), `services/mempoolProvidersStore.ts`, `components/Header.tsx`, `components/HeaderProviderCard.tsx`.
+- **Branta**: `@branta-ops/branta` **4.2.0**, `services/BrantaService.ts`, `screens/SendBitcoinModal.tsx`, `polyfills.js`.
+- **Version**: `package.json` **4.1.2**; Android **`versionCode` 73** / **`versionName` 4.1.2**; iOS build **73** / **`MARKETING_VERSION` 4.1.2**.
+
 ## [4.1.1] - 2026-10-27
 
 > **Security + wallet release (delta from v4.1.0):** audit remediations (native keyshare crypto, ceremony tokens, LAN/Nostr transport), Testnet4 with the same provider checklist as mainnet, smarter sync, provider Calls card, send fee chips+slider, steadier transaction details, and bounded broadcast. GG18 keyshares keep working — no forced migration.

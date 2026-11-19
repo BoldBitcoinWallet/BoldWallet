@@ -654,8 +654,8 @@ const AddressesScreen: React.FC<{navigation: any}> = ({navigation}) => {
     );
   }, [apiBase, onHeaderRefresh, refreshing, theme, toggleViewMode, viewMode]);
   const headerTitle = useCallback(
-    () => <HeaderProvider apiBase={apiBase} />,
-    [apiBase],
+    () => <HeaderProvider apiBase={apiBase} network={network} />,
+    [apiBase, network],
   );
   const headerRight = useCallback(
     () => (

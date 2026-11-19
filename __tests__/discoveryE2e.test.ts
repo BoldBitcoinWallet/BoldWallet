@@ -300,4 +300,23 @@ describe('discoverHdIndexesForNetwork (stubbed /txs)', () => {
     expect(result.txs).toHaveLength(10);
     expect(result.cursors.recv0).toBeNull();
   });
+
+  it('abort signal stops between windows and leaves restoreDone false', async () => {
+    mockUsedAddrs.add('recv0');
+    const ac = new AbortController();
+    ac.abort();
+
+    await WalletService.getInstance().discoverHdIndexesForNetwork(
+      NETWORK,
+      TYPE,
+      API,
+      undefined,
+      {signal: ac.signal},
+    );
+
+    expect(mockHd.change).toBe(0);
+    const meta = mockHdMeta.get(`${NETWORK}|${TYPE}`);
+    expect(meta?.discovery_status).toBe('partial');
+    expect(meta?.restore_done).not.toBe(1);
+  });
 });

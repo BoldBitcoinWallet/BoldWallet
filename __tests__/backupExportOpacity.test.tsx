@@ -1,7 +1,10 @@
-jest.mock('react-native-toast-message', () => ({
-  __esModule: true,
-  default: {show: jest.fn()},
-}));
+jest.mock('react-native-toast-message', () => {
+  const React = require('react');
+  const Toast = (props: any) => React.createElement('Toast', props);
+  Toast.show = jest.fn();
+  Toast.hide = jest.fn();
+  return {__esModule: true, default: Toast};
+});
 
 import {NativeModules, Text, TextInput} from 'react-native';
 import Toast from 'react-native-toast-message';

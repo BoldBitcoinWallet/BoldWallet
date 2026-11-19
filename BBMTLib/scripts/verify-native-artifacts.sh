@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Post-build verification: ABI headers, JNI symbols, artifact presence,
-# Go toolchain floor (F28-exp: CVE-2026-111943 needs go1.26.10+ in every .so).
+# Go toolchain floor (F28-exp: CVE-2026-111943 needs go1.26.10+;
+# GO-2026-6859 / CVE-2026-97054 needs go1.26.11+ in every .so).
 set -euo pipefail
 
-MIN_GO="1.26.10"
+MIN_GO="1.26.11"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 JNI_OUT="${ROOT}/../android/app/src/main/jniLibs"

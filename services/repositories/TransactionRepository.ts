@@ -23,6 +23,7 @@ export interface TxRecord {
   locktime: number | null;
   rawJson: string;
   fetchedAt: number;
+  replacedByTxid?: string | null;
 }
 
 export interface TxAddressMapping {
@@ -50,6 +51,137 @@ export interface PendingTxData {
   [key: string]: unknown;
 }
 
+export interface ConflictTx {
+  txid?: string;
+  fee?: number;
+  status?: {confirmed?: boolean};
+  vin?: Array<{txid?: string; vout?: number; prevout?: {value?: number}}>;
+  vout?: Array<{value?: number}>;
+}
+
+interface ConflictRow {
+  txid: string;
+  confirmed: boolean;
+  fee: number;
+  replacedBy: string | null;
+  vins: NonNullable<ConflictTx['vin']>;
+}
+
+interface ConflictView {
+  txid: string;
+  confirmed: boolean;
+  fee: number;
+  replaced: boolean;
+}
+
+/** Absolute fee from input and output values, then the fee field. */
+export function absoluteFeeSats(tx: ConflictTx): number | null {
+  const vins = tx.vin ?? [];
+  const vouts = tx.vout ?? [];
+  const valued =
+    vins.length > 0 &&
+    vouts.length > 0 &&
+    vins.every(vin => vin.prevout?.value != null);
+  if (valued) {
+    const inputs = vins.reduce((sum, vin) => sum + (vin.prevout?.value ?? 0), 0);
+    const outputs = vouts.reduce((sum, vout) => sum + (vout.value ?? 0), 0);
+    if (inputs >= outputs) {
+      return inputs - outputs;
+    }
+  }
+  return typeof tx.fee === 'number' ? tx.fee : null;
+}
+
+/**
+ * Confirmed beats unconfirmed. A replaced unconfirmed tx never wins.
+ * Otherwise the higher absolute fee wins. Equal fees leave both in place.
+ */
+export function replacementWinner(left: ConflictView, right: ConflictView): string | null {
+  if (left.txid === right.txid) {
+    return null;
+  }
+  if (left.confirmed !== right.confirmed) {
+    return left.confirmed ? left.txid : right.txid;
+  }
+  if (left.confirmed && right.confirmed) {
+    return null;
+  }
+  if (left.replaced !== right.replaced) {
+    return left.replaced ? right.txid : left.txid;
+  }
+  if (left.replaced && right.replaced) {
+    return null;
+  }
+  if (left.fee === right.fee) {
+    return null;
+  }
+  return left.fee > right.fee ? left.txid : right.txid;
+}
+
+function parseTxJson(raw: unknown): ConflictTx {
+  try {
+    return JSON.parse(String(raw ?? '{}')) as ConflictTx;
+  } catch {
+    return {};
+  }
+}
+
+function numOrNull(value: unknown): number | null {
+  return typeof value === 'number' ? value : null;
+}
+
+function outpointKeys(
+  vins: Array<{txid?: string; vout?: number}> | undefined,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const vin of vins ?? []) {
+    if (vin.txid != null && vin.vout != null) {
+      keys.add(`${vin.txid}:${vin.vout}`);
+    }
+  }
+  return keys;
+}
+
+function sharesOutpoint(
+  vins: Array<{txid?: string; vout?: number}>,
+  keys: Set<string>,
+): boolean {
+  for (const vin of vins) {
+    if (vin.txid != null && vin.vout != null && keys.has(`${vin.txid}:${vin.vout}`)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function spendsTx(tx: ConflictTx, parentTxid: string): boolean {
+  return (tx.vin ?? []).some(vin => vin.txid === parentTxid);
+}
+
+function localView(row: ConflictRow): ConflictView {
+  return {
+    txid: row.txid,
+    confirmed: row.confirmed,
+    fee: row.fee,
+    replaced: !row.confirmed && !!row.replacedBy,
+  };
+}
+
+function conflictView(
+  txid: string,
+  incoming: ConflictTx,
+  stored: ConflictRow | undefined,
+): ConflictView {
+  const confirmed =
+    incoming.status?.confirmed === true || stored?.confirmed === true;
+  return {
+    txid,
+    confirmed,
+    fee: absoluteFeeSats(incoming) ?? stored?.fee ?? incoming.fee ?? 0,
+    replaced: !confirmed && !!stored?.replacedBy,
+  };
+}
+
 class TransactionRepository {
   // ── Confirmed / history transactions ────────────────────────────────────
 
@@ -71,7 +203,11 @@ class TransactionRepository {
              size         = excluded.size,
              weight       = excluded.weight,
              raw_json     = excluded.raw_json,
-             fetched_at   = excluded.fetched_at`,
+             fetched_at   = excluded.fetched_at,
+             replaced_by_txid = CASE
+               WHEN excluded.is_confirmed = 1 THEN NULL
+               ELSE transactions.replaced_by_txid
+             END`,
           [
             tx.txid, tx.network,
             tx.blockHeight ?? null, tx.blockHash ?? null, tx.blockTime ?? null,
@@ -124,7 +260,11 @@ class TransactionRepository {
                size         = excluded.size,
                weight       = excluded.weight,
                raw_json     = excluded.raw_json,
-               fetched_at   = excluded.fetched_at`,
+               fetched_at   = excluded.fetched_at,
+               replaced_by_txid = CASE
+                 WHEN excluded.is_confirmed = 1 THEN NULL
+                 ELSE transactions.replaced_by_txid
+               END`,
             [
               tx.txid, tx.network,
               tx.blockHeight ?? null, tx.blockHash ?? null, tx.blockTime ?? null,
@@ -188,6 +328,7 @@ class TransactionRepository {
          JOIN transaction_addresses ta
            ON t.txid = ta.txid AND t.network = ta.network
          WHERE ta.address = ? AND t.network = ?
+           AND (t.replaced_by_txid IS NULL OR t.replaced_by_txid = '')
          ORDER BY t.block_time DESC NULLS FIRST, t.fetched_at DESC
          LIMIT ?`,
         [address, network, limit],
@@ -216,6 +357,7 @@ class TransactionRepository {
          JOIN transaction_addresses ta
            ON t.txid = ta.txid AND t.network = ta.network
          WHERE ta.address IN (${placeholders}) AND t.network = ?
+           AND (t.replaced_by_txid IS NULL OR t.replaced_by_txid = '')
          ORDER BY t.block_time DESC NULLS FIRST, t.fetched_at DESC
          LIMIT ?`,
         [...addresses, network, limit],
@@ -304,8 +446,15 @@ class TransactionRepository {
       txid: string;
       status?: {confirmed?: boolean; block_height?: number | null; block_time?: number | null; block_hash?: string | null};
       fee?: number;
-      vin?: Array<{prevout?: {scriptpubkey_address?: string; value?: number}}>;
+      vin?: Array<{
+        txid?: string;
+        vout?: number;
+        sequence?: number;
+        prevout?: {scriptpubkey_address?: string; value?: number};
+      }>;
       vout?: Array<{scriptpubkey_address?: string; value?: number}>;
+      size?: number | null;
+      weight?: number | null;
     },
     senderAddress?: string,
   ): void {
@@ -318,8 +467,8 @@ class TransactionRepository {
       blockTime: status.block_time ?? null,
       isConfirmed: status.confirmed ?? false,
       feeSats: apiTxShape.fee ?? null,
-      size: null,
-      weight: null,
+      size: apiTxShape.size ?? null,
+      weight: apiTxShape.weight ?? null,
       version: null,
       locktime: null,
       rawJson: JSON.stringify(apiTxShape),
@@ -399,7 +548,11 @@ class TransactionRepository {
       database.execute(
         `UPDATE transactions
          SET is_confirmed = ?, block_height = ?, block_time = ?, block_hash = ?,
-             raw_json = ?, fetched_at = ?
+             raw_json = ?, fetched_at = ?,
+             replaced_by_txid = CASE
+               WHEN ? = 1 THEN NULL
+               ELSE replaced_by_txid
+             END
          WHERE txid = ? AND network = ?`,
         [
           status.confirmed ? 1 : 0,
@@ -408,6 +561,7 @@ class TransactionRepository {
           status.confirmed ? status.blockHash ?? null : null,
           rawJson,
           Date.now(),
+          status.confirmed ? 1 : 0,
           txid,
           network,
         ],
@@ -428,7 +582,8 @@ class TransactionRepository {
     try {
       database.execute(
         `UPDATE transactions
-         SET is_confirmed = 1, block_height = ?, block_time = ?, block_hash = ?
+         SET is_confirmed = 1, block_height = ?, block_time = ?, block_hash = ?,
+             replaced_by_txid = NULL
          WHERE txid = ? AND network = ?`,
         [blockHeight, blockTime, blockHash ?? null, txid, network],
       );
@@ -511,7 +666,8 @@ class TransactionRepository {
         `SELECT DISTINCT ta.address
          FROM transaction_addresses ta
          JOIN transactions t ON ta.txid = t.txid AND ta.network = t.network
-         WHERE t.network = ? AND t.is_confirmed = 0`,
+         WHERE t.network = ? AND t.is_confirmed = 0
+           AND (t.replaced_by_txid IS NULL OR t.replaced_by_txid = '')`,
         [network],
       );
       const addrs = new Set<string>();
@@ -587,6 +743,159 @@ class TransactionRepository {
     }
   }
 
+  /**
+   * The replacement is in the mempool. Hide the stuck tx, its unconfirmed
+   * children, and drop the pending row.
+   */
+  markReplaced(oldTxid: string, newTxid: string, network: string): void {
+    if (!oldTxid || !newTxid || oldTxid === newTxid) {
+      return;
+    }
+    try {
+      database.transaction(svc => {
+        const queue = [oldTxid];
+        const seen = new Set<string>();
+        while (queue.length) {
+          const current = queue.shift() as string;
+          if (seen.has(current) || current === newTxid) {
+            continue;
+          }
+          seen.add(current);
+          svc.execute(
+            `UPDATE transactions SET replaced_by_txid = ?
+             WHERE txid = ? AND network = ?
+               AND is_confirmed = 0`,
+            [newTxid, current, network],
+          );
+          svc.execute(
+            `DELETE FROM pending_transactions WHERE txid = ? AND network = ?`,
+            [current, network],
+          );
+          const {rows} = svc.execute(
+            `SELECT txid, raw_json FROM transactions
+             WHERE network = ? AND is_confirmed = 0
+               AND (replaced_by_txid IS NULL OR replaced_by_txid = '')`,
+            [network],
+          );
+          for (const row of rows ?? []) {
+            const child = String(row.txid);
+            if (spendsTx(parseTxJson(row.raw_json), current)) {
+              queue.push(child);
+            }
+          }
+        }
+      });
+    } catch (err) {
+      dbg('TransactionRepository.markReplaced error', err);
+    }
+  }
+
+  /**
+   * After this phone broadcasts a replacement, hide every local unconfirmed
+   * tx that spends the same inputs. A confirmed conflict wins instead.
+   */
+  markConflictsReplacedBy(
+    newTxid: string,
+    inputs: Array<{txid?: string; vout?: number}>,
+    network: string,
+  ): void {
+    const keys = outpointKeys(inputs);
+    if (!newTxid || !keys.size) {
+      return;
+    }
+    try {
+      const locals = this._conflictRows(network);
+      for (const local of locals) {
+        if (local.txid === newTxid || !sharesOutpoint(local.vins, keys)) {
+          continue;
+        }
+        if (local.confirmed) {
+          this.markReplaced(newTxid, local.txid, network);
+        } else {
+          this.markReplaced(local.txid, newTxid, network);
+        }
+      }
+    } catch (err) {
+      dbg('TransactionRepository.markConflictsReplacedBy error', err);
+    }
+  }
+
+  /**
+   * A synced tx spends an input that another local tx also spends.
+   * Confirmed wins. Otherwise the higher absolute fee wins. A tx that is
+   * already marked replaced, and still unconfirmed, never wins.
+   */
+  noteReplacementConflicts(network: string, incoming: ConflictTx[]): void {
+    const parsed = incoming.filter(tx => tx.txid);
+    if (!parsed.length) {
+      return;
+    }
+    try {
+      const locals = this._conflictRows(network);
+      const byId = new Map(locals.map(row => [row.txid, row]));
+      for (const inc of parsed) {
+        const txid = inc.txid as string;
+        const stored = byId.get(txid);
+        const view = conflictView(txid, inc, stored);
+        if (view.confirmed) {
+          this._clearReplaced(txid, network);
+        }
+        if (view.replaced) {
+          continue;
+        }
+        const keys = outpointKeys(inc.vin);
+        for (const local of locals) {
+          if (local.txid === txid || !sharesOutpoint(local.vins, keys)) {
+            continue;
+          }
+          const winner = replacementWinner(localView(local), view);
+          if (!winner) {
+            continue;
+          }
+          const loser = winner === txid ? local.txid : txid;
+          const loserConfirmed = winner === txid ? local.confirmed : view.confirmed;
+          if (loserConfirmed) {
+            continue;
+          }
+          this.markReplaced(loser, winner, network);
+          if (loser === local.txid) {
+            local.replacedBy = winner;
+          }
+        }
+      }
+    } catch (err) {
+      dbg('TransactionRepository.noteReplacementConflicts error', err);
+    }
+  }
+
+  private _clearReplaced(txid: string, network: string): void {
+    database.execute(
+      `UPDATE transactions SET replaced_by_txid = NULL
+       WHERE txid = ? AND network = ? AND is_confirmed = 1`,
+      [txid, network],
+    );
+  }
+
+  private _conflictRows(network: string): ConflictRow[] {
+    const {rows} = database.execute(
+      `SELECT txid, is_confirmed, fee_sats, replaced_by_txid, raw_json
+       FROM transactions
+       WHERE network = ?`,
+      [network],
+    );
+    return rows.map(row => {
+      const parsed = parseTxJson(row.raw_json);
+      const replacedBy = (row.replaced_by_txid as string) || null;
+      return {
+        txid: String(row.txid),
+        confirmed: Number(row.is_confirmed) === 1,
+        fee: absoluteFeeSats(parsed) ?? numOrNull(row.fee_sats) ?? 0,
+        replacedBy,
+        vins: parsed.vin ?? [],
+      };
+    });
+  }
+
   // ── Helpers ──────────────────────────────────────────────────────────────
 
   private _rowToTx(r: Record<string, unknown>): TxRecord {
@@ -604,6 +913,7 @@ class TransactionRepository {
       locktime: (r.locktime as number) ?? null,
       rawJson: r.raw_json as string,
       fetchedAt: r.fetched_at as number,
+      replacedByTxid: (r.replaced_by_txid as string) ?? null,
     };
   }
 }

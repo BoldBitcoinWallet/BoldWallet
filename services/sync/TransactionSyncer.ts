@@ -249,6 +249,24 @@ class TransactionSyncer {
     // All succeeded — write all batches in a single SQLite transaction, then update cursors
     if (allBatches.length) {
       transactionRepository.upsertTransactionBatch(allBatches);
+      const byNetwork = new Map<
+        string,
+        Array<{txid?: string; vin?: Array<{txid?: string; vout?: number}>}>
+      >();
+      for (const row of allBatches) {
+        let parsed: {txid?: string; vin?: Array<{txid?: string; vout?: number}>};
+        try {
+          parsed = JSON.parse(row.tx.rawJson);
+        } catch {
+          parsed = {txid: row.tx.txid};
+        }
+        const list = byNetwork.get(row.tx.network) ?? [];
+        list.push(parsed);
+        byNetwork.set(row.tx.network, list);
+      }
+      for (const [net, txs] of byNetwork) {
+        transactionRepository.noteReplacementConflicts(net, txs);
+      }
     }
     if (missingLinks.length) {
       transactionRepository.ensureAddressLinks(missingLinks);
@@ -371,6 +389,19 @@ class TransactionSyncer {
 
         if (batch.length) {
           transactionRepository.upsertTransactionBatch(batch);
+          transactionRepository.noteReplacementConflicts(
+            network,
+            batch.map(row => {
+              try {
+                return JSON.parse(row.tx.rawJson) as {
+                  txid?: string;
+                  vin?: Array<{txid?: string; vout?: number}>;
+                };
+              } catch {
+                return {txid: row.tx.txid};
+              }
+            }),
+          );
         }
         if (links.length) {
           transactionRepository.ensureAddressLinks(links);

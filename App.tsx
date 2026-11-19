@@ -9,6 +9,7 @@ import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {enableScreens} from 'react-native-screens';
 import {Image, useWindowDimensions} from 'react-native';
 import ShowcaseScreen from './screens/ShowcaseScreen';
+import WalletSetupScreen from './screens/WalletSetupScreen';
 import WalletHome from './screens/WalletHome';
 import MempoolPlaygroundScreen from './screens/MempoolPlaygroundScreen';
 import UtxosScreen from './screens/UtxosScreen';
@@ -154,6 +155,7 @@ const HomeHeader = renderAppHeader(60);
 const PSBTHeader = renderAppHeader(60);
 const SettingsHeader = renderAppHeader(60);
 const WelcomeHeader = renderAppHeader(60);
+const WalletSetupHeader = renderAppHeader(60);
 const DevicesPairingHeader = renderAppHeader(60);
 const NostrConnectHeader = renderAppHeader(60);
 const DeviceHeader = renderAppHeader(60);
@@ -901,6 +903,15 @@ const AppContent = ({
                 options={{
                   header: WelcomeHeader,
                   title: 'Welcome',
+                }}
+              />
+              <Stack.Screen
+                name="Wallet Setup"
+                component={WalletSetupScreen}
+                options={{
+                  headerShown: true,
+                  header: WalletSetupHeader,
+                  title: 'New Wallet Setup',
                 }}
               />
               <Stack.Screen

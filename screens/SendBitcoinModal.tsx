@@ -162,7 +162,6 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
   } | null>(null);
   const [brantaVerifyUrl, setBrantaVerifyUrl] = useState<string | undefined>();
   const [brantaLoading, setBrantaLoading] = useState(false);
-  const [_brantaError, setBrantaError] = useState<string | null>(null);
   const [brantaRawQrProp, setBrantaRawQrProp] = useState<string>('');
   const [coinControlOpen, setCoinControlOpen] = useState(false);
   const [pickerUtxos, setPickerUtxos] = useState<CoinControlUtxo[]>([]);
@@ -1198,106 +1197,122 @@ const SendBitcoinModal: React.FC<SendBitcoinModalProps> = ({
       setBrantaRawQrProp('');
     }
   }, [activeNetwork, initialBrantaRawQr]);
-  // Resolve Branta QR when raw QR data is set (strict mode: only ZK-encoded QRs)
+  // Resolve Branta QR when raw QR data is set (ZK-encoded QRs)
   useEffect(() => {
     const rawQr = brantaRawQr || brantaRawQrProp;
-    
+
     if (!rawQr || !isBrantaEnabled()) {
       setBrantaPayment(null);
       setBrantaVerifyUrl(undefined);
       setBrantaLoading(false);
-      setBrantaError(null);
       return;
     }
 
-    // Reset error state and mark as loading
     setBrantaPayment(null);
     setBrantaVerifyUrl(undefined);
     setBrantaLoading(true);
-    setBrantaError(null);
     let cancelled = false;
 
-    // Wrap entire Branta resolution in try-catch for robustness
     (async () => {
       try {
         const result = await resolveBrantaQr(rawQr, activeNetwork);
-        
+
         if (cancelled) {
           dbg('resolveBrantaQr: result ignored (effect cancelled)');
           return;
         }
 
-        if (!result) {
-          // Silent fallback: no Branta data found, continue with manual entry
-          dbg('SendBitcoinModal: no Branta merchant result');
+        if (result.status === 'unknown') {
+          dbg('SendBitcoinModal: Branta unknown — no card');
           setBrantaPayment(null);
           setBrantaVerifyUrl(undefined);
           setBrantaLoading(false);
-          setBrantaError(null);
           return;
         }
 
+        if (result.status === 'tampered') {
+          dbg('SendBitcoinModal: Branta tampered');
+          setBrantaPayment(null);
+          setBrantaVerifyUrl(undefined);
+          setBrantaLoading(false);
+          // Prefill came from the QR address, which may be the altered destination.
+          setAddress('');
+          setAddressError(null);
+          showAppNotice(
+            'Payment not verified',
+            'The payment destination was altered. This payment is not verified by Branta.',
+          );
+          return;
+        }
+
+        if (result.status === 'incomplete') {
+          dbg('SendBitcoinModal: Branta incomplete');
+          setBrantaPayment(null);
+          setBrantaVerifyUrl(undefined);
+          setBrantaLoading(false);
+          showAppNotice(
+            'Verification incomplete',
+            'Branta could not finish verification. This payment is not verified.',
+          );
+          return;
+        }
+
+        // match
         try {
-          // Validate address
+          const payment = result.payment;
           const persistAddresses = new Set<string>();
-          if (validateAddressRef.current(result.address)) {
-            setAddress(result.address);
-            persistAddresses.add(result.address);
+          if (validateAddressRef.current(payment.address)) {
+            setAddress(payment.address);
+            persistAddresses.add(payment.address);
           }
           const formAddress = addressRef.current;
-          if (
-            formAddress &&
-            validateAddressRef.current(formAddress)
-          ) {
+          if (formAddress && validateAddressRef.current(formAddress)) {
             persistAddresses.add(formAddress);
           }
 
-          // Persist to merchant_labels for every on-chain dest we might send to
-          // (Branta destination can differ from the BIP-21 URI address).
           try {
             for (const persistAddress of persistAddresses) {
               merchantLabelRepository.upsert({
                 address: persistAddress,
-                platform: result.platform,
-                description: result.description,
-                logoUrl: result.logoUrl,
-                logoLightUrl: result.logoLightUrl,
-                verifyUrl: result.verifyUrl,
+                platform: payment.platform,
+                description: payment.description,
+                logoUrl: payment.logoUrl,
+                logoLightUrl: payment.logoLightUrl,
+                verifyUrl: payment.verifyUrl,
                 fetchedAt: Date.now(),
               });
             }
           } catch (dbErr) {
-            // Silent DB error - doesn't block UI
             dbg('Warning: Failed to persist merchant label', dbErr);
           }
 
-          // Update UI state
-          dbg('SendBitcoinModal: showing Branta merchant', result.platform);
+          dbg('SendBitcoinModal: showing Branta merchant', payment.platform);
           setBrantaPayment({
-            platform: result.platform,
-            description: result.description,
-            logoUrl: result.logoUrl,
-            logoLightUrl: result.logoLightUrl,
+            platform: payment.platform,
+            description: payment.description,
+            logoUrl: payment.logoUrl,
+            logoLightUrl: payment.logoLightUrl,
           });
-          setBrantaVerifyUrl(result.verifyUrl);
+          setBrantaVerifyUrl(payment.verifyUrl);
           setBrantaLoading(false);
-          setBrantaError(null);
         } catch (processErr) {
-          // Error processing result, silent fallback
           dbg('Error processing Branta result', processErr);
           setBrantaPayment(null);
           setBrantaVerifyUrl(undefined);
           setBrantaLoading(false);
-          setBrantaError(null);
         }
       } catch (err) {
-        // Top-level catch for any unexpected errors
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
         dbg('Unexpected error in resolveBrantaQr', err);
         setBrantaPayment(null);
         setBrantaVerifyUrl(undefined);
         setBrantaLoading(false);
-        setBrantaError(null);
+        showAppNotice(
+          'Verification incomplete',
+          'Branta could not finish verification. This payment is not verified.',
+        );
       }
     })();
 

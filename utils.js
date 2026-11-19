@@ -852,40 +852,31 @@ export const explorerWebBaseFromApiUrl = apiUrl => {
   return s;
 };
 
-// Built-in copy of the reviewed pin (90a154c7). Used only when that
-// fetch fails or returns nothing. Mainnet is /api; testnet4 is the
-// same hosts except emzy, on /testnet4/api.
+// Built-in copy of main MAINNET.md / TESTNET4.md. Used only when that
+// fetch fails, times out, or returns nothing.
+// https://github.com/BoldBitcoinWallet/mempool-space-hosts/blob/main/MAINNET.md
+// https://github.com/BoldBitcoinWallet/mempool-space-hosts/blob/main/TESTNET4.md
 export const MAINNET_APIS = [
   'https://mempool.space/api',
+  'https://mempool.xxi.quest/api',
   'https://mempool.ninja/api',
   'https://mempool.emzy.de/api',
   'https://strategy.mempool.space/api',
   'https://benpool.mempool.space/api',
-  'https://mempool.guide/api',
   'https://metaplanet.mempool.space/api',
 ];
 export const TESTNET_APIS = [
   'https://mempool.space/testnet4/api',
-  'https://mempool.ninja/testnet4/api',
-  'https://mempool.guide/testnet4/api',
-  'https://strategy.mempool.space/testnet4/api',
-  'https://benpool.mempool.space/testnet4/api',
-  'https://metaplanet.mempool.space/testnet4/api',
+  'https://testnet4.xxi.quest/api',
 ];
 
-// F35: the dynamic mempool/relay lists live in a GitHub repo whose
-// main branch moves. Fetch from a REVIEWED, PINNED commit — a repo
-// compromise pushing a malicious list to main cannot redirect
-// traffic until a pinned update ships in an app release (which is
-// a reviewed change). To update: verify the new list content,
-// bump MEMPOOL_HOSTS_COMMIT, and name the review in the commit.
-//
-// 90a154c7 (2026-10-26, signed): MAINNET.md is space, ninja, emzy,
-// strategy, benpool, guide, metaplanet (orangefren removed).
-// TESTNET4.md is those hosts except emzy, as host roots mapped here
-// to /testnet4/api. NOSTR.md matches the previous pin b94706d4.
+// Mempool provider lists follow main so Settings > Defaults matches the
+// published files. A failed fetch uses MAINNET_APIS / TESTNET_APIS above.
+// Nostr relays stay on a reviewed pin (F35).
 const MEMPOOL_HOSTS_COMMIT = '90a154c7af314e79dfa9337a4679f2d052b9375c';
 const MEMPOOL_HOSTS_BASE = `https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/${MEMPOOL_HOSTS_COMMIT}`;
+const MEMPOOL_HOSTS_MAIN =
+  'https://raw.githubusercontent.com/BoldBitcoinWallet/mempool-space-hosts/refs/heads/main';
 // F35: parsing bounds (a compromised-or-corrupt fetch must not
 // yield an unbounded list or a multi-MB regex scan).
 const MAX_LIST_BODY_CHARS = 64 * 1024;
@@ -900,7 +891,9 @@ const isValidMempoolApiUrl = url => {
     if (parsed.protocol !== 'https:') {
       return false;
     }
-    return parsed.hostname.toLowerCase().includes('mempool');
+    const host = parsed.hostname.toLowerCase();
+    // Dedicated testnet mirrors (testnet4.xxi.quest) do not contain "mempool".
+    return host.includes('mempool') || host.startsWith('testnet');
   } catch {
     return false;
   }
@@ -915,11 +908,11 @@ const isValidRelayUrl = url => {
   }
 };
 
-const fetchPinnedMarkdown = async fileName => {
+const fetchHostsMarkdown = async (base, fileName) => {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), LIST_FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(`${MEMPOOL_HOSTS_BASE}/${fileName}`, {
+    const response = await fetch(`${base}/${fileName}`, {
       signal: controller.signal,
     });
     if (!response.ok) {
@@ -953,10 +946,11 @@ const toMainnetCatalogApi = url => {
 };
 
 /**
- * TESTNET4.md lists public host roots (https://mempool.space). Map those
- * to /testnet4/api. Keep an explicit /testnet4 or /testnet4/api URL.
- * Drop mainnet /api, legacy /testnet, and /signet so the file cannot
- * point testnet traffic at another chain.
+ * TESTNET4.md lists public host roots (https://mempool.space) and dedicated
+ * testnet hosts (https://testnet4.xxi.quest). Map mempool.space-style roots
+ * to /testnet4/api. A host whose name already starts with testnet serves
+ * the chain at /api (…/testnet4/api on that host is the explorer HTML).
+ * Drop mainnet /api, legacy /testnet, and /signet.
  */
 const toTestnet4CatalogApi = url => {
   const clean = url.replace(/\/$/, '');
@@ -974,8 +968,15 @@ const toTestnet4CatalogApi = url => {
   }
   try {
     const parsed = new URL(clean);
+    const host = parsed.hostname.toLowerCase();
+    const dedicated = host.startsWith('testnet');
+    if (/\/api$/i.test(parsed.pathname) && dedicated) {
+      return `${parsed.origin}/api`;
+    }
     if (parsed.pathname === '/' || parsed.pathname === '') {
-      return `${parsed.origin}/testnet4/api`;
+      return dedicated
+        ? `${parsed.origin}/api`
+        : `${parsed.origin}/testnet4/api`;
     }
   } catch {
     return null;
@@ -983,10 +984,13 @@ const toTestnet4CatalogApi = url => {
   return null;
 };
 
-// Pinned MAINNET.md (reviewed commit). Empty on failure — caller falls back.
+// main MAINNET.md. Empty on failure — caller falls back to MAINNET_APIS.
 export const fetchDynamicAPIEndpoints = async () => {
   try {
-    const markdownText = await fetchPinnedMarkdown('MAINNET.md');
+    const markdownText = await fetchHostsMarkdown(
+      MEMPOOL_HOSTS_MAIN,
+      'MAINNET.md',
+    );
     return dedupeUrls(
       extractHttpsUrls(markdownText)
         .filter(isValidMempoolApiUrl)
@@ -1000,10 +1004,14 @@ export const fetchDynamicAPIEndpoints = async () => {
   }
 };
 
-// Pinned TESTNET4.md. Host roots become /testnet4/api. Empty on failure.
+// main TESTNET4.md. Host roots become /testnet4/api, dedicated testnet
+// hosts become /api. Empty on failure — caller falls back to TESTNET_APIS.
 export const fetchDynamicTestnetAPIEndpoints = async () => {
   try {
-    const markdownText = await fetchPinnedMarkdown('TESTNET4.md');
+    const markdownText = await fetchHostsMarkdown(
+      MEMPOOL_HOSTS_MAIN,
+      'TESTNET4.md',
+    );
     return dedupeUrls(
       extractHttpsUrls(markdownText)
         .filter(isValidMempoolApiUrl)

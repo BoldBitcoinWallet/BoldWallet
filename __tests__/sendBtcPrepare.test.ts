@@ -215,4 +215,16 @@ describe('prepareSendBtcMultiPathInputs', () => {
     expect(native[0].txid).toBe(compactRouteUtxo.txid);
     expect(mockWs.fetchUtxosWithPaths).not.toHaveBeenCalled();
   });
+
+  it('keeps the required flag on coins that a replacement must spend', async () => {
+    const result = await prepareSendBtcMultiPathInputs({
+      network: 'testnet4',
+      addressType: 'segwit-native',
+      utxosJsonFromRoute: JSON.stringify([
+        {...compactRouteUtxo, scriptpubkey: '0014aabb', required: true},
+      ]),
+      changeAddressFromRoute: 'tb1qchg',
+    });
+    expect(JSON.parse(result.utxosWithPathsJSON)[0].required).toBe(true);
+  });
 });

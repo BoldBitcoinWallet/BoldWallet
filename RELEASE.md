@@ -3,12 +3,13 @@
 ## Toolchain minimums (F28-exp)
 
 These floors exist because **CVE-2026-111943** (Go x509 eMudhra trust)
-shipped in v4.1.0's `libbbmtmobile.so` and was fixed in **go1.26.10**.
-Do not regress them.
+shipped in v4.1.0's `libbbmtmobile.so` and was fixed in **go1.26.10**, and
+because **GO-2026-6859 / CVE-2026-97054** (`net/http` MaxBytesReader header
+race) is fixed in **go1.26.11**. Do not regress them.
 
 | Tool    | Minimum   | Pinned in |
 |---------|-----------|-----------|
-| Go      | 1.26.10   | `BBMTLib/go.mod` (`toolchain`), Dockerfiles, CI `setup-go`, `GOTOOLCHAIN=local` |
+| Go      | 1.26.11   | `BBMTLib/go.mod` (`toolchain`), Dockerfiles, CI `setup-go`, `GOTOOLCHAIN=local` |
 | Node    | 22.23.4   | `Dockerfile`, `package.json` engines, `.nvmrc` |
 
 ## Pre-release gate

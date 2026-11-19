@@ -404,20 +404,24 @@ export const UserProvider: React.FC<{children: React.ReactNode}> = ({
   }, [refresh]);
   const handleSetActiveNetwork = useCallback(
     async (newNetwork: string) => {
+      if (apiBase) {
+        appConfigRepository.set(`api_${network}`, apiBase);
+      }
+      appConfigRepository.set(CONFIG_KEYS.NETWORK, newNetwork);
+      const nextApi = resolveStoredMempoolApiBase(newNetwork);
+      appConfigRepository.set(`api_${newNetwork}`, nextApi);
+      appConfigRepository.set('api', nextApi);
+      setNetwork(newNetwork);
+      setApiBase(nextApi);
+      // Endpoints were already chosen for this network. Skip the
+      // in-app allow alert; a custom host still gets the OS prompt.
       try {
-        if (apiBase) {
-          appConfigRepository.set(`api_${network}`, apiBase);
-        }
-        appConfigRepository.set(CONFIG_KEYS.NETWORK, newNetwork);
-        const nextApi = resolveStoredMempoolApiBase(newNetwork);
-        appConfigRepository.set(`api_${newNetwork}`, nextApi);
-        appConfigRepository.set('api', nextApi);
-        setNetwork(newNetwork);
-        setApiBase(nextApi);
-        // Endpoints were already chosen for this network. Skip the
-        // in-app allow alert; a custom host still gets the OS prompt.
         await ensureMempoolApiApplied(newNetwork, nextApi, null);
-        const providerNet = newNetwork === 'mainnet' ? 'mainnet' : 'testnet4';
+      } catch {
+        // Ceremony denial must not block provider-list seeding.
+      }
+      const providerNet = newNetwork === 'mainnet' ? 'mainnet' : 'testnet4';
+      try {
         const enabled = await ensureMempoolProvidersSeeded(providerNet);
         mempoolClient.setPublicBases(enabled);
         await ensureFeeApisApplied(enabled, null);
