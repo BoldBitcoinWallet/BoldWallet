@@ -1,7 +1,13 @@
 package main
 
+/*
+#include <string.h>
+*/
 import "C"
-import "fmt"
+import (
+	"fmt"
+	"unsafe"
+)
 
 // F11 bridge input validation at the Go //export seam — the single choke
 // point both platforms funnel through. Platform seams (JNI/ObjC) enforce
@@ -30,6 +36,28 @@ type f11Error struct{ msg string }
 
 func (e *f11Error) Error() string { return "f11: " + e.msg }
 
+// cgoString copies a NUL-terminated C string without C.GoString.
+//
+// Go 1.26's C.GoString calls runtime.findnull, whose arm64 IndexByteString
+// aligns the pointer down and reads the previous 16 bytes. Under Arm MTE
+// (GrapheneOS) that is a different tag granule and the process dies with
+// SIGSEGV / SEGV_MTESERR. strnlen stays inside the allocation; GoBytes
+// copies a known length and never scans for NUL.
+//
+// ok is false when no NUL appears within max bytes (the caller treats that
+// as over-cap). A nil pointer is the caller's responsibility.
+func cgoString(p *C.char, max int) (s string, ok bool) {
+	n := C.strnlen(p, C.size_t(max+1))
+	if n > C.size_t(max) {
+		return "", false
+	}
+	if n == 0 {
+		return "", true
+	}
+	b := C.GoBytes(unsafe.Pointer(p), C.int(n))
+	return string(b), true
+}
+
 // mustGoStr converts a C bridge string. Nil and over-cap are always
 // rejected; empty is allowed — domain code owns requiredness, and several
 // methods take legitimate empty strings (unset optionals).
@@ -37,8 +65,8 @@ func mustGoStr(p *C.char, what string) string {
 	if p == nil {
 		panic(&f11Error{msg: "null " + what})
 	}
-	s := C.GoString(p)
-	if len(s) > maxBridgeString {
+	s, ok := cgoString(p, maxBridgeString)
+	if !ok {
 		panic(&f11Error{msg: fmt.Sprintf("%s exceeds %d bytes", what, maxBridgeString)})
 	}
 	return s

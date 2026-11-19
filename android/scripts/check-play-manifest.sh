@@ -25,7 +25,8 @@ for feature in \
   android.hardware.camera.front \
   android.hardware.location \
   android.hardware.location.gps \
-  android.hardware.wifi
+  android.hardware.wifi \
+  android.hardware.screen.portrait
 do
   grep -q "android:name=\"${feature}\" android:required=\"false\"" "$MANIFEST" \
     || fail "uses-feature ${feature} must be required=false"

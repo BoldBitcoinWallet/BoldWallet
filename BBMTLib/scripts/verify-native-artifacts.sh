@@ -1,15 +1,31 @@
 #!/usr/bin/env bash
 # Post-build verification: ABI headers, JNI symbols, artifact presence,
 # Go toolchain floor (F28-exp: CVE-2026-111943 needs go1.26.10+;
-# GO-2026-6859 / CVE-2026-97054 needs go1.26.11+ in every .so).
+# GO-2026-6859 / CVE-2026-97054 needs go1.26.11+ in every .so;
+# android/arm64 MTE / C.GoString needs go1.27+).
 set -euo pipefail
 
-MIN_GO="1.26.11"
+MIN_GO="1.27.4"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 JNI_OUT="${ROOT}/../android/app/src/main/jniLibs"
 CPP_DIR="${ROOT}/../android/app/src/main/cpp"
 CHECK_JNI="${ROOT}/../android/scripts/check-jni-exports.sh"
+
+# android: .so files just produced. ios: xcframework. all: both (release check).
+# Android-only builds must not fail on an xcframework this run has not rebuilt yet.
+SCOPE="${1:-all}"
+case "${SCOPE}" in
+  android|ios|all) ;;
+  -h|--help)
+    echo "Usage: $0 [android|ios|all]"
+    exit 0
+    ;;
+  *)
+    echo "Usage: $0 [android|ios|all]" >&2
+    exit 1
+    ;;
+esac
 
 info() { echo "==> $*"; }
 fail() { echo "FAIL: $*" >&2; exit 1; }
@@ -33,17 +49,6 @@ validate_goint_abi() {
   pass "${abi} GoInt ABI (${pointer_bits}-bit)"
 }
 
-info "Verifying native artifacts"
-[ -f "${CHECK_JNI}" ] || fail "missing check-jni-exports.sh"
-
-for abi in arm64-v8a armeabi-v7a x86_64; do
-  so="${JNI_OUT}/${abi}/libbbmtmobile.so"
-  jni="${JNI_OUT}/${abi}/libdkls_jni.so"
-  [ -f "${so}" ] || fail "missing ${so}"
-  [ -f "${jni}" ] || fail "missing ${jni}"
-  pass "${abi} libbbmtmobile.so + libdkls_jni.so"
-done
-
 # ver_ge A B: true if dotted version A >= B (numeric per component).
 ver_ge() {
   local IFS=.
@@ -56,6 +61,19 @@ ver_ge() {
   done
   return 0
 }
+
+info "Verifying native artifacts (${SCOPE})"
+
+verify_android() {
+[ -f "${CHECK_JNI}" ] || fail "missing check-jni-exports.sh"
+
+for abi in arm64-v8a armeabi-v7a x86_64; do
+  so="${JNI_OUT}/${abi}/libbbmtmobile.so"
+  jni="${JNI_OUT}/${abi}/libdkls_jni.so"
+  [ -f "${so}" ] || fail "missing ${so}"
+  [ -f "${jni}" ] || fail "missing ${jni}"
+  pass "${abi} libbbmtmobile.so + libdkls_jni.so"
+done
 
 # F28-exp: every shipped .so must be built with go >= MIN_GO, and all ABIs
 # must agree (no mixed toolchains). `go version -m` is authoritative.
@@ -78,13 +96,14 @@ validate_goint_abi arm64-v8a 64
 validate_goint_abi x86_64 64
 
 bash "${CHECK_JNI}" "${JNI_OUT}/arm64-v8a/libdkls_jni.so"
+}
 
+verify_ios() {
 xc="${ROOT}/../ios/BbmtMobile/libbbmtmobile.xcframework"
 if [ -d "${xc}" ]; then
   pass "iOS libbbmtmobile.xcframework"
   # F28-exp: `go version -m` cannot read merged .a archives, so check
-  # embedded toolchain strings instead: must contain the fixed version
-  # and must not contain any vulnerable go1.26 single-patch version.
+  # embedded toolchain strings instead: every go1.x.y string must be >= MIN_GO.
   for xc_a in "${xc}"/*/*.a; do
     [ -f "${xc_a}" ] || continue
     versions="$(strings "${xc_a}" | grep -oE "go1\.[0-9]+\.[0-9]+" | sort -u)"
@@ -97,8 +116,18 @@ if [ -d "${xc}" ]; then
   done
 else
   warn_msg="iOS xcframework not found (skip on Linux CI)"
+  if [ "${SCOPE}" = "ios" ]; then
+    fail "${warn_msg}"
+  fi
   echo "  --  ${warn_msg}"
 fi
+}
+
+case "${SCOPE}" in
+  android) verify_android ;;
+  ios) verify_ios ;;
+  all) verify_android; verify_ios ;;
+esac
 
 echo ""
 echo "Native artifact verification: PASS"

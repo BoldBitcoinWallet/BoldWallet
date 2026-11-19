@@ -1,6 +1,19 @@
 # Changelog
 
-## [Unreleased]
+## [4.1.4] - 2026-11-19
+
+> **Wallet release (delta from v4.1.3):** GrapheneOS with memory tagging on no longer dies at launch. Play no longer treats a portrait screen as required.
+
+### Fixed
+- **GrapheneOS memory tagging** — opening the wallet on GrapheneOS with memory tagging on died with `SIGSEGV` / `SEGV_MTESERR`. Go 1.26's `C.GoString` reads 16 bytes before a C string on android/arm64. Bridge strings are now copied with `strnlen` and `GoBytes`, and native builds use Go **1.27.4**, whose runtime does not do that read. Compatibility mode is not required for this crash.
+
+### Changed
+- **Play device catalog** — `android:screenOrientation="portrait"` was implying `android.hardware.screen.portrait` required. That feature is now optional, so phones stay portrait and ChromeOS, XR, and landscape-only devices stay eligible.
+
+### Technical Details
+- **GrapheneOS MTE**: `BBMTLib/bbmtmobile/validate.go`. Toolchain pin `go1.27.4` in `BBMTLib/go.mod`, Dockerfiles, and CI. `verify-native-artifacts.sh` floor is 1.27.4. `build-dkls.sh` clears a stale `GOROOT` so a Homebrew Go tree cannot leave the previous `.so` in place. Android and iOS natives are rebuilt locally and are not committed.
+- **Play portrait feature**: `android/app/src/main/AndroidManifest.xml`, `android/scripts/check-play-manifest.sh`, `__tests__/playConsoleManifest.test.ts`.
+- **Version**: `package.json` **4.1.4**; Android **`versionCode` 76** / **`versionName` 4.1.4**; iOS build **76** / **`MARKETING_VERSION` 4.1.4**.
 
 ## [4.1.3] - 2026-11-17
 

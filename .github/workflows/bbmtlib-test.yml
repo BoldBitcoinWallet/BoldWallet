@@ -35,7 +35,10 @@ jobs:
         with:
           # F28-exp: pin exact patch — CVE-2026-111943 fixed in go1.26.10;
           # GO-2026-6859 / CVE-2026-97054 fixed in go1.26.11.
-          go-version: '1.26.11'
+          # android/arm64 MTE (C.GoString) fixed in go1.27.
+          # This binary must be the Go on PATH. govulncheck probes the toolchain
+          # with GO111MODULE=off, which ignores GOTOOLCHAIN and the go.mod toolchain line.
+          go-version: '1.27.4'
           cache-dependency-path: BBMTLib/go.sum
 
       - name: Verify Go version
@@ -232,7 +235,10 @@ jobs:
         uses: actions/setup-go@v6
         with:
           # GO-2026-6859 / CVE-2026-97054 fixed in go1.26.11.
-          go-version: '1.26.11'
+          # android/arm64 MTE (C.GoString) fixed in go1.27.
+          # This binary must be the Go on PATH. govulncheck probes the toolchain
+          # with GO111MODULE=off, which ignores GOTOOLCHAIN and the go.mod toolchain line.
+          go-version: '1.27.4'
           cache-dependency-path: BBMTLib/go.sum
 
       - name: Install govulncheck

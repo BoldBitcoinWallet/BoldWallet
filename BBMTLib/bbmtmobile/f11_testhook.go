@@ -6,15 +6,26 @@
 // bbmt_test). Run: go test -tags bbmt_test ./bbmtmobile/
 package main
 
+/*
+#include <stdlib.h>
+*/
 import "C"
-import "strings"
+import (
+	"strings"
+	"unsafe"
+)
 
 func testFinish(out *C.char) string {
 	if out == nil {
 		panic("export returned nil *C.char")
 	}
-	s := C.GoString(out)
+	// Same MTE-safe copy as mustGoStr. Export results are short error or
+	// hex strings; the cap only rejects a missing NUL.
+	s, ok := cgoString(out, maxBridgeString)
 	BbmtFree(out)
+	if !ok {
+		panic("export returned a C string with no NUL within cap")
+	}
 	return s
 }
 
@@ -63,10 +74,31 @@ func testMustGoStr(s string, nullArg, over bool) (res string, perr string) {
 		return res, ""
 	}
 	if over {
-		res = mustGoStr(C.CString(strings.Repeat("z", maxBridgeString+1)), "x")
+		cs := C.CString(strings.Repeat("z", maxBridgeString+1))
+		defer C.free(unsafe.Pointer(cs))
+		res = mustGoStr(cs, "x")
 		return res, ""
 	}
-	res = mustGoStr(C.CString(s), "x")
+	cs := C.CString(s)
+	defer C.free(unsafe.Pointer(cs))
+	res = mustGoStr(cs, "x")
+	return res, ""
+}
+
+// testMustGoStrN round-trips a C string of exactly n bytes.
+func testMustGoStrN(n int) (res string, perr string) {
+	defer func() {
+		if r := recover(); r != nil {
+			if e, ok := r.(*f11Error); ok {
+				perr = e.Error()
+			} else {
+				perr = "non-f11 panic"
+			}
+		}
+	}()
+	cs := C.CString(strings.Repeat("a", n))
+	defer C.free(unsafe.Pointer(cs))
+	res = mustGoStr(cs, "x")
 	return res, ""
 }
 
