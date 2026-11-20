@@ -34,6 +34,18 @@ Stay on one source. Android refuses an update when the signature does not match 
 
 32-bit Android phones are not supported. They are not secure enough for a modern wallet: the kernel, the chipset, and the manufacturer's update policy leave them behind even a modest 64-bit phone.
 
+## Watch-only Chrome extension
+
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoedgbkfdeilmlbdecf">
+    <img src="assets/watch-only-chrome.png" alt="Bold Bitcoin Wallet Extension. Watch-only on the desktop. Signing stays on the phone." width="560" height="350">
+  </a>
+</p>
+
+The [Bold Wallet Chrome extension](https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoedgbkfdeilmlbdecf) is the watch-only companion on your desk. Balance, squad, and history sit in the browser. Signing stays on the phone, and the keyshare stays with it.
+
+Bind from Keyshare. Scan the extension QR, then show the response QR back to Chrome.
+
 ## Keys
 
 | Feature | What you get |
@@ -41,7 +53,7 @@ Stay on one source. Android refuses an update when the signature does not match 
 | Encrypted backup | No seed phrase. A backup is an encrypted keyshare file with a password you choose. |
 | Device prompt | Backup, airgap export, and wallet delete ask for the device biometric or passcode. |
 | Watch-only | Export an output descriptor for Sparrow: legacy, native SegWit, and nested SegWit. The descriptor does not include the keyshare. |
-| Chrome extension | A watch-only wallet in the browser. [Bold Wallet for Chrome](https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoedgbkfdeilmlbdecf). Bind from Keyshare by scanning its QR, then showing the response QR. The keyshare stays on the phone. |
+| Watch-only Chrome extension | A watch-only wallet in the browser. [Bold Wallet for Chrome](https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoedgbkfdeilmlbdecf). Bind from Keyshare by scanning its QR, then showing the response QR. The keyshare stays on the phone. |
 | Airgap QR | An animated QR locked with a 6-digit PIN. Export from Keyshare, restore from the welcome screen. The PIN is for that QR, not a wallet login. |
 | Open from another app | A `.share` or `.psbt` can arrive from Files, Telegram, WhatsApp, and the share sheet. A `bitcoin:` link prefills Send. |
 | Desktop recovery | If the phones are gone, both keyshares load on one computer. The warning and the steps are in [BBMTLib/RECOVER.md](BBMTLib/RECOVER.md). |
