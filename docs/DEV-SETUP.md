@@ -10,9 +10,9 @@ BoldWallet is a **React Native** mobile app. JavaScript dependencies alone are n
 
 | Layer | Toolchain | Output |
 |-------|-----------|--------|
-| JS / React Native | Node 20+, npm | `node_modules/`, Metro bundle (debug) |
+| JS / React Native | Node 22.23.4, npm | `node_modules/`, Metro bundle (debug) |
 | MPC / TSS (Rust) | Rust, `cargo-ndk` | `libtss` static libs per Android ABI |
-| MPC / TSS (Go) | Go 1.24+ | `android/app/src/main/jniLibs/*/libbbmtmobile.so`, `libdkls_jni.so` |
+| MPC / TSS (Go) | Go 1.27.4 | `android/app/src/main/jniLibs/*/libbbmtmobile.so`, `libdkls_jni.so` |
 | Android app | JDK 17, SDK, NDK, Gradle | `android/app/build/outputs/apk/release/app-release.apk` |
 
 ---
@@ -38,9 +38,9 @@ Install or verify each item before building.
 | Requirement | Version | Verify with |
 |-------------|---------|-------------|
 | **Git** | recent | `git --version` |
-| **Node.js** | **≥ 20** (project README: **20.18.1**) | `node -v` |
+| **Node.js** | **22.23.4** (`.nvmrc`) | `node -v` |
 | **npm** | bundled with Node | `npm -v` |
-| **Go** | **1.24+** | `go version` |
+| **Go** | **1.27.4** | `go version` |
 | **Rust** | stable | `rustc --version` |
 | **cargo-ndk** | latest | `cargo ndk --version` |
 
@@ -49,7 +49,7 @@ Install or verify each item before building.
 | Requirement | Version | Verify with |
 |-------------|---------|-------------|
 | **JDK** | **17** | `java -version` |
-| **Android SDK** | Platform **android-35**, Build-Tools **35.0.0** | `sdkmanager --list` |
+| **Android SDK** | Platform **android-36**, Build-Tools **36.0.0** | `sdkmanager --list` |
 | **Android NDK** | **27.1.12297006** (see `android/build.gradle`) | `ls "$ANDROID_NDK_HOME"` |
 | **adb** | from SDK | `adb version` |
 
@@ -93,8 +93,8 @@ export PATH="$JAVA_HOME/bin:$PATH"
 **Sanity check** (all should succeed):
 
 ```bash
-node -v          # v20.x
-go version       # go1.24+
+node -v          # v22.23.4
+go version       # go1.27.4
 rustc --version
 cargo ndk --version
 java -version    # 17
@@ -116,22 +116,22 @@ adb version
 sudo apt update
 sudo apt install -y git curl unzip openjdk-17-jdk-headless
 
-# Node 20 via nvm (recommended; avoids old system Node 18)
+# Node 22.23.4 via nvm (matches .nvmrc)
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
 export NVM_DIR="$HOME/.nvm"
 . "$NVM_DIR/nvm.sh"
-nvm install 20
-nvm alias default 20
+nvm install 22.23.4
+nvm alias default 22.23.4
 node -v
 
-# Go 1.24+ (system-wide; or use ~/sdk — see below)
-curl -LO https://go.dev/dl/go1.24.2.linux-amd64.tar.gz
+# Go 1.27.4 (system-wide; or use ~/sdk — see below)
+curl -LO https://go.dev/dl/go1.27.4.linux-amd64.tar.gz
 sudo rm -rf /usr/local/go
-sudo tar -C /usr/local -xzf go1.24.2.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.27.4.linux-amd64.tar.gz
 
 # Go without sudo (user install)
-# mkdir -p ~/sdk && curl -LO ... && tar -C ~/sdk -xzf go1.24.2.linux-amd64.tar.gz
-# mv ~/sdk/go ~/sdk/go1.24.2 && ln -sf ~/sdk/go1.24.2 ~/sdk/go
+# mkdir -p ~/sdk && curl -LO ... && tar -C ~/sdk -xzf go1.27.4.linux-amd64.tar.gz
+# mv ~/sdk/go ~/sdk/go1.27.4 && ln -sf ~/sdk/go1.27.4 ~/sdk/go
 
 # Rust + Android cross-compile targets
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -154,8 +154,8 @@ export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools
 
 yes | sdkmanager --sdk_root="$ANDROID_HOME" \
   "platform-tools" \
-  "platforms;android-35" \
-  "build-tools;35.0.0" \
+  "platforms;android-36" \
+  "build-tools;36.0.0" \
   "ndk;27.1.12297006"
 ```
 
@@ -164,11 +164,17 @@ Then add the shell block from [section 2](#2-shell-environment-set-on-every-new-
 ### macOS
 
 ```bash
-# Homebrew
-brew install git node@20 go rust openjdk@17
+# Homebrew. Node and Go are pinned below; Homebrew's default formulas are not those versions.
+brew install git rust openjdk@17
 
-export PATH="/opt/homebrew/opt/node@20/bin:$PATH"
+# Node 22.23.4 via nvm (same as the Linux block)
 export JAVA_HOME="$(/usr/libexec/java_home -v 17)"
+
+# Go 1.27.4 (Apple silicon). Intel Macs use go1.27.4.darwin-amd64.tar.gz.
+curl -LO https://go.dev/dl/go1.27.4.darwin-arm64.tar.gz
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.27.4.darwin-arm64.tar.gz
+export PATH="/usr/local/go/bin:$PATH"
 
 # Android Studio is the easiest way to get SDK + NDK 27.1.12297006
 export ANDROID_HOME="$HOME/Library/Android/sdk"
@@ -221,7 +227,7 @@ Dependencies are **exact-pinned** in `package.json` / `package-lock.json`. Use *
 
 ```bash
 cd ~/code/BoldWallet
-node -v    # must be v20+
+node -v    # must be v22.23.4
 npm ci     # runs patch-package via postinstall
 ```
 
@@ -279,7 +285,7 @@ android/app/src/main/jniLibs/
 ├── arm64-v8a/libbbmtmobile.so
 ├── arm64-v8a/libdkls_jni.so
 ├── armeabi-v7a/...
-└── x86_64/...          ← emulators typically use this ABI
+└── x86_64/...          ← built for the native stamp; the release APK does not package it
 ```
 
 **Re-run native build when:** `BBMTLib/`, `libtss`, or Android JNI/cpp changes — not needed for JS-only doc/README commits.
@@ -332,7 +338,8 @@ Alternative install target (emulator/device already connected):
 ### Create and start emulators
 
 - **Android Studio → Device Manager** → Create Virtual Device  
-- Use **API 24+** and a **64-bit** system image (**x86_64** on Intel/AMD Linux is typical)  
+- Use **API 24+**. The default `./release.sh` APK is **arm64-v8a only** (about 53 MB), so use an **arm64** system image.  
+- A stock **x86_64** emulator needs the fat APK in [RELEASE.md](../RELEASE.md) (`-PplayAbi=arm64-v8a,armeabi-v7a,x86_64` and the matching `-PreactNativeArchitectures`).  
 - Start one or more AVDs  
 
 ```bash
@@ -345,7 +352,7 @@ You should see `emulator-5554 device`, etc.
 
 ### Streamed install on all connected emulators
 
-Release APKs are large (~127 MB); `adb install -r` uses **streamed install** automatically.
+The default release APK is about 53 MB. `adb install -r` uses **streamed install** automatically. An x86_64 emulator needs the fat APK from [RELEASE.md](../RELEASE.md) before this install.
 
 **One emulator:**
 
@@ -360,7 +367,7 @@ adb -s emulator-5554 shell am start -n com.boldwallet/.MainActivity
 ```bash
 export ANDROID_HOME="$HOME/Android/Sdk"
 export PATH="$ANDROID_HOME/platform-tools:$PATH"
-APK=~/code/BoldWallet/android/app/build/outputs/apk/release/app-release.apk"
+APK=~/code/BoldWallet/android/app/build/outputs/apk/release/app-release.apk
 
 for s in $(adb devices | awk '/^emulator-/{print $1}'); do
   echo "=== $s ==="
@@ -436,7 +443,7 @@ cd BBMTLib && ./build-all.sh && cd ..
 # APK
 cd android && ./release.sh && cd ..
 
-# All emulators
+# All emulators. This APK is arm64-only; x86_64 AVDs need the fat build in RELEASE.md.
 APK=android/app/build/outputs/apk/release/app-release.apk
 for s in $(adb devices | awk '/^emulator-/{print $1}'); do
   adb -s "$s" install -r "$APK"
@@ -472,7 +479,7 @@ npm run lint
 | `Missing libbbmtmobile.so` | Run `BBMTLib/build-all.sh` or `./build-dkls.sh android`; then `npm run verify:native`. |
 | `cd: .../libtss: No such file` | Run `bash BBMTLib/mobile-deps/libtss/setup-libtss.sh`. |
 | `ANDROID_NDK_HOME not set` | Install NDK **27.1.12297006** via `sdkmanager`; export paths ([section 2](#2-shell-environment-set-on-every-new-machine)). |
-| Node `EBADENGINE` (Node 18) | `nvm install 20 && nvm use 20`. |
+| Node `EBADENGINE` | `nvm install 22.23.4 && nvm use 22.23.4`. |
 | `npm ci` vs lockfile errors | Use `npm ci`; avoid `npm update` unless intentionally refreshing deps. |
 | `verify:native` fails on **arm64** JNI symbol only | **x86_64** emulator builds may still work; check `npm run check:jni` for your target ABI. |
 | `build-all.sh` fails at host Go tests | Android `jniLibs` may still be built; check files under `android/app/src/main/jniLibs/`. |
@@ -486,7 +493,7 @@ npm run lint
 ## 15. Quick reference — brand new machine (ordered)
 
 ```bash
-# === One-time: OS packages, nvm Node 20, Go, Rust, cargo-ndk, JDK 17, Android SDK+NDK ===
+# === One-time: OS packages, nvm Node 22.23.4, Go 1.27.4, Rust, cargo-ndk, JDK 17, Android SDK+NDK ===
 # === Add section 2 to ~/.bashrc and: source ~/.bashrc ===
 
 mkdir -p ~/code && cd ~/code
@@ -504,7 +511,7 @@ cd .. && npm run verify:native
 
 cd android && ./release.sh
 
-# Emulators running:
+# Emulators running. arm64 images can install this APK. x86_64 images need the fat flags in RELEASE.md.
 APK=app/build/outputs/apk/release/app-release.apk
 for s in $(adb devices | awk '/^emulator-/{print $1}'); do
   adb -s "$s" install -r "$APK"
@@ -517,6 +524,5 @@ done
 ## Further reading
 
 - [BBMTLib/README.md](../BBMTLib/README.md) — native MPC build overview  
-- [BBMTLib/docs/DKLS_MOBILE.md](../BBMTLib/docs/DKLS_MOBILE.md) — DKLs / `libbbmtmobile` architecture  
 - [docker/README.md](../docker/README.md) — containerized APK builds  
 - [README.md](../README.md) — product overview and recovery CLI  

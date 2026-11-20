@@ -36,7 +36,7 @@ cargo install cargo-ndk
 | GG18 + DKLs | `build-dkls.sh android` | same (Bbmt* + Dkls* JNI) | `build-dkls.sh ios` |
 | Legacy gomobile | `build.sh` | (not linked in app) | optional `Tss.xcframework` |
 
-Do **not** ship `tss.aar` and `libbbmtmobile.so` together — two Go runtimes corrupt the heap. See [docs/DKLS_MOBILE.md](docs/DKLS_MOBILE.md).
+Do **not** ship `tss.aar` and `libbbmtmobile.so` together — two Go runtimes corrupt the heap.
 
 ## iOS (manual gomobile)
 
