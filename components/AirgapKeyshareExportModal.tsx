@@ -46,8 +46,8 @@ const PRIVACY_HINT = 'Eyes on these two screens only.';
 const PIN_NEXT_HINT = 'Read the PIN on the new phone, then show the QR.';
 const AIRGAP_PROCESS_HINT =
   'Takes a couple of minutes — keep scanning. PIN + QR only; no files or SD cards.';
-const AIRGAP_QR_HINT =
-  'A couple of minutes is normal. Fountain can finish before every frame.';
+const AIRGAP_QR_HINT_TIME = 'A couple of minutes is normal.';
+const AIRGAP_QR_HINT_FOUNTAIN = 'Fountain can finish before every frame.';
 
 /**
  * This modal draws under the status bar and the Android navigation bar.
@@ -426,15 +426,26 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
     },
     qrTopBar: {
       paddingHorizontal: 16,
-      paddingBottom: 8,
-      borderBottomWidth: StyleSheet.hairlineWidth,
-      borderBottomColor: isLightTheme
-        ? theme.colors.blackOverlay10
-        : theme.colors.whiteOverlay10,
+      paddingBottom: 4,
+    },
+    qrStatus: {
+      alignItems: 'center',
+      paddingHorizontal: 32,
+      paddingTop: 20,
+      paddingBottom: 16,
     },
     qrTopRow: {
       flexDirection: 'row',
       alignItems: 'center',
+    },
+    qrTopIcon: {
+      width: 22,
+      height: 22,
+      marginRight: 10,
+      tintColor:
+        theme.colors.background === '#ffffff'
+          ? theme.colors.primary
+          : theme.colors.bitcoinOrange,
     },
     qrTopTitle: {
       flex: 1,
@@ -456,15 +467,24 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
         : theme.colors.whiteOverlay10,
     },
     qrStageFrame: {
-      marginTop: 8,
-      fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.medium,
+      fontSize: theme.fontSizes?.base || 15,
+      lineHeight: 22,
+      fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.text,
       textAlign: 'center',
     },
     qrStageHint: {
-      marginTop: 4,
-      fontSize: theme.fontSizes?.sm || 12,
+      marginTop: 10,
+      fontSize: theme.fontSizes?.sm || 13,
+      lineHeight: 18,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+    },
+    qrStageHintFollow: {
+      marginTop: 2,
+      fontSize: theme.fontSizes?.sm || 13,
+      lineHeight: 18,
       fontFamily: theme.fontFamilies?.medium,
       color: theme.colors.textSecondary,
       textAlign: 'center',
@@ -497,6 +517,11 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
             {paddingTop: statusBarInset(insets.top) + 8},
           ]}>
           <View style={styles.qrTopRow}>
+            <Image
+              source={require('../assets/scan-icon.png')}
+              style={styles.qrTopIcon}
+              resizeMode="contain"
+            />
             <Text style={styles.qrTopTitle}>Scan Encrypted Keyshare</Text>
             <AppPressable
               style={styles.closeButton}
@@ -509,10 +534,13 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
               <Text style={styles.closeButtonText}>✕</Text>
             </AppPressable>
           </View>
+        </View>
+        <View style={styles.qrStatus}>
           <Text style={styles.qrStageFrame}>
             Frame {qrFrame.frame} of {qrFrame.total}
           </Text>
-          <Text style={styles.qrStageHint}>{AIRGAP_QR_HINT}</Text>
+          <Text style={styles.qrStageHint}>{AIRGAP_QR_HINT_TIME}</Text>
+          <Text style={styles.qrStageHintFollow}>{AIRGAP_QR_HINT_FOUNTAIN}</Text>
         </View>
         <View style={styles.qrSlot} onLayout={handleQrSlotLayout}>
           {qrSize > 0 ? (

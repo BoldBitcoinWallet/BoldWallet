@@ -1061,10 +1061,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                           ]}>
                           <Image
                             source={FINGERPRINT_ICON}
-                            style={[
-                              screenStyles.walletInfoPillFingerprintIcon,
-                              {tintColor: fingerprintBandColors.iconTint},
-                            ]}
+                            style={screenStyles.walletInfoPillFingerprintIcon}
                             resizeMode="contain"
                           />
                         </View>
