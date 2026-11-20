@@ -68,6 +68,8 @@ For app screenshots and visual previews, check the [App Store listing](https://a
 > It is **not compatible** with the version distributed via [F-Droid](https://f-droid.org).  
 > Always install updates from **one source only** to avoid signature conflicts.
 
+The release APK is **64-bit ARM only** (`arm64-v8a`), about **53 MB**. 32-bit Android phones are not supported. They are not secure enough for a modern wallet: the kernel, the chipset, and the manufacturer's update policy leave them behind even a modest 64-bit phone.
+
 ## 📖 Dev Guide
 - You can build the Android APK yourself, via Auto Builder or Manual Build as below.
 - iOS builds follow React-Native iphone–guide 
@@ -92,8 +94,8 @@ KEY_PASSWORD="your_key_password"
 # This will take time given your PC performance (couple of minutes up to 30 minutes)
 # When done, the app-release.apk is generated within the BoldWallet folder
 
-> sh docker-apk-builder.sh --fdroid #optional, for F-Droid foss tailored build
-> sh docker-apk-builder.sh --fdroid --git=main #optional, which git "branch,tag, or commit-hash" to use
+> ./docker/scripts/docker-apk-builder.sh --fdroid #optional, for F-Droid foss tailored build
+> ./docker/scripts/docker-apk-builder.sh --fdroid --git=main #optional, which git "branch,tag, or commit-hash" to use
 ```
 
 For F-Droid builds, the Docker path bootstraps pinned [`BoldBitcoinWallet/libtss`](https://github.com/BoldBitcoinWallet/libtss) (with vendored frost/DKLs23 submodules), installs Rust tooling (`cargo-ndk`), and builds Android native libs with `BBMTLib/build-dkls.sh android` (`libbbmtmobile.so` + `libdkls_jni.so`).
@@ -104,17 +106,18 @@ For F-Droid builds, the Docker path bootstraps pinned [`BoldBitcoinWallet/libtss
 Manual build, requires manual and extra efforts to compiles the app on your PC.
 
 BoldWallet is a typical React Native Mobile Based App ( android / iOS ).
-- Built using node v20.18.1
+- Built using Node 22.23.4 and Go 1.27.4
   - npm install
-  - For Android native libs (release path):
+  - For Android native libs:
     - `cd BBMTLib && ./build-dkls.sh android`
-    - This is the Android v4 runtime path (`libbbmtmobile.so` + `libdkls_jni.so`)
+    - This builds `libbbmtmobile.so` and `libdkls_jni.so`
     - `build-all.sh` is optional for full matrix/local smoke workflows
   - For Android APK build:
     - cd android
     - ./release.sh
         - APK generated under:
-            ./android/app/build/outputs/apk/release/app-release.apk 
+            ./android/app/build/outputs/apk/release/app-release.apk
+        - `./release.sh` packages `arm64-v8a` only. A fat emulator build uses the flags in [RELEASE.md](RELEASE.md).
 
 
 ----
@@ -187,7 +190,7 @@ For detailed recovery instructions, including:
 - Complete workflow examples
 - Security best practices
 
-👉 **See the full [Recovery Guide](https://github.com/BoldBitcoinWallet/BoldWallet/blob/v2.1.2/BBMTLib/RECOVER.md)**
+👉 **See the full [Recovery Guide](BBMTLib/RECOVER.md)**
 
 The recovery guide covers:
 - Building binaries for all platforms

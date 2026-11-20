@@ -11,8 +11,10 @@ react {
 // Note: Disabling this will prevent generating mapping.txt for Play Console
 def enableProguardInReleaseBuilds = true
 
-// Play AAB is arm64-only (-PplayAbi=arm64-v8a). Sideload/F-Droid APK keeps device + emulator ABIs.
-def playPackagedAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64']
+// GitHub/sideload APK and Play AAB package arm64-v8a only.
+// Fat APK (32-bit phones and x86_64 emulators):
+// ./gradlew assembleRelease -PplayAbi=arm64-v8a,armeabi-v7a,x86_64 -PreactNativeArchitectures=arm64-v8a,armeabi-v7a,x86_64
+def playPackagedAbis = ['arm64-v8a']
 if (project.hasProperty('playAbi')) {
     playPackagedAbis = project.property('playAbi').toString().split(',').collect { it.trim() }
 }
@@ -44,8 +46,9 @@ android {
         missingDimensionStrategy 'react-native-arch', 'oldarch'
         
         // 16KB page size support
-        // Include x86_64 so stock Google emulators (x86_64 images) can load libreactnative.so.
-        // ARM-only APKs crash on launch with SoLoader: couldn't find libreactnative.so on those AVDs.
+        // Packaged ABIs follow playPackagedAbis (arm64-v8a). The React Native
+        // plugin appends reactNativeArchitectures in finalizeDsl; the block
+        // below puts this list back so Android Studio cannot re-include them.
         // Play AAB: ./gradlew bundleRelease -PplayAbi=arm64-v8a -PreactNativeArchitectures=arm64-v8a
         ndk {
             abiFilters.clear()
@@ -154,6 +157,17 @@ dependencies {
     testImplementation "junit:junit:4.13.2"
     androidTestImplementation "androidx.test:runner:1.5.2"
     androidTestImplementation "androidx.test.ext:junit:1.1.5"
+}
+
+// React Native's NdkConfiguratorUtils adds reactNativeArchitectures onto
+// abiFilters inside finalizeDsl, after the defaultConfig block above. Callbacks
+// run in registration order, and this plugin is applied first, so this later
+// callback is the one that decides what the APK contains.
+androidComponents {
+    finalizeDsl { ext ->
+        ext.defaultConfig.ndk.abiFilters.clear()
+        ext.defaultConfig.ndk.abiFilters.addAll(playPackagedAbis)
+    }
 }
 
 // F28 build integrity: jniLibs/*.so are gitignored local artifacts and gradle
