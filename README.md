@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="#about">About</a> · <a href="#install">Install</a> · <a href="#watch-only-chrome-extension">Chrome Extension</a> · <a href="#features">Features</a> · <a href="#recovery">Recovery</a> · <a href="#build">Build</a>
+  <a href="#about">About</a> · <a href="#install">Install</a> · <a href="#app-overview">App Overview</a> · <a href="#watch-only-chrome-extension">Chrome Extension</a> · <a href="#features">Features</a> · <a href="#recovery">Recovery</a> · <a href="#build">Build</a>
 </p>
 
 ---
@@ -22,9 +22,14 @@
 
 Protect your bitcoin by holding it yourself. Bold is open-source self-custody where the private key exists nowhere and is never reconstructed. Distributed key generation gives each phone a share. When you spend, multi-party computation makes a threshold signature, and the key stays ghosted.
 
+* **No seed phrase** — a backup is an encrypted keyshare file with a password you choose
+* **Duo and Trio** — Duo needs both phones for every spend. Trio lets any two of three approve
+* **Local or anywhere** — setup and signing on a local Wi-Fi network or a hotspot need no internet, or over Nostr from anywhere
+* **Interoperable and sovereign** — PSBT works with Sparrow, Electrum, and BlueWallet, and you can self-host mempool.space and point Bold at it
+
 Duo needs both phones for every spend. Trio lets any two of three approve. Setup and signing on a local Wi-Fi network or a hotspot need no internet. Nostr is the resilient path from anywhere: you choose the relays, and a relay that fails leaves the others to carry the signature.
 
-PSBT keeps Bold interoperable with Sparrow, Electrum, BlueWallet, and other wallets. A watch-only [Bold Wallet Chrome extension](https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoedgbkfdeilmlbdecf) watches the same coins in the browser, and the keyshare stays on the phone. Chain data stays under your sovereignty. Use public mempool.space hosts, or self-host mempool.space and point Bold at it.
+PSBT keeps Bold interoperable with Sparrow, Electrum, BlueWallet, and other wallets. A watch-only [Bold Wallet Chrome extension](https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoeddgbkfdeilmlbdecf) watches the same coins in the browser, and the keyshare stays on the phone. Chain data stays under your sovereignty. Use public mempool.space hosts, or self-host mempool.space and point Bold at it.
 
 ---
 
@@ -35,14 +40,26 @@ PSBT keeps Bold interoperable with Sparrow, Electrum, BlueWallet, and other wall
 
 | Where | Get it | Note |
 | :--- | :---: | :--- |
-| **App Store** | [<img src="assets/app-store-badge.svg" alt="Download on the App Store" height="40">](https://apps.apple.com/ae/app/bold-bitcoin-wallet/id6748949478) | iPhone, iPad, and Mac |
-| **Google Play** | [<img src="assets/playstore.svg" alt="Get it on Play Store" height="40">](https://play.google.com/store/apps/details?id=com.boldwallet) | Android |
-| **Zapstore** | [<img src="assets/zapstore.svg" alt="Get it on Zapstore" height="40">](https://zapstore.dev/apps/naddr1qvzqqqr7pvpzq7xwd748yfjrsu5yuerm56fcn9tntmyv04w95etn0e23xrczvvraqq8xxmmd9e3x7mrywaskcmr9ws90nrd9) | Android |
-| **F-Droid** | [<img src="assets/f-droid-badge.png" alt="Get it on F-Droid" height="40">](https://f-droid.org/packages/com.boldwallet) | Signed by F-Droid. Does not match the GitHub APK. |
+| **App Store** | [<img src="assets/app-store-badge.svg" alt="Download on the App Store" width="120" height="40">](https://apps.apple.com/ae/app/bold-bitcoin-wallet/id6748949478) | iPhone, iPad, and Mac |
+| **Google Play** | [<img src="assets/playstore.svg" alt="Get it on Play Store" width="28" height="28">](https://play.google.com/store/apps/details?id=com.boldwallet) | Android |
+| **Zapstore** | [<img src="assets/zapstore.svg" alt="Get it on Zapstore" width="13" height="22">](https://zapstore.dev/apps/naddr1qvzqqqr7pvpzq7xwd748yfjrsu5yuerm56fcn9tntmyv04w95etn0e23xrczvvraqq8xxmmd9e3x7mrywaskcmr9ws90nrd9) | Android |
+| **F-Droid** | [<img src="assets/f-droid-badge.png" alt="Get it on F-Droid" width="104" height="40">](https://f-droid.org/packages/com.boldwallet) | Signed by F-Droid. Does not match the GitHub APK. |
 | **GitHub** | [Latest APK](https://github.com/BoldBitcoinWallet/BoldWallet/releases/latest) | Official keystore. 64-bit ARM only. [Fonte](https://github.com/Turtlecute33/Fonte) and [Obtainium](https://github.com/ImranR98/Obtainium) can track this release. |
 
 > [!NOTE]
 > 32-bit Android phones are not supported. They are not secure enough for a modern wallet: the kernel, the chipset, and the manufacturer's update policy leave them behind even a modest 64-bit phone.
+
+---
+
+## App Overview
+
+* **Wallet Home** — balance in BTC and fiat, and the sends and receives
+* **Receive** — shows a QR
+* **Send** — each phone shows the payment and you approve it there
+* **PSBT** — sign with Sparrow, Electrum, BlueWallet, and other wallets
+* **Lock screen** — biometrics or the device passcode
+
+For app screenshots and visual previews, check the [App Store listing](https://apps.apple.com/ae/app/bold-bitcoin-wallet/id6748949478) or [Play Store listing](https://play.google.com/store/apps/details?id=com.boldwallet).
 
 ---
 
@@ -125,6 +142,8 @@ Bind from Keyshare. Scan the extension QR, then show the response QR back to Chr
 ---
 
 ## Recovery
+
+If the phones are gone, both keyshares load on one computer.
 
 > [!WARNING]
 > Use the command-line tools only when the phones are unavailable. Both keyshares are loaded on that one computer. The steps and the warning are in [BBMTLib/RECOVER.md](BBMTLib/RECOVER.md).
