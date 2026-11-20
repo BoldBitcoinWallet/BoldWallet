@@ -2,12 +2,14 @@
 
 ## [4.1.4] - 2026-11-20
 
-> **Wallet release (delta from v4.1.3):** GrapheneOS with memory tagging on no longer dies at launch. Play no longer treats a portrait screen as required. The lock button and the floating menu share one matte glass rim, and the tab order you arrange is kept. Settings are grouped as App, Wallet, Tabs, and More. The sideload APK is arm64-only, about 53 MB, and 32-bit Android phones are no longer supported.
+> **Wallet release (delta from v4.1.3):** GrapheneOS with memory tagging on no longer dies at launch. Play no longer treats a portrait screen as required. The lock button and the floating menu share one matte glass rim, and the tab order you arrange is kept. Settings are grouped as App, Wallet, Tabs, and More. The sideload APK is arm64-only, and 32-bit Android phones are no longer supported. A finished airgap QR imports, and that restore opens the wallet home.
 
 ### Added
 - **Tab order** — long-press a tab, then drag it, to reorder the tabs that are switched on. That order is saved. A tab you switch off keeps its place and shows up there again when you switch it back on.
 
 ### Changed
+- **Airgap QR** — a new code opens on Fast. The QR fills the screen as a black-on-white square with a square white margin. The title, frame count, and hint sit at the top. Restart and Speed stay at the bottom, above the Android navigation bar. Dark mode styles that chrome and leaves the code itself black on white. The screen stays awake while the QR is showing.
+- **Airgap scan** — the scanner shows one progress bar. The frame count is on the left and the percent is on the right, on iOS and on the Android camera screen.
 - **Lock button** — the floating lock control is a matte glass circle, the same glaze as the floating menu: a light frost, a faint sheen, and no drop shadow. The rim is 1.25 pt in light mode and 1 pt in dark mode. The button is a little larger and sits farther from the screen edge.
 - **Floating menu** — the pill uses that same matte glaze and the same rim. The glass sits on the inside edge of the stroke, so the corners stay filled.
 - **Headers** — Keyshare info, Wallet Settings, and PSBT no longer show the top header, and their content starts under the status bar. Play, UTXOs, and Addresses show Connected or Disconnected in the center, with the provider count when connected. Tapping that label still opens the provider card.
@@ -20,6 +22,9 @@
 - **Docs** — the README is one page: duo and trio, dice rolls, the Branta shop-name check, the arm64 APK next to the store links, and short build and recovery pointers. A new machine guide pins Node 22.23.4, Go 1.27.4, and Android SDK 36, and says the default APK does not install on an x86_64 emulator.
 
 ### Fixed
+- **Airgap import** — a finished scan showed “Failed to import the file” because the QR did not contain the backup. Default, Medium, and Fast now carry the same backup bytes, and a completed scan imports. Show Airgap QR asks to authenticate once. A successful import confirms with a toast and opens the wallet home. Leaving for the camera no longer drops that restore onto the lock screen.
+- **Start phone after key generation** — the phone that shows Start Key Generation no longer waits about 30 seconds after the other phones have already finished.
+- **Restore taps** — Restore Existing Wallet and Restore via Airgap QR no longer wait on encrypted storage before the picker or the PIN screen opens.
 - **GrapheneOS memory tagging** — opening the wallet on GrapheneOS with memory tagging on died with `SIGSEGV` / `SEGV_MTESERR`. Go 1.26's `C.GoString` reads 16 bytes before a C string on android/arm64. Bridge strings are now copied with `strnlen` and `GoBytes`, and native builds use Go **1.27.4**, whose runtime does not do that read. Compatibility mode is not required for this crash.
 
 ### Technical Details
@@ -30,7 +35,10 @@
 - **Settings grouping**: `screens/WalletSettings.tsx`. Deep links `expandSection: 'backup'` and `'advanced'` still open Keyshare and Network Providers. Developer Mode scrolls into view on More after the build number unlocks it.
 - **APK ABIs**: `android/app/build.gradle` (`playPackagedAbis` default `arm64-v8a`, re-applied after the React Native plugin appends ABIs) and `android/gradle.properties` (`reactNativeArchitectures=arm64-v8a`). `android/release.sh` passes the same flags. The native stamp still requires `arm64-v8a`, `armeabi-v7a`, and `x86_64` on disk. Fat APK: `-PplayAbi=arm64-v8a,armeabi-v7a,x86_64 -PreactNativeArchitectures=arm64-v8a,armeabi-v7a,x86_64`.
 - **Install docs**: `README.md`, `docs/DEV-SETUP.md`, `RELEASE.md`, `BBMTLib/README.md`. The README download note matches the arm64-only APK. Manual builds pin Node 22.23.4 and Go 1.27.4. Recovery points at `BBMTLib/RECOVER.md`. The removed `BBMTLib/docs/DKLS_MOBILE.md` link is gone.
-- **Version**: `package.json` **4.1.4**; Android **`versionCode` 76** / **`versionName` 4.1.4**; iOS build **76** / **`MARKETING_VERSION` 4.1.4**.
+- **Airgap QR**: `utils/urBytesQr.ts` encodes the bytes after `BW2$` and restores that prefix before import. Fast is `UR_AIRGAP_DEFAULT_SPEED`. `components/AirgapKeyshareExportModal.tsx` is the full-screen publisher. `services/screenAwake.ts` toggles the existing idle-timer flag without starting MPC keep-alive. `services/airgapImportSession.ts` holds auto-lock while the camera activity is up. `services/keyshareImport.ts` (`landOn: 'wallet-home'`) opens MainTabs and starts indexing on `https://mempool.space/api`. `components/QRScannerHud.tsx` and the ZXing patch `patches/rn-barcode-zxing-scan+1.0.4.patch` draw the frame/percent bar.
+- **Post-DKG wait**: `BBMTLib/tss/nostrtransport/pump.go` replays `keygen-groupkey` events that arrived before the collector was registered.
+- **Encrypted storage**: `android/.../SecureStorage.kt` keeps one `EncryptedSharedPreferences` instance for the process. A failed open is not cached.
+- **Version**: `package.json` **4.1.4**; Android **`versionCode` 77** / **`versionName` 4.1.4**; iOS build **77** / **`MARKETING_VERSION` 4.1.4**.
 
 ## [4.1.3] - 2026-11-17
 

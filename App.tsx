@@ -73,6 +73,7 @@ import {installWalletOnlineNetworkGuard} from './services/walletOnlineStore';
 import {installNativeMempoolRequestTrace} from './services/mempoolRequestLog';
 import {useNavMenuOrder, useNavMenuStyle} from './services/navMenuStore';
 import {isMpcKeepAliveActive} from './services/mpcKeepAlive';
+import {isAirgapImportSessionActive} from './services/airgapImportSession';
 import {
   getWalletAutoLock,
   shouldAutoLockOnResume,
@@ -719,6 +720,10 @@ const App = () => {
     let leftAt: number | null = null;
     const sub = AppState.addEventListener('change', next => {
       if (next === 'background') {
+        if (isAirgapImportSessionActive()) {
+          leftAt = null;
+          return;
+        }
         leftAt = Date.now();
         if (isMpcKeepAliveActive()) {
           return;
@@ -734,7 +739,7 @@ const App = () => {
       }
       const awayMs = Date.now() - leftAt;
       leftAt = null;
-      if (isMpcKeepAliveActive()) {
+      if (isMpcKeepAliveActive() || isAirgapImportSessionActive()) {
         return;
       }
       if (shouldAutoLockOnResume(getWalletAutoLock(), awayMs)) {

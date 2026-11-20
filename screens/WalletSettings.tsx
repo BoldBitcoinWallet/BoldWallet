@@ -688,14 +688,30 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     });
   }, [runWithWalletBiometric]);
 
-  const openAirgapExportModalWithAuth = useCallback(() => {
-    runWithWalletBiometric(
-      () => setIsAirgapExportModalVisible(true),
-      WALLET_SENSITIVE_ACTION_AUTH.airgapKeyshareExport,
-    ).catch(error => {
-      dbg('openAirgapExportModalWithAuth failed', error);
-    });
-  }, [runWithWalletBiometric]);
+  const openAirgapExportModal = useCallback(() => {
+    if (walletSensitiveAuthPendingRef.current) {
+      return;
+    }
+    walletSensitiveAuthPendingRef.current = true;
+    setWalletSensitiveAuthPending(true);
+    // Export itself shows the OS ceremony prompt. A biometric here
+    // would be a second prompt before that one.
+    confirmDeviceIntegrityForSensitiveAction(
+      WALLET_SENSITIVE_ACTION_AUTH.airgapKeyshareExport.integrityActionLabel,
+    )
+      .then(ok => {
+        if (ok) {
+          setIsAirgapExportModalVisible(true);
+        }
+      })
+      .catch(error => {
+        dbg('openAirgapExportModal failed', error);
+      })
+      .finally(() => {
+        walletSensitiveAuthPendingRef.current = false;
+        setWalletSensitiveAuthPending(false);
+      });
+  }, []);
 
   const openDeleteWalletModalWithAuth = useCallback(() => {
     runWithWalletBiometric(
@@ -3317,7 +3333,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.backupButton,
                 walletSensitiveAuthPending && styles.halfOpacity,
               ]}
-              onPress={openAirgapExportModalWithAuth}
+              onPress={openAirgapExportModal}
               disabled={walletSensitiveAuthPending}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.buttonContent}>

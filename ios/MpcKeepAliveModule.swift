@@ -112,6 +112,28 @@ class MpcKeepAliveModule: NSObject {
   }
 
   @objc
+  func isScreenAwake(
+    _ resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.main.async {
+      resolve(UIApplication.shared.isIdleTimerDisabled)
+    }
+  }
+
+  @objc
+  func setScreenAwake(
+    _ on: Bool,
+    resolver resolve: @escaping RCTPromiseResolveBlock,
+    rejecter reject: @escaping RCTPromiseRejectBlock
+  ) {
+    DispatchQueue.main.async {
+      UIApplication.shared.isIdleTimerDisabled = on
+      resolve(true)
+    }
+  }
+
+  @objc
   func warnBackgrounded(
     _ resolve: @escaping RCTPromiseResolveBlock,
     rejecter reject: @escaping RCTPromiseRejectBlock

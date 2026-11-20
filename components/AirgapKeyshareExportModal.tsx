@@ -1,17 +1,23 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {showAppNotice} from '../services/appPrompt';
+import {holdScreenAwake} from '../services/screenAwake';
 import {
   View,
   Text,
   Image,
-
   StyleSheet,
   ActivityIndicator,
-  ScrollView,
+  Dimensions,
+  Platform,
+  StatusBar,
   useWindowDimensions,
+  type LayoutChangeEvent,
 } from 'react-native';
+import {
+  initialWindowMetrics,
+  useSafeAreaInsets,
+} from 'react-native-safe-area-context';
 import AppModal from './AppModal';
-import {Buffer} from 'buffer';
 import type {UR} from '@ngraveio/bc-ur';
 import AppPressable from './AppPressable';
 import GlassModalOverlay from './GlassModalOverlay';
@@ -19,6 +25,7 @@ import AnimatedUrQr, {UR_QR_QUIET_ZONE_PX} from './AnimatedUrQr';
 import {dbg, getKeyshareMetadata} from '../utils';
 import {useTheme} from '../theme';
 import {
+  airgapV2Bytes,
   bufferToUr,
   nextAirgapQrSpeed,
   UR_AIRGAP_DEFAULT_SPEED,
@@ -42,22 +49,53 @@ const AIRGAP_PROCESS_HINT =
 const AIRGAP_QR_HINT =
   'A couple of minutes is normal. Fountain can finish before every frame.';
 
+/**
+ * This modal draws under the status bar and the Android navigation bar.
+ * Inside a modal the live safe-area inset is often 0, so use the larger of
+ * that, the inset measured at launch, and the system bar the window does
+ * not already reserve.
+ */
+function statusBarInset(reportedTop: number): number {
+  const measured = Math.max(
+    reportedTop,
+    initialWindowMetrics?.insets.top ?? 0,
+  );
+  if (Platform.OS !== 'android') {
+    return measured;
+  }
+  return Math.max(measured, StatusBar.currentHeight ?? 0);
+}
+
+function androidNavigationInset(reportedBottom: number): number {
+  const measured = Math.max(
+    reportedBottom,
+    initialWindowMetrics?.insets.bottom ?? 0,
+  );
+  if (Platform.OS !== 'android') {
+    return measured;
+  }
+  const screenH = Dimensions.get('screen').height;
+  const windowH = Dimensions.get('window').height;
+  const status = StatusBar.currentHeight ?? 0;
+  const gap = screenH - windowH;
+  const reserved = gap > status + 1 ? gap - status : 0;
+  return Math.max(measured, reserved);
+}
+
 const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
   visible,
   onClose,
 }) => {
   const {theme} = useTheme();
-  const {width: windowWidth, height: windowHeight} = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const {width: windowWidth} = useWindowDimensions();
   const overlayGutter = 8;
-  const qrBodyPad = 12;
+  const [qrSlot, setQrSlot] = useState({width: 0, height: 0});
+  const [qrFrame, setQrFrame] = useState({frame: 1, total: 1});
   const qrSize = Math.max(
-    240,
-    Math.min(
-      windowWidth -
-        overlayGutter * 2 -
-        qrBodyPad * 2 -
-        UR_QR_QUIET_ZONE_PX * 2,
-      Math.round(windowHeight * 0.52) - UR_QR_QUIET_ZONE_PX * 2,
+    0,
+    Math.floor(
+      Math.min(qrSlot.width, qrSlot.height) - UR_QR_QUIET_ZONE_PX * 2,
     ),
   );
 
@@ -101,7 +139,8 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
         if (!encryptedKeyshare) {
           throw new Error('Failed to encrypt the keyshare.');
         }
-        const ur = bufferToUr(Buffer.from(encryptedKeyshare, 'base64'));
+        const raw = airgapV2Bytes(encryptedKeyshare);
+        const ur = raw ? bufferToUr(raw) : null;
         if (!ur) {
           throw new Error('Failed to encode the keyshare QR.');
         }
@@ -150,9 +189,55 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
     setRestartNonce(n => n + 1);
   };
 
+  const handleQrSlotLayout = (event: LayoutChangeEvent) => {
+    const width = Math.floor(event.nativeEvent.layout.width);
+    const height = Math.floor(event.nativeEvent.layout.height);
+    setQrSlot(prev =>
+      prev.width === width && prev.height === height ? prev : {width, height},
+    );
+  };
+
+  const handleQrFrame = useCallback((frame: number, total: number) => {
+    setQrFrame(prev =>
+      prev.frame === frame && prev.total === total ? prev : {frame, total},
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!visible || step !== 'qr') {
+      return;
+    }
+    let release: (() => void) | undefined;
+    let cancelled = false;
+    holdScreenAwake().then(done => {
+      if (cancelled) {
+        done();
+        return;
+      }
+      release = done;
+    });
+    return () => {
+      cancelled = true;
+      release?.();
+    };
+  }, [visible, step]);
+
   const speedPreset = UR_AIRGAP_SPEEDS[qrSpeed];
 
   const isLightTheme = theme.colors.background === '#ffffff';
+
+  useEffect(() => {
+    if (!visible || step !== 'qr') {
+      return;
+    }
+    const entry = StatusBar.pushStackEntry({
+      barStyle: isLightTheme ? 'dark-content' : 'light-content',
+      backgroundColor: theme.colors.background,
+    });
+    return () => {
+      StatusBar.popStackEntry(entry);
+    };
+  }, [visible, step, isLightTheme, theme.colors.background]);
 
   const styles = StyleSheet.create({
     modalOverlay: {
@@ -228,12 +313,6 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       paddingVertical: 20,
       alignItems: 'center',
     },
-    modalBodyQr: {
-      paddingHorizontal: qrBodyPad,
-      paddingTop: 12,
-      paddingBottom: 16,
-      width: '100%',
-    },
     privacyHint: {
       fontSize: theme.fontSizes?.base || 14,
       fontFamily: theme.fontFamilies?.medium,
@@ -292,7 +371,6 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       flexDirection: 'row',
       alignItems: 'stretch',
       width: '100%',
-      marginTop: 12,
       gap: 10,
     },
     buttonContent: {
@@ -333,21 +411,6 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
     qrCodeContainer: {
       alignSelf: 'center',
     },
-    qrFrameLabel: {
-      marginTop: 8,
-      fontSize: theme.fontSizes?.sm || 12,
-      fontFamily: theme.fontFamilies?.medium,
-      color: theme.colors.text,
-      textAlign: 'center',
-    },
-    qrAnimatedHint: {
-      marginTop: 8,
-      marginBottom: 8,
-      paddingHorizontal: 8,
-      fontSize: theme.fontSizes?.sm || 12,
-      color: theme.colors.textSecondary,
-      textAlign: 'center',
-    },
     loadingWrap: {
       paddingVertical: 36,
       alignItems: 'center',
@@ -357,27 +420,182 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
       fontSize: theme.fontSizes?.base || 14,
       color: theme.colors.textSecondary,
     },
-    scrollContent: {
+    qrStage: {
+      flex: 1,
+      backgroundColor: theme.colors.background,
+    },
+    qrTopBar: {
+      paddingHorizontal: 16,
+      paddingBottom: 8,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: isLightTheme
+        ? theme.colors.blackOverlay10
+        : theme.colors.whiteOverlay10,
+    },
+    qrTopRow: {
+      flexDirection: 'row',
       alignItems: 'center',
-      width: '100%',
     },
-    qrStep: {
-      width: '100%',
-      alignItems: 'stretch',
+    qrTopTitle: {
+      flex: 1,
+      fontSize: theme.fontSizes?.lg || 16,
+      fontFamily: theme.fontFamilies?.bold,
+      color: theme.colors.text,
     },
-    qrScroll: {
-      width: '100%',
+    qrSlot: {
+      flex: 1,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    qrBottomBar: {
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: isLightTheme
+        ? theme.colors.blackOverlay10
+        : theme.colors.whiteOverlay10,
+    },
+    qrStageFrame: {
+      marginTop: 8,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.text,
+      textAlign: 'center',
+    },
+    qrStageHint: {
+      marginTop: 4,
+      fontSize: theme.fontSizes?.sm || 12,
+      fontFamily: theme.fontFamilies?.medium,
+      color: theme.colors.textSecondary,
+      textAlign: 'center',
+    },
+    qrActionButton: {
+      backgroundColor: isLightTheme
+        ? theme.colors.cardBackground
+        : theme.colors.subPrimary,
+      borderWidth: 1,
+      borderColor: isLightTheme
+        ? theme.colors.border
+        : theme.colors.whiteOverlay12,
+    },
+    qrActionIcon: {
+      tintColor: theme.colors.text,
+    },
+    qrActionText: {
+      color: theme.colors.text,
     },
   });
 
   const pinReady = !!pin && !!exportUr && !isEncrypting;
+
+  const qrStage =
+    step === 'qr' && exportUr ? (
+      <View style={styles.qrStage}>
+        <View
+          style={[
+            styles.qrTopBar,
+            {paddingTop: statusBarInset(insets.top) + 8},
+          ]}>
+          <View style={styles.qrTopRow}>
+            <Text style={styles.qrTopTitle}>Scan Encrypted Keyshare</Text>
+            <AppPressable
+              style={styles.closeButton}
+              onPress={onClose}
+              android_ripple={{
+                color: isLightTheme
+                  ? theme.colors.blackOverlay10
+                  : theme.colors.whiteOverlay10,
+              }}>
+              <Text style={styles.closeButtonText}>✕</Text>
+            </AppPressable>
+          </View>
+          <Text style={styles.qrStageFrame}>
+            Frame {qrFrame.frame} of {qrFrame.total}
+          </Text>
+          <Text style={styles.qrStageHint}>{AIRGAP_QR_HINT}</Text>
+        </View>
+        <View style={styles.qrSlot} onLayout={handleQrSlotLayout}>
+          {qrSize > 0 ? (
+            <AnimatedUrQr
+              ur={exportUr}
+              size={qrSize}
+              restartNonce={restartNonce}
+              maxFragmentLen={speedPreset.fragmentSize}
+              frameIntervalMs={speedPreset.frameIntervalMs}
+              frameLabelStyle={styles.qrStageFrame}
+              hintStyle={styles.qrStageHint}
+              containerStyle={styles.qrCodeContainer}
+              hint=""
+              showFrameLabel={false}
+              onFrame={handleQrFrame}
+              fallbackText="Could not render animated QR."
+            />
+          ) : qrSlot.width > 0 && qrSlot.height > 0 ? (
+            <Text style={styles.qrStageHint}>Could not render animated QR.</Text>
+          ) : null}
+        </View>
+        <View
+          style={[
+            styles.qrBottomBar,
+            {paddingBottom: androidNavigationInset(insets.bottom) + 12},
+          ]}>
+          <View style={styles.qrActionsRow}>
+            <AppPressable
+              style={[styles.secondaryButton, styles.qrActionButton]}
+              onPress={handleRestartFrames}
+              android_ripple={{
+                color: isLightTheme
+                  ? theme.colors.blackOverlay10
+                  : theme.colors.whiteOverlay10,
+              }}>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/recycle-icon.png')}
+                  style={[styles.secondaryButtonIcon, styles.qrActionIcon]}
+                  resizeMode="contain"
+                />
+                <Text
+                  style={[styles.secondaryButtonText, styles.qrActionText]}
+                  numberOfLines={1}>
+                  Restart frames
+                </Text>
+              </View>
+            </AppPressable>
+            <AppPressable
+              style={[styles.secondaryButton, styles.qrActionButton]}
+              onPress={handleCycleSpeed}
+              android_ripple={{
+                color: isLightTheme
+                  ? theme.colors.blackOverlay10
+                  : theme.colors.whiteOverlay10,
+              }}>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/refresh-icon.png')}
+                  style={[styles.secondaryButtonIcon, styles.qrActionIcon]}
+                  resizeMode="contain"
+                />
+                <Text
+                  style={[styles.secondaryButtonText, styles.qrActionText]}
+                  numberOfLines={1}>
+                  Speed: {speedPreset.label}
+                </Text>
+              </View>
+            </AppPressable>
+          </View>
+        </View>
+      </View>
+    ) : null;
 
   return (
     <AppModal
       visible={visible}
       transparent={true}
       animationType="fade"
+      statusBarTranslucent
+      navigationBarTranslucent
       onRequestClose={onClose}>
+      {qrStage ?? (
       <GlassModalOverlay style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
@@ -386,9 +604,7 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
               style={styles.modalHeaderIcon}
               resizeMode="contain"
             />
-            <Text style={styles.modalTitle}>
-              {step === 'qr' ? 'Scan Encrypted Keyshare' : 'Airgap QR Keyshare'}
-            </Text>
+            <Text style={styles.modalTitle}>Airgap QR Keyshare</Text>
             <AppPressable
               style={styles.closeButton}
               onPress={onClose}
@@ -396,13 +612,13 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
               <Text style={styles.closeButtonText}>✕</Text>
             </AppPressable>
           </View>
-          <View style={[styles.modalBody, step === 'qr' && styles.modalBodyQr]}>
+          <View style={styles.modalBody}>
             {isEncrypting && !exportUr ? (
               <View style={styles.loadingWrap}>
                 <ActivityIndicator color={theme.colors.primary} />
                 <Text style={styles.loadingText}>Encrypting keyshare…</Text>
               </View>
-            ) : step === 'pin' ? (
+            ) : (
               <>
                 <Text style={styles.privacyHint}>{PRIVACY_HINT}</Text>
                 <Text style={styles.processHint}>{AIRGAP_PROCESS_HINT}</Text>
@@ -429,68 +645,11 @@ const AirgapKeyshareExportModal: React.FC<AirgapKeyshareExportModalProps> = ({
                   </View>
                 </AppPressable>
               </>
-            ) : (
-              <View style={styles.qrStep}>
-                <ScrollView
-                  style={styles.qrScroll}
-                  contentContainerStyle={styles.scrollContent}
-                  showsVerticalScrollIndicator={false}>
-                  {exportUr ? (
-                    <AnimatedUrQr
-                      ur={exportUr}
-                      size={qrSize}
-                      restartNonce={restartNonce}
-                      maxFragmentLen={speedPreset.fragmentSize}
-                      frameIntervalMs={speedPreset.frameIntervalMs}
-                      frameLabelStyle={styles.qrFrameLabel}
-                      hintStyle={styles.qrAnimatedHint}
-                      containerStyle={styles.qrCodeContainer}
-                      hint={AIRGAP_QR_HINT}
-                      fallbackText="Could not render animated QR."
-                    />
-                  ) : (
-                    <Text style={styles.qrAnimatedHint}>
-                      Could not render animated QR.
-                    </Text>
-                  )}
-                </ScrollView>
-                <View style={styles.qrActionsRow}>
-                  <AppPressable
-                    style={styles.secondaryButton}
-                    onPress={handleRestartFrames}
-                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                    <View style={styles.buttonContent}>
-                      <Image
-                        source={require('../assets/recycle-icon.png')}
-                        style={styles.secondaryButtonIcon}
-                        resizeMode="contain"
-                      />
-                      <Text style={styles.secondaryButtonText} numberOfLines={1}>
-                        Restart frames
-                      </Text>
-                    </View>
-                  </AppPressable>
-                  <AppPressable
-                    style={styles.secondaryButton}
-                    onPress={handleCycleSpeed}
-                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                    <View style={styles.buttonContent}>
-                      <Image
-                        source={require('../assets/refresh-icon.png')}
-                        style={styles.secondaryButtonIcon}
-                        resizeMode="contain"
-                      />
-                      <Text style={styles.secondaryButtonText} numberOfLines={1}>
-                        Speed: {speedPreset.label}
-                      </Text>
-                    </View>
-                  </AppPressable>
-                </View>
-              </View>
             )}
           </View>
         </View>
       </GlassModalOverlay>
+      )}
     </AppModal>
   );
 };

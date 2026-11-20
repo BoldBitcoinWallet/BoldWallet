@@ -54,6 +54,9 @@ jest.mock('../services/TssProvider', () => ({
 jest.mock('../services/walletSetupOrchestrator', () => ({
   persistStagedKeyshare: jest.fn(),
 }));
+jest.mock('../services/sync/walletIndexingSession', () => ({
+  requestWalletIndexing: jest.fn(() => Promise.resolve('ok')),
+}));
 jest.mock('../services/repositories/AppConfigRepository', () => ({
   __esModule: true,
   default: {
@@ -216,6 +219,21 @@ describe('keyshareImport (F1 mapping, F15b-1 staged)', () => {
     expect(clearCachesBeforeWalletSession).toHaveBeenCalled();
     expect(setActiveNetwork).toHaveBeenCalledWith('mainnet');
     expect(navigate).toHaveBeenCalled();
+  });
+
+  it('airgap import opens the wallet home', async () => {
+    const navigate = jest.fn();
+    const setActiveNetwork = jest.fn(async () => {});
+    await finalizeKeyshareImport(
+      'ab'.repeat(16),
+      {pub_key: 'abc', local_party_key: 'KeyShare1'},
+      {setActiveNetwork, navigate, landOn: 'wallet-home'},
+    );
+    const state = navigate.mock.calls[0][0] as {
+      routes: Array<{name: string; state?: {index: number}}>;
+    };
+    expect(state.routes[0].name).toBe('MainTabs');
+    expect(state.routes[0].state?.index).toBeGreaterThan(0);
   });
 
   it('3b-2e B17/B18: import shares one ceremony across stage+persist', async () => {

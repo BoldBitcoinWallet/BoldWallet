@@ -6,6 +6,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.WindowManager
 import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import com.facebook.react.bridge.ReactContextBaseJavaModule
@@ -93,6 +94,51 @@ class MpcKeepAliveModule(reactContext: ReactApplicationContext) :
     @ReactMethod
     fun warnBackgrounded(promise: Promise) {
         promise.resolve(false)
+    }
+
+    @ReactMethod
+    fun isScreenAwake(promise: Promise) {
+        val activity = getCurrentActivity()
+        if (activity == null) {
+            promise.resolve(false)
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                val flags = activity.window?.attributes?.flags ?: 0
+                val awake =
+                    (flags and WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) != 0
+                promise.resolve(awake)
+            } catch (e: Exception) {
+                promise.resolve(false)
+            }
+        }
+    }
+
+    @ReactMethod
+    fun setScreenAwake(on: Boolean, promise: Promise) {
+        val activity = getCurrentActivity()
+        if (activity == null) {
+            promise.resolve(false)
+            return
+        }
+        activity.runOnUiThread {
+            try {
+                val window = activity.window
+                if (window == null) {
+                    promise.resolve(false)
+                    return@runOnUiThread
+                }
+                if (on) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+                promise.resolve(true)
+            } catch (e: Exception) {
+                promise.resolve(false)
+            }
+        }
     }
 
     @ReactMethod

@@ -158,29 +158,32 @@ export const ScannerHud: React.FC<ScannerHudProps> = ({
       opacity: 0.92,
       lineHeight: 18,
     },
-    progressMeta: {
-      marginTop: 10,
-      flexDirection: 'row',
-      justifyContent: 'space-between',
-      alignItems: 'center',
-    },
     progressMetaText: {
       fontSize: theme.fontSizes?.sm || 12,
       fontFamily: theme.fontFamilies?.bold,
       color: theme.colors.white,
     },
     progressBarContainer: {
-      marginTop: 6,
+      marginTop: 10,
       width: '100%',
-      height: 8,
+      height: 28,
       backgroundColor: theme.colors.whiteOverlay20,
-      borderRadius: 4,
+      borderRadius: 8,
       overflow: 'hidden',
+      justifyContent: 'center',
     },
     progressBar: {
-      height: '100%',
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
       backgroundColor: theme.colors.bitcoinOrange,
-      borderRadius: 4,
+    },
+    progressBarLabels: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 10,
     },
     frame: {
       position: 'absolute',
@@ -243,19 +246,17 @@ export const ScannerHud: React.FC<ScannerHudProps> = ({
             <Text style={styles.subtitle}>{subtitle}</Text>
           ) : null}
           {isAnimatedQR ? (
-            <>
-              <View style={styles.progressMeta}>
+            <View style={styles.progressBarContainer}>
+              <View
+                style={[styles.progressBar, {width: `${progressPercent}%`}]}
+              />
+              <View style={styles.progressBarLabels}>
                 <Text style={styles.progressMetaText}>
-                  {progress!.received} / {progress!.total}
+                  Frame {progress!.received}/{progress!.total}
                 </Text>
                 <Text style={styles.progressMetaText}>{progressPercent}%</Text>
               </View>
-              <View style={styles.progressBarContainer}>
-                <View
-                  style={[styles.progressBar, {width: `${progressPercent}%`}]}
-                />
-              </View>
-            </>
+            </View>
           ) : null}
         </View>
       </View>
