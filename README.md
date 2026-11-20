@@ -30,7 +30,7 @@ Stay on one source. Android refuses an update when the signature does not match 
 | Google Play | [<img src="assets/playstore.svg" alt="Get it on Play Store" width="28" height="28">](https://play.google.com/store/apps/details?id=com.boldwallet) | Android |
 | Zapstore | [<img src="assets/zapstore.svg" alt="Get it on Zapstore" width="13" height="22">](https://zapstore.dev/apps/naddr1qvzqqqr7pvpzq7xwd748yfjrsu5yuerm56fcn9tntmyv04w95etn0e23xrczvvraqq8xxmmd9e3x7mrywaskcmr9ws90nrd9) | Android |
 | F-Droid | [<img src="assets/f-droid-badge.png" alt="Get it on F-Droid" width="104" height="40">](https://f-droid.org/packages/com.boldwallet) | Signed by F-Droid. Does not match the GitHub APK. |
-| GitHub | [Latest APK](https://github.com/BoldBitcoinWallet/BoldWallet/releases/latest) | Official keystore. 64-bit ARM only, about 53 MB. |
+| GitHub | [Latest APK](https://github.com/BoldBitcoinWallet/BoldWallet/releases/latest) | Official keystore. 64-bit ARM only. [Fonte](https://github.com/Turtlecute33/Fonte) and [Obtainium](https://github.com/ImranR98/Obtainium) can track this release. |
 
 32-bit Android phones are not supported. They are not secure enough for a modern wallet: the kernel, the chipset, and the manufacturer's update policy leave them behind even a modest 64-bit phone.
 
