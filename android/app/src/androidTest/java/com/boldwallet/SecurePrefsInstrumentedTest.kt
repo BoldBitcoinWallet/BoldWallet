@@ -4,6 +4,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -34,6 +35,14 @@ class SecurePrefsInstrumentedTest {
         } finally {
             prefs.edit().clear().commit()
         }
+    }
+
+    @Test
+    fun testOpenSecurePrefs_ReusesInMemoryInstance() {
+        val ctx = InstrumentationRegistry.getInstrumentation().targetContext
+        val first = openSecurePrefs(ctx, "F3TestPrefs")
+        val second = openSecurePrefs(ctx, "F3TestPrefs")
+        assertSame(first, second)
     }
 
     private fun containsBytes(haystack: ByteArray, needle: ByteArray): Boolean {

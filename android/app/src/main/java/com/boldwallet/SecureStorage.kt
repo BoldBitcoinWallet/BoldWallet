@@ -68,9 +68,23 @@ internal fun mapSecureStorageError(e: Throwable): SecureStorageException =
     }
 
 /**
+ * Process-lifetime cache of opened encrypted prefs. Building a [MasterKey]
+ * and [EncryptedSharedPreferences] talks to the Keystore and is a multi-second
+ * cost on Android, especially StrongBox-first. The welcome screen opens the
+ * wallet file on load; restore taps reuse that instance.
+ */
+private val securePrefsCache = HashMap<String, SharedPreferences>()
+private val securePrefsLock = Any()
+
+/**
  * Opens EncryptedSharedPreferences with StrongBox-first policy (API 28+),
  * TEE fallback, and fail-closed semantics. Throws [SecureStorageException]
  * on every failure path — there is intentionally no plaintext fallback.
+ *
+ * A successful open is kept in memory for the process, keyed by [fileName].
+ * A second caller, including one that arrives while the first open is still
+ * inside the Keystore, waits and receives that same instance. A failed open
+ * is not cached.
  *
  * NOTE on `setUserAuthenticationRequired`: deliberately NOT set. The keyshare
  * is read on flows that run while backgrounded (ceremony progress, resume),
@@ -80,6 +94,18 @@ internal fun mapSecureStorageError(e: Throwable): SecureStorageException =
  * native-held shares (F15b).
  */
 internal fun openSecurePrefs(
+    context: Context,
+    fileName: String,
+): SharedPreferences {
+    synchronized(securePrefsLock) {
+        securePrefsCache[fileName]?.let { return it }
+        val opened = openSecurePrefsUncached(context.applicationContext, fileName)
+        securePrefsCache[fileName] = opened
+        return opened
+    }
+}
+
+private fun openSecurePrefsUncached(
     context: Context,
     fileName: String,
 ): SharedPreferences {
