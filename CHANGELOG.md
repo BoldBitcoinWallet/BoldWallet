@@ -2,7 +2,7 @@
 
 ## [4.1.4] - 2026-11-20
 
-> **Wallet release (delta from v4.1.3):** GrapheneOS with memory tagging on no longer dies at launch. Play no longer treats a portrait screen as required. The lock button and the floating menu share one matte glass rim, and the tab order you arrange is kept.
+> **Wallet release (delta from v4.1.3):** GrapheneOS with memory tagging on no longer dies at launch. Play no longer treats a portrait screen as required. The lock button and the floating menu share one matte glass rim, and the tab order you arrange is kept. Settings are grouped as App, Wallet, Tabs, and More.
 
 ### Added
 - **Tab order** — long-press a tab, then drag it, to reorder the tabs that are switched on. That order is saved. A tab you switch off keeps its place and shows up there again when you switch it back on.
@@ -14,6 +14,8 @@
 - **Provider Calls** — a call's response stays hidden until you tap Response.
 - **Auto lock** — the Auto lock section uses the same locker icon as the lock button.
 - **Play device catalog** — `android:screenOrientation="portrait"` was implying `android.hardware.screen.portrait` required. That feature is now optional, so phones stay portrait and ChromeOS, XR, and landscape-only devices stay eligible.
+- **Wallet Settings** — the tabs are App, Wallet, Tabs, and More. App keeps appearance, lock, and the updater. Wallet holds Keyshare, ceremony notices, address type, network providers, storage, relays, Branta, and HD options. Tabs holds the menu style and which screens appear in the bar. More holds Legal, About, and Developer Mode, still unlocked by tapping the build number. A section title shows a short status when one is clear, such as On, Off, the theme, or the app icon.
+- **Branta** — the section leads with who you're paying. A Branta QR can show the shop name and logo, and the switch is Verify shop names. Other address QRs stay the same, and the lookup stays off until you turn it on.
 
 ### Fixed
 - **GrapheneOS memory tagging** — opening the wallet on GrapheneOS with memory tagging on died with `SIGSEGV` / `SEGV_MTESERR`. Go 1.26's `C.GoString` reads 16 bytes before a C string on android/arm64. Bridge strings are now copied with `strnlen` and `GoBytes`, and native builds use Go **1.27.4**, whose runtime does not do that read. Compatibility mode is not required for this crash.
@@ -23,6 +25,7 @@
 - **Play portrait feature**: `android/app/src/main/AndroidManifest.xml`, `android/scripts/check-play-manifest.sh`, `__tests__/playConsoleManifest.test.ts`.
 - **Glass and tab order**: `components/FloatingTabBar.tsx`, `App.tsx`, `services/navMenuStore.ts`, `services/repositories/AppConfigRepository.ts` (`nav_menu_order`). Disabled tabs stay in the stored list; a reorder writes only the tabs that are on, back into their existing slots. iOS uses a thin material blur; Android uses the same frost without blur, so elevation does not paint a square rim.
 - **Headers and Calls**: `App.tsx` (`headerShown: false` on Device, PSBT, Settings), `components/KeyshareInfoContent.tsx`, `screens/WalletSettings.tsx`, `screens/PSBTScreen.tsx`, `components/Header.tsx`, `screens/MempoolPlaygroundScreen.tsx`, `screens/UtxosScreen.tsx`, `screens/AddressesScreen.tsx`, `components/HeaderProviderCard.tsx`.
+- **Settings grouping**: `screens/WalletSettings.tsx`. Deep links `expandSection: 'backup'` and `'advanced'` still open Keyshare and Network Providers. Developer Mode scrolls into view on More after the build number unlocks it.
 - **Version**: `package.json` **4.1.4**; Android **`versionCode` 76** / **`versionName` 4.1.4**; iOS build **76** / **`MARKETING_VERSION` 4.1.4**.
 
 ## [4.1.3] - 2026-11-17
