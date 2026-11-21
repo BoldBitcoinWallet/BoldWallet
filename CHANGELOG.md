@@ -27,6 +27,7 @@
 - **Start phone after key generation** — the phone that shows Start Key Generation no longer waits about 30 seconds after the other phones have already finished.
 - **Restore taps** — Restore Existing Wallet and Restore via Airgap QR no longer wait on encrypted storage before the picker or the PIN screen opens.
 - **GrapheneOS memory tagging** — opening the wallet on GrapheneOS with memory tagging on died with `SIGSEGV` / `SEGV_MTESERR`. Go 1.26's `C.GoString` reads 16 bytes before a C string on android/arm64. Bridge strings are now copied with `strnlen` and `GoBytes`, and native builds use Go **1.27.4**, whose runtime does not do that read. Compatibility mode is not required for this crash.
+- **F-Droid bundle** — the release JavaScript bundle stopped on the first PNG because Metro was forced onto image-size 2.1.0, which does not accept a file path. Metro 0.83.8 measures the images itself.
 
 ### Technical Details
 - **GrapheneOS MTE**: `BBMTLib/bbmtmobile/validate.go`. Toolchain pin `go1.27.4` in `BBMTLib/go.mod`, Dockerfiles, and CI. `verify-native-artifacts.sh` floor is 1.27.4. `build-dkls.sh` clears a stale `GOROOT` so a Homebrew Go tree cannot leave the previous `.so` in place. Android and iOS natives are rebuilt locally and are not committed.
@@ -40,6 +41,7 @@
 - **Fingerprint band**: `utils/fingerprintPillColors.ts` paints only the leading band at a mid luminance. `components/KeyshareInfoContent.tsx` leaves `assets/id-icon.png` untinted.
 - **Post-DKG wait**: `BBMTLib/tss/nostrtransport/pump.go` replays `keygen-groupkey` events that arrived before the collector was registered.
 - **Encrypted storage**: `android/.../SecureStorage.kt` keeps one `EncryptedSharedPreferences` instance for the process. A failed open is not cached.
+- **F-Droid bundle**: `package.json` overrides the Metro packages to **0.83.8**. The `image-size` override is removed. Metro reads each PNG and records its size without that package.
 - **Version**: `package.json` **4.1.4**; Android **`versionCode` 77** / **`versionName` 4.1.4**; iOS build **77** / **`MARKETING_VERSION` 4.1.4**.
 
 ## [4.1.3] - 2026-11-17
