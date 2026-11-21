@@ -37,7 +37,7 @@ describe('Play Console packaging', () => {
   const playCopySh = fs.readFileSync(playCopyShPath, 'utf8');
   const checkPlaySh = fs.readFileSync(checkPlayShPath, 'utf8');
 
-  it('marks camera, location, and wifi features optional', () => {
+  it('marks camera, location, wifi, and portrait features optional', () => {
     const features = [
       'android.hardware.camera',
       'android.hardware.camera.autofocus',
@@ -46,6 +46,7 @@ describe('Play Console packaging', () => {
       'android.hardware.location',
       'android.hardware.location.gps',
       'android.hardware.wifi',
+      'android.hardware.screen.portrait',
     ];
     for (const name of features) {
       expect(manifest).toMatch(

@@ -30,7 +30,43 @@ export const UR_AIRGAP_SPEEDS: Record<
   fast: {fragmentSize: 200, frameIntervalMs: 175, label: 'Fast'},
 };
 
-export const UR_AIRGAP_DEFAULT_SPEED: AirgapQrSpeed = 'default';
+export const UR_AIRGAP_DEFAULT_SPEED: AirgapQrSpeed = 'fast';
+
+/**
+ * v2 backup envelope. The animated QR carries the bytes after this prefix;
+ * the scanner puts the prefix back before import.
+ */
+export const AIRGAP_V2_PREFIX = 'BW2$';
+
+/** Raw ciphertext bytes from a `BW2$` + base64 envelope. Null when it is not v2. */
+export function airgapV2Bytes(envelope: string): Buffer | null {
+  const trimmed = envelope.trim();
+  if (!trimmed.startsWith(AIRGAP_V2_PREFIX)) {
+    return null;
+  }
+  const body = trimmed.slice(AIRGAP_V2_PREFIX.length);
+  if (!body) {
+    return null;
+  }
+  const raw = Buffer.from(body, 'base64');
+  if (!raw.length) {
+    return null;
+  }
+  return raw;
+}
+
+/**
+ * File-shaped envelope for import. A payload that already starts with
+ * `BW2$` is returned unchanged.
+ */
+export function airgapV2Envelope(recoveredBase64: string): string {
+  const trimmed = recoveredBase64.trim();
+  if (!trimmed || trimmed.startsWith(AIRGAP_V2_PREFIX)) {
+    return trimmed;
+  }
+  return AIRGAP_V2_PREFIX + trimmed;
+}
+
 export const UR_AIRGAP_SPEED_ORDER: AirgapQrSpeed[] = [
   'default',
   'medium',

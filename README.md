@@ -1,210 +1,180 @@
 # Bold Bitcoin Wallet
 
-<p align="center"> 
-  <img src="https://github.com/user-attachments/assets/844f9927-252a-4fd8-a2e0-5e9d3e9b7d74" width=200 height=410>
+<p align="center">
+  <img src="https://github.com/user-attachments/assets/844f9927-252a-4fd8-a2e0-5e9d3e9b7d74" alt="Bold Bitcoin Wallet" width="200" height="410">
 </p>
 
 <p align="center">
-  <strong>Seedless, secure Bitcoin wallet using Threshold Signatures.</strong>
+  <strong>Protect your bitcoin. Self-custody, with a private key that exists nowhere.</strong>
 </p>
+
+<p align="center">
+  <a href="https://boldbitcoinwallet.com">boldbitcoinwallet.com</a>
+</p>
+
+<p align="center">
+  <a href="#about">About</a> · <a href="#install">Install</a> · <a href="#app-overview">App Overview</a> · <a href="#watch-only-chrome-extension">Chrome Extension</a> · <a href="#features">Features</a> · <a href="#recovery">Recovery</a> · <a href="#build">Build</a>
+</p>
+
+---
 
 ## About
 
-Bold Bitcoin Wallet is an open-source next-generation Bitcoin wallet that eliminates traditional security tradeoffs and single points of failure. It uses Threshold Signatures (2-of-2 or 2-of-3) over your mobile devices — no internet needed for setup or signing.
+Protect your bitcoin by holding it yourself. Bold is open-source self-custody where the private key exists nowhere and is never reconstructed. Distributed key generation gives each phone a share. When you spend, multi-party computation makes a threshold signature, and the key stays ghosted.
 
-## ✨ Key Features
+* **No seed phrase** — a backup is an encrypted keyshare file with a password you choose
+* **Duo and Trio** — Duo needs both phones for every spend. Trio lets any two of three approve
+* **Local or anywhere** — setup and signing on a local Wi-Fi network or a hotspot need no internet, or over Nostr from anywhere
+* **Interoperable and sovereign** — PSBT works with Sparrow, Electrum, and BlueWallet, and you can self-host mempool.space and point Bold at it
 
-- ✅ **Seedless Setup** - Uses Threshold Signature Scheme (TSS), no seed phrases required
-- 🔐 **No Seed Phrases** - No paper backups or hardware wallets needed
-- 📱 **Multi-Device Security** - Up to 3 device-based key generation with 2 devices needed for signing
-- 🎛 **PSBT Signer** - Compatible with wallets like Sparrow, Electrum, BlueWallet, and more
-- 🔄 **P2P Encrypted Protocol** - Secure communication between devices over Nostr or Local WiFi/Hotspot
-- 🚫 **Offline Capable** - No internet required for setup or signing transactions
-- 📦 **100% Open Source** - Verifiable, auditable, and transparent
-- 🧾 **Flexible Mempool** - Supports Mempool.space (public or self-hosted) for enhanced privacy
-- 🌐 **Connect Anywhere** - Device pairing via Nostr relays (works from anywhere) or local WiFi
+Duo needs both phones for every spend. Trio lets any two of three approve. Setup and signing on a local Wi-Fi network or a hotspot need no internet. Nostr is the resilient path from anywhere: you choose the relays, and a relay that fails leaves the others to carry the signature.
 
-## 📲 Install Bold Bitcoin Wallet App:
-
-[<img src="https://tools.applemediaservices.com/api/badges/download-on-the-app-store/black/en-us?size=250x83&releaseDate=1699228800"
-    alt="Download on the App Store"
-    height="50">](https://apps.apple.com/ae/app/bold-bitcoin-wallet/id6748949478)
-
-[<img src="https://boldbitcoinwallet.com/playstore.svg"
-    alt="Get it on Play Store"
-    height="20">  Via Playstore](https://play.google.com/store/apps/details?id=com.boldwallet)
-
-[<img src="https://zapstore.dev/images/logo.svg"
-    alt="Get it on Zap Store"
-    height="20">  Via Zap Store](https://zapstore.dev/apps/naddr1qvzqqqr7pvpzq7xwd748yfjrsu5yuerm56fcn9tntmyv04w95etn0e23xrczvvraqq8xxmmd9e3x7mrywaskcmr9ws90nrd9)
-
-[<img src="https://f-droid.org/badge/get-it-on.png"
-    alt="Get it on F-Droid"
-    height="50">](https://f-droid.org/packages/com.boldwallet)
+PSBT keeps Bold interoperable with Sparrow, Electrum, BlueWallet, and other wallets. A watch-only [Bold Wallet Chrome extension](https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoeddgbkfdeilmlbdecf) watches the same coins in the browser, and the keyshare stays on the phone. Chain data stays under your sovereignty. Use public mempool.space hosts, or self-host mempool.space and point Bold at it.
 
 ---
 
-## 📱 App Overview
+## Install
 
-Bold Bitcoin Wallet provides a complete Bitcoin wallet experience with a focus on security and sovereignty:
+> [!IMPORTANT]
+> Stay on one source. Android refuses an update when the signature does not match the copy already on the phone.
 
-- **🔒 Secure Lock Screen** - Biometric and passcode protection
-- **🚀 Easy Setup** - Quick onboarding with device pairing
-- **💼 Wallet Home** - Clean interface showing balance and transaction history
-- **📤 Send Bitcoin** - Create and sign transactions securely
-- **📥 Receive Bitcoin** - Generate addresses with QR codes
-- **🎛 PSBT Signing** - Import and sign PSBTs from Sparrow, Electrum, and other wallets
-- **⚙️ Settings** - Customize network, API providers, and wallet preferences
-- **🔐 Multi-Device Pairing** - Connect devices via Nostr or local WiFi
+| Where | Get it | Note |
+| :--- | :---: | :--- |
+| **App Store** | [<img src="assets/app-store-badge.svg" alt="Download on the App Store" width="120" height="40">](https://apps.apple.com/ae/app/bold-bitcoin-wallet/id6748949478) | iPhone, iPad, and Mac |
+| **Google Play** | [<img src="assets/playstore.svg" alt="Get it on Play Store" width="28" height="28">](https://play.google.com/store/apps/details?id=com.boldwallet) | Android |
+| **Zapstore** | [<img src="assets/zapstore.svg" alt="Get it on Zapstore" width="13" height="22">](https://zapstore.dev/apps/naddr1qvzqqqr7pvpzq7xwd748yfjrsu5yuerm56fcn9tntmyv04w95etn0e23xrczvvraqq8xxmmd9e3x7mrywaskcmr9ws90nrd9) | Android |
+| **F-Droid** | [<img src="assets/f-droid-badge.png" alt="Get it on F-Droid" width="104" height="40">](https://f-droid.org/packages/com.boldwallet) | Signed by F-Droid. Does not match the GitHub APK. |
+| **GitHub** | [Latest APK](https://github.com/BoldBitcoinWallet/BoldWallet/releases/latest) | Official keystore. 64-bit ARM only. [Fonte](https://github.com/Turtlecute33/Fonte) and [Obtainium](https://github.com/ImranR98/Obtainium) can track this release. |
+
+> [!NOTE]
+> 32-bit Android phones are not supported. They are not secure enough for a modern wallet: the kernel, the chipset, and the manufacturer's update policy leave them behind even a modest 64-bit phone.
+
+---
+
+## App Overview
+
+* **Wallet Home** — balance in BTC and fiat, and the sends and receives
+* **Receive** — shows a QR
+* **Send** — each phone shows the payment and you approve it there
+* **PSBT** — sign with Sparrow, Electrum, BlueWallet, and other wallets
+* **Lock screen** — biometrics or the device passcode
 
 For app screenshots and visual previews, check the [App Store listing](https://apps.apple.com/ae/app/bold-bitcoin-wallet/id6748949478) or [Play Store listing](https://play.google.com/store/apps/details?id=com.boldwallet).
 
-----
+---
 
-## ➡️ BoldWallet Official Release
-**[Download Latest APK Release](https://github.com/BoldBitcoinWallet/BoldWallet/releases/latest)**
+## Watch-only Chrome extension
 
-> ⚠️ **Important:** This APK is signed with the official BoldWallet keystore.  
-> It is **not compatible** with the version distributed via [F-Droid](https://f-droid.org).  
-> Always install updates from **one source only** to avoid signature conflicts.
+<p align="center">
+  <a href="https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoedgbkfdeilmlbdecf">
+    <img src="assets/watch-only-chrome.png" alt="Bold Bitcoin Wallet Extension. Watch-only on the desktop. Signing stays on the phone." width="560" height="350">
+  </a>
+</p>
 
-## 📖 Dev Guide
-- You can build the Android APK yourself, via Auto Builder or Manual Build as below.
-- iOS builds follow React-Native iphone–guide 
+The [Bold Wallet Chrome extension](https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoedgbkfdeilmlbdecf) is the watch-only companion on your desk. Balance, squad, and history sit in the browser. Signing stays on the phone, and the keyshare stays with it.
 
-## 🪄 Android - Build It Yourself 
-### 🔁 Via Auto Builder
-Relies on docker (Dockerfile) - guaranteed quick way to compile and release the APK.
-
-**Docker scripts are located in `docker/scripts/` - see [docker/README.md](docker/README.md) for full documentation.**
-
-Build the APK seamlessly following the steps:
-- Optional: edit android/release.sh when needed:
-```sh
-KEYSTORE_FILE="my-release-key.jks"
-KEY_ALIAS="my-key"
-KEYSTORE_PASSWORD="your_keystore_password"
-KEY_PASSWORD="your_key_password"
-```
-- Run Docker Script Runner:
-```sh
-# use sudo if needed for docker
-# This will take time given your PC performance (couple of minutes up to 30 minutes)
-# When done, the app-release.apk is generated within the BoldWallet folder
-
-> sh docker-apk-builder.sh --fdroid #optional, for F-Droid foss tailored build
-> sh docker-apk-builder.sh --fdroid --git=main #optional, which git "branch,tag, or commit-hash" to use
-```
-
-For F-Droid builds, the Docker path bootstraps pinned [`BoldBitcoinWallet/libtss`](https://github.com/BoldBitcoinWallet/libtss) (with vendored frost/DKLs23 submodules), installs Rust tooling (`cargo-ndk`), and builds Android native libs with `BBMTLib/build-dkls.sh android` (`libbbmtmobile.so` + `libdkls_jni.so`).
-
-![image](https://github.com/user-attachments/assets/eb8f1a45-b2cb-46ec-a061-fc0cb4f10448)
-  
-### ✍️ Via Manual Build
-Manual build, requires manual and extra efforts to compiles the app on your PC.
-
-BoldWallet is a typical React Native Mobile Based App ( android / iOS ).
-- Built using node v20.18.1
-  - npm install
-  - For Android native libs (release path):
-    - `cd BBMTLib && ./build-dkls.sh android`
-    - This is the Android v4 runtime path (`libbbmtmobile.so` + `libdkls_jni.so`)
-    - `build-all.sh` is optional for full matrix/local smoke workflows
-  - For Android APK build:
-    - cd android
-    - ./release.sh
-        - APK generated under:
-            ./android/app/build/outputs/apk/release/app-release.apk 
-
-
-----
-
-## 🔐 Recovery Without the App
-
-If you need to recover or spend Bitcoin from your keyshares without using the mobile app, you can use the command-line recovery tools. This is useful if:
-- The mobile app is unavailable or not working
-- You need to recover funds from keyshare backups
-- You want to use the wallet from a desktop environment
-
-### Quick Recovery Guide
-
-Bold Wallet provides cross-platform CLI tools for recovering and spending Bitcoin from keyshare backups:
-
-1. **`bold-spend` binary** (Recommended) - Works on Windows, Linux, and macOS
-2. **`spend-bitcoin.sh` script** - Unix/Linux/macOS only
-
-### What You Need
-
-- **Keyshare files**: Both keyshare backup files (`.share` files from mobile app or `.ks` files)
-- **Passphrases**: If your keyshares are encrypted
-- **Network info**: Mainnet or testnet
-- **Derivation path**: BIP32 path for your wallet address type
-
-### Quick Example
-
-```bash
-# Navigate to BBMTLib directory
-cd BBMTLib
-
-# Build the recovery binary
-./build-bold-spend.sh
-
-# Preview transaction (estimate fee)
-./bin/bold-spend-darwin-arm64 \
-  --to-address <recipient_address> \
-  --amount-sats <amount> \
-  --network testnet4 \
-  --mempool-url https://mempool.space/testnet4/api \
-  --derivation-path "m/84'/1'/0'/0/0" \
-  --address-type p2wpkh \
-  --keyshare1 "KeyShare1.Dec19.2025.1257.share" \
-  --keyshare2 "KeyShare2.Dec19.2025.1257.share" \
-  --passphrase1 "your-passphrase-1" \
-  --passphrase2 "your-passphrase-2" \
-  --preview
-
-# Send transaction (remove --preview and add --fee-sats)
-./bin/bold-spend-darwin-arm64 \
-  --to-address <recipient_address> \
-  --amount-sats <amount> \
-  --fee-sats <estimated_fee> \
-  --network testnet4 \
-  --mempool-url https://mempool.space/testnet4/api \
-  --derivation-path "m/84'/1'/0'/0/0" \
-  --address-type p2wpkh \
-  --keyshare1 "KeyShare1.Dec19.2025.1257.share" \
-  --keyshare2 "KeyShare2.Dec19.2025.1257.share" \
-  --passphrase1 "your-passphrase-1" \
-  --passphrase2 "your-passphrase-2"
-```
-
-### Complete Recovery Documentation
-
-For detailed recovery instructions, including:
-- All address types (Legacy, SegWit Native, SegWit Compatible, Taproot)
-- Platform-specific instructions (Windows, Linux, macOS)
-- Troubleshooting common issues
-- Complete workflow examples
-- Security best practices
-
-👉 **See the full [Recovery Guide](https://github.com/BoldBitcoinWallet/BoldWallet/blob/v2.1.2/BBMTLib/RECOVER.md)**
-
-The recovery guide covers:
-- Building binaries for all platforms
-- Using mobile app backup files directly (`.share` format)
-- Fee estimation and transaction preview
-- Mainnet and testnet examples
-- Encrypted and unencrypted keyshare scenarios
-- Platform-specific commands (Windows PowerShell, Linux, macOS)
+Bind from Keyshare. Scan the extension QR, then show the response QR back to Chrome.
 
 ---
 
-#### React Native Learn More
+## Features
 
-To learn more about React Native, take a look at the following resources:
+### Keys
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+| Feature | What you get |
+| :--- | :--- |
+| **Encrypted backup** | No seed phrase. A backup is an encrypted keyshare file with a password you choose. |
+| **Device prompt** | Backup, airgap export, and wallet delete ask for the device biometric or passcode. |
+| **Watch-only** | Export an output descriptor for Sparrow: legacy, native SegWit, and nested SegWit. The descriptor does not include the keyshare. |
+| **Watch-only Chrome extension** | A watch-only wallet in the browser. [Bold Wallet for Chrome](https://chromewebstore.google.com/detail/bold-wallet/dpgigdojkmhknnoedgbkfdeilmlbdecf). Bind from Keyshare by scanning its QR, then showing the response QR. The keyshare stays on the phone. |
+| **Airgap QR** | An animated QR locked with a 6-digit PIN. Export from Keyshare, restore from the welcome screen. The PIN is for that QR, not a wallet login. |
+| **Open from another app** | A `.share` or `.psbt` can arrive from Files, Telegram, WhatsApp, and the share sheet. A `bitcoin:` link prefills Send. |
+| **Desktop recovery** | If the phones are gone, both keyshares load on one computer. The warning and the steps are in [BBMTLib/RECOVER.md](BBMTLib/RECOVER.md). |
+
+### Signing
+
+| Feature | What you get |
+| :--- | :--- |
+| **Duo and trio** | Duo is 2-of-2: both phones approve every spend. Trio is 2-of-3: any two of three approve. |
+| **DKLs23 and GG18** | New wallets use DKLs23. An existing GG18 keyshare still signs. |
+| **Local or Nostr** | Pair and sign on local Wi-Fi or a hotspot with no internet, or over Nostr from anywhere. |
+| **Your relays** | You pick the Nostr relays. The list is yours. |
+| **Dice rolls** | Optional. The same sequence on every phone becomes the master chaincode, checked in the room. [Guide](docs/DICE_USER_GUIDE.md). |
+| **Both phones approve** | Each phone shows the payment and you approve it there. |
+| **Fees** | Send uses fee chips and a slider. An unconfirmed send can be sped up or cancelled, and that replacement is signed again. |
+| **Coin control** | When the UTXOs tab is on, you choose which coins to spend. |
+| **PSBT** | Sign with Sparrow, Electrum, BlueWallet, and other wallets. |
+| **Receive and history** | Receive shows a QR. Home lists the balance in BTC and fiat, and the sends and receives. |
+
+### Your network
+
+| Feature | What you get |
+| :--- | :--- |
+| **Your mempool hosts** | Enable, disable, or replace hosts, separately for mainnet and Testnet4. At least one stays on. |
+| **Offline** | The wallet can sit offline so a refresh makes no internet calls. |
+| **Connection** | The header shows whether you are connected and which host answered. |
+| **Shop names** | Branta stays off until you turn it on. A Branta QR can then show the shop name and logo. Other address QRs stay the same. |
+
+### The phone
+
+| Feature | What you get |
+| :--- | :--- |
+| **Tabs** | Show, hide, and reorder Wallet, UTXOs, Addresses, PSBT, and the mainnet mempool playground. Addresses lists receive and change with balances. |
+| **Menu** | A floating pill or a docked bar. |
+| **Lock screen** | Biometrics or the device passcode, auto lock, haptics, light or dark or the system theme, a formatted or raw balance, and an optional strip of tips. |
+| **Disguise** | The launcher icon can stay Bold or switch to QuickCalc, Notes, Weather, or Files. |
+| **Address type** | Legacy, nested SegWit, or native SegWit. |
+| **Notices and cache** | Setup and signing can show short ceremony notices. Cached balances and history can be cleared. |
+
+<details>
+<summary><strong>Developer Mode</strong></summary>
+<br>
+
+| Feature | What you get |
+| :--- | :--- |
+| **Turn it on** | Settings, More, About. Tap Build Number 7 times. The count clears after 3 seconds without a tap. Confirm with the device biometric or passcode. Developer Mode then opens on More. |
+| **Mainnet and Testnet4** | Switch the wallet between mainnet and Testnet4. The wallet goes offline until you turn it back on in Network Providers. |
+| **Debug logging** | On Android, logging for this session. The logs can hold sensitive information. Read them in logcat. They reset when the app restarts. |
+| **Hide it** | Disable Dev Mode hides the section. A wallet on Testnet4 returns to mainnet. Tap Build Number 7 times to show it again. |
+
+</details>
+
+---
+
+## Recovery
+
+If the phones are gone, both keyshares load on one computer.
+
+> [!WARNING]
+> Use the command-line tools only when the phones are unavailable. Both keyshares are loaded on that one computer. The steps and the warning are in [BBMTLib/RECOVER.md](BBMTLib/RECOVER.md).
+
+---
+
+## Build
+
+### Docker
+
+From the repo root. Details are in [docker/README.md](docker/README.md).
+
+```sh
+./docker/scripts/docker-apk-builder.sh
+./docker/scripts/docker-apk-builder.sh --fdroid
+./docker/scripts/docker-apk-builder.sh --fdroid --git=main
+```
+
+The F-Droid image builds `libbbmtmobile.so` and `libdkls_jni.so` from the pinned [libtss](https://github.com/BoldBitcoinWallet/libtss) checkout.
+
+### Manual
+
+Node 22.23.4 and Go 1.27.4. A new machine follows [docs/DEV-SETUP.md](docs/DEV-SETUP.md).
+
+```sh
+cd BBMTLib && ./build-dkls.sh android
+cd android && ./release.sh
+```
+
+`./release.sh` writes an arm64 APK to `android/app/build/outputs/apk/release/app-release.apk`. A fat emulator build uses the flags in [RELEASE.md](RELEASE.md).
+
+### iOS
+
+Xcode on macOS. The same setup guide covers the native xcframework and the CocoaPods install.

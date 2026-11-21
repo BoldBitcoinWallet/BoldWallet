@@ -19,6 +19,8 @@ import {
 } from '../utils';
 import {WalletAlreadyLoadedError} from './walletGuard';
 import {IncomingFileTooLargeError} from './incomingFileClassifier';
+import {requestWalletIndexing} from './sync/walletIndexingSession';
+import {getResetToMainTabsWallet} from '../utils';
 
 export {WalletAlreadyLoadedError, assertNoExistingWallet} from './walletGuard';
 
@@ -143,6 +145,11 @@ export async function decryptAndValidateKeyshare(
 export type FinalizeKeyshareImportOptions = {
   setActiveNetwork: (network: string) => Promise<void>;
   navigate: (action: ReturnType<typeof CommonActions.reset>) => void;
+  /**
+   * File restore confirms the mempool endpoint first.
+   * Airgap restore opens the wallet home.
+   */
+  landOn?: 'preferences' | 'wallet-home';
 };
 
 export async function finalizeKeyshareImport(
@@ -178,6 +185,28 @@ export async function finalizeKeyshareImport(
   );
   dbg('=== Keyshare imported: Resetting network to mainnet');
   await options.setActiveNetwork('mainnet');
+  if (options.landOn === 'wallet-home') {
+    const apiUrl = 'https://mempool.space/api';
+    const addressType = 'segwit-native';
+    appConfigRepository.set(CONFIG_KEYS.NETWORK, 'mainnet');
+    appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addressType);
+    appConfigRepository.set('api', apiUrl);
+    appConfigRepository.set('api_mainnet', apiUrl);
+    requestWalletIndexing({
+      network: 'mainnet',
+      addressType,
+      apiBase: apiUrl,
+      force: true,
+    }).catch(error => {
+      dbg('keyshareImport: indexing after airgap import failed', error);
+    });
+    options.navigate(
+      CommonActions.reset(
+        getResetToMainTabsWallet({}, {showWallet: true, showPlay: true}),
+      ),
+    );
+    return;
+  }
   options.navigate(
     CommonActions.reset({
       index: 0,

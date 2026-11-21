@@ -1,23 +1,23 @@
 /**
- * Derive colors for the fingerprint pill's leading band (~25% width) only.
- * Hash text and the rest of the pill use theme surfaces (see KeyshareInfoContent).
+ * Derive the fingerprint pill's leading band color.
+ * The id icon stays untinted: a white shield with a black mark. Tinting
+ * paints both of those the same color, and that color can match the band.
+ * The band carries the identity hue at a fixed mid luminance so the white
+ * shield stays separate from it in light and dark themes.
  */
 
 export type FingerprintBandColors = {
   bandBackgroundColor: string;
-  /** Icon tint with enough contrast on bandBackgroundColor */
-  iconTint: string;
 };
 
-const NEUTRAL_BAND_LIGHT: FingerprintBandColors = {
-  bandBackgroundColor: 'rgba(160, 160, 160, 0.22)',
-  iconTint: '#5a5a5a',
+/** Mid gray that still separates a white shield from either card surface. */
+const NEUTRAL_BAND: FingerprintBandColors = {
+  bandBackgroundColor: 'rgb(61, 76, 89)',
 };
 
-const NEUTRAL_BAND_DARK: FingerprintBandColors = {
-  bandBackgroundColor: 'rgba(140, 140, 140, 0.2)',
-  iconTint: '#d8d8d8',
-};
+/** Target sRGB relative luminance for the band. White shield contrast stays above 3:1. */
+const TARGET_LUMINANCE = 0.18;
+const BAND_SATURATION = 0.72;
 
 function rgbFromFingerprintSeed(fingerprint: string): {r: number; g: number; b: number} {
   const hex = fingerprint.replace(/[^0-9a-f]/gi, '').toLowerCase();
@@ -29,48 +29,107 @@ function rgbFromFingerprintSeed(fingerprint: string): {r: number; g: number; b: 
   };
 }
 
-/** Relative luminance 0–255 from RGB channels (sRGB-ish weights). */
-function luminance(r: number, g: number, b: number): number {
-  return 0.299 * r + 0.587 * g + 0.114 * b;
+function channelLuminance(channel: number): number {
+  const s = channel / 255;
+  return s <= 0.04045 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
 }
 
-/** Pick dark or light icon tint readable on the band fill. */
-function iconTintOnBand(r: number, g: number, b: number, isLightTheme: boolean): string {
-  const lum = luminance(r, g, b);
-  if (isLightTheme) {
-    // Pastel bands are usually light → dark icon
-    return lum > 150 ? '#1A2B3C' : '#344960';
+function relativeLuminance(r: number, g: number, b: number): number {
+  return 0.2126 * channelLuminance(r) + 0.7152 * channelLuminance(g) + 0.0722 * channelLuminance(b);
+}
+
+function rgbToHsl(r: number, g: number, b: number): {h: number; s: number} {
+  const rn = r / 255;
+  const gn = g / 255;
+  const bn = b / 255;
+  const max = Math.max(rn, gn, bn);
+  const min = Math.min(rn, gn, bn);
+  const d = max - min;
+  if (d === 0) {
+    return {h: 0, s: 0};
   }
-  return lum > 110 ? '#1A2B3C' : '#FFFFFF';
+  const l = (max + min) / 2;
+  const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+  let h = 0;
+  if (max === rn) {
+    h = (gn - bn) / d + (gn < bn ? 6 : 0);
+  } else if (max === gn) {
+    h = (bn - rn) / d + 2;
+  } else {
+    h = (rn - gn) / d + 4;
+  }
+  return {h: h / 6, s};
 }
 
-/** Map fingerprint hex → leading band background + contrast-safe icon tint. */
+function hueToRgb(p: number, q: number, t: number): number {
+  let hue = t;
+  if (hue < 0) {
+    hue += 1;
+  }
+  if (hue > 1) {
+    hue -= 1;
+  }
+  if (hue < 1 / 6) {
+    return p + (q - p) * 6 * hue;
+  }
+  if (hue < 1 / 2) {
+    return q;
+  }
+  if (hue < 2 / 3) {
+    return p + (q - p) * (2 / 3 - hue) * 6;
+  }
+  return p;
+}
+
+function hslToRgb(h: number, s: number, l: number): {r: number; g: number; b: number} {
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return {
+    r: Math.round(hueToRgb(p, q, h + 1 / 3) * 255),
+    g: Math.round(hueToRgb(p, q, h) * 255),
+    b: Math.round(hueToRgb(p, q, h - 1 / 3) * 255),
+  };
+}
+
+/** Hold the fingerprint hue and pull lightness until the band is mid-tone. */
+function bandRgb(h: number): {r: number; g: number; b: number} {
+  let lo = 0.05;
+  let hi = 0.62;
+  let best = hslToRgb(h, BAND_SATURATION, 0.36);
+  for (let i = 0; i < 18; i++) {
+    const mid = (lo + hi) / 2;
+    const rgb = hslToRgb(h, BAND_SATURATION, mid);
+    best = rgb;
+    if (relativeLuminance(rgb.r, rgb.g, rgb.b) > TARGET_LUMINANCE) {
+      hi = mid;
+    } else {
+      lo = mid;
+    }
+  }
+  return best;
+}
+
+function rgbCss(r: number, g: number, b: number): string {
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+/** Map fingerprint hex → leading band background. The icon is not recolored. */
 export function colorsFromWalletFingerprint(
   fingerprint: string | null | undefined,
-  isLightTheme: boolean,
+  _isLightTheme: boolean,
 ): FingerprintBandColors {
   const raw = String(fingerprint ?? '')
     .trim()
     .toLowerCase();
-  if (!raw || raw === 'n/a' || raw.replace(/[^0-9a-f]/g, '').length < 2) {
-    return isLightTheme ? NEUTRAL_BAND_LIGHT : NEUTRAL_BAND_DARK;
+  const hex = raw.replace(/[^0-9a-f]/g, '');
+  if (!raw || raw === 'n/a' || hex.length < 2) {
+    return NEUTRAL_BAND;
   }
 
   const {r, g, b} = rgbFromFingerprintSeed(raw);
-
-  if (isLightTheme) {
-    return {
-      bandBackgroundColor: `rgba(${blend(r, 255, 0.72)}, ${blend(g, 255, 0.72)}, ${blend(b, 255, 0.72)}, 0.88)`,
-      iconTint: iconTintOnBand(r, g, b, true),
-    };
-  }
-
-  return {
-    bandBackgroundColor: `rgba(${r}, ${g}, ${b}, 0.28)`,
-    iconTint: iconTintOnBand(r, g, b, false),
-  };
-}
-
-function blend(channel: number, target: number, weight: number): number {
-  return Math.round(channel * (1 - weight) + target * weight);
+  const {h, s} = rgbToHsl(r, g, b);
+  // A gray seed has no hue. Spread those across the wheel from the hex itself.
+  const hue = s < 0.12 ? (parseInt(hex.slice(0, 6).padEnd(6, '0'), 16) % 360) / 360 : h;
+  const band = bandRgb(hue);
+  return {bandBackgroundColor: rgbCss(band.r, band.g, band.b)};
 }

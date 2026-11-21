@@ -10,6 +10,7 @@ import {
   Platform,
   DeviceEventEmitter,
   ActivityIndicator,
+  Linking,
   type LayoutChangeEvent,
   type StyleProp,
   type TextStyle,
@@ -138,38 +139,37 @@ import {useRoute, useFocusEffect, RouteProp} from '@react-navigation/native';
 
 type SettingsParams = {expandSection?: string};
 
-type SettingsTabId = 'App' | 'Wallet' | 'Features' | 'Info';
+type SettingsTabId = 'App' | 'Wallet' | 'Tabs' | 'More';
 
-const SETTINGS_TABS: SettingsTabId[] = ['App', 'Wallet', 'Features', 'Info'];
+const SETTINGS_TABS: SettingsTabId[] = ['App', 'Wallet', 'Tabs', 'More'];
 
 /** Collapsible key → the one settings tab that shows it. */
 const SECTION_TAB: Record<string, SettingsTabId> = {
   theme: 'App',
   autoLock: 'App',
-  ceremonyNotices: 'App',
+  ceremonyNotices: 'Wallet',
   haptics: 'App',
   manchette: 'App',
   updater: 'App',
   displayFormat: 'App',
-  storage: 'App',
+  storage: 'Wallet',
   appIcon: 'App',
-  menu: 'App',
+  menu: 'Tabs',
   backup: 'Wallet',
   advanced: 'Wallet',
   hdOptions: 'Wallet',
   nostr: 'Wallet',
   branta: 'Wallet',
-  devicePairing: 'Wallet',
   addressType: 'Wallet',
-  devDebug: 'Wallet',
-  mempoolPlayground: 'Features',
-  utxos: 'Features',
-  addresses: 'Features',
-  psbt: 'Features',
-  wallet: 'Features',
-  legal: 'Info',
-  about: 'Info',
-  fontTesting: 'Info',
+  mempoolPlayground: 'Tabs',
+  utxos: 'Tabs',
+  addresses: 'Tabs',
+  psbt: 'Tabs',
+  wallet: 'Tabs',
+  legal: 'More',
+  about: 'More',
+  fontTesting: 'More',
+  devDebug: 'More',
 };
 
 interface CollapsibleSectionProps {
@@ -179,6 +179,8 @@ interface CollapsibleSectionProps {
   onToggle: () => void;
   styles: any;
   theme: any;
+  /** State pill on the section title. `on` tints the pill; Menu uses a neutral pill. */
+  badge?: {label: string; on?: boolean};
 }
 const SECTION_OPEN_MS = 280;
 
@@ -189,6 +191,7 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
   onToggle,
   styles,
   theme,
+  badge,
 }) => {
   const progress = useSharedValue(isExpanded ? 1 : 0);
   const measured = useSharedValue(0);
@@ -230,9 +233,9 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
         android_ripple={{color: 'rgba(0,0,0,0.1)'}}
         accessible={true}
         accessibilityRole="button"
-        accessibilityLabel={`${title} section, ${
-          isExpanded ? 'expanded' : 'collapsed'
-        }`}
+        accessibilityLabel={`${title} section${
+          badge ? `, ${badge.label}` : ''
+        }, ${isExpanded ? 'expanded' : 'collapsed'}`}
         accessibilityHint={`Double tap to ${
           isExpanded ? 'collapse' : 'expand'
         } ${title} section`}>
@@ -242,7 +245,26 @@ const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
             style={styles.sectionIcon}
             resizeMode="contain"
           />
-          <Text style={styles.sectionHeaderTitle}>{title}</Text>
+          <Text style={styles.sectionHeaderTitle} numberOfLines={1}>
+            {title}
+          </Text>
+          {badge ? (
+            <View
+              style={[
+                styles.sectionBadge,
+                badge.on ? styles.sectionBadgeOn : styles.sectionBadgeOff,
+              ]}>
+              <Text
+                style={[
+                  styles.sectionBadgeText,
+                  badge.on
+                    ? styles.sectionBadgeTextOn
+                    : styles.sectionBadgeTextOff,
+                ]}>
+                {badge.label}
+              </Text>
+            </View>
+          ) : null}
         </View>
         <Animated.Text
           style={[
@@ -274,6 +296,8 @@ const getSectionIcon = (title: string): any => {
   switch (title.toLowerCase()) {
     case 'theme':
       return require('../assets/theme-icon.png');
+    case 'auto lock':
+      return require('../assets/locker-icon.png');
     case 'ceremony notices':
       return require('../assets/notice-icon.png');
     case 'menu':
@@ -282,7 +306,7 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/address-type-icon.png');
     case 'network providers':
       return require('../assets/api-icon.png');
-    case 'security':
+    case 'keyshare':
       return require('../assets/backup-icon.png');
     case 'advanced':
       return require('../assets/advanced-icon.png');
@@ -316,7 +340,7 @@ const getSectionIcon = (title: string): any => {
       return require('../assets/utxo-icon.png');
     case 'psbt':
       return require('../assets/cosign-icon.png');
-    case 'wallet':
+    case 'wallet tab':
       return require('../assets/wallet-icon.png');
     case 'addresses':
       return require('../assets/addresses-icon.png');
@@ -449,7 +473,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     showWalletTab,
     setShowWalletTab,
     activeNetwork,
-    activeApiProvider,
   } = useUser();
   const [selectedIcon, setSelectedIcon] = useState<
     CamouflagePresetId | 'loading'
@@ -665,14 +688,30 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     });
   }, [runWithWalletBiometric]);
 
-  const openAirgapExportModalWithAuth = useCallback(() => {
-    runWithWalletBiometric(
-      () => setIsAirgapExportModalVisible(true),
-      WALLET_SENSITIVE_ACTION_AUTH.airgapKeyshareExport,
-    ).catch(error => {
-      dbg('openAirgapExportModalWithAuth failed', error);
-    });
-  }, [runWithWalletBiometric]);
+  const openAirgapExportModal = useCallback(() => {
+    if (walletSensitiveAuthPendingRef.current) {
+      return;
+    }
+    walletSensitiveAuthPendingRef.current = true;
+    setWalletSensitiveAuthPending(true);
+    // Export itself shows the OS ceremony prompt. A biometric here
+    // would be a second prompt before that one.
+    confirmDeviceIntegrityForSensitiveAction(
+      WALLET_SENSITIVE_ACTION_AUTH.airgapKeyshareExport.integrityActionLabel,
+    )
+      .then(ok => {
+        if (ok) {
+          setIsAirgapExportModalVisible(true);
+        }
+      })
+      .catch(error => {
+        dbg('openAirgapExportModal failed', error);
+      })
+      .finally(() => {
+        walletSensitiveAuthPendingRef.current = false;
+        setWalletSensitiveAuthPending(false);
+      });
+  }, []);
 
   const openDeleteWalletModalWithAuth = useCallback(() => {
     runWithWalletBiometric(
@@ -692,7 +731,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
         about: false,
         devDebug: true,
       }));
-      showSettingsTab('Wallet', 'end');
+      showSettingsTab('More', 'end');
       Toast.show({
         type: 'success',
         text1: 'Dev Mode Enabled',
@@ -731,7 +770,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
     storage: false,
     appIcon: false,
     branta: false,
-    devicePairing: false,
     addressType: false,
     fontTesting: false,
     devDebug: false,
@@ -894,7 +932,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       appConfigRepository.set(`api_${network}`, apiUrl);
       appConfigRepository.set(CONFIG_KEYS.ADDRESS_TYPE, addressType);
 
-      void requestWalletIndexing({
+      requestWalletIndexing({
         network,
         addressType,
         apiBase: apiUrl,
@@ -1003,7 +1041,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
       'storage',
       'appIcon',
       'branta',
-      'devicePairing',
       'addressType',
       'fontTesting',
       'devDebug',
@@ -1529,6 +1566,33 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           fontSize: theme.fontSizes?.lg || 16,
           fontFamily: theme.fontFamilies?.bold,
           color: theme.colors.text,
+          flexShrink: 1,
+        },
+        sectionBadge: {
+          marginLeft: 8,
+          paddingHorizontal: 8,
+          paddingVertical: 2,
+          borderRadius: 999,
+          borderWidth: 1,
+        },
+        sectionBadgeOn: {
+          backgroundColor: theme.colors.success + '22',
+          borderColor: theme.colors.success,
+        },
+        sectionBadgeOff: {
+          backgroundColor: 'transparent',
+          borderColor: theme.colors.border,
+        },
+        sectionBadgeText: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.bold,
+          letterSpacing: 0.3,
+        },
+        sectionBadgeTextOn: {
+          color: theme.colors.success,
+        },
+        sectionBadgeTextOff: {
+          color: theme.colors.textSecondary,
         },
         expandIcon: {
           fontSize: theme.fontSizes?.base || 14,
@@ -1685,6 +1749,100 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
           fontFamily: theme.fontFamilies?.medium,
           color: theme.colors.bitcoinOrange,
           marginLeft: 8,
+        },
+        brantaLead: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          marginBottom: 12,
+        },
+        brantaMark: {
+          width: 36,
+          height: 36,
+          borderRadius: 8,
+          marginRight: 12,
+          backgroundColor: '#111111',
+        },
+        brantaLeadCopy: {
+          flex: 1,
+        },
+        brantaLeadTitle: {
+          fontSize: theme.fontSizes?.base || 14,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        brantaLeadHint: {
+          marginTop: 2,
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.regular,
+          color: theme.colors.textSecondary,
+          lineHeight: 16,
+        },
+        brantaOutcomes: {
+          flexDirection: 'row',
+          marginBottom: 10,
+        },
+        brantaOutcome: {
+          flex: 1,
+          borderWidth: 1,
+          borderRadius: 10,
+          paddingVertical: 10,
+          paddingHorizontal: 10,
+          borderColor: theme.colors.border,
+          backgroundColor: theme.colors.background,
+        },
+        brantaOutcomeLead: {
+          marginRight: 8,
+        },
+        brantaOutcomeLabel: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.bold,
+          color: theme.colors.text,
+        },
+        brantaOutcomeBody: {
+          marginTop: 2,
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.regular,
+          color: theme.colors.text,
+          lineHeight: 15,
+        },
+        brantaFoot: {
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.regular,
+          color: theme.colors.textSecondary,
+          lineHeight: 15,
+          marginBottom: 10,
+        },
+        brantaLinkRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          borderWidth: 1,
+          borderColor: theme.colors.border,
+          borderRadius: 10,
+          paddingVertical: 10,
+          paddingHorizontal: 12,
+          marginBottom: 12,
+        },
+        brantaLinkLabel: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.text,
+        },
+        brantaLink: {
+          fontSize: theme.fontSizes?.sm || 12,
+          fontFamily: theme.fontFamilies?.medium,
+          color: theme.colors.bitcoinOrange,
+        },
+        brantaSwitchRow: {
+          flexDirection: 'row',
+          alignItems: 'center',
+        },
+        brantaSwitchHint: {
+          marginTop: 2,
+          fontSize: theme.fontSizes?.xs || 11,
+          fontFamily: theme.fontFamilies?.regular,
+          color: theme.colors.textSecondary,
+          lineHeight: 15,
         },
         inputAPI: {
           borderWidth: 1,
@@ -2741,7 +2899,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
   return (
     <SafeAreaView
       style={styles.container}
-      edges={['left', 'right']}
+      edges={['top', 'left', 'right']}
       key={themeUpdateKey}>
       <View style={styles.settingsTabBar} accessibilityRole="tablist">
         <View style={styles.settingsTabRule} />
@@ -2792,7 +2950,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             isExpanded={expandedSections.theme}
             onToggle={() => toggleSection('theme')}
             styles={styles}
-            theme={theme}>
+            theme={theme}
+            badge={{
+              label:
+                themeMode === 'light'
+                  ? 'Light'
+                  : themeMode === 'dark'
+                    ? 'Dark'
+                    : 'OS',
+            }}>
             <Text style={styles.toggleDescription}>
               Choose your preferred color theme. OS Default follows your system
               settings.
@@ -2879,95 +3045,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </CollapsibleSection>
           <CollapsibleSection
-            title="Auto lock"
-            isExpanded={expandedSections.autoLock}
-            onToggle={() => toggleSection('autoLock')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.toggleDescription}>
-              Locks when you leave the app. Unlock with Face ID or your PIN as
-              usual.
-            </Text>
-            <View style={styles.themeOptionContainer}>
-              {WALLET_AUTO_LOCK_OPTIONS.map(option => {
-                const selected = autoLockPolicy === option.value;
-                return (
-                  <AppPressable
-                    key={option.value}
-                    style={[
-                      styles.themeOption,
-                      selected && styles.themeOptionSelected,
-                    ]}
-                    onPress={() => {
-                      setWalletAutoLock(option.value as WalletAutoLockPolicy);
-                    }}
-                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-                    <View style={styles.themeOptionContent}>
-                      <Text
-                        style={[
-                          styles.themeOptionLabel,
-                          selected && styles.themeOptionLabelSelected,
-                        ]}>
-                        {option.label}
-                      </Text>
-                      {selected ? (
-                        <Image
-                          source={require('../assets/check-icon.png')}
-                          style={styles.themeOptionCheck}
-                          resizeMode="contain"
-                        />
-                      ) : null}
-                    </View>
-                  </AppPressable>
-                );
-              })}
-            </View>
-          </CollapsibleSection>
-          <CollapsibleSection
-            title="Ceremony notices"
-            isExpanded={expandedSections.ceremonyNotices}
-            onToggle={() => toggleSection('ceremonyNotices')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.toggleDescription}>
-              Finished, interrupted, and return notices. They disappear after 2
-              minutes. Android still shows the required progress notice while
-              setup or co-signing is running.
-            </Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Off</Text>
-              <AppSwitch
-                onValueChange={handleToggleCeremonyNotices}
-                value={ceremonyNoticesEnabled}
-              />
-              <Text style={styles.toggleLabel}>On</Text>
-            </View>
-          </CollapsibleSection>
-          <CollapsibleSection
-            title="Menu"
-            isExpanded={expandedSections.menu}
-            onToggle={() => toggleSection('menu')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.toggleDescription}>
-              Floating is a centered pill only as wide as its icons. Docked is
-              the full-width bar with a label under each icon.
-            </Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Docked</Text>
-              <AppSwitch
-                onValueChange={handleToggleMenuStyle}
-                value={menuStyle === 'floating'}
-              />
-              <Text style={styles.toggleLabel}>Floating</Text>
-            </View>
-          </CollapsibleSection>
-          <CollapsibleSection
             title="Balance Display"
             isExpanded={expandedSections.displayFormat}
             onToggle={() => toggleSection('displayFormat')}
             styles={styles}
-            theme={theme}>
+            theme={theme}
+            badge={{
+              label: balanceFormattingEnabled ? 'Formatted' : 'Raw',
+              on: balanceFormattingEnabled,
+            }}>
             <Text style={styles.hintText}>
               Bitcoin uses <Text style={styles.hintBold}>8 decimal places</Text>{' '}
               for full accuracy.
@@ -3006,29 +3092,15 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             </View>
           </CollapsibleSection>
           <CollapsibleSection
-            title="Haptics"
-            isExpanded={expandedSections.haptics}
-            onToggle={() => toggleSection('haptics')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.toggleDescription}>
-              Enable vibration feedback. OS settings may override this.
-            </Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Haptics Off</Text>
-              <AppSwitch
-                onValueChange={handleToggleHaptics}
-                value={hapticsEnabled}
-              />
-              <Text style={styles.toggleLabel}>Haptics On</Text>
-            </View>
-          </CollapsibleSection>
-          <CollapsibleSection
             title="Manchette"
             isExpanded={expandedSections.manchette}
             onToggle={() => toggleSection('manchette')}
             styles={styles}
-            theme={theme}>
+            theme={theme}
+            badge={{
+              label: lockScreenManchetteEnabled ? 'On' : 'Off',
+              on: lockScreenManchetteEnabled,
+            }}>
             <Text style={styles.toggleDescription}>
               Rolling tips and news/links along the bottom of the lock screen.
               Turn off for a minimal unlock view.
@@ -3042,77 +3114,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               <Text style={styles.toggleLabel}>Visible</Text>
             </View>
           </CollapsibleSection>
-          <CollapsibleSection
-            title="Updater"
-            isExpanded={expandedSections.updater}
-            onToggle={() => toggleSection('updater')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.toggleDescription}>
-              Lock screen version chip. When off, the chip stays visible but no
-              automatic update checks or alerts run on unlock.
-            </Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Off</Text>
-              <AppSwitch
-                onValueChange={handleToggleLockScreenUpdateChecker}
-                value={lockScreenUpdateCheckerEnabled}
-              />
-              <Text style={styles.toggleLabel}>On</Text>
-            </View>
-          </CollapsibleSection>
-          {/* Storage - inside App */}
-          <CollapsibleSection
-            title="Storage"
-            isExpanded={expandedSections.storage}
-            onToggle={() => toggleSection('storage')}
-            styles={styles}
-            theme={theme}>
-            <View style={styles.apiItem}>
-              <Text style={styles.apiDescription}>
-                Clear cached balances and history.
-              </Text>
-            </View>
-            <AppPressable
-              style={[styles.button, styles.deleteButton]}
-              onPress={() => {
-                if (
-                  !guardOnlineAction(
-                    'Go online to clear cache and re-index this wallet.',
-                  )
-                ) {
-                  return;
-                }
-                dbg('WalletSettings: Clear Cache pressed', {
-                  network: activeNetwork,
-                  addressType: activeAddressType,
-                });
-                refreshUsageSize();
-                Toast.show({
-                  type: 'success',
-                  text1: 'Cache clear started',
-                  text2: 'Indexing continues on the Wallet tab.',
-                  visibilityTime: 3000,
-                });
-                startWalletIndexingAndGoHome(
-                  activeNetwork,
-                  activeAddressType,
-                  {force: true},
-                );
-              }}
-              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
-              <View style={styles.buttonContent}>
-                <Image
-                  source={require('../assets/delete-icon.png')}
-                  style={[styles.buttonIcon, styles.whiteTint]}
-                  resizeMode="contain"
-                />
-                <Text style={styles.buttonText}>
-                  Clear Cache ({usageSize.mb})
-                </Text>
-              </View>
-            </AppPressable>
-          </CollapsibleSection>
           {/* App Icon - Android Only */}
           {Platform.OS === 'android' && (
             <CollapsibleSection
@@ -3120,7 +3121,17 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               isExpanded={expandedSections.appIcon}
               onToggle={() => toggleSection('appIcon')}
               styles={styles}
-              theme={theme}>
+              theme={theme}
+              badge={
+                selectedIcon === 'loading'
+                  ? undefined
+                  : {
+                      label:
+                        CAMOUFLAGE_PRESETS.find(p => p.id === selectedIcon)
+                          ?.label ?? 'Bold Wallet',
+                      on: camouflageIconActive,
+                    }
+              }>
               <View style={styles.appIconBody}>
                 <View style={styles.iconPresetGrid}>
                   {CAMOUFLAGE_PRESETS.map(preset => {
@@ -3187,13 +3198,111 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </View>
             </CollapsibleSection>
           )}
+          <CollapsibleSection
+            title="Haptics"
+            isExpanded={expandedSections.haptics}
+            onToggle={() => toggleSection('haptics')}
+            styles={styles}
+            theme={theme}
+            badge={{label: hapticsEnabled ? 'On' : 'Off', on: hapticsEnabled}}>
+            <Text style={styles.toggleDescription}>
+              Enable vibration feedback. OS settings may override this.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Haptics Off</Text>
+              <AppSwitch
+                onValueChange={handleToggleHaptics}
+                value={hapticsEnabled}
+              />
+              <Text style={styles.toggleLabel}>Haptics On</Text>
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="Auto lock"
+            isExpanded={expandedSections.autoLock}
+            onToggle={() => toggleSection('autoLock')}
+            styles={styles}
+            theme={theme}
+            badge={{
+              label:
+                autoLockPolicy === 'instant'
+                  ? 'Instant'
+                  : autoLockPolicy === '5m'
+                    ? '5 min'
+                    : autoLockPolicy === 'never'
+                      ? 'Never'
+                      : '1 min',
+              on: autoLockPolicy !== 'never',
+            }}>
+            <Text style={styles.toggleDescription}>
+              Locks when you leave the app. Unlock with Face ID or your PIN as
+              usual.
+            </Text>
+            <View style={styles.themeOptionContainer}>
+              {WALLET_AUTO_LOCK_OPTIONS.map(option => {
+                const selected = autoLockPolicy === option.value;
+                return (
+                  <AppPressable
+                    key={option.value}
+                    style={[
+                      styles.themeOption,
+                      selected && styles.themeOptionSelected,
+                    ]}
+                    onPress={() => {
+                      setWalletAutoLock(option.value as WalletAutoLockPolicy);
+                    }}
+                    android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+                    <View style={styles.themeOptionContent}>
+                      <Text
+                        style={[
+                          styles.themeOptionLabel,
+                          selected && styles.themeOptionLabelSelected,
+                        ]}>
+                        {option.label}
+                      </Text>
+                      {selected ? (
+                        <Image
+                          source={require('../assets/check-icon.png')}
+                          style={styles.themeOptionCheck}
+                          resizeMode="contain"
+                        />
+                      ) : null}
+                    </View>
+                  </AppPressable>
+                );
+              })}
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="Updater"
+            isExpanded={expandedSections.updater}
+            onToggle={() => toggleSection('updater')}
+            styles={styles}
+            theme={theme}
+            badge={{
+              label: lockScreenUpdateCheckerEnabled ? 'On' : 'Off',
+              on: lockScreenUpdateCheckerEnabled,
+            }}>
+            <Text style={styles.toggleDescription}>
+              Lock screen version chip. When off, the chip stays visible but no
+              automatic update checks or alerts run on unlock.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Off</Text>
+              <AppSwitch
+                onValueChange={handleToggleLockScreenUpdateChecker}
+                value={lockScreenUpdateCheckerEnabled}
+              />
+              <Text style={styles.toggleLabel}>On</Text>
+            </View>
+          </CollapsibleSection>
           </View>
         )}
 
         {selectedSettingsTab === 'Wallet' && (
           <View style={styles.sectionGroup}>
           <CollapsibleSection
-            title="Security"
+            title="Keyshare"
             isExpanded={expandedSections.backup}
             onToggle={() => toggleSection('backup')}
             styles={styles}
@@ -3224,7 +3333,7 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                 styles.backupButton,
                 walletSensitiveAuthPending && styles.halfOpacity,
               ]}
-              onPress={openAirgapExportModalWithAuth}
+              onPress={openAirgapExportModal}
               disabled={walletSensitiveAuthPending}
               android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
               <View style={styles.buttonContent}>
@@ -3258,13 +3367,46 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </View>
             </AppPressable>
           </CollapsibleSection>
+          <CollapsibleSection
+            title="Ceremony notices"
+            isExpanded={expandedSections.ceremonyNotices}
+            onToggle={() => toggleSection('ceremonyNotices')}
+            styles={styles}
+            theme={theme}
+            badge={{
+              label: ceremonyNoticesEnabled ? 'On' : 'Off',
+              on: ceremonyNoticesEnabled,
+            }}>
+            <Text style={styles.toggleDescription}>
+              Finished, interrupted, and return notices. They disappear after 2
+              minutes. Android still shows the required progress notice while
+              setup or co-signing is running.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Off</Text>
+              <AppSwitch
+                onValueChange={handleToggleCeremonyNotices}
+                value={ceremonyNoticesEnabled}
+              />
+              <Text style={styles.toggleLabel}>On</Text>
+            </View>
+          </CollapsibleSection>
           {/* Address Type - use address-type-icon */}
           <CollapsibleSection
             title="Address Type"
             isExpanded={expandedSections.addressType}
             onToggle={() => toggleSection('addressType')}
             styles={styles}
-            theme={theme}>
+            theme={theme}
+            badge={{
+              label:
+                activeAddressType === 'legacy'
+                  ? 'Legacy'
+                  : activeAddressType === 'segwit-compatible'
+                    ? 'Nested'
+                    : 'Native',
+              on: activeAddressType === 'segwit-native',
+            }}>
             <Text style={styles.walletModeDescription}>
               Choose the receive address format. Native SegWit (bech32) is
               recommended. Changing this updates your receive address on the
@@ -3371,7 +3513,11 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
             isExpanded={expandedSections.advanced}
             onToggle={() => toggleSection('advanced')}
             styles={styles}
-            theme={theme}>
+            theme={theme}
+            badge={{
+              label: walletOnline ? 'Online' : 'Offline',
+              on: walletOnline,
+            }}>
             <View style={styles.toggleContainer}>
               <Text style={styles.toggleLabel}>
                 {walletOnline ? 'Online' : 'Offline'}
@@ -3419,6 +3565,172 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               }
               onSave={saveMempoolProviders}
             />
+          </CollapsibleSection>
+          {/* Storage */}
+          <CollapsibleSection
+            title="Storage"
+            isExpanded={expandedSections.storage}
+            onToggle={() => toggleSection('storage')}
+            styles={styles}
+            theme={theme}>
+            <View style={styles.apiItem}>
+              <Text style={styles.apiDescription}>
+                Clear cached balances and history.
+              </Text>
+            </View>
+            <AppPressable
+              style={[styles.button, styles.deleteButton]}
+              onPress={() => {
+                if (
+                  !guardOnlineAction(
+                    'Go online to clear cache and re-index this wallet.',
+                  )
+                ) {
+                  return;
+                }
+                dbg('WalletSettings: Clear Cache pressed', {
+                  network: activeNetwork,
+                  addressType: activeAddressType,
+                });
+                refreshUsageSize();
+                Toast.show({
+                  type: 'success',
+                  text1: 'Cache clear started',
+                  text2: 'Indexing continues on the Wallet tab.',
+                  visibilityTime: 3000,
+                });
+                startWalletIndexingAndGoHome(
+                  activeNetwork,
+                  activeAddressType,
+                  {force: true},
+                );
+              }}
+              android_ripple={{color: 'rgba(0,0,0,0.1)'}}>
+              <View style={styles.buttonContent}>
+                <Image
+                  source={require('../assets/delete-icon.png')}
+                  style={[styles.buttonIcon, styles.whiteTint]}
+                  resizeMode="contain"
+                />
+                <Text style={styles.buttonText}>
+                  Clear Cache ({usageSize.mb})
+                </Text>
+              </View>
+            </AppPressable>
+          </CollapsibleSection>
+          {hasNostr && (
+            <CollapsibleSection
+              title="Nostr Relays"
+              isExpanded={expandedSections.nostr}
+              onToggle={() => toggleSection('nostr')}
+              styles={styles}
+              theme={theme}
+              badge={
+                relayEntries.length === 0
+                  ? undefined
+                  : {
+                      label: `${relayEntries.filter(entry => entry.enabled).length} on`,
+                      on: relayEntries.some(entry => entry.enabled),
+                    }
+              }>
+              <View style={styles.apiItem}>
+                <Text style={styles.apiName}>Nostr Relay Configuration</Text>
+                <Text style={styles.apiDescription}>
+                  Relays used for device pairing and transaction signing. Toggle
+                  a relay off to skip it without deleting. At least one must
+                  stay on.
+                </Text>
+              </View>
+              <NostrRelaysEditor
+                entries={relayEntries}
+                onChange={setRelayEntries}
+                showSave
+                saveDisabled={
+                  JSON.stringify(relayEntries) === savedRelaySnapshot
+                }
+                onSave={async () => {
+                  try {
+                    if (activeRelaysCSV(relayEntries).length === 0) {
+                      showAppNotice(
+                        'Error',
+                        'Please keep at least one relay enabled',
+                      );
+                      return;
+                    }
+                    await saveNostrRelayEntries(relayEntries);
+                    setSavedRelaySnapshot(JSON.stringify(relayEntries));
+                    showAppNotice('Success', 'Nostr relays saved successfully!');
+                  } catch (error) {
+                    dbg('Error saving Nostr relays:', error);
+                    showAppNotice('Error', 'Failed to save Nostr relays');
+                  }
+                }}
+              />
+            </CollapsibleSection>
+          )}
+          <CollapsibleSection
+            title="Branta"
+            isExpanded={expandedSections.branta}
+            onToggle={() => toggleSection('branta')}
+            styles={styles}
+            theme={theme}
+            badge={{label: brantaEnabled ? 'On' : 'Off', on: brantaEnabled}}>
+            <View style={styles.brantaLead}>
+              <Image
+                source={require('../assets/branta-icon.png')}
+                style={styles.brantaMark}
+                resizeMode="contain"
+                accessibilityIgnoresInvertColors
+              />
+              <View style={styles.brantaLeadCopy}>
+                <Text style={styles.brantaLeadTitle}>Who you're paying</Text>
+                <Text style={styles.brantaLeadHint}>
+                  Branta checks the shop name on their QR before you pay.
+                </Text>
+              </View>
+            </View>
+            <View style={styles.brantaOutcomes}>
+              <View style={[styles.brantaOutcome, styles.brantaOutcomeLead]}>
+                <Text style={styles.brantaOutcomeLabel}>Shop name</Text>
+                <Text style={styles.brantaOutcomeBody}>
+                  See the name and logo on a Branta QR
+                </Text>
+              </View>
+              <View style={styles.brantaOutcome}>
+                <Text style={styles.brantaOutcomeLabel}>Their address</Text>
+                <Text style={styles.brantaOutcomeBody}>
+                  Pay the address that shop published
+                </Text>
+              </View>
+            </View>
+            <Text style={styles.brantaFoot}>
+              Other address QRs are unchanged. This stays off until you turn it
+              on.
+            </Text>
+            <AppPressable
+              onPress={() => {
+                Linking.openURL('https://branta.pro').catch(() => {});
+              }}
+              style={styles.brantaLinkRow}
+              accessibilityRole="link"
+              accessibilityLabel="Open the Branta website"
+              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
+              <Text style={styles.brantaLinkLabel}>How shops use Branta</Text>
+              <Text style={styles.brantaLink}>branta.pro</Text>
+            </AppPressable>
+            <View style={styles.brantaSwitchRow}>
+              <View style={styles.brantaLeadCopy}>
+                <Text style={styles.toggleLabel}>Verify shop names</Text>
+                <Text style={styles.brantaSwitchHint}>
+                  The shop name stays on the payment and in history while this
+                  is on.
+                </Text>
+              </View>
+              <AppSwitch
+                onValueChange={handleToggleBranta}
+                value={brantaEnabled}
+              />
+            </View>
           </CollapsibleSection>
           <CollapsibleSection
             title="HD Options"
@@ -3645,68 +3957,302 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
               </AppPressable>
             </View>
           </CollapsibleSection>
-          {hasNostr && (
-            <CollapsibleSection
-              title="Nostr Relays"
-              isExpanded={expandedSections.nostr}
-              onToggle={() => toggleSection('nostr')}
-              styles={styles}
-              theme={theme}>
-              <View style={styles.apiItem}>
-                <Text style={styles.apiName}>Nostr Relay Configuration</Text>
-                <Text style={styles.apiDescription}>
-                  Relays used for device pairing and transaction signing. Toggle
-                  a relay off to skip it without deleting. At least one must
-                  stay on.
-                </Text>
-              </View>
-              <NostrRelaysEditor
-                entries={relayEntries}
-                onChange={setRelayEntries}
-                showSave
-                saveDisabled={
-                  JSON.stringify(relayEntries) === savedRelaySnapshot
-                }
-                onSave={async () => {
-                  try {
-                    if (activeRelaysCSV(relayEntries).length === 0) {
-                      showAppNotice(
-                        'Error',
-                        'Please keep at least one relay enabled',
-                      );
-                      return;
-                    }
-                    await saveNostrRelayEntries(relayEntries);
-                    setSavedRelaySnapshot(JSON.stringify(relayEntries));
-                    showAppNotice('Success', 'Nostr relays saved successfully!');
-                  } catch (error) {
-                    dbg('Error saving Nostr relays:', error);
-                    showAppNotice('Error', 'Failed to save Nostr relays');
-                  }
-                }}
+          </View>
+        )}
+
+        {selectedSettingsTab === 'Tabs' && (
+          <View style={styles.sectionGroup}>
+          <CollapsibleSection
+            title="Menu"
+            isExpanded={expandedSections.menu}
+            onToggle={() => toggleSection('menu')}
+            styles={styles}
+            theme={theme}
+            badge={{
+              label: menuStyle === 'floating' ? 'Floating' : 'Docked',
+            }}>
+            <Text style={styles.toggleDescription}>
+              Floating is a centered pill only as wide as its icons. Docked is
+              the full-width bar with a label under each icon. Long-press a
+              tab, then drag it, to change the order. That order is kept for
+              the tabs that are switched on.
+            </Text>
+            <View style={styles.toggleContainer}>
+              <Text style={styles.toggleLabel}>Docked</Text>
+              <AppSwitch
+                onValueChange={handleToggleMenuStyle}
+                value={menuStyle === 'floating'}
               />
+              <Text style={styles.toggleLabel}>Floating</Text>
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="Wallet tab"
+            isExpanded={expandedSections.wallet}
+            onToggle={() => toggleSection('wallet')}
+            styles={styles}
+            theme={theme}
+            badge={{label: showWalletTab ? 'On' : 'Off', on: showWalletTab}}>
+            <Text style={styles.hintText}>
+              Show the <Text style={styles.hintBold}>Wallet tab</Text> in the
+              tab bar. It shows your balance and send/receive. On by default.
+            </Text>
+            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+              <Text style={styles.toggleLabel}>Hide Wallet tab</Text>
+              <AppSwitch
+                onValueChange={value => setShowWalletTab(value)}
+                value={showWalletTab}
+              />
+              <Text style={styles.toggleLabel}>Show Wallet tab</Text>
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="UTXOs"
+            isExpanded={expandedSections.utxos}
+            onToggle={() => toggleSection('utxos')}
+            styles={styles}
+            theme={theme}
+            badge={{label: showUtxosTab ? 'On' : 'Off', on: showUtxosTab}}>
+            <Text style={styles.hintText}>
+              Show the{' '}
+              <Text style={styles.hintBold}>UTXOs and Coin control</Text> tab in
+              the tab bar. This tab lists your unspent outputs (date, output,
+              address, value in BTC and fiat). Off by default, when enabled it
+              allows Coin Control when spending your bitcoins.
+            </Text>
+            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+              <Text style={styles.toggleLabel}>Hide UTXOs tab</Text>
+              <AppSwitch
+                onValueChange={value => setShowUtxosTab(value)}
+                value={showUtxosTab}
+              />
+              <Text style={styles.toggleLabel}>Show UTXOs tab</Text>
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="Addresses"
+            isExpanded={expandedSections.addresses}
+            onToggle={() => toggleSection('addresses')}
+            styles={styles}
+            theme={theme}
+            badge={{
+              label: showAddressesTab ? 'On' : 'Off',
+              on: showAddressesTab,
+            }}>
+            <Text style={styles.hintText}>
+              Show the <Text style={styles.hintBold}>Addresses</Text> tab in the
+              tab bar. Lists receive and change addresses with balances (from
+              your wallet cache). Off by default.
+            </Text>
+            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+              <Text style={styles.toggleLabel}>Hide Addresses tab</Text>
+              <AppSwitch
+                onValueChange={value => setShowAddressesTab(value)}
+                value={showAddressesTab}
+              />
+              <Text style={styles.toggleLabel}>Show Addresses tab</Text>
+            </View>
+          </CollapsibleSection>
+          <CollapsibleSection
+            title="PSBT"
+            isExpanded={expandedSections.psbt ?? false}
+            onToggle={() => toggleSection('psbt')}
+            styles={styles}
+            theme={theme}
+            badge={{label: showPsbtTab ? 'On' : 'Off', on: showPsbtTab}}>
+            <Text style={styles.hintText}>
+              Show the <Text style={styles.hintBold}>PSBT</Text> tab in the tab
+              bar. This tab is for signing Partially Signed Bitcoin
+              Transactions. Off by default.
+            </Text>
+            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+              <Text style={styles.toggleLabel}>Hide PSBT tab</Text>
+              <AppSwitch
+                onValueChange={value => setShowPsbtTab(value)}
+                value={showPsbtTab}
+              />
+              <Text style={styles.toggleLabel}>Show PSBT tab</Text>
+            </View>
+          </CollapsibleSection>
+          {activeNetwork === 'mainnet' && (
+            <CollapsibleSection
+              title="Mempool"
+              isExpanded={expandedSections.mempoolPlayground}
+              onToggle={() => toggleSection('mempoolPlayground')}
+              styles={styles}
+              theme={theme}
+              badge={{
+                label: showMempoolPlayground ? 'On' : 'Off',
+                on: showMempoolPlayground,
+              }}>
+              <Text style={styles.hintText}>
+                Show the <Text style={styles.hintBold}>Play</Text> tab in the
+                tab bar. This tab is a mempool playground for utility APIs
+                (mainnet only).
+              </Text>
+              <View
+                style={[styles.toggleContainer, styles.toggleContainerTabs]}>
+                <Text style={styles.toggleLabel}>Hide Play tab</Text>
+                <AppSwitch
+                  onValueChange={value => setShowMempoolPlayground(value)}
+                  value={showMempoolPlayground}
+                />
+                <Text style={styles.toggleLabel}>Show Play tab</Text>
+              </View>
             </CollapsibleSection>
           )}
+          </View>
+        )}
+
+        {selectedSettingsTab === 'More' && (
+          <View style={styles.sectionGroup}>
           <CollapsibleSection
-            title="Branta"
-            isExpanded={expandedSections.branta}
-            onToggle={() => toggleSection('branta')}
+            title="Legal"
+            isExpanded={expandedSections.legal}
+            onToggle={() => toggleSection('legal')}
             styles={styles}
             theme={theme}>
             <Text style={styles.toggleDescription}>
-              Verify merchant pay-to addresses via Branta when you scan a
-              Branta-enhanced QR. Off by default; when off, sends stay normal
-              BIP-21 and history hides merchant names.
+              Terms of Service and Privacy Policy
             </Text>
-            <View style={styles.toggleContainer}>
-              <Text style={styles.toggleLabel}>Off</Text>
-              <AppSwitch
-                onValueChange={handleToggleBranta}
-                value={brantaEnabled}
-              />
-              <Text style={styles.toggleLabel}>On</Text>
-            </View>
+            <AppPressable
+              onPress={() => {
+                setLegalModalType('terms');
+                setIsLegalModalVisible(true);
+              }}
+              style={styles.aboutInfoRow}
+              accessibilityRole="button"
+              accessibilityLabel="Open terms of use"
+              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
+              <Text style={styles.aboutLabel}>Terms of Use</Text>
+              <Text style={styles.aboutValue}>View</Text>
+            </AppPressable>
+            <AppPressable
+              onPress={() => {
+                setLegalModalType('privacy');
+                setIsLegalModalVisible(true);
+              }}
+              style={styles.aboutInfoRow}
+              accessibilityRole="button"
+              accessibilityLabel="Open privacy policy"
+              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
+              <Text style={styles.aboutLabel}>Privacy Policy</Text>
+              <Text style={styles.aboutValue}>View</Text>
+            </AppPressable>
           </CollapsibleSection>
+          <CollapsibleSection
+            title="About"
+            isExpanded={expandedSections.about}
+            onToggle={() => toggleSection('about')}
+            styles={styles}
+            theme={theme}
+            badge={
+              githubUpdateAvailable
+                ? {label: 'Update', on: true}
+                : appVersion
+                  ? {label: appVersion}
+                  : undefined
+            }>
+            <Text style={styles.toggleDescription}>
+              Make sure that your wallet keyshares apps are all aligned running
+              the latest version for optimal compatibility and security.
+            </Text>
+            <AppPressable
+              onPress={handleAppVersionRowPress}
+              disabled={!appVersion || checkingGithubRelease}
+              style={styles.aboutInfoRow}
+              accessibilityRole="button"
+              accessibilityLabel="Check for Bold Wallet updates"
+              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
+              <Text style={styles.aboutLabel}>App Version</Text>
+              {checkingGithubRelease ? (
+                <ActivityIndicator
+                  size="small"
+                  color={theme.colors.secondary}
+                />
+              ) : (
+                <Text style={styles.aboutValue}>{appVersion}</Text>
+              )}
+            </AppPressable>
+            <AppPressable
+              onPress={() => {
+                if (walletSensitiveAuthPending) {
+                  return;
+                }
+                if (devDebugEnabled) {
+                  Toast.show({
+                    type: 'info',
+                    text1: 'Dev Mode Already Enabled',
+                    text2: 'Developer debug section is already visible',
+                    position: 'top',
+                    visibilityTime: 2000,
+                  });
+                  return;
+                }
+
+                buildNumberClickCountRef.current += 1;
+                const currentCount = buildNumberClickCountRef.current;
+                setBuildNumberClickCount(currentCount);
+
+                if (buildNumberClickTimeoutRef.current) {
+                  clearTimeout(buildNumberClickTimeoutRef.current);
+                }
+                buildNumberClickTimeoutRef.current = setTimeout(() => {
+                  buildNumberClickCountRef.current = 0;
+                  setBuildNumberClickCount(0);
+                }, 3000);
+
+                if (currentCount >= 2 && currentCount < 7) {
+                  const stepsRemaining = 7 - currentCount;
+                  Toast.show({
+                    type: 'info',
+                    text1: `You're now ${stepsRemaining} step${
+                      stepsRemaining > 1 ? 's' : ''
+                    } to enable dev mode`,
+                    position: 'top',
+                    visibilityTime: 2000,
+                  });
+                }
+
+                if (currentCount >= 7) {
+                  enableDeveloperModeWithAuth();
+                }
+              }}
+              style={styles.aboutInfoRow}
+              accessibilityRole="button"
+              accessibilityLabel="Build number"
+              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
+              <Text style={styles.aboutLabel}>Build Number</Text>
+              <View style={styles.buildNumberContainer}>
+                {buildNumberClickCount >= 2 ? (
+                  <View style={styles.buildNumberBadge}>
+                    <Text style={styles.buildNumberBadgeText}>
+                      {buildNumber}
+                    </Text>
+                  </View>
+                ) : (
+                  <Text style={styles.aboutValue}>{buildNumber}</Text>
+                )}
+              </View>
+            </AppPressable>
+          </CollapsibleSection>
+          {__DEV__ && (
+            <CollapsibleSection
+              title="Font Testing"
+              isExpanded={expandedSections.fontTesting}
+              onToggle={() => toggleSection('fontTesting')}
+              styles={styles}
+              theme={theme}>
+              <Text style={styles.toggleDescription}>
+                Visual font comparison tool to verify unified fonts across
+                platforms. This section only appears in development builds. Note
+                that rendered fonts may differ from the actual fonts on your
+                device. Also, the font testing section is only visible in
+                development builds.
+              </Text>
+              <FontComparisonScreen />
+            </CollapsibleSection>
+          )}
           {/* Developer Mode — network switch plus diagnostics. Unlocked from About. */}
           {devDebugEnabled && (
             <CollapsibleSection
@@ -3816,27 +4362,25 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                     if (!ok) {
                       return;
                     }
-                          const runDisableDev = async () => {
-                            if (isTestnet) {
-                              const switched = await toggleNetwork(false, {
-                                silent: true,
-                              });
-                              if (!switched) {
-                                return;
-                              }
-                            }
-                            setDevDebugEnabled(false);
-                            setDevDebugEnabledPref(false);
-                            Toast.show({
-                              type: 'info',
-                              text1: 'Dev Mode Disabled',
-                              text2: 'Developer Mode section is now hidden',
-                              position: 'top',
-                            });
-                          };
-                          runDisableDev().catch(e =>
-                            dbg('Disable Dev Mode:', e),
-                          );
+                    const runDisableDev = async () => {
+                      if (isTestnet) {
+                        const switched = await toggleNetwork(false, {
+                          silent: true,
+                        });
+                        if (!switched) {
+                          return;
+                        }
+                      }
+                      setDevDebugEnabled(false);
+                      setDevDebugEnabledPref(false);
+                      Toast.show({
+                        type: 'info',
+                        text1: 'Dev Mode Disabled',
+                        text2: 'Developer Mode section is now hidden',
+                        position: 'top',
+                      });
+                    };
+                    runDisableDev().catch(e => dbg('Disable Dev Mode:', e));
                   });
                 }}
                 android_ripple={{color: 'rgba(255,255,255,0.2)'}}>
@@ -3844,261 +4388,6 @@ const WalletSettings: React.FC<{navigation: any}> = ({navigation}) => {
                   Disable Dev Mode
                 </Text>
               </AppPressable>
-            </CollapsibleSection>
-          )}
-          </View>
-        )}
-
-        {selectedSettingsTab === 'Features' && (
-          <View style={styles.sectionGroup}>
-          <CollapsibleSection
-            title="Wallet"
-            isExpanded={expandedSections.wallet}
-            onToggle={() => toggleSection('wallet')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.hintText}>
-              Show the <Text style={styles.hintBold}>Wallet</Text> tab in the
-              tab bar. This tab shows your balance and send/receive. On by
-              default.
-            </Text>
-            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-              <Text style={styles.toggleLabel}>Hide Wallet tab</Text>
-              <AppSwitch
-                onValueChange={value => setShowWalletTab(value)}
-                value={showWalletTab}
-              />
-              <Text style={styles.toggleLabel}>Show Wallet tab</Text>
-            </View>
-          </CollapsibleSection>
-          <CollapsibleSection
-            title="UTXOs"
-            isExpanded={expandedSections.utxos}
-            onToggle={() => toggleSection('utxos')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.hintText}>
-              Show the{' '}
-              <Text style={styles.hintBold}>UTXOs and Coin control</Text> tab in
-              the tab bar. This tab lists your unspent outputs (date, output,
-              address, value in BTC and fiat). Off by default, when enabled it
-              allows Coin Control when spending your bitcoins.
-            </Text>
-            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-              <Text style={styles.toggleLabel}>Hide UTXOs tab</Text>
-              <AppSwitch
-                onValueChange={value => setShowUtxosTab(value)}
-                value={showUtxosTab}
-              />
-              <Text style={styles.toggleLabel}>Show UTXOs tab</Text>
-            </View>
-          </CollapsibleSection>
-          <CollapsibleSection
-            title="Addresses"
-            isExpanded={expandedSections.addresses}
-            onToggle={() => toggleSection('addresses')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.hintText}>
-              Show the <Text style={styles.hintBold}>Addresses</Text> tab in the
-              tab bar. Lists receive and change addresses with balances (from
-              your wallet cache). Off by default.
-            </Text>
-            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-              <Text style={styles.toggleLabel}>Hide Addresses tab</Text>
-              <AppSwitch
-                onValueChange={value => setShowAddressesTab(value)}
-                value={showAddressesTab}
-              />
-              <Text style={styles.toggleLabel}>Show Addresses tab</Text>
-            </View>
-          </CollapsibleSection>
-          <CollapsibleSection
-            title="PSBT"
-            isExpanded={expandedSections.psbt ?? false}
-            onToggle={() => toggleSection('psbt')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.hintText}>
-              Show the <Text style={styles.hintBold}>PSBT</Text> tab in the tab
-              bar. This tab is for signing Partially Signed Bitcoin
-              Transactions. Off by default.
-            </Text>
-            <View style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-              <Text style={styles.toggleLabel}>Hide PSBT tab</Text>
-              <AppSwitch
-                onValueChange={value => setShowPsbtTab(value)}
-                value={showPsbtTab}
-              />
-              <Text style={styles.toggleLabel}>Show PSBT tab</Text>
-            </View>
-          </CollapsibleSection>
-          {activeNetwork === 'mainnet' && (
-            <CollapsibleSection
-              title="Mempool"
-              isExpanded={expandedSections.mempoolPlayground}
-              onToggle={() => toggleSection('mempoolPlayground')}
-              styles={styles}
-              theme={theme}>
-              <Text style={styles.hintText}>
-                Show the <Text style={styles.hintBold}>Play</Text> tab in the
-                tab bar. This tab is a mempool playground for utility APIs
-                (mainnet only).
-              </Text>
-              <View
-                style={[styles.toggleContainer, styles.toggleContainerTabs]}>
-                <Text style={styles.toggleLabel}>Hide Play tab</Text>
-                <AppSwitch
-                  onValueChange={value => setShowMempoolPlayground(value)}
-                  value={showMempoolPlayground}
-                />
-                <Text style={styles.toggleLabel}>Show Play tab</Text>
-              </View>
-            </CollapsibleSection>
-          )}
-          </View>
-        )}
-
-        {selectedSettingsTab === 'Info' && (
-          <View style={styles.sectionGroup}>
-          <CollapsibleSection
-            title="Legal"
-            isExpanded={expandedSections.legal}
-            onToggle={() => toggleSection('legal')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.toggleDescription}>
-              Terms of Service and Privacy Policy
-            </Text>
-            <AppPressable
-              onPress={() => {
-                setLegalModalType('terms');
-                setIsLegalModalVisible(true);
-              }}
-              style={styles.aboutInfoRow}
-              accessibilityRole="button"
-              accessibilityLabel="Open terms of use"
-              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
-              <Text style={styles.aboutLabel}>Terms of Use</Text>
-              <Text style={styles.aboutValue}>View</Text>
-            </AppPressable>
-            <AppPressable
-              onPress={() => {
-                setLegalModalType('privacy');
-                setIsLegalModalVisible(true);
-              }}
-              style={styles.aboutInfoRow}
-              accessibilityRole="button"
-              accessibilityLabel="Open privacy policy"
-              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
-              <Text style={styles.aboutLabel}>Privacy Policy</Text>
-              <Text style={styles.aboutValue}>View</Text>
-            </AppPressable>
-          </CollapsibleSection>
-          <CollapsibleSection
-            title="About"
-            isExpanded={expandedSections.about}
-            onToggle={() => toggleSection('about')}
-            styles={styles}
-            theme={theme}>
-            <Text style={styles.toggleDescription}>
-              Make sure that your wallet keyshares apps are all aligned running
-              the latest version for optimal compatibility and security.
-            </Text>
-            <AppPressable
-              onPress={handleAppVersionRowPress}
-              disabled={!appVersion || checkingGithubRelease}
-              style={styles.aboutInfoRow}
-              accessibilityRole="button"
-              accessibilityLabel="Check for Bold Wallet updates"
-              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
-              <Text style={styles.aboutLabel}>App Version</Text>
-              {checkingGithubRelease ? (
-                <ActivityIndicator
-                  size="small"
-                  color={theme.colors.secondary}
-                />
-              ) : (
-                <Text style={styles.aboutValue}>{appVersion}</Text>
-              )}
-            </AppPressable>
-            <AppPressable
-              onPress={() => {
-                if (walletSensitiveAuthPending) {
-                  return;
-                }
-                if (devDebugEnabled) {
-                  Toast.show({
-                    type: 'info',
-                    text1: 'Dev Mode Already Enabled',
-                    text2: 'Developer debug section is already visible',
-                    position: 'top',
-                    visibilityTime: 2000,
-                  });
-                  return;
-                }
-
-                buildNumberClickCountRef.current += 1;
-                const currentCount = buildNumberClickCountRef.current;
-                setBuildNumberClickCount(currentCount);
-
-                if (buildNumberClickTimeoutRef.current) {
-                  clearTimeout(buildNumberClickTimeoutRef.current);
-                }
-                buildNumberClickTimeoutRef.current = setTimeout(() => {
-                  buildNumberClickCountRef.current = 0;
-                  setBuildNumberClickCount(0);
-                }, 3000);
-
-                if (currentCount >= 2 && currentCount < 7) {
-                  const stepsRemaining = 7 - currentCount;
-                  Toast.show({
-                    type: 'info',
-                    text1: `You're now ${stepsRemaining} step${
-                      stepsRemaining > 1 ? 's' : ''
-                    } to enable dev mode`,
-                    position: 'top',
-                    visibilityTime: 2000,
-                  });
-                }
-
-                if (currentCount >= 7) {
-                  enableDeveloperModeWithAuth();
-                }
-              }}
-              style={styles.aboutInfoRow}
-              accessibilityRole="button"
-              accessibilityLabel="Build number"
-              android_ripple={{color: 'rgba(0,0,0,0.08)'}}>
-              <Text style={styles.aboutLabel}>Build Number</Text>
-              <View style={styles.buildNumberContainer}>
-                {buildNumberClickCount >= 2 ? (
-                  <View style={styles.buildNumberBadge}>
-                    <Text style={styles.buildNumberBadgeText}>
-                      {buildNumber}
-                    </Text>
-                  </View>
-                ) : (
-                  <Text style={styles.aboutValue}>{buildNumber}</Text>
-                )}
-              </View>
-            </AppPressable>
-          </CollapsibleSection>
-          {__DEV__ && (
-            <CollapsibleSection
-              title="Font Testing"
-              isExpanded={expandedSections.fontTesting}
-              onToggle={() => toggleSection('fontTesting')}
-              styles={styles}
-              theme={theme}>
-              <Text style={styles.toggleDescription}>
-                Visual font comparison tool to verify unified fonts across
-                platforms. This section only appears in development builds. Note
-                that rendered fonts may differ from the actual fonts on your
-                device. Also, the font testing section is only visible in
-                development builds.
-              </Text>
-              <FontComparisonScreen />
             </CollapsibleSection>
           )}
           </View>

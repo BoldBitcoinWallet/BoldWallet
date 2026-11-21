@@ -22,7 +22,7 @@ runs:
         echo "LIBTSS_REF=${LIBTSS_REF}" >> "${GITHUB_ENV}"
         test -f "${LIBTSS_DIR}/libtss-go/go.mod"
         grep -q DerivePathWithChainCode "${LIBTSS_DIR}/libtss-go/tss/derive.go"
-        # Go 1.26.11 dropped -l:filename from the #cgo LDFLAGS safelist.
+        # Go 1.26.11+ dropped -l:filename from the #cgo LDFLAGS safelist.
         # -llibtss_ffi alone prefers liblibtss_ffi.so and the test binary then
         # fails to start. -Bstatic keeps the original static archive.
         tss_go="${LIBTSS_DIR}/libtss-go/tss/tss.go"

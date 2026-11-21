@@ -2,34 +2,42 @@
  * Bottom tab bar. Docked spans the screen with icon and label.
  * Floating is a centered pill only as wide as its icons.
  * Selection is one sliding shape. Press uses that same shape, with no extra ripple.
+ * A long press lifts an item so it can be dragged into a new place.
  */
-import React, {useCallback, useContext, useEffect, useRef, useState} from 'react';
+import React, {useCallback, useContext, useEffect, useMemo, useRef, useState} from 'react';
 import {useSafeAreaInsets} from 'react-native-safe-area-context';
-import {useNavMenuStyle} from '../services/navMenuStore';
+import {
+  setEnabledNavMenuOrder,
+  useNavMenuStyle,
+} from '../services/navMenuStore';
 import {DISSOLVE_FADE} from './DissolveFade';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
   Platform,
   useWindowDimensions,
-  type GestureResponderEvent,
   type LayoutChangeEvent,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import Animated, {
+  runOnJS,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming,
+  type SharedValue,
 } from 'react-native-reanimated';
+import {Gesture, GestureDetector, GestureHandlerRootView, ScrollView as GestureScrollView} from 'react-native-gesture-handler';
 import {CommonActions} from '@react-navigation/native';
 import type {BottomTabBarProps} from '@react-navigation/bottom-tabs';
 import {BottomTabBarHeightCallbackContext} from '@react-navigation/bottom-tabs';
 import {BlurView} from '@sbaiahmed1/react-native-blur';
+import LinearGradient from 'react-native-linear-gradient';
 import {useTheme} from '../theme';
 import {consumeNotedTabEnter, noteTabEnter} from '../services/tabFade';
-import AppPressable from './AppPressable';
+import {HapticFeedback} from '../utils';
 
 const TAB_ICON_SIZE = 22;
 const FLOATING_ICON_SIZE = 25;
@@ -41,7 +49,9 @@ const DOCKED_HIGHLIGHT_RADIUS = 12;
 /** Shared by the floating pill shell. */
 export const FLOATING_PILL_RADIUS = 30;
 /** Outline of the undocked pill. Docked chrome stays on hairlineWidth. */
-const FLOATING_PILL_BORDER_WIDTH = 1.5;
+export function floatingPillBorderWidth(isDarkMode: boolean): number {
+  return isDarkMode ? 1 : 1.25;
+}
 const FLOATING_SIDE_MARGIN = 16;
 const PILL_BOTTOM_GAP = 10;
 /** Icon-only pill. Excludes safe-area and the gap under the pill. */
@@ -117,6 +127,219 @@ function TabIconSlot({
   return <Animated.View style={anim}>{children}</Animated.View>;
 }
 
+const DRAG_HOLD_MS = 420;
+
+function hoverForDrag(
+  from: number,
+  translation: number,
+  centers: number[],
+  widths: number[],
+): number {
+  'worklet';
+  if ((widths[from] ?? 0) <= 0) {
+    return from;
+  }
+  const finger = (centers[from] ?? 0) + translation;
+  let best = from;
+  let bestDist = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < centers.length; i++) {
+    const dist = Math.abs((centers[i] ?? 0) - finger);
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function MenuTab({
+  index,
+  focused,
+  floating,
+  pressedColor,
+  accessibilityLabel,
+  testID,
+  minWidth,
+  minHeight,
+  icon,
+  label,
+  dragFrom,
+  hoverIndex,
+  translationX,
+  widthsSV,
+  centersSV,
+  onPress,
+  onDragStart,
+  onDragEnd,
+  onLayout,
+  labelStyle,
+}: {
+  index: number;
+  focused: boolean;
+  floating: boolean;
+  pressedColor: string;
+  accessibilityLabel: string;
+  testID?: string;
+  minWidth: number;
+  minHeight: number;
+  icon: React.ReactNode;
+  label: React.ReactNode;
+  dragFrom: SharedValue<number>;
+  hoverIndex: SharedValue<number>;
+  translationX: SharedValue<number>;
+  widthsSV: SharedValue<number[]>;
+  centersSV: SharedValue<number[]>;
+  onPress: () => void;
+  onDragStart: (index: number) => void;
+  onDragEnd: (from: number, to: number) => void;
+  onLayout: (event: LayoutChangeEvent) => void;
+  labelStyle: StyleProp<ViewStyle>;
+}) {
+  const [pressed, setPressed] = useState(false);
+  const onPressRef = useRef(onPress);
+  const onDragStartRef = useRef(onDragStart);
+  const onDragEndRef = useRef(onDragEnd);
+  onPressRef.current = onPress;
+  onDragStartRef.current = onDragStart;
+  onDragEndRef.current = onDragEnd;
+  const press = useCallback(() => {
+    HapticFeedback.medium();
+    onPressRef.current();
+  }, []);
+  const dragStart = useCallback((itemIndex: number) => {
+    onDragStartRef.current(itemIndex);
+  }, []);
+  const dragEnd = useCallback((from: number, to: number) => {
+    onDragEndRef.current(from, to);
+  }, []);
+  const slotBuzz = useCallback(() => {
+    HapticFeedback.selection();
+  }, []);
+  const dragStyle = useAnimatedStyle(() => {
+    const from = dragFrom.value;
+    const to = hoverIndex.value;
+    const active = from === index && from >= 0;
+    let tx = 0;
+    if (from >= 0 && to >= 0) {
+      const w = widthsSV.value[from] ?? 0;
+      if (active) {
+        tx = translationX.value;
+      } else if (from < to && index > from && index <= to) {
+        tx = -w;
+      } else if (to < from && index >= to && index < from) {
+        tx = w;
+      }
+    }
+    return {
+      transform: [{translateX: tx}, {scale: active ? 1.04 : 1}],
+      zIndex: active ? 5 : 0,
+      elevation: active ? 8 : 0,
+    };
+  });
+  const gesture = useMemo(() => {
+    const tap = Gesture.Tap()
+      .onBegin(() => {
+        runOnJS(setPressed)(true);
+      })
+      .onFinalize(() => {
+        runOnJS(setPressed)(false);
+      })
+      .onEnd((_event, success) => {
+        if (success) {
+          runOnJS(press)();
+        }
+      });
+    const pan = Gesture.Pan()
+      .activateAfterLongPress(DRAG_HOLD_MS)
+      .onStart(() => {
+        dragFrom.value = index;
+        hoverIndex.value = index;
+        translationX.value = 0;
+        runOnJS(setPressed)(false);
+        runOnJS(dragStart)(index);
+      })
+      .onUpdate(event => {
+        translationX.value = event.translationX;
+        const next = hoverForDrag(
+          index,
+          event.translationX,
+          centersSV.value,
+          widthsSV.value,
+        );
+        if (next !== hoverIndex.value) {
+          hoverIndex.value = next;
+          runOnJS(slotBuzz)();
+        }
+      })
+      .onFinalize((_event, success) => {
+        if (dragFrom.value !== index) {
+          return;
+        }
+        const from = index;
+        const to = success ? hoverIndex.value : index;
+        runOnJS(dragEnd)(from, to);
+      });
+    return Gesture.Exclusive(pan, tap);
+  }, [
+    centersSV,
+    dragEnd,
+    dragFrom,
+    dragStart,
+    hoverIndex,
+    index,
+    press,
+    slotBuzz,
+    translationX,
+    widthsSV,
+  ]);
+  return (
+    <GestureDetector gesture={gesture}>
+      <Animated.View
+        collapsable={false}
+        accessibilityRole="button"
+        accessibilityState={focused ? {selected: true} : {}}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityHint="Long press, then drag to reorder"
+        testID={testID}
+        onLayout={onLayout}
+        onAccessibilityTap={onPress}
+        style={[
+          styles.tabItem,
+          floating && styles.tabItemFloating,
+          {minWidth, minHeight},
+          dragStyle,
+        ]}>
+        {pressed && !focused && !floating ? (
+          <View
+            pointerEvents="none"
+            style={[styles.pressDock, {backgroundColor: pressedColor}]}
+          />
+        ) : null}
+        <View
+          style={floating ? styles.floatingIconAnchor : undefined}
+          pointerEvents="none">
+          {pressed && !focused && floating ? (
+            <View style={[styles.pressDisc, {backgroundColor: pressedColor}]} />
+          ) : null}
+          <View style={[styles.iconWrap, floating && styles.floatingIconWrap]}>
+            <TabIconSlot focused={focused} pressed={pressed}>
+              {icon}
+            </TabIconSlot>
+          </View>
+        </View>
+        <Animated.View
+          style={[styles.labelWrap, labelStyle]}
+          accessibilityElementsHidden={floating}
+          importantForAccessibility={
+            floating ? 'no-hide-descendants' : 'auto'
+          }>
+          {label}
+        </Animated.View>
+      </Animated.View>
+    </GestureDetector>
+  );
+}
+
 const FloatingTabBar: React.FC<BottomTabBarProps> = ({
   state,
   descriptors,
@@ -129,10 +352,17 @@ const FloatingTabBar: React.FC<BottomTabBarProps> = ({
   const {width: windowWidth} = useWindowDimensions();
   const onHeightChange = useContext(BottomTabBarHeightCallbackContext);
   const isDarkMode = theme.colors.background !== '#ffffff';
+  const pillBorderWidth = floatingPillBorderWidth(isDarkMode);
   const bottomPad = Math.max(insets.bottom, 0) + PILL_BOTTOM_GAP;
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<React.ComponentRef<typeof GestureScrollView>>(null);
   const [layouts, setLayouts] = useState<Record<string, ItemLayout>>({});
+  const [dragging, setDragging] = useState(false);
   const indicatorX = useSharedValue(0);
+  const dragFrom = useSharedValue(-1);
+  const hoverIndex = useSharedValue(-1);
+  const translationX = useSharedValue(0);
+  const widthsSV = useSharedValue<number[]>([]);
+  const centersSV = useSharedValue<number[]>([]);
   const indicatorW = useSharedValue(0);
   const pillY = useSharedValue(floating ? 16 : 0);
   const pillOpacity = useSharedValue(floating ? 0 : 1);
@@ -168,7 +398,7 @@ const FloatingTabBar: React.FC<BottomTabBarProps> = ({
   }, [layouts, state.routes]);
   const fittedWidth =
     hugWidth > 0
-      ? Math.min(hugWidth + FLOATING_PILL_BORDER_WIDTH * 2, floatingMax)
+      ? Math.min(hugWidth + pillBorderWidth * 2, floatingMax)
       : 0;
   const dockedOverflows = !floating && hugWidth > windowWidth;
 
@@ -243,7 +473,7 @@ const FloatingTabBar: React.FC<BottomTabBarProps> = ({
     return {
       transform: [{translateX: indicatorX.value}],
       width: indicatorW.value,
-      opacity: indicatorW.value > 0 ? 1 : 0,
+      opacity: dragFrom.value >= 0 ? 0 : indicatorW.value > 0 ? 1 : 0,
       height,
       borderRadius: floating ? FLOATING_DISC / 2 : DOCKED_HIGHLIGHT_RADIUS,
       top: floating ? Math.max(0, (barHeight.value - height) / 2) : 4,
@@ -259,8 +489,14 @@ const FloatingTabBar: React.FC<BottomTabBarProps> = ({
   }));
 
   const clipStyle = useAnimatedStyle(() => ({
-    borderRadius: barRadius.value,
-    minHeight: barHeight.value,
+    // Sit inside the stroke. The same radius as the outer pill leaves a
+    // blank crescent between the border and the glass at each corner.
+    borderRadius: floating
+      ? Math.max(0, barRadius.value - pillBorderWidth)
+      : barRadius.value,
+    minHeight: floating
+      ? Math.max(0, barHeight.value - pillBorderWidth * 2)
+      : barHeight.value,
   }));
 
   const labelSlotStyle = useAnimatedStyle(() => ({
@@ -274,6 +510,20 @@ const FloatingTabBar: React.FC<BottomTabBarProps> = ({
   const borderColor = isDarkMode
     ? theme.colors.whiteOverlay12
     : theme.colors.blackOverlay10;
+  const floatingBorderColor = isDarkMode
+    ? 'rgba(255,255,255,0.55)'
+    : 'rgba(15,23,42,0.22)';
+  const glassSheenColors = isDarkMode
+    ? ([
+        'rgba(255,255,255,0.05)',
+        'rgba(255,255,255,0.02)',
+        'rgba(255,255,255,0)',
+      ] as const)
+    : ([
+        'rgba(255,255,255,0.28)',
+        'rgba(255,255,255,0.1)',
+        'rgba(255,255,255,0)',
+      ] as const);
   const indicatorColor = isDarkMode
     ? 'rgba(247,147,26,0.28)'
     : 'rgba(247,147,26,0.18)';
@@ -313,14 +563,64 @@ const FloatingTabBar: React.FC<BottomTabBarProps> = ({
     [navigation, state],
   );
 
-  const onTabLongPress = useCallback(
-    (route: (typeof state.routes)[number]) => {
+  useEffect(() => {
+    const widths: number[] = [];
+    const centers: number[] = [];
+    for (const route of state.routes) {
+      const layout = layouts[route.key];
+      const x = layout?.x ?? 0;
+      const width = layout?.width ?? 0;
+      widths.push(width);
+      centers.push(x + width / 2);
+    }
+    widthsSV.value = widths;
+    centersSV.value = centers;
+  }, [centersSV, layouts, state.routes, widthsSV]);
+
+  const routeNamesRef = useRef<string[]>([]);
+  routeNamesRef.current = state.routes.map(route => route.name);
+
+  const onDragStart = useCallback(
+    (index: number) => {
+      const route = state.routes[index];
+      setDragging(true);
+      HapticFeedback.medium();
+      if (!route) {
+        return;
+      }
       navigation.emit({
         type: 'tabLongPress',
         target: route.key,
       });
     },
-    [navigation, state],
+    [navigation, state.routes],
+  );
+
+  const onDragEnd = useCallback(
+    (from: number, to: number) => {
+      const names = routeNamesRef.current.slice();
+      dragFrom.value = -1;
+      hoverIndex.value = -1;
+      translationX.value = 0;
+      setDragging(false);
+      if (
+        from < 0 ||
+        to < 0 ||
+        from === to ||
+        from >= names.length ||
+        to >= names.length
+      ) {
+        return;
+      }
+      const next = names.slice();
+      const [moved] = next.splice(from, 1);
+      if (!moved) {
+        return;
+      }
+      next.splice(to, 0, moved);
+      setEnabledNavMenuOrder(next);
+    },
+    [dragFrom, hoverIndex, translationX],
   );
 
   const onItemLayout = useCallback(
@@ -344,25 +644,27 @@ const FloatingTabBar: React.FC<BottomTabBarProps> = ({
         backgroundColor: theme.colors.background,
         borderTopColor: borderColor,
       };
-  // iOS shadow only. Android elevation plus the blur overlay
-  // paints a gray box around the pill.
+  // No drop shadow. Android skips blur, so it uses the same light frost as the lock button.
   const elevatedSurfaceStyle = {
     backgroundColor: floating
       ? Platform.OS === 'android'
         ? isDarkMode
-          ? 'rgba(30,30,30,0.96)'
-          : 'rgba(255,255,255,0.96)'
+          ? 'rgba(44,44,48,0.86)'
+          : 'rgba(255,255,255,0.82)'
         : 'transparent'
       : theme.colors.background,
-    shadowColor:
-      Platform.OS === 'ios'
-        ? theme.colors.shadowColor || '#000'
-        : 'transparent',
-    shadowOpacity: Platform.OS === 'ios' && floating ? 0.22 : 0,
+    shadowOpacity: 0,
     elevation: 0,
   };
+  const floatingRingStyle = floating
+    ? {
+        overflow: 'visible' as const,
+        borderWidth: pillBorderWidth,
+        borderColor: floatingBorderColor,
+      }
+    : null;
   return (
-    <View
+    <GestureHandlerRootView
       pointerEvents="box-none"
       style={[
         floating ? styles.outerFloating : styles.outerDocked,
@@ -373,13 +675,14 @@ const FloatingTabBar: React.FC<BottomTabBarProps> = ({
           floating ? styles.pillElevated : styles.dockElevated,
           pillStyle,
           elevatedSurfaceStyle,
+          floatingRingStyle,
         ]}>
         <Animated.View
           style={[
             styles.pillClip,
             floating && styles.pillClipFloating,
             clipStyle,
-            {borderColor},
+            !floating && {borderColor},
           ]}>
           {floating && Platform.OS === 'ios' ? (
             <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -387,20 +690,31 @@ const FloatingTabBar: React.FC<BottomTabBarProps> = ({
                 style={StyleSheet.absoluteFill}
                 blurType={
                   isDarkMode
-                    ? 'systemUltraThinMaterialDark'
-                    : 'systemUltraThinMaterialLight'
+                    ? 'systemThinMaterialDark'
+                    : 'systemThinMaterialLight'
                 }
-                blurAmount={16}
+                blurAmount={32}
                 overlayColor={
-                  isDarkMode ? 'rgba(18,18,20,0.12)' : 'rgba(255,255,255,0.18)'
+                  isDarkMode ? 'rgba(28,28,32,0.42)' : 'rgba(255,255,255,0.46)'
                 }
-                reducedTransparencyFallbackColor={theme.colors.cardBackground}
+                reducedTransparencyFallbackColor={
+                  isDarkMode ? 'rgba(44,44,48,0.92)' : 'rgba(255,255,255,0.88)'
+                }
               />
             </View>
           ) : null}
-          <ScrollView
+          {floating ? (
+            <LinearGradient
+              pointerEvents="none"
+              colors={[...glassSheenColors]}
+              locations={[0, 0.62, 1]}
+              style={StyleSheet.absoluteFill}
+            />
+          ) : null}
+          <GestureScrollView
             ref={scrollRef}
             horizontal
+            scrollEnabled={!dragging}
             showsHorizontalScrollIndicator={false}
             bounces={false}
             contentContainerStyle={[
@@ -457,82 +771,43 @@ const FloatingTabBar: React.FC<BottomTabBarProps> = ({
                 );
 
               return (
-                <AppPressable
+                <MenuTab
                   key={route.key}
-                  variant="none"
-                  accessibilityRole="button"
-                  accessibilityState={focused ? {selected: true} : {}}
+                  index={index}
+                  focused={focused}
+                  floating={floating}
+                  pressedColor={pressedColor}
                   accessibilityLabel={
                     options.tabBarAccessibilityLabel ?? label
                   }
                   testID={options.tabBarButtonTestID}
-                  onPress={(_e: GestureResponderEvent) =>
-                    onTabPress(route, focused)
+                  minWidth={
+                    floating ? FLOATING_ITEM_MIN_WIDTH : DOCKED_ITEM_MIN_WIDTH
                   }
-                  onLongPress={() => onTabLongPress(route)}
+                  minHeight={
+                    (floating
+                      ? FLOATING_TAB_BAR_CONTENT_HEIGHT
+                      : DOCKED_TAB_BAR_CONTENT_HEIGHT) - 8
+                  }
+                  icon={icon}
+                  label={labelNode}
+                  labelStyle={labelSlotStyle}
+                  dragFrom={dragFrom}
+                  hoverIndex={hoverIndex}
+                  translationX={translationX}
+                  widthsSV={widthsSV}
+                  centersSV={centersSV}
+                  onPress={() => onTabPress(route, focused)}
+                  onDragStart={onDragStart}
+                  onDragEnd={onDragEnd}
                   onLayout={onItemLayout(route.key)}
-                  style={[
-                    styles.tabItem,
-                    floating && styles.tabItemFloating,
-                    {
-                      minWidth: floating
-                        ? FLOATING_ITEM_MIN_WIDTH
-                        : DOCKED_ITEM_MIN_WIDTH,
-                      minHeight:
-                        (floating
-                          ? FLOATING_TAB_BAR_CONTENT_HEIGHT
-                          : DOCKED_TAB_BAR_CONTENT_HEIGHT) - 8,
-                    },
-                  ]}>
-                  {({pressed}) => (
-                    <>
-                      {pressed && !focused && !floating ? (
-                        <View
-                          pointerEvents="none"
-                          style={[
-                            styles.pressDock,
-                            {backgroundColor: pressedColor},
-                          ]}
-                        />
-                      ) : null}
-                      <View
-                        style={floating ? styles.floatingIconAnchor : undefined}
-                        pointerEvents="none">
-                        {pressed && !focused && floating ? (
-                          <View
-                            style={[
-                              styles.pressDisc,
-                              {backgroundColor: pressedColor},
-                            ]}
-                          />
-                        ) : null}
-                        <View
-                          style={[
-                            styles.iconWrap,
-                            floating && styles.floatingIconWrap,
-                          ]}>
-                          <TabIconSlot focused={focused} pressed={pressed}>
-                            {icon}
-                          </TabIconSlot>
-                        </View>
-                      </View>
-                      <Animated.View
-                        style={[styles.labelWrap, labelSlotStyle]}
-                        accessibilityElementsHidden={floating}
-                        importantForAccessibility={
-                          floating ? 'no-hide-descendants' : 'auto'
-                        }>
-                        {labelNode}
-                      </Animated.View>
-                    </>
-                  )}
-                </AppPressable>
+                />
               );
             })}
-          </ScrollView>
+          </GestureScrollView>
         </Animated.View>
       </Animated.View>
-    </View>
+    </GestureHandlerRootView>
   );
 };
 
@@ -575,7 +850,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   pillClipFloating: {
-    borderWidth: FLOATING_PILL_BORDER_WIDTH,
+    borderWidth: 0,
   },
   scroll: {
     flexGrow: 0,

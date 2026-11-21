@@ -36,6 +36,9 @@
     <uses-feature android:name="android.hardware.location" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
+    <!-- screenOrientation=portrait implies this feature as required. Keep portrait
+         on phones, but do not block ChromeOS, XR, or landscape-only devices. -->
+    <uses-feature android:name="android.hardware.screen.portrait" android:required="false" />
     <application
         android:name=".MainApplication"
         android:label="@string/app_name"

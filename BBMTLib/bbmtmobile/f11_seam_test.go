@@ -28,6 +28,14 @@ func TestF11_MustGoStr(t *testing.T) {
 	if _, perr := testMustGoStr("", false, true); !strings.Contains(perr, "exceeds") {
 		t.Fatalf("oversize want f11 exceeds error, got %q", perr)
 	}
+	// Exact cap, including a length that is not 16-byte aligned (the MTE
+	// granule C.GoString used to read before).
+	for _, n := range []int{1, 15, 16, 17, 4096, maxBridgeString} {
+		res, perr := testMustGoStrN(n)
+		if perr != "" || len(res) != n {
+			t.Fatalf("len %d = %d,%q", n, len(res), perr)
+		}
+	}
 }
 
 func TestF11_RecoverBridge(t *testing.T) {

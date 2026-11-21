@@ -42,6 +42,8 @@ import {
   urFountainWrapAfter,
   urTypeFromPart,
   utf8ToUr,
+  airgapV2Bytes,
+  airgapV2Envelope,
   bufferToUr,
   UR_AIRGAP_DEFAULT_SPEED,
   UR_AIRGAP_FRAGMENT_SIZE,
@@ -306,7 +308,7 @@ describe('urBytesQr binary airgap payload', () => {
       UR_AIRGAP_SPEEDS.default.fragmentSize,
     );
     expect(UR_AIRGAP_FRAGMENT_SIZE).toBeGreaterThan(UR_BYTES_FRAGMENT_SIZE);
-    expect(UR_AIRGAP_DEFAULT_SPEED).toBe('default');
+    expect(UR_AIRGAP_DEFAULT_SPEED).toBe('fast');
     expect(nextAirgapQrSpeed('default')).toBe('medium');
     expect(nextAirgapQrSpeed('medium')).toBe('fast');
     expect(nextAirgapQrSpeed('fast')).toBe('default');
@@ -424,5 +426,44 @@ describe('urBytesQr binary airgap payload', () => {
     expect(urFountainWrapAfter(470)).toBe(940);
     expect(urFountainWrapAfter(1)).toBe(2);
     expect(urFountainWrapAfter(0)).toBe(2);
+  });
+
+  it('round-trips a BW2$ envelope at every airgap speed', () => {
+    const raw = Buffer.alloc(4096);
+    for (let i = 0; i < raw.length; i++) {
+      raw[i] = (i * 17 + 43) % 256;
+    }
+    const envelope = `BW2$${raw.toString('base64')}`;
+    expect(airgapV2Envelope(envelope)).toBe(envelope);
+    expect(airgapV2Envelope(raw.toString('base64'))).toBe(envelope);
+    expect(airgapV2Bytes('legacy-blob')).toBeNull();
+    expect(airgapV2Bytes('BW2$')).toBeNull();
+
+    const speeds = [
+      UR_AIRGAP_SPEEDS.default.fragmentSize,
+      UR_AIRGAP_SPEEDS.medium.fragmentSize,
+      UR_AIRGAP_SPEEDS.fast.fragmentSize,
+    ];
+    for (const fragmentSize of speeds) {
+      const bytes = airgapV2Bytes(envelope);
+      expect(bytes).not.toBeNull();
+      expect(bytes!.equals(raw)).toBe(true);
+      const ur = bufferToUr(bytes!);
+      expect(ur).not.toBeNull();
+      expect(urFragmentCount(ur!, fragmentSize)).toBeGreaterThan(1);
+      const parts = urFountainParts(ur!, 4, fragmentSize);
+      const decoder = createUrDecoder();
+      let recovered: string | null = null;
+      for (const part of parts) {
+        const result = receiveUrBytesPartAsBase64(decoder, part);
+        if (result.kind === 'complete') {
+          recovered = result.payload;
+          break;
+        }
+        expect(result.kind).toBe('progress');
+      }
+      expect(recovered).not.toBeNull();
+      expect(airgapV2Envelope(recovered!)).toBe(envelope);
+    }
   });
 });

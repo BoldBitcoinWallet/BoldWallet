@@ -31,7 +31,19 @@ type MessagePump struct {
 	onAbort       func(reason string)
 	// F39: post-DKG group-key hash collection. Invoked (sender
 	// hex, content) for phase "keygen-groupkey" rumors.
-	onGroupKey func(senderHex, gkHash string)
+	// onGroupKeyMu guards onGroupKey and pendingGroupKeys.
+	// A joiner can publish keygen-groupkey while this party is
+	// still inside the last DKG round, before SetOnGroupKey.
+	// Those wraps are already marked seen, so they are buffered
+	// and replayed when the collector attaches.
+	onGroupKeyMu     sync.Mutex
+	onGroupKey       func(senderHex, gkHash string)
+	pendingGroupKeys []groupKeyObservation
+}
+
+type groupKeyObservation struct {
+	senderHex string
+	gkHash    string
 }
 
 func NewMessagePump(cfg Config, client *Client) (result *MessagePump) {
@@ -63,12 +75,45 @@ func (p *MessagePump) SetOnAbort(fn func(reason string)) {
 }
 
 // SetOnGroupKey registers the F39 group-key collector. The
-// callback must be non-blocking (it fires on the pump loop).
+// callback must be non-blocking (it fires on the pump loop, and
+// also for any keygen-groupkey events buffered before this call).
 func (p *MessagePump) SetOnGroupKey(fn func(senderHex, gkHash string)) {
 	if p == nil {
 		return
 	}
+	p.onGroupKeyMu.Lock()
 	p.onGroupKey = fn
+	pending := p.pendingGroupKeys
+	if fn != nil {
+		p.pendingGroupKeys = nil
+	}
+	p.onGroupKeyMu.Unlock()
+	if fn == nil {
+		return
+	}
+	for _, item := range pending {
+		fn(item.senderHex, item.gkHash)
+	}
+}
+
+// deliverGroupKey hands a peer group-key hash to the collector, or
+// buffers it until SetOnGroupKey. The callback runs without the mutex.
+func (p *MessagePump) deliverGroupKey(senderHex, gkHash string) {
+	if p == nil || gkHash == "" {
+		return
+	}
+	p.onGroupKeyMu.Lock()
+	fn := p.onGroupKey
+	if fn == nil {
+		p.pendingGroupKeys = append(p.pendingGroupKeys, groupKeyObservation{
+			senderHex: senderHex,
+			gkHash:    gkHash,
+		})
+		p.onGroupKeyMu.Unlock()
+		return
+	}
+	p.onGroupKeyMu.Unlock()
+	fn(senderHex, gkHash)
 }
 
 // handleCoordinatorPhase returns true if the rumor is a session coordinator
@@ -92,8 +137,8 @@ func (p *MessagePump) handleCoordinatorPhase(chunkMessage map[string]interface{}
 	}
 	if strings.EqualFold(phase, "keygen-groupkey") {
 		content, _ := chunkMessage["content"].(string)
-		if p.onGroupKey != nil && content != "" {
-			p.onGroupKey(senderHex, content)
+		if content != "" {
+			p.deliverGroupKey(senderHex, content)
 		}
 	}
 	return true

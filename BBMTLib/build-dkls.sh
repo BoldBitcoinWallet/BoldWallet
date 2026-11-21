@@ -14,6 +14,12 @@ MIN_API="${MIN_API:-21}"
 
 export CGO_ENABLED=1
 
+# Homebrew exports GOROOT for its own Go. A newer `go` on PATH (or a
+# go.mod toolchain switch) then runs the old compile/asm, the c-shared
+# build fails, and the previous .so is left in place. Drop it so this
+# `go` uses the tree it was built with.
+unset GOROOT
+
 info() { echo "==> $*"; }
 warn() { echo "Warning: $*" >&2; }
 
@@ -100,7 +106,7 @@ build_host() {
   if [ "$(uname -s)" = "Darwin" ]; then
     export CGO_LDFLAGS="-L${host_lib} -llibtss_ffi -lm -framework Security -framework CoreFoundation"
   else
-    # Go 1.26.11 rejects -l:filename. -Bstatic keeps liblibtss_ffi.a, not the .so.
+    # Go 1.26.11+ rejects -l:filename. -Bstatic keeps liblibtss_ffi.a, not the .so.
     export CGO_LDFLAGS="-L${host_lib} -Wl,-Bstatic -llibtss_ffi -Wl,-Bdynamic -lm -ldl -lpthread"
   fi
   info "Building bbmtmobile for host..."
@@ -162,11 +168,15 @@ build_android_abi() {
   export CXX="${cc}++"
   export CGO_CFLAGS="-O2"
   # libtss-go #cgo android only adds -lm -llog; path to static FFI comes from here.
-  # Go 1.26.11 rejects -l:filename. Pass the archive as a direct linker input.
+  # Go 1.26.11+ rejects -l:filename. Pass the archive as a direct linker input.
   export CGO_LDFLAGS="-L${ffi_dir} ${ffi_dir}/liblibtss_ffi.a -lm -llog -landroid"
 
-  go build -buildmode=c-shared -ldflags="-s -w" -o "${JNI_OUT}/${abi}/libbbmtmobile.so" ./bbmtmobile/
-
+  # Called as `build_android_abi ... && ok=1`, so set -e does not abort
+  # this function. A failed build must not report the previous .so as new.
+  if ! go build -buildmode=c-shared -ldflags="-s -w" -o "${JNI_OUT}/${abi}/libbbmtmobile.so" ./bbmtmobile/; then
+    warn "Build failed for ${abi}"
+    return 1
+  fi
   if [ ! -f "${JNI_OUT}/${abi}/libbbmtmobile.so" ]; then
     warn "Build failed for ${abi}"
     return 1
@@ -266,9 +276,11 @@ build_android() {
 
   print_android_build_summary
 
+  # iOS is a later step in build.sh / build-all.sh. Checking the xcframework
+  # here fails on the archive this run is about to replace.
   local verify="${ROOT}/scripts/verify-native-artifacts.sh"
   if [ "${VERIFY_NATIVE:-1}" = "1" ] && [ -x "${verify}" ]; then
-    bash "${verify}" || warn "Native artifact verification reported issues"
+    bash "${verify}" android || warn "Native artifact verification reported issues"
   fi
 
   # F28: record which sources produced these .so files. Gradle fails fast
@@ -359,6 +371,11 @@ build_ios() {
   cp -f "${bbmt_dir}/libbbmtmobile_go.h" "${dkls_dir}/libdklsmobile_go.h" 2>/dev/null || true
 
   info "iOS xcframework: ios/BbmtMobile/libbbmtmobile.xcframework (replaces Tss + libdklsmobile)"
+
+  local verify="${ROOT}/scripts/verify-native-artifacts.sh"
+  if [ "${VERIFY_NATIVE:-1}" = "1" ] && [ -x "${verify}" ]; then
+    bash "${verify}" ios
+  fi
 }
 
 main() {

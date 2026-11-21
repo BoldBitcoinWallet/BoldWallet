@@ -1,12 +1,13 @@
 module github.com/BoldBitcoinWallet/BBMTLib
 
-go 1.26.0
+go 1.27.0
 
 // F29: minimum toolchain — CVE-2026-111943 (eMudhra intermediates) is fixed
 // in go1.26.10's crypto/x509. GO-2026-6859 / CVE-2026-97054 (net/http
-// MaxBytesReader header race) is fixed in go1.26.11. Binaries must be
-// rebuilt, not just relinked.
-toolchain go1.26.11
+// MaxBytesReader header race) is fixed in go1.26.11. Go 1.27 stops
+// android/arm64 C.GoString from reading the previous MTE granule
+// (SEGV_MTESERR on GrapheneOS). Binaries must be rebuilt, not just relinked.
+toolchain go1.27.4
 
 require (
 	github.com/0xCarbon/libtss/libtss-go v0.0.0
@@ -15,60 +16,57 @@ require (
 	github.com/btcsuite/btcd/btcec/v2 v2.3.4
 	github.com/btcsuite/btcd/btcutil v1.1.5
 	github.com/btcsuite/btcd/btcutil/psbt v1.1.10
+	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
 	github.com/decred/dcrd/dcrec/edwards/v2 v2.0.3
+	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
+	github.com/ecies/go/v2 v2.0.8
 	github.com/gorilla/mux v1.8.1
 	github.com/ipfs/go-log/v2 v2.1.3
 	github.com/nbd-wtf/go-nostr v0.52.3
 	github.com/patrickmn/go-cache v2.1.0+incompatible
+	golang.org/x/crypto v0.44.0
+	golang.org/x/sys v0.48.0
 )
 
 require (
 	filippo.io/bigmod v0.1.0 // indirect
 	github.com/ImVexed/fasturl v0.0.0-20230304231329-4e41488060f3 // indirect
+	github.com/agl/ed25519 v0.0.0-20200225211852-fd4d107ace12 // indirect
 	github.com/awnumar/memcall v0.4.0 // indirect
 	github.com/awnumar/memguard v0.23.0 // indirect
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f // indirect
+	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce // indirect
 	github.com/bytedance/sonic v1.13.1 // indirect
 	github.com/bytedance/sonic/loader v0.2.4 // indirect
 	github.com/cloudwego/base64x v0.1.5 // indirect
 	github.com/coder/websocket v1.8.12 // indirect
+	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/decred/dcrd/crypto/blake256 v1.1.0 // indirect
 	github.com/ethereum/go-ethereum v1.17.0 // indirect
+	github.com/gogo/protobuf v1.3.3 // indirect
+	github.com/hashicorp/errwrap v1.1.0 // indirect
+	github.com/hashicorp/go-multierror v1.1.1 // indirect
+	github.com/ipfs/go-log v1.0.5 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.10 // indirect
 	github.com/mailru/easyjson v0.9.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/opentracing/opentracing-go v1.2.0 // indirect
+	github.com/otiai10/primes v0.0.0-20210501021515-f1b2be525a11 // indirect
+	github.com/pkg/errors v0.9.1 // indirect
+	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/puzpuzpuz/xsync/v3 v3.5.1 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
 	github.com/tidwall/pretty v1.2.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
-	golang.org/x/arch v0.15.0 // indirect
-	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
-)
-
-require (
-	github.com/agl/ed25519 v0.0.0-20200225211852-fd4d107ace12 // indirect
-	github.com/btcsuite/btcd/chaincfg/chainhash v1.1.0
-	github.com/btcsuite/btcutil v1.0.3-0.20201208143702-a53e38424cce // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
-	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0
-	github.com/ecies/go/v2 v2.0.8
-	github.com/gogo/protobuf v1.3.3 // indirect
-	github.com/hashicorp/errwrap v1.1.0 // indirect
-	github.com/hashicorp/go-multierror v1.1.1 // indirect
-	github.com/ipfs/go-log v1.0.5 // indirect
-	github.com/opentracing/opentracing-go v1.2.0 // indirect
-	github.com/otiai10/primes v0.0.0-20210501021515-f1b2be525a11 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
-	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.10.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/crypto v0.44.0
-	golang.org/x/sys v0.48.0
+	golang.org/x/arch v0.15.0 // indirect
+	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 )
 

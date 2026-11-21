@@ -226,7 +226,7 @@ export function initializeBranta(network: string): void {
       typeof global.atob,
     );
     // Fire-and-forget probe — logs whether ZK decrypt can work on this runtime.
-    void probeBrantaCrypto(crypto).then(ok => {
+    probeBrantaCrypto(crypto).then(ok => {
       dbg('initializeBranta: cryptoProbe =', ok ? 'ok' : 'FAIL');
     });
   } catch (err) {

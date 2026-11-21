@@ -371,6 +371,15 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({
     color: providerTextColor,
     textAlign: 'center',
   };
+  const connectionStatusWrapStyle = {
+    flexShrink: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+  };
+  const connectionStatusTextStyle = {
+    ...providerTextStyle,
+    fontSize: theme.fontSizes?.sm || 12,
+  };
 
   const wrapperStyle: any = {
     paddingTop: 12,
@@ -436,16 +445,13 @@ export const HeaderProvider: React.FC<HeaderProviderProps> = ({
           <View
             style={
               connectionStatus
-                ? {flexShrink: 1, minWidth: 0, justifyContent: 'center'}
+                ? connectionStatusWrapStyle
                 : providerTextWrapStyle
             }>
             <Text
               style={
                 connectionStatus
-                  ? {
-                      ...providerTextStyle,
-                      fontSize: theme.fontSizes?.sm || 12,
-                    }
+                  ? connectionStatusTextStyle
                   : providerTextStyle
               }
               numberOfLines={1}

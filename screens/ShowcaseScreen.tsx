@@ -1,5 +1,10 @@
 import {CommonActions} from '@react-navigation/native';
 import {confirmAppPrompt, showAppNotice} from '../services/appPrompt';
+import Toast from 'react-native-toast-message';
+import {
+  beginAirgapImportSession,
+  endAirgapImportSession,
+} from '../services/airgapImportSession';
 import React, {useCallback, useEffect, useRef, useState} from 'react';
 import {
   View,
@@ -47,9 +52,9 @@ import {clearCachesBeforeWalletSession} from '../services/walletSessionReset';
 import {useUser} from '../context/UserContext';
 import {shouldIgnoreNonUrDuringSendScan} from '../utils/sendQrScan';
 import {
+  airgapV2Envelope,
   createUrDecoder,
   decoderMatchesPartSeqLen,
-  formatUrRecoveredProgress,
   receiveUrBytesPartAsBase64,
   urSeqIndexFromPart,
   type UrBytesProgress,
@@ -129,6 +134,15 @@ const ShowcaseScreen = ({navigation}: any) => {
       .then(setWalletAlreadyLoaded)
       .catch(() => setWalletAlreadyLoaded(false));
   }, []);
+  useEffect(() => {
+    const holding =
+      isAirgapScannerVisible || (isImporting && restoreMode === 'airgap');
+    if (!holding) {
+      return;
+    }
+    beginAirgapImportSession();
+    return () => endAirgapImportSession();
+  }, [isAirgapScannerVisible, isImporting, restoreMode]);
   const openLoadedWallet = () => {
     navigation.dispatch(
       CommonActions.reset({
@@ -221,8 +235,10 @@ const ShowcaseScreen = ({navigation}: any) => {
         if (airgapImportEpochRef.current !== epoch) {
           return;
         }
-        const imported = importKeyshareFromBase64(base64Content, password, {
+        const envelope = airgapV2Envelope(base64Content);
+        const imported = importKeyshareFromBase64(envelope, password, {
           setActiveNetwork,
+          landOn: 'wallet-home',
           navigate: action => {
             if (airgapImportEpochRef.current !== epoch) {
               return;
@@ -243,6 +259,12 @@ const ShowcaseScreen = ({navigation}: any) => {
         setModalVisible(false);
         setRestoreMode(null);
         resetAirgapRestore();
+        Toast.show({
+          type: 'success',
+          text1: 'Keyshare imported',
+          text2: 'Opening your wallet.',
+          position: 'top',
+        });
       } catch (error) {
         if (airgapImportEpochRef.current !== epoch) {
           return;
@@ -395,16 +417,17 @@ const ShowcaseScreen = ({navigation}: any) => {
         seqLen: parsed?.seqLen,
         payloadChars: urResult.payload.length,
       });
+      const envelope = airgapV2Envelope(urResult.payload);
       airgapImportingRef.current = true;
       airgapUrDecoderRef.current = null;
       setAirgapUrProgress(urResult.progress);
-      setAirgapCipherBase64(urResult.payload);
+      setAirgapCipherBase64(envelope);
       // Stop the camera now. Import waits until this screen is active again
       // before the OS auth prompt — prompting during finish() never returns.
       stopAndroidContinuousScan();
       setIsAirgapScannerVisible(false);
       setIsImporting(true);
-      importAirgapCipher(urResult.payload, airgapPasswordRef.current);
+      importAirgapCipher(envelope, airgapPasswordRef.current);
     }
   }, [importAirgapCipher]);
   const styles = StyleSheet.create({
@@ -881,13 +904,9 @@ const ShowcaseScreen = ({navigation}: any) => {
         mode="continuous"
         title="Scanning Animated QR..."
         subtitle={
-          airgapUrProgress && airgapUrProgress.total > 1
-            ? airgapUrProgress.percentage >= 100
-              ? 'Processing keyshare…'
-              : `${formatUrRecoveredProgress(
-                  airgapUrProgress,
-                )} — fountain can finish before ${airgapUrProgress.total}`
-            : 'Point camera at the encrypted keyshare QR'
+          airgapUrProgress && airgapUrProgress.percentage >= 100
+            ? 'Processing keyshare…'
+            : 'Fountain can finish before every frame.'
         }
         showProgress={!!airgapUrProgress && airgapUrProgress.total > 1}
         progress={airgapUrProgress || undefined}

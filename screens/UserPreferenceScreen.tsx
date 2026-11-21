@@ -162,7 +162,7 @@ const UserPreferenceScreen: React.FC<{navigation: any}> = ({navigation}) => {
     appConfigRepository.set(`api_${network}`, apiUrl);
     database.invalidateSyncMetadataForAddressType(network, addressType);
     mempoolClient.invalidateAll();
-    void requestWalletIndexing({
+    requestWalletIndexing({
       network,
       addressType,
       apiBase: apiUrl,

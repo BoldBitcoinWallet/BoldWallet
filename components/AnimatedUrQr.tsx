@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   StyleSheet,
   Text,
@@ -10,7 +10,6 @@ import {
 import QRCode from 'react-native-qrcode-svg';
 import type {UR} from '@ngraveio/bc-ur';
 import {dbg} from '../utils';
-import {useTheme} from '../theme';
 import {
   UR_BYTES_FRAGMENT_SIZE,
   UR_FRAME_INTERVAL_MS,
@@ -41,6 +40,9 @@ type AnimatedUrQrProps = {
   maxFragmentLen?: number;
   /** Override default frame interval (ms). Lower = faster animation. */
   frameIntervalMs?: number;
+  /** When false, the parent draws the frame count outside the quiet zone. */
+  showFrameLabel?: boolean;
+  onFrame?: (frame: number, total: number) => void;
 };
 
 const DEFAULT_HINT =
@@ -59,9 +61,11 @@ const AnimatedUrQr: React.FC<AnimatedUrQrProps> = ({
   restartNonce = 0,
   maxFragmentLen = UR_BYTES_FRAGMENT_SIZE,
   frameIntervalMs = UR_FRAME_INTERVAL_MS,
+  showFrameLabel = true,
+  onFrame,
 }) => {
-  const {theme} = useTheme();
-  const isLightTheme = theme.colors.background === '#ffffff';
+  const onFrameRef = useRef(onFrame);
+  onFrameRef.current = onFrame;
   const ur = useMemo(() => {
     if (urProp) {
       return urProp;
@@ -104,22 +108,21 @@ const AnimatedUrQr: React.FC<AnimatedUrQrProps> = ({
     return () => clearInterval(interval);
   }, [ur, restartNonce, maxFragmentLen, frameIntervalMs, totalParts]);
 
+  const displayFrame = totalParts > 0 ? (frameIndex % totalParts) + 1 : 1;
+  useEffect(() => {
+    if (!qrData) {
+      return;
+    }
+    onFrameRef.current?.(displayFrame, totalParts);
+  }, [qrData, displayFrame, totalParts]);
+
   if (!qrData) {
     return <Text style={hintStyle}>{fallbackText}</Text>;
   }
-  const displayFrame = totalParts > 0 ? (frameIndex % totalParts) + 1 : 1;
-  const quietPlateStyle = [
-    styles.quietPlate,
-    {
-      borderColor: isLightTheme
-        ? theme.colors.blackOverlay10
-        : 'rgba(0,0,0,0.12)',
-    },
-  ];
   return (
     <>
       <View style={containerStyle}>
-        <View style={quietPlateStyle}>
+        <View style={styles.quietPlate}>
           <QRCode
             value={qrData}
             size={size}
@@ -132,9 +135,11 @@ const AnimatedUrQr: React.FC<AnimatedUrQrProps> = ({
           />
         </View>
       </View>
-      <Text style={frameLabelStyle}>
-        Frame {displayFrame} of {totalParts}
-      </Text>
+      {showFrameLabel ? (
+        <Text style={frameLabelStyle}>
+          Frame {displayFrame} of {totalParts}
+        </Text>
+      ) : null}
       {hint ? <Text style={hintStyle}>{hint}</Text> : null}
     </>
   );
@@ -144,9 +149,6 @@ const styles = StyleSheet.create({
   quietPlate: {
     backgroundColor: '#FFFFFF',
     padding: UR_QR_QUIET_ZONE_PX,
-    borderRadius: 16,
-    overflow: 'hidden',
-    borderWidth: StyleSheet.hairlineWidth,
   },
 });
 

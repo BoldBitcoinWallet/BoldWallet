@@ -116,7 +116,7 @@ echo -e ""
 
 # Step 3: Build the Release APK
 echo -e "Building the Release APK..."
-./gradlew assembleRelease
+./gradlew assembleRelease -PplayAbi=arm64-v8a -PreactNativeArchitectures=arm64-v8a
 
 # Step 4: Locate and display APK
 APK_PATH="app/build/outputs/apk/release/app-release.apk"

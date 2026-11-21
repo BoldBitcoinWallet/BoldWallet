@@ -986,7 +986,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
   return (
     <SafeAreaView
       style={screenStyles.safeArea}
-      edges={['left', 'right', 'bottom']}>
+      edges={['top', 'left', 'right', 'bottom']}>
       <ScrollView
         style={screenStyles.scrollView}
         contentContainerStyle={[
@@ -1061,10 +1061,7 @@ const KeyshareInfoContent: React.FC<KeyshareInfoContentProps> = ({
                           ]}>
                           <Image
                             source={FINGERPRINT_ICON}
-                            style={[
-                              screenStyles.walletInfoPillFingerprintIcon,
-                              {tintColor: fingerprintBandColors.iconTint},
-                            ]}
+                            style={screenStyles.walletInfoPillFingerprintIcon}
                             resizeMode="contain"
                           />
                         </View>

@@ -30,9 +30,9 @@ RUN curl -Lo node.tar.gz https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x6
     && rm node.tar.gz
 
 # Install Go (cached unless Go version changes)
-# F29: 1.26.11 minimum (CVE-2026-111943; GO-2026-6859 / CVE-2026-97054), checksum-verified.
-RUN curl -Lo go.tar.gz https://go.dev/dl/go1.26.11.linux-amd64.tar.gz \
-    && echo "9849f4e04ee35303714e34fbc3ac8ab44ea3e448a95aa182f91e3b9b79c710ec go.tar.gz" | sha256sum -c - \
+# F29: 1.27.4 (CVE floors from 1.26.11, plus android/arm64 MTE-safe C.GoString), checksum-verified.
+RUN curl -Lo go.tar.gz https://go.dev/dl/go1.27.4.linux-amd64.tar.gz \
+    && echo "7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840 go.tar.gz" | sha256sum -c - \
     && tar -C /usr/local -xzf go.tar.gz \
     && rm go.tar.gz
 
